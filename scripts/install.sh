@@ -4,14 +4,16 @@ repo=https://github.com/lucaslodeiro/ai-factory.git
 branch=bootstrap/mvp
 dest="$HOME/ai-factory"
 skip_tools=false
+configure_defaults=false
 while (($#)); do
   case "$1" in
     --dir|--branch|--repo)
       (($# >= 2)) || { echo "Missing value for $1" >&2; exit 1; }
       case "$1" in --dir) dest=$2;; --branch) branch=$2;; --repo) repo=$2;; esac
       shift 2;;
+    --defaults) configure_defaults=true; shift;;
     --skip-tools) skip_tools=true; shift;;
-    --help) echo 'Usage: bash install.sh [--dir PATH] [--branch BRANCH] [--repo URL] [--skip-tools]'; exit 0;;
+    --help) echo 'Usage: bash install.sh [--dir PATH] [--branch BRANCH] [--repo URL] [--skip-tools] [--defaults]'; exit 0;;
     *) echo "Unknown option: $1" >&2; exit 1;;
   esac
 done
@@ -54,20 +56,11 @@ cd "$dest"
 npm ci
 npm run build
 npm test
-# Never copy credentials from another machine or reuse the old demo target.
-node --input-type=module <<'NODE'
-import fs from 'node:fs';
-import {execFileSync} from 'node:child_process';
-const executable = name => {
-  try { return execFileSync('which', [name], {encoding:'utf8'}).trim(); }
-  catch { return name; }
-};
-let env = fs.readFileSync('.env.example','utf8');
-const values = {FACTORY_REPO_DIR:'', GITHUB_REPOSITORY:'', FACTORY_APPROVERS:'',
-  CODEX_COMMAND:executable('codex'), CLAUDE_COMMAND:executable('claude'), GIT_COMMAND:executable('git')};
-for (const [key,value] of Object.entries(values)) env = env.replace(new RegExp(`^${key}=.*$`,'m'),`${key}=${JSON.stringify(value)}`);
-fs.writeFileSync('.env', env, {flag:'wx', mode:0o600});
-NODE
+if "$configure_defaults"; then
+  bash scripts/configure.sh --defaults
+else
+  bash scripts/configure.sh
+fi
 printf '\nFactory installed in %s\n' "$PWD"
 printf 'For this toolchain, add these directories to PATH: %s:%s:%s\n' "$(dirname "$(command -v node)")" "$(dirname "$(command -v git)")" "$HOME/.local/bin"
 cat <<'NEXT'
@@ -76,7 +69,7 @@ Next:
   gh auth setup-git
   codex login
   claude auth login
-Clone your target application and configure .env (see INSTALL.md).
+Clone your target application if needed. Reconfigure with bash scripts/configure.sh (see INSTALL.md).
 Then run:
   npm run factory -- doctor
   npm run factory -- start

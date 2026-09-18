@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
+configure_args=()
 if [[ ${1:-} == --help ]]; then
-  echo 'Usage: bash scripts/update.sh (updates current branch from origin; stop factory first)'
+  echo 'Usage: bash scripts/update.sh [--defaults] (updates current branch, then configures; stop factory first)'
   exit 0
+fi
+if [[ ${1:-} == --defaults ]]; then
+  configure_args=(--defaults)
+  shift
 fi
 (($# == 0)) || { echo 'Unexpected arguments; see --help.' >&2; exit 1; }
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 node -e 'if(Number(process.versions.node.split(".")[0]) < 22) { console.error("Node 22+ is required"); process.exit(1); }'
-exec node scripts/update.mjs
+node scripts/update.mjs
+bash scripts/configure.sh "${configure_args[@]}"

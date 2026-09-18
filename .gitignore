@@ -5,3 +5,6 @@ dist/
 .DS_Store
 .factory/
 coverage/
+
+.env.backup-*
+.env.tmp-*

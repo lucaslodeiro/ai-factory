@@ -9,7 +9,7 @@ curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/bootstrap/m
 bash /tmp/ai-factory-install.sh --dir "$HOME/ai-factory"
 ```
 
-The default branch is `bootstrap/mvp`; use `--branch main` once the MVP is merged there. The installer installs missing tools, clones the engine, installs locked npm dependencies, builds, tests and creates a private `.env` with blank target settings. It does not authenticate accounts or start agents. Existing destinations are rejected. `--skip-tools` skips machine tool installation; Node 22+, npm and Git must already work. Automatic tool installation is macOS-only. Provider installers: [Codex](https://developers.openai.com/codex/cli), [Claude](https://code.claude.com/docs/en/setup).
+The default branch is `bootstrap/mvp`; use `--branch main` once the MVP is merged there. The installer installs missing tools, clones the engine, installs locked npm dependencies, builds, tests and opens the interactive configurator to create a private `.env`. Enter accepts each displayed default. Use `--defaults` to write installation defaults without prompting (target settings remain blank). It does not authenticate accounts or start agents. Existing destinations are rejected. `--skip-tools` skips machine tool installation; Node 22+, npm and Git must already work. Automatic tool installation is macOS-only. Provider installers: [Codex](https://developers.openai.com/codex/cli), [Claude](https://code.claude.com/docs/en/setup).
 
 To update an existing installation, first stop its daemon and wait for it to exit:
 
@@ -22,7 +22,7 @@ npm run factory -- doctor
 npm run factory -- start
 ```
 
-The updater requires the existing built runtime and dependencies. It uses the current branch on `origin`, refuses local changes/local-only commits and holds the daemon lock throughout the update. It backs up SQLite and `.env` under `FACTORY_DATA_DIR/update-backup-*`, applies a fast-forward, installs locked dependencies, builds and tests. It preserves configuration, logs and worktrees; it never restarts the daemon or updates provider CLIs. A failed build/test leaves the daemon stopped and prints the backup and previous revision for diagnosis; there is no destructive automatic rollback. Backups contain private data: keep them local. Use the same Node/Git PATH as for running the daemon.
+The updater requires the existing built runtime and dependencies. It uses the current branch on `origin`, refuses local changes/local-only commits and holds the daemon lock throughout the update. It backs up SQLite and `.env` under `FACTORY_DATA_DIR/update-backup-*`, applies a fast-forward, installs locked dependencies, builds and tests, and then opens the same configurator used by installation. Existing settings are its defaults and newly added settings use the installation defaults. It preserves configuration, logs and worktrees; it never restarts the daemon or updates provider CLIs. A failed build/test leaves the daemon stopped and prints the backup and previous revision for diagnosis; there is no destructive automatic rollback. Backups contain private data: keep them local. Use the same Node/Git PATH as for running the daemon. Use `bash scripts/update.sh --defaults` for a non-interactive update that accepts all existing/default values.
 
 ## Configure projects and concurrency
 
@@ -117,3 +117,20 @@ Worker prompts include the actual daemon Node executable and configured Git, plu
 The daemon reconciles READY_TO_MERGE and PR_CLOSED items against GitHub. Merge records MERGED with timestamp/commit; closing without merging records PR_CLOSED; reopening resumes READY_TO_MERGE tracking. GitHub handles issue closure via the PR closing reference. With the daemon stopped, `npm run factory -- sync` performs one synchronization and flushes pending reports/notifications without running agents. The shared singleton lock prevents concurrent daemon/sync execution.
 
 To exercise installer/updater safeguards using temporary local repositories and a stub npm (no CLI installations or agents), run `node scripts/test-maintenance.mjs` after `npm run build`. The regular `npm test` suite validates the actual runtime.
+
+## Interactive configuration
+
+Run this directly from your installation whenever you want to inspect or change settings, without installing or updating:
+
+```sh
+npm run configure
+# equivalent: bash scripts/configure.sh
+```
+
+The installer runs the same wizard automatically. Every option in `.env.example` is offered, including target repository/clone, approvers, data directory, polling, timeouts, correction limits, CLI executables, models and optional Slack. Saved `.env` values (including intentionally empty values) take precedence; missing options use `.env.example` installation defaults, with locally discovered CLI paths. Environment variables from the invoking shell are not saved as defaults. Enter keeps the displayed value; `-` clears an optional setting. Invalid values are explained and prompted again. Target repository, clone and approvers can remain blank to finish setup later; `doctor` must pass before starting.
+
+Slack webhook input/defaults are hidden. Unknown existing environment settings are preserved. Saving creates a private `.env.backup-*` and replaces `.env` atomically with owner-only permissions; these files are ignored by Git. Ctrl+C or incomplete input cancels without saving. Stop the daemon before reconfiguring; do not start another instance while the wizard is open. Changing paths/repositories does not migrate existing data or clone a target repository. Use a separate installation/data directory for a different project.
+
+`bash scripts/configure.sh --defaults` saves existing/default values without questions. For unattended installation use `bash install.sh --defaults` (plus the usual installer options). No configuration command authenticates accounts or starts agents. Check configuration with `npm run factory -- doctor`.
+
+Configuration regression checks: `node scripts/test-configure.mjs`.

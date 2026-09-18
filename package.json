@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc && node scripts/copy-assets.mjs",
+    "configure": "bash scripts/configure.sh",
     "dev": "tsx src/cli.ts",
     "factory": "tsx src/cli.ts",
     "test": "node --import tsx --test test/*.test.ts"

@@ -1,0 +1,54 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+import {parse} from 'dotenv';
+import Database from 'better-sqlite3';
+const source = fileURLToPath(new URL('..',import.meta.url));
+const root = fs.mkdtempSync(path.join(os.tmpdir(),'factory-configure-'));
+try {
+  fs.mkdirSync(path.join(root,'scripts'));
+  for (const file of ['configure.sh','configure.mjs']) fs.copyFileSync(path.join(source,'scripts',file),path.join(root,'scripts',file));
+  fs.copyFileSync(path.join(source,'.env.example'),path.join(root,'.env.example'));
+  fs.symlinkSync(path.join(source,'node_modules'),path.join(root,'node_modules'),'dir');
+  const template = fs.readFileSync(path.join(root,'.env.example'),'utf8');
+  const keys = Object.keys(parse(template));
+  const file = path.join(root,'.env');
+  function run(args = [], input = '', success = true) {
+    const result = spawnSync('bash',[path.join(root,'scripts/configure.sh'),...args],{input,encoding:'utf8'});
+    assert.equal(result.status === 0,success,result.stdout + result.stderr);
+    return result;
+  }
+  run(['--defaults']);
+  assert.equal(parse(fs.readFileSync(file)).FACTORY_POLL_INTERVAL_MS,'15000');
+  assert.equal(parse(fs.readFileSync(file)).GITHUB_REPOSITORY,'');
+  fs.writeFileSync(file,"GITHUB_REPOSITORY=example/existing\nFACTORY_APPROVERS=alice\nFACTORY_DATA_DIR=.factory\nSLACK_WEBHOOK_URL=https://hooks.example.com/private-secret\nCUSTOM_VALUE='keep # $HOME'\n");
+  const saved = fs.readFileSync(file,'utf8');
+  const answers = keys.map(key => ({FACTORY_REPO_DIR:'/tmp/my target #1',FACTORY_POLL_INTERVAL_MS:'0\n5000',GITHUB_REPOSITORY:'invalid\nexample/new',FACTORY_APPROVERS:'-'}[key] ?? '')).join('\n') + '\n';
+  const result = run([],answers);
+  assert.ok(!result.stdout.includes('private-secret'));
+  const values = parse(fs.readFileSync(file));
+  assert.equal(values.FACTORY_REPO_DIR,'/tmp/my target #1');
+  assert.equal(values.GITHUB_REPOSITORY,'example/new');
+  assert.equal(values.FACTORY_APPROVERS,'');
+  assert.equal(values.FACTORY_POLL_INTERVAL_MS,'5000');
+  assert.equal(values.CUSTOM_VALUE,'keep # $HOME');
+  assert.equal(values.CLAUDE_MODEL_STRONG,'opus');
+  const backups = fs.readdirSync(root).filter(name => name.startsWith('.env.backup-'));
+  assert.equal(fs.readFileSync(path.join(root,backups.at(-1)),'utf8'),saved);
+  assert.equal(fs.statSync(file).mode & 0o777,0o600);
+  const before = fs.readFileSync(file,'utf8');
+  run([], '\n',false);
+  assert.equal(fs.readFileSync(file,'utf8'),before);
+  run(['--defaults']);
+  assert.deepEqual(parse(fs.readFileSync(file)),values);
+  fs.mkdirSync(path.join(root,'.factory'));
+  const db = new Database(path.join(root,'.factory','factory.db'));
+  db.exec('CREATE TABLE daemon_lock(id INTEGER PRIMARY KEY,pid INTEGER,token TEXT)');
+  db.prepare('INSERT INTO daemon_lock VALUES(1,?,?)').run(process.pid,'test');
+  assert.match(run(['--defaults'],'',false).stderr,/Stop the factory/);
+  db.close();
+  console.log('PASS: installation defaults, saved defaults, edits, clearing, validation/retry, secret masking, unknown settings, backups, permissions, EOF cancellation and daemon guard.');
+} finally { fs.rmSync(root,{recursive:true,force:true}); }
