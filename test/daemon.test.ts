@@ -24,7 +24,7 @@ test("full daemon and CLI integration with local Git remote and deterministic pr
 const fs=require('node:fs');const file=${JSON.stringify(stateFile)};const a=process.argv.slice(2);const s=JSON.parse(fs.readFileSync(file));
 const save=()=>fs.writeFileSync(file,JSON.stringify(s));const out=x=>console.log(JSON.stringify(x));
 if(a[0]==='auth'){process.exit(0)}
-if(a[0]==='api'){out([s.comments])}
+if(a[0]==='api'){if(a.includes('--method')){const id=Number(a[1].split('/').pop());s.comments.find(c=>c.id===id).body=JSON.parse(fs.readFileSync(0,'utf8')).body;save();out({});}else out([s.comments])}
 else if(a[0]==='label'){}
 else if(a[0]==='issue'&&a[1]==='list'){out([{number:1,title:'Add greet',body:'Add greet function and tests',url:'https://example.test/issues/1'}])}
 else if(a[0]==='issue'&&a[1]==='view'){out({labels:[{name:s.label}]})}

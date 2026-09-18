@@ -1,3 +1,4 @@
+import { specMarkdown, reportMarkdown, decisionsMarkdown, progressMarkdown } from "./presentation.js";
 import { modelForWork } from "./model-policy.js";
 import { randomUUID } from "node:crypto";
 import { Store } from "./storage.js";
@@ -60,7 +61,7 @@ export class Orchestrator {
   }
   await deliverNotifications(this.store, this.slack);
   for (const w of this.store.items()) {
-   try { this.github.syncState(w.issue_number, w.state); }
+   try { this.github.syncState(w.issue_number, w.state, progressMarkdown(w)); }
    catch (e) { this.store.event("github.labels_failed", { error: String(e) }, w.id); }
   }
  }
@@ -114,7 +115,7 @@ export class Orchestrator {
      w.context.version++; w.context.waiting = "approval";
      w.context.reports = { "product-architect": result };
      this.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment) VALUES(?,?,?,?,?)").run(w.id, w.context.version, result.spec, JSON.stringify(result.acceptanceCriteria), JSON.stringify(result.taskAssessment));
-     this.store.post(w.issue_number, `SPEC v${w.context.version}\n\n${result.spec}\n\nTask assessment (approved with this spec):\n${JSON.stringify(result.taskAssessment, null, 2)}\n\nAcceptance criteria:\n${JSON.stringify(result.acceptanceCriteria, null, 2)}\n\nApprove with /factory approve v${w.context.version}, or revise with /factory answer <feedback>.`);
+     this.store.post(w.issue_number, specMarkdown(w.context.version, result));
     }
     this.store.transition(w, "WAITING_HUMAN");
    })(); return;
@@ -124,7 +125,7 @@ export class Orchestrator {
   if (decision || changes) {
    w.context.feedback.push(`${role}: ${JSON.stringify(result)}`); w.context.cycles++;
    this.store.db.transaction(() => {
-    this.store.post(w.issue_number, `${role} report (SPEC v${w.context.version}):\n${JSON.stringify(result, null, 2)}`);
+    this.store.post(w.issue_number, reportMarkdown(role, w.context.version, result));
     if (w.context.cycles >= config.maxCycles) {
      w.context.waiting = "loop";
      this.store.post(w.issue_number, "Automatic correction limit reached. Reply /factory answer <guidance> to return to Product/Architect.");
@@ -138,10 +139,10 @@ export class Orchestrator {
    if (w.context.reports.developer?.outcome !== "pass" || w.context.reports.qa?.outcome !== "pass") throw new Error("Developer and QA must pass before publication");
    this.workspaces.publish(w.context.cwd, w.branch);
    w.context.pr = this.github.ensurePR(w.branch, `#${w.issue_number}: ${w.context.title}`,
-    `Closes #${w.issue_number}\n\nApproved SPEC v${w.context.version} by ${w.context.approval?.login}.\n\n${w.context.spec}\n\n## QA\n${w.context.reports.qa.summary.slice(0, 4000)}\n\n## Review\n${result.summary.slice(0, 4000)}\n\nFull structured reports, evidence, decisions and deferred findings: ${w.context.url}\n\nHuman merge required.`);
+    `Closes #${w.issue_number}\n\nApproved SPEC v${w.context.version} by ${w.context.approval?.login}.\n\n${w.context.spec}\n\n## QA\n${w.context.reports.qa.summary.slice(0, 4000)}\n\n## Review\n${result.summary.slice(0, 4000)}\n\nReports, evidence, decisions and deferred findings: ${w.context.url}\n\nHuman merge required.`);
   }
   this.store.db.transaction(() => {
-   this.store.post(w.issue_number, `${role} report (SPEC v${w.context.version}):\n${JSON.stringify(result, null, 2)}${w.context.pr ? `\nReady for human merge: ${w.context.pr}` : ""}`);
+   this.store.post(w.issue_number, reportMarkdown(role, w.context.version, result, w.context.pr));
    this.store.transition(w, role === "developer" ? "QA" : role === "qa" ? "REVIEW" : "READY_TO_MERGE");
   })();
  }
@@ -162,7 +163,7 @@ export class Orchestrator {
    w.context.decisions = [...(w.context.decisions ?? []), ...result.decisions];
    w.context.consultation = undefined;
    this.store.event("decision.tactical", { decisions: result.decisions, from, to, specVersion: w.context.version }, w.id);
-   this.store.post(w.issue_number, `Product/Architect resolved a tactical question under SPEC v${w.context.version}:\n${JSON.stringify(result.decisions, null, 2)}\nNext: ${to}. No specification change.`);
+   this.store.post(w.issue_number, `Product/Architect resolved a tactical question under SPEC v${w.context.version}:\n${decisionsMarkdown(result.decisions)}\nNext: ${to}. No specification change.`);
    this.routeDelivery(w, to);
   })();
  }

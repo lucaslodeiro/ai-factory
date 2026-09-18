@@ -98,7 +98,7 @@ GitHub comments use their own durable idempotent outbox. Slack webhooks have no 
 
 ### F13 — Auditability
 
-Retain versioned specs/criteria, approval identity, tactical decisions, full structured reports, transitions, control requests, execution events and logs. Publish reports to GitHub (split when necessary); preserve full artifacts in SQLite. `status`, `events` and `notifications` provide inspection. A result schema validates shape and internal consistency; it does not independently prove that an agent's claimed evidence is true.
+Retain versioned specs/criteria, approval identity, tactical decisions, full structured reports, transitions, control requests, execution events and logs. Publish human-readable Markdown reports to GitHub with summaries and expandable evidence; preserve complete structured artifacts in SQLite. Mirror the workflow using known state labels and one updatable progress comment; Open/Closed remains the issue lifecycle, with closure on PR merge. `status`, `events` and `notifications` provide inspection. A result schema validates shape and internal consistency; it does not independently prove that an agent's claimed evidence is true.
 
 ### F14 — Installation and acceptance demo
 
