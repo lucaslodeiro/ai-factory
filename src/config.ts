@@ -15,11 +15,6 @@ function provider(name: string, fallback: "codex" | "claude"): "codex" | "claude
   if (value !== "codex" && value !== "claude") throw new Error(`${name} must be codex or claude`);
   return value as "codex" | "claude";
 }
-function modelMode(name: string): "auto" | "manual" {
-  const value = (process.env[name] ?? "manual").trim();
-  if (value !== "auto" && value !== "manual") throw new Error(`${name} must be auto or manual`);
-  return value;
-}
 function dashboardHost() {
   const value = (process.env.FACTORY_DASHBOARD_HOST ?? "127.0.0.1").trim();
   if (!["127.0.0.1", "localhost", "::1"].includes(value)) throw new Error("FACTORY_DASHBOARD_HOST must be a loopback address");
@@ -30,25 +25,18 @@ function dashboardPort() {
   if (value > 65535) throw new Error("FACTORY_DASHBOARD_PORT must be at most 65535");
   return value;
 }
-const models = {
-  codex: { fast: model("CODEX_MODEL_FAST", "gpt-5.6-luna"), balanced: model("CODEX_MODEL_BALANCED", "gpt-5.6-terra"), strong: model("CODEX_MODEL_STRONG", "gpt-5.6-sol") },
-  claude: { fast: model("CLAUDE_MODEL_FAST", "sonnet"), balanced: model("CLAUDE_MODEL_BALANCED", "sonnet"), strong: model("CLAUDE_MODEL_STRONG", "opus") },
-};
-function role(prefix: string, fallback: "codex" | "claude") {
+function role(prefix: string, fallback: "codex" | "claude", fallbackModel: string) {
   const selected = provider(`${prefix}_PROVIDER`,fallback);
-  return { provider:selected,modelMode:modelMode(`${prefix}_MODEL_MODE`),models:{
-    fast:model(`${prefix}_MODEL_FAST`,models[selected].fast),
-    balanced:model(`${prefix}_MODEL_BALANCED`,models[selected].balanced),
-    strong:model(`${prefix}_MODEL_STRONG`,models[selected].strong),
-  }};
+  const legacy = process.env[`${prefix}_MODEL_MODE`] === "auto" ? "auto"
+    : process.env[`${prefix}_MODEL_BALANCED`] ?? process.env[`${selected.toUpperCase()}_MODEL_BALANCED`] ?? fallbackModel;
+  return { provider:selected,model:model(`${prefix}_MODEL`,legacy) };
 }
 export const config = {
-  models,
   roles: {
-    "product-architect":role("PRODUCT_ARCHITECT","claude"),
-    developer:role("DEVELOPER","codex"),
-    qa:role("QA","codex"),
-    reviewer:role("REVIEWER","claude"),
+    "product-architect":role("PRODUCT_ARCHITECT","claude","sonnet"),
+    developer:role("DEVELOPER","codex","gpt-5.6-terra"),
+    qa:role("QA","codex","gpt-5.6-terra"),
+    reviewer:role("REVIEWER","claude","sonnet"),
   },
   dataDir: path.resolve(process.env.FACTORY_DATA_DIR ?? ".factory"),
   repoDir: path.resolve(process.env.FACTORY_REPO_DIR ?? "."),

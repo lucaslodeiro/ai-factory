@@ -27,15 +27,15 @@ test("policy uses each role's configured provider and model IDs", () => {
  const saved = structuredClone(config.roles.developer);
  try {
   config.roles.developer.provider = "claude";
-  config.roles.developer.models.fast = "custom-claude-fast";
+  config.roles.developer.model = "custom-claude";
   const choice = selectModel("developer", assessment("low", "low"));
-  assert.equal(choice.model, "custom-claude-fast"); assert.equal(choice.provider, "claude");
-  assert.equal(choice.policy, "balanced-v4"); assert.match(choice.reason, /low-risk/);
-  config.roles.developer.modelMode = "auto";
+  assert.equal(choice.model, "custom-claude"); assert.equal(choice.provider, "claude");
+  assert.equal(choice.policy, "direct-v1"); assert.match(choice.reason, /low-risk/);
+  assert.equal(selectModel("developer", assessment("high", "high")).model, "custom-claude");
+  config.roles.developer.model = "auto";
   assert.equal(selectModel("developer", assessment("low", "low")).model, "auto");
-  config.roles.developer.modelMode = "manual";
-  config.roles.developer.models.fast = "";
-  assert.throws(() => selectModel("developer", assessment("low", "low")), /developer profile fast/);
+  config.roles.developer.model = "";
+  assert.throws(() => selectModel("developer", assessment("low", "low")), /Missing claude model for developer/);
  } finally { config.roles.developer = saved; }
 });
 test("only new specs can set an assessment and every assessment needs valid levels and rationale", () => {

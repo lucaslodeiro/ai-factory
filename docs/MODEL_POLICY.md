@@ -1,10 +1,12 @@
-# Model selection: balanced-v4
+# Agent model selection: direct-v1
 
-The user selected a balance of quality, cost and time. Product/Architect assesses each issue when proposing its spec. The deterministic orchestrator maps that assessment and role to a configured profile, then reads the provider and model configured for that role. The model never supplies a provider or executable model ID. This is per issue and role invocation; the MVP does not decompose an issue into independently routed subtasks.
+Each agent role has exactly two routing settings: a provider and a model. The model can be a concrete provider model ID or `auto`. A concrete ID is passed to the provider CLI for every invocation of that role. With `auto`, the factory omits the model override and lets the provider choose its recommended default.
 
-## Routing rules (in priority order)
+The factory does not translate task complexity into `fast`, `balanced`, or `strong` model names. Product/Architect still assesses complexity and risk because those values control workflow safeguards and make the human approval explicit; they never replace the model selected for the role.
 
-| Condition | Profile |
+## Workflow assessment rules
+
+| Condition | Internal workflow tier |
 |---|---|
 | Architect has an unapproved high-complexity/high-risk draft awaiting review | strong |
 | A correction/decision cycle has occurred, or Architect is handling a consultation | strong |
@@ -13,31 +15,33 @@ The user selected a balance of quality, cost and time. Product/Architect assesse
 | Developer on low complexity AND low risk | fast |
 | All other cases, including initial Architect, QA and Reviewer | balanced |
 
-QA and Reviewer have a balanced floor. Initial Architect starts balanced because complexity is not known yet; if it proposes a high-complexity or high-risk spec, the orchestrator persists that unapproved draft and invokes a fresh strong-profile Architect before creating a spec version or requesting approval. That invocation can finalize/reassess the spec or ask questions. Failures, restarts and clarification answers retain the draft and strong routing. A strong-profile result is not escalated again, preventing a review loop. Only the finalized spec becomes an approvable version. Initial questions without a spec do not trigger this extra review. Corrections escalate subsequent roles for the remaining cycle; timeout/cancellation or transport errors alone do not increase the correction counter. The existing correction limit still applies. Human guidance resets that counter as before.
+These internal tiers describe workflow treatment only. For example, a high-complexity or high-risk draft receives a fresh Architect review before publication for approval. The review uses the same provider and model configured for Product/Architect. The tier is retained in audit events so the reason for additional review remains visible.
 
-Complexity considers scope, algorithms, architecture and concurrency. Risk considers authentication/authorization, secrets, payments, destructive migrations and security boundaries. Unknown scope should prompt clarification or a conservative assessment. This semantic classification remains an AI judgment, visible for human correction; the router itself is deterministic. It does not independently prove the assessment correct.
+Complexity considers scope, algorithms, architecture and concurrency. Risk considers authentication/authorization, secrets, payments, destructive migrations and security boundaries. Unknown scope should prompt clarification or a conservative assessment. Product/Architect supplies the semantic assessment; the deterministic orchestrator applies the workflow rules.
 
-The assessment and its rationale are published with SPEC vN and stored in that immutable spec snapshot. Approving the spec approves the assessment. Use `/factory answer ...` to request a correction before approval. Tactical resolutions and delivery results cannot replace it; a new assessment requires a new spec version and approval.
+The assessment and rationale are published with SPEC vN and stored in its immutable snapshot. Approving the spec approves the assessment. Use `/factory answer ...` to request a correction before approval. Tactical resolutions and delivery results cannot replace it; a new assessment requires a new spec version and approval.
 
-## Configured role table
+## Configured roles
 
-| Role | Default provider | fast | balanced | strong |
-|---|---|---|---|---|
-| Product / Architect | Claude | sonnet | sonnet | opus |
-| Developer | Codex | gpt-5.6-luna | gpt-5.6-terra | gpt-5.6-sol |
-| QA | Codex | gpt-5.6-luna | gpt-5.6-terra | gpt-5.6-sol |
-| Reviewer | Claude | sonnet | sonnet | opus |
+| Role | Default provider | Default model |
+|---|---|---|
+| Product / Architect | Claude | sonnet |
+| Developer | Codex | gpt-5.6-terra |
+| QA | Codex | gpt-5.6-terra |
+| Reviewer | Claude | sonnet |
 
-Dashboard → Configuration → Agent roles exposes one card per role. Each card selects Codex or Claude and sets `<ROLE>_MODEL_MODE` to `auto` or `manual`, where `<ROLE>` is `PRODUCT_ARCHITECT`, `DEVELOPER`, `QA`, or `REVIEWER`. Auto delegates model choice to the selected provider for every profile of that role. Manual uses `<ROLE>_MODEL_FAST|BALANCED|STRONG`. `CODEX_MODEL_*` and `CLAUDE_MODEL_*` remain provider defaults used to initialize new manual role settings and migrate existing installations.
+Dashboard → Configuration → Agent roles exposes one card per role. Each card writes `<ROLE>_PROVIDER` and `<ROLE>_MODEL`, where `<ROLE>` is `PRODUCT_ARCHITECT`, `DEVELOPER`, `QA`, or `REVIEWER`. The model selector offers `Auto (provider recommended)`, known model IDs for the selected provider, and preserves an existing custom ID.
 
-Profiles are relative policy tiers, not a provider's premium Fast service tier, a price guarantee or a spending cap. IDs may be the same across profiles when account availability requires it. Claude aliases can resolve to new versions; use full versioned IDs when pinning is required. QA and Reviewer currently have a balanced floor, so their fast setting is reserved for future policy changes.
+When an older installation is loaded, an old `auto` mode migrates to `auto`; otherwise its balanced model becomes the role's single model. Saving removes the retired mode and fast/balanced/strong variables.
 
-The Codex defaults follow the [official model catalog](https://developers.openai.com/es-419/docs/models). OpenAI documents that Codex uses a recommended model when none is specified. Claude's [official CLI reference](https://code.claude.com/docs/en/cli-usage) documents `--model` as an override. In auto mode the factory omits `--model`; in manual mode it passes the configured ID. Availability still depends on the account and provider. A rejected manual model fails the run; the factory never silently changes mode or provider. Changing role settings requires restarting the daemon and affects future attempts, with each selection recorded separately. The audit records `auto` when delegated, but the provider's resolved backend model is not independently attested. Both providers receive the same canonical role contract. Product/Architect and Reviewer remain read-only; Developer can edit the worktree; QA remains restricted to test files by the orchestrator's mutation checks.
+The Codex choices follow the [official model catalog](https://developers.openai.com/es-419/docs/models). OpenAI documents that Codex uses a recommended model when none is specified. Claude's [official CLI reference](https://code.claude.com/docs/en/cli-usage) documents `--model` as an override. Availability depends on the account and provider. A rejected model fails the run; the factory never silently changes provider or model. Changing role settings requires restarting the daemon and affects future attempts.
+
+Both providers receive the same canonical role contract. Product/Architect and Reviewer remain read-only; Developer can edit the worktree; QA remains restricted to test files by the orchestrator's mutation checks.
 
 ## Inspecting and auditing
 
-- `npm run factory -- models`: show every configured role/provider/profile/model mapping without running an agent.
-- `npm run factory -- models <work-item-id>`: preview selections for each role given current context (not historical usage and not authorization to execute).
-- `npm run factory -- events <work-item-id>`: inspect `model.selected` and `execution.started`. Each started run records policy version, provider, profile, configured model mode/value and reason, linked to its run ID. Auto records delegation; the provider's resolved backend model is not independently attested.
+- `npm run factory -- models`: show the configured provider and model for every role without running an agent.
+- `npm run factory -- models <work-item-id>`: preview the same configured model with the workflow assessment and reason for each role.
+- `npm run factory -- events <work-item-id>`: inspect `model.selected` and `execution.started`. Each run records policy version, provider, configured model, internal workflow tier and reason. With `auto`, the provider's resolved backend model is not independently attested.
 
-Existing specs without assessments continue under the strong delivery profile; new spec outputs must contain an assessment. No prices, token budgets or automatic provider switching are inferred. Real live model availability and quality require acceptance runs; subprocess fixtures verify routing and arguments only.
+Existing specs without assessments retain conservative workflow handling. No prices, token budgets or automatic provider switching are inferred. Real model availability and quality require acceptance runs; subprocess fixtures verify routing and arguments only.

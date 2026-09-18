@@ -130,7 +130,7 @@ export class Orchestrator {
      w.context.approvedVersion = undefined; w.context.approval = undefined; w.context.consultation = undefined;
      this.store.save(w);
      this.store.event("spec.review_required", { assessment: result.taskAssessment, previousSelection: selection }, w.id);
-     this.store.post(w.issue_number, "Product/Architect detected high complexity or risk. The draft will receive a strong-profile architectural review before a specification is published for approval.");
+     this.store.post(w.issue_number, "Product/Architect detected high complexity or risk. The draft will receive an additional architectural review before a specification is published for approval.");
     })(); return;
    }
    // Ignore commands posted before this new specification exists.

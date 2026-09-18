@@ -95,7 +95,7 @@ export function validate(key, value) {
   if (key === 'GITHUB_REPOSITORY' && value && !/^[\w.-]+\/[\w.-]+$/.test(value)) throw new Error('Use owner/repository.');
   if (key === 'FACTORY_APPROVERS' && value && !value.split(',').every(v => /^[a-zA-Z0-9-]+$/.test(v.trim()))) throw new Error('Use comma-separated GitHub usernames.');
   if (key === 'AGENT_SECRET_ALLOWLIST' && value && !value.split(',').every(v => /^[A-Za-z_][A-Za-z0-9_]*$/.test(v.trim()))) throw new Error('Use comma-separated environment variable names.');
-  if (key.includes('_MODEL_') && !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(value)) throw new Error('Enter a model identifier.');
+  if (key.includes('_MODEL') && !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(value)) throw new Error('Enter a model identifier.');
   if (key.endsWith('_PROVIDER') && !['codex','claude'].includes(value)) throw new Error('Choose codex or claude.');
   if (['FACTORY_DATA_DIR','GITHUB_DEFAULT_BRANCH','CODEX_COMMAND','CLAUDE_COMMAND','GIT_COMMAND'].includes(key) && !value.trim()) throw new Error('This value cannot be empty.');
   if (key === 'SLACK_WEBHOOK_URL' && value) {
@@ -107,7 +107,8 @@ export function saveConfig(root, template, values, original) {
   // Preserve unrecognized settings as well as every known setting.
   let output = template.replace(/^([A-Z_][A-Z0-9_]*)=.*$/gm, (_, key) => `${key}=${encode(values[key])}`);
   const known = parse(template);
-  for (const [key, value] of Object.entries(values)) if (!(key in known)) output += `\n${key}=${encode(value)}`;
+  const retiredModelSetting = key => /^(CODEX|CLAUDE)_MODEL_(FAST|BALANCED|STRONG)$/.test(key) || /^(PRODUCT_ARCHITECT|DEVELOPER|QA|REVIEWER)_MODEL_(MODE|FAST|BALANCED|STRONG)$/.test(key);
+  for (const [key, value] of Object.entries(values)) if (!(key in known) && !retiredModelSetting(key)) output += `\n${key}=${encode(value)}`;
   const file = path.join(root,'.env');
   const current = fs.existsSync(file) ? fs.readFileSync(file,'utf8') : null;
   if (current !== original) throw new Error('.env changed during configuration; rerun to load the new defaults.');
@@ -148,10 +149,9 @@ export async function configure(root, useDefaults = false) {
   const values = {...defaults,...saved};
   for (const prefix of ['PRODUCT_ARCHITECT','DEVELOPER','QA','REVIEWER']) {
     const selected = (values[`${prefix}_PROVIDER`] || defaults[`${prefix}_PROVIDER`]).toUpperCase();
-    for (const profile of ['FAST','BALANCED','STRONG']) {
-      const roleKey = `${prefix}_MODEL_${profile}`;
-      if (!(roleKey in saved)) values[roleKey] = values[`${selected}_MODEL_${profile}`] || defaults[roleKey];
-    }
+    const roleKey = `${prefix}_MODEL`;
+    if (!(roleKey in saved)) values[roleKey] = saved[`${prefix}_MODEL_MODE`] === 'auto' ? 'auto'
+      : saved[`${prefix}_MODEL_BALANCED`] || saved[`${selected}_MODEL_BALANCED`] || defaults[roleKey];
   }
   assertStopped(root, values);
   const oldValues = {...values};
@@ -198,8 +198,8 @@ export async function configure(root, useDefaults = false) {
             const previous = values[key];
             values[key] = value;
             if (key.endsWith('_PROVIDER') && value !== previous) {
-              const prefix = key.slice(0,-'_PROVIDER'.length), selected = value.toUpperCase();
-              for (const profile of ['FAST','BALANCED','STRONG']) values[`${prefix}_MODEL_${profile}`] = values[`${selected}_MODEL_${profile}`];
+              const prefix = key.slice(0,-'_PROVIDER'.length);
+              values[`${prefix}_MODEL`] = value === 'claude' ? 'sonnet' : 'gpt-5.6-terra';
             }
             break;
           }

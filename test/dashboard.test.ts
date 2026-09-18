@@ -46,7 +46,7 @@ exit 0
   config.codexCommand=fakeCodex; config.claudeCommand=fakeClaude; process.env.GH_COMMAND=fakeGh;
   fs.writeFileSync(path.join(settingsRoot,"package.json"),JSON.stringify({version:"0.1.0"}));
   fs.copyFileSync(".env.example",path.join(settingsRoot,".env.example"));
-  fs.writeFileSync(path.join(settingsRoot,".env"),"FACTORY_POLL_INTERVAL_MS=15000\nSLACK_WEBHOOK_URL='https://hooks.example.com/private'\nCODEX_MODEL_FAST='custom-codex-model'\n");
+  fs.writeFileSync(path.join(settingsRoot,".env"),"FACTORY_POLL_INTERVAL_MS=15000\nSLACK_WEBHOOK_URL='https://hooks.example.com/private'\nDEVELOPER_MODEL_MODE='manual'\nDEVELOPER_MODEL_BALANCED='custom-codex-model'\nCODEX_MODEL_FAST='retired-model'\n");
   fs.mkdirSync(path.join(settingsRoot,"scripts"));
   fs.writeFileSync(path.join(settingsRoot,"scripts","services.sh"),`#!/usr/bin/env bash
 if [[ $1 == status ]]; then
@@ -128,11 +128,12 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(dashboardHost.type,"select"); assert.deepEqual(dashboardHost.options.map((option: any) => option.value),["127.0.0.1","localhost","::1"]);
     const developerProvider = settings.fields.find((field: any) => field.key === "DEVELOPER_PROVIDER");
     assert.equal(developerProvider.group,"models"); assert.equal(developerProvider.type,"select"); assert.deepEqual(developerProvider.options.map((option: any) => option.value),["codex","claude"]);
-    const developerMode = settings.fields.find((field: any) => field.key === "DEVELOPER_MODEL_MODE");
-    assert.equal(developerMode.kind,"model-mode"); assert.deepEqual(developerMode.options.map((option: any) => option.value),["manual","auto"]);
-    const developerModel = settings.fields.find((field: any) => field.key === "DEVELOPER_MODEL_BALANCED");
-    assert.equal(developerModel.section,"Developer"); assert.equal(developerModel.profile,"balanced"); assert.ok(developerModel.options.some((option: any) => option.value === "gpt-5.6-terra"));
-    assert.ok(settings.modelCatalog.codex.defaults.fast === "custom-codex-model");
+    const developerModel = settings.fields.find((field: any) => field.key === "DEVELOPER_MODEL");
+    assert.equal(developerModel.kind,"role-model"); assert.equal(developerModel.section,"Developer");
+    assert.equal(developerModel.value,"custom-codex-model");
+    assert.ok(developerModel.options.some((option: any) => option.value === "auto"));
+    assert.ok(developerModel.options.some((option: any) => option.value === "gpt-5.6-terra"));
+    assert.equal(settings.modelCatalog.codex.default,"gpt-5.6-terra");
     assert.ok(settings.modelCatalog.codex.options.some((option: any) => option.value === "gpt-5.6-luna"));
     assert.equal(settings.fields.some((field: any) => field.key === "CODEX_MODEL_FAST"),false);
     assert.equal(settings.fields.some((field: any) => field.key === "SLACK_WEBHOOK_URL"),false);
@@ -164,12 +165,13 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(connected.credentials.find((item: any) => item.id === "github").account,"demo-user");
     const unknownCredential = await fetch(`http://127.0.0.1:${port}/api/credentials/connect`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({provider:"other"})});
     assert.equal(unknownCredential.status,400);
-    const saved = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_POLL_INTERVAL_MS:"5000",SLACK_WEBHOOK_URL:"",DEVELOPER_PROVIDER:"claude",DEVELOPER_MODEL_MODE:"auto",DEVELOPER_MODEL_FAST:"sonnet",DEVELOPER_MODEL_BALANCED:"sonnet",DEVELOPER_MODEL_STRONG:"opus"}})});
+    const saved = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_POLL_INTERVAL_MS:"5000",SLACK_WEBHOOK_URL:"",DEVELOPER_PROVIDER:"claude",DEVELOPER_MODEL:"auto"}})});
     assert.equal(saved.status,200);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^FACTORY_POLL_INTERVAL_MS='5000'$/m);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^SLACK_WEBHOOK_URL='https:\/\/hooks\.example\.com\/private'$/m);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^DEVELOPER_PROVIDER='claude'$/m);
-    assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^DEVELOPER_MODEL_MODE='auto'$/m);
+    assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^DEVELOPER_MODEL='auto'$/m);
+    assert.doesNotMatch(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/DEVELOPER_MODEL_(MODE|BALANCED)|CODEX_MODEL_FAST/);
     assert.ok(fs.readdirSync(settingsRoot).some(file => file.startsWith(".env.backup-")));
     const invalid = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_DASHBOARD_PORT:"70000"}})});
     assert.equal(invalid.status,400);
