@@ -57,6 +57,8 @@ cd "$HOME"
 
 The uninstaller prints the exact installation, runtime-data and LaunchAgent paths, then requires typing `uninstall`. For an automated disposable-machine test, use `npm run uninstall -- --yes`.
 
+The service launcher exposes the same operation in its help and can be used as an alias: `npm run service -- uninstall` or `npm run service -- uninstall --yes`. Run `npm run service -- --help` to see every launcher action.
+
 It stops and removes both factory LaunchAgents, the engine checkout, `.env` and backups, SQLite, logs and retained worktrees. A configured external data directory is removed only when it contains the factory database marker; unsafe paths are rejected. The target application repository is preserved, as are global GitHub/Codex/Claude credentials and shared Node, Git, `gh`, Codex and Claude installations. This leaves the Mac ready to exercise the installer again without deleting unrelated development data.
 
 To update an existing installation, first stop its daemon and wait for it to exit:
@@ -106,6 +108,7 @@ npm run service -- stop all
 npm run service -- logs daemon
 npm run service -- logs dashboard
 npm run service -- logs all
+npm run service -- uninstall
 ```
 
 The `logs` action prints the last 100 stdout/error lines and continues following both files until `Ctrl+C`. Installation, update, service start and service restart print the configured dashboard URL plus the status, restart, log and stop commands so the next operational step is visible without reopening this document.

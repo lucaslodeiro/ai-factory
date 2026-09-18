@@ -7,7 +7,14 @@ logs="$root/.factory/service-logs"
 domain="gui/$UID"
 
 usage() {
-  echo 'Usage: bash scripts/services.sh <install|start|stop|restart|status|logs> <daemon|dashboard|all>'
+  cat <<'EOF'
+Usage:
+  npm run service -- <install|start|stop|restart|status|logs> <daemon|dashboard|all>
+  npm run service -- uninstall [--yes]
+
+Uninstall removes both services, this factory installation and its runtime data.
+Target repositories, shared tools and provider credentials are preserved.
+EOF
 }
 xml() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'; }
 label() { printf 'com.ai-factory.%s' "$1"; }
@@ -75,6 +82,14 @@ logs_for() {
   exec tail -n 100 -F "$logs/$service.log" "$logs/$service.error.log"
 }
 
+case ${1:-} in
+  help|-h|--help) usage; exit 0;;
+  uninstall)
+    shift
+    [[ $# == 0 || ( $# == 1 && $1 == --yes ) ]] || { usage >&2; exit 1; }
+    exec node "$root/scripts/uninstall.mjs" "$@"
+    ;;
+esac
 [[ $(uname -s) == Darwin ]] || { echo 'Factory services require macOS launchd.' >&2; exit 1; }
 action=${1:-}; target=${2:-}
 [[ $action =~ ^(install|start|stop|restart|status|logs)$ && $target =~ ^(daemon|dashboard|all)$ && $# == 2 ]] || { usage >&2; exit 1; }
