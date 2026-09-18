@@ -4,10 +4,10 @@
 
 `npm run build` and `npm test` pass on macOS with Node 26.4.0. A Node 22/Linux GitHub Actions template is provided in `docs/ci.example.yml`. It is not activated: the current GitHub OAuth credential lacks the workflow scope, and GitHub rejected a push containing `.github/workflows/ci.yml`. Copy the template there using a credential permitted to manage workflows when ready.
 
-38 tests cover:
+40 tests cover:
 
 - Full foreground daemon with real SQLite, separate CLI control processes, real Git worktrees and a local bare remote. Deterministic provider executables consume the actual adapter arguments and stdin; a GitHub executable fixture supplies issues/comments and records the PR. The test approves a version, starts Developer, checks status without recovery side effects, cancels, retries, runs QA/Reviewer, publishes a branch and verifies READY_TO_MERGE, then stops the daemon.
-- Native Claude/Codex output envelopes and schema validation.
+- Native Claude/Codex output envelopes, role-specific generation schemas and local validation. Read-only Reviewer receives attributed QA execution evidence without Developer reasoning or QA summary conclusions.
 - Invalid/stale/unauthorized/bot approvals and question/answer loops.
 - QA auto-fix, decision routing, bounded correction loops and deferred findings.
 - Durable GitHub outbox, idempotent delivery and malformed output failure.
@@ -25,26 +25,39 @@
 
 - High-complexity/high-risk drafts receive a strong-profile Architect review before an approvable version exists; failed reviews and clarification loops retain the draft/profile, and premature approvals are ignored. This second-review behavior is tested with deterministic providers, not live Claude.
 
-## Live checks
+## Completed live four-role demo
 
-- Private demo repository created: https://github.com/lucaslodeiro/ai-factory-demo
-- Acceptance issue queued: https://github.com/lucaslodeiro/ai-factory-demo/issues/1
-- Both repositories cloned locally; `.env` points the factory at the demo.
-- Codex was already installed and authenticated. The initial adapter connectivity check passed. A second real run through the new supervisor and expanded schema executed a Node assertion, produced `smoke assertion passed` with exit code 0, and returned criterion coverage plus test evidence. The CLI execution trace confirms the command ran. No demo files changed. These are provider/protocol checks, not the live demo workflow.
-- The balanced model policy passed a real Codex smoke run with explicit `gpt-5.6-terra` and the new nullable taskAssessment field. The CLI trace identifies Terra and shows the Node assertion executing successfully (exit 0, `model routing smoke passed`); run `d83d51bd-d69f-49da-bed3-97e3baca45a1`. The demo checkout stayed clean. Luna/Sol and Claude model availability were not live-tested in this change.
-- Claude Code 2.1.267 installed successfully. Authentication is still required; the user was away from the machine. Login was cancelled rather than left waiting.
+On 2026-09-18, the real pipeline reached **READY_TO_MERGE** and created [demo PR #2](https://github.com/lucaslodeiro/ai-factory-demo/pull/2). The PR remains open for human review/merge.
 
-The real four-role demo has **not** completed. No simulated approval was posted to the real issue, and no real demo PR exists yet. Automated tests use deterministic provider/GitHub substitutes; they do not establish Claude reasoning quality or successful live Claude authentication.
+- Target: private [ai-factory-demo](https://github.com/lucaslodeiro/ai-factory-demo), [issue #1](https://github.com/lucaslodeiro/ai-factory-demo/issues/1).
+- Work item: `e3d45eaf-fad3-48c0-8e99-fccc121cecd7`.
+- Claude authenticated successfully; doctor passed for both providers, Git/GitHub, target repository and SQLite.
+- Product/Architect (Sonnet) published SPEC v1 with ten acceptance criteria and low complexity/low risk. The human `lucaslodeiro` approved the exact version in [comment 5732900319](https://github.com/lucaslodeiro/ai-factory-demo/issues/1#issuecomment-5732900319).
+- Developer (Luna) implemented the pure Unicode text-analysis function, stdin/stdout CLI, README, ESM package and nine tests without dependencies.
+- QA (Terra), in a fresh execution, ran all nine tests successfully with Node 26.4.0 and additional independent function/CLI, exit-status, output and dependency checks.
+- Reviewer (Sonnet), in a fresh read-only execution, independently inspected code, tests and all review dimensions. It explicitly attributed runtime evidence to QA, reported no blocking findings and returned PASS.
+- The orchestrator committed and pushed `factory/issue-1-e3d45eaf` (commit `63ac9beb12ea1f676ed9a5472741c504849837a2`), created PR #2 against main and delivered all queued GitHub messages. No automatic merge. The daemon was stopped after completion.
 
-## Resume the live acceptance check
+### Live integration failures found and corrected
 
-1. Run `~/.local/bin/claude auth login` on the Mac and finish browser authentication.
-2. In the factory checkout, use Node 22+ and working Git in PATH; run `npm run factory -- doctor`, then `npm run factory -- start`.
-3. Read the SPEC on demo issue #1 and post its exact `/factory approve vN` command (or `/factory answer ...` for changes).
-4. Verify independent Developer, QA and Reviewer executions, a pushed work branch and a demo PR. Review and merge manually if desired.
+This was not an uninterrupted first-attempt success. Two validation failures were retained in the audit trail and resolved before explicit stage retries:
 
-Execution logs and SQLite are retained under `.factory/demo/` on the current machine. The daemon is not left running while authentication is missing.
+1. Developer's first process completed but returned forbidden spec/criteria/nextRole fields and historical failed commands in its PASS report. Its login shell also selected Node 20 and Xcode Git. Provider output schemas now constrain delivery fields by role; prompts distinguish final verification from historical failures and prepend the configured Node/Git directories to shell commands. Developer retried on retained files and verified Node 26.4.0 with nine passing tests.
+2. Read-only Reviewer initially lacked QA execution evidence and returned PASS with an execution-dependent criterion marked not-run. The coverage gate rejected it. Reviewer now receives attributed QA test/criterion evidence, without Developer reasoning or QA summary conclusions, and distinguishes those results from commands it personally ran. The retry passed without weakening the coverage gate or adding shell access.
 
-## Consolidated specification
+### Run evidence
 
-`SPEC.md` now consolidates the complete available design conversation, distinguishes tactical autonomy from material changes, defines the report/lifecycle/notification contracts and maps requirements to tests. It also records the remaining operational boundaries: this is not a complete OS security boundary for malicious repositories, and real four-role acceptance still needs Claude login.
+| Role/attempt | Run ID | Result |
+|---|---|---|
+| Architect | `3921aab6-8fa7-4b70-82a2-f16dee7e7c85` | SPEC v1 |
+| Developer first attempt | `5340fb8d-fc33-456b-96df-32700c6a9a94` | Process succeeded; report rejected |
+| Developer retry | `226bae67-60ee-4791-a7fc-bf12f9fd442f` | PASS |
+| QA | `34c5aeb5-0f3a-487c-a4b5-d962cabddf11` | PASS |
+| Reviewer first attempt | `a7250093-7fc1-4d22-b051-9fea2b0dc6f9` | Process succeeded; coverage rejected |
+| Reviewer retry | `e5d80fb7-42a5-480d-91d7-60b38178543f` | PASS |
+
+Logs and SQLite remain under `.factory/demo/` on the user's machine. Full accepted reports are on the issue. Earlier standalone Codex protocol checks also passed, including explicit Terra selection (`d83d51bd-d69f-49da-bed3-97e3baca45a1`).
+
+## Remaining operational validation
+
+The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge remains separate. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

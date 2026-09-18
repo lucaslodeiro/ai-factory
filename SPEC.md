@@ -42,7 +42,7 @@ Given an open issue with `factory:queued` in the configured repository, polling 
 
 ### F02 — Fresh role contexts
 
-Each role invocation receives its common contract, provider-specific instructions, applicable template and current approved artifacts. QA/Reviewer do not inherit Developer conversation or conclusions. Documented Product/Architect decisions are shared, since they are part of the authoritative work contract. Reviewer receives the implementation diff.
+Each role invocation receives its common contract, provider-specific instructions, applicable template and current approved artifacts. QA/Reviewer do not inherit Developer conversation or conclusions. Documented Product/Architect decisions are shared, since they are part of the authoritative work contract. Reviewer receives the implementation diff and attributed QA test commands/results and criterion evidence, without QA summary conclusions. It independently inspects code and test quality, and never claims QA executions as its own.
 
 ### F03 — Clarification and human authority
 
@@ -121,7 +121,7 @@ Use the balanced-v2 policy in `docs/MODEL_POLICY.md`: Product/Architect reports 
 | F12 | `src/notifications.ts`, `src/adapters/slack.ts`, SQLite queues | `test/notifications.test.ts`, GitHub-outage notification case |
 | F13 | `src/storage.ts`, `src/cli.ts` | Persistence/reopening tests and full daemon test |
 | F15 | `src/model-policy.ts`, adapters, spec snapshots and execution events | `test/model-policy.test.ts`, workflow routing and subprocess argument/audit assertions |
-| F14 | `INSTALL.md`, `src/doctor.ts`, demo repository | Local checks implemented; live four-role acceptance **pending Claude authentication** |
+| F14 | `INSTALL.md`, `src/doctor.ts`, demo repository | Real four-role demo reached READY_TO_MERGE and created demo PR #2; see `docs/VALIDATION.md` |
 
 ## Operational boundaries and remaining acceptance work
 
@@ -129,4 +129,4 @@ The orchestrator runs locally, sequentially, one target repository/data director
 
 The environment allowlist and role mutation checks are implemented. Worktrees, provider sandboxes and prompts are **not a complete OS security boundary** against malicious code running as the local user. Strong read isolation from unrelated repositories/credential files is not established by these checks; trusted repositories are the operational assumption. Provider auth stores remain accessible. Detached processes that deliberately leave the managed process group are outside supervisor cleanup guarantees.
 
-Remaining live acceptance: authenticate Claude, configure/test a real Slack webhook if notifications are wanted, run demo issue #1 through human approval and all real providers, review the resulting PR. GitHub Actions activation is optional and currently blocked by the OAuth credential's workflow scope. See `docs/VALIDATION.md` for actual evidence rather than treating this specification as a completion claim.
+The real four-role demo completed through explicit human approval and all providers, producing demo PR #2 for human review/merge. Remaining optional operational checks: real Slack delivery and live complex-task model escalation. GitHub Actions activation is optional and currently blocked by the OAuth credential's workflow scope. See `docs/VALIDATION.md` for actual evidence rather than treating this specification as a completion claim.

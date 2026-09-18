@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseResult, validateCoverage } from "../src/results.js";
+import { parseResult, validateCoverage, resultSchemaFor } from "../src/results.js";
 import { result } from "./fixtures.js";
 test("reports require evidence fields, tests, dependency rationale and review dimensions", () => {
  const missing = result("pass") as any; delete missing.dependencies;
@@ -20,4 +20,15 @@ test("spec/coverage IDs are unique and correspond to the immutable approved crit
  assert.throws(() => parseResult(report, "qa"), /Duplicate/);
  assert.throws(() => validateCoverage(result("pass"), []), /lacks structured/);
  assert.throws(() => validateCoverage(result("pass", { coverage: [{ criterionId: "AC1", status: "not-run", evidence: "No execution" }] }), [{ id: "AC1", description: "Return value" }]), /every approved/);
+});
+
+test("provider schemas prevent delivery roles from respecifying or selecting their next stage", () => {
+ for (const role of ["developer", "qa", "reviewer"] as const) {
+  const schema = resultSchemaFor(role).properties!;
+  assert.deepEqual(schema.spec.enum, [""]);
+  assert.equal(schema.acceptanceCriteria.maxItems, 0);
+  assert.equal(schema.taskAssessment.type, "null"); assert.equal(schema.nextRole.type, "null");
+  assert.deepEqual(schema.outcome.enum, ["pass", "changes", "decision"]);
+ }
+ assert.deepEqual(resultSchemaFor("product-architect").properties!.outcome.enum, ["spec", "questions", "resolved"]);
 });

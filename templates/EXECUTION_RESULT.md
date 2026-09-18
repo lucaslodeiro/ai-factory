@@ -19,3 +19,5 @@ The machine-readable source of truth is `resultSchema` in `src/results.ts`, used
 | `reviewChecks` | Evidence per review dimension, including reasons for not-applicable. |
 
 A tactical resolution does not contain a replacement spec or criteria. Major decisions and conflicts cannot use that outcome. All new specs require human approval. The orchestrator stores full reports and rejects contradictions such as PASS with a failing test or a blocking finding. Reported evidence remains an agent assertion to be independently checked by QA/Reviewer.
+
+Provider schemas are specialized by role: delivery roles cannot return a replacement spec, acceptance criteria, task assessment or nextRole. In `tests`, report final verification for the current files; disclose historical failures and their fixes in `summary`. A read-only Reviewer may cite explicitly attributed QA execution evidence while independently inspecting code and test quality; its own `tests` list stays empty if it ran no commands. Missing or insufficient execution evidence must block PASS.

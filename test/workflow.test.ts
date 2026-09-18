@@ -215,3 +215,14 @@ test("strong draft review can ask questions and retains its profile after the hu
  assert.equal(f.item().context.waiting, "approval"); assert.equal(f.item().context.version, 1);
  f.store.db.close();
 });
+
+test("read-only reviewer receives attributed QA execution evidence without developer conclusions", async () => {
+ const f = setup({ developer: [result("pass", { summary: "PRIVATE_DEVELOPER_REASONING" })], qa: [result("pass", { summary: "QA_CONCLUSION_NOT_SHARED", tests: [{ command: "node --test", exitCode: 0, evidence: "INDEPENDENT_QA_EXECUTION" }] })] });
+ await f.o.tick(); f.gh.reply("/factory approve v1"); await f.o.tick();
+ for (let i = 0; i < 3; i++) await f.o.tick();
+ const instructions = f.calls.find(call => call.role === "reviewer")!.instructions;
+ assert.match(instructions, /INDEPENDENT_QA_EXECUTION/);
+ assert.match(instructions, /explicitly attributing it to QA/);
+ assert.doesNotMatch(instructions, /PRIVATE_DEVELOPER_REASONING|QA_CONCLUSION_NOT_SHARED/);
+ assert.equal(f.item().state, "READY_TO_MERGE"); f.store.db.close();
+});

@@ -19,6 +19,15 @@ export const resultSchema = object({
   nextRole: { type: ["string", "null"], enum: ["developer", "qa", "reviewer", null] },
   reviewChecks: list(object({ dimension: enumeration(...reviewDimensions), status: enumeration("passed", "failed", "not-applicable"), evidence: text() })),
 });
+// Constrain provider generation by role as well as validating it afterwards.
+export function resultSchemaFor(role: AgentRole): Schema {
+ if (role === "product-architect") return { ...resultSchema, properties: { ...resultSchema.properties, outcome: enumeration("spec", "questions", "resolved") } };
+ return { ...resultSchema, properties: { ...resultSchema.properties,
+  outcome: enumeration("pass", "changes", "decision"),
+  spec: { type: "string", enum: [""] }, acceptanceCriteria: { ...resultSchema.properties!.acceptanceCriteria, maxItems: 0 },
+  taskAssessment: { type: "null" }, nextRole: { type: "null" },
+ } };
+}
 // Validate the same deliberately small JSON Schema vocabulary sent to both CLIs.
 function validate(value: unknown, schema: Schema, location = "result"): void {
   const kind = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
