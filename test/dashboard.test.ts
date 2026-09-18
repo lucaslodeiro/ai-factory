@@ -12,6 +12,7 @@ test("dashboard serves readable state and queues daemon controls", async () => {
   const store = new Store(":memory:");
   const settingsRoot = fs.mkdtempSync(path.join(os.tmpdir(),"factory-dashboard-settings-"));
   const previousGit = config.gitCommand;
+  const previousCodex = config.codexCommand, previousClaude = config.claudeCommand, previousGh = process.env.GH_COMMAND;
   const fakeGit = path.join(settingsRoot,"git");
   fs.writeFileSync(fakeGit,`#!/usr/bin/env bash
 case "$*" in
@@ -26,6 +27,23 @@ case "$*" in
 esac
 `,{mode:0o755});
   config.gitCommand=fakeGit;
+  const fakeGh = path.join(settingsRoot,"gh"), fakeCodex = path.join(settingsRoot,"codex"), fakeClaude = path.join(settingsRoot,"claude");
+  fs.writeFileSync(fakeGh,`#!/usr/bin/env bash
+if [[ $1 == auth && $2 == status ]]; then [[ -f "$PWD/gh-authenticated" ]]; exit; fi
+if [[ $1 == auth && $2 == login ]]; then touch "$PWD/gh-authenticated"; exit; fi
+if [[ $1 == auth && $2 == setup-git ]]; then exit; fi
+if [[ $1 == api && $2 == user ]]; then echo demo-user; exit; fi
+exit 1
+`,{mode:0o755});
+  fs.writeFileSync(fakeCodex,`#!/usr/bin/env bash
+if [[ $1 == login && $2 == status ]]; then exit 0; fi
+exit 0
+`,{mode:0o755});
+  fs.writeFileSync(fakeClaude,`#!/usr/bin/env bash
+if [[ $1 == auth && $2 == status ]]; then echo '{"loggedIn":true,"email":"claude@example.com"}'; exit 0; fi
+exit 0
+`,{mode:0o755});
+  config.codexCommand=fakeCodex; config.claudeCommand=fakeClaude; process.env.GH_COMMAND=fakeGh;
   fs.writeFileSync(path.join(settingsRoot,"package.json"),JSON.stringify({version:"0.1.0"}));
   fs.copyFileSync(".env.example",path.join(settingsRoot,".env.example"));
   fs.writeFileSync(path.join(settingsRoot,".env"),"FACTORY_POLL_INTERVAL_MS=15000\nSLACK_WEBHOOK_URL='https://hooks.example.com/private'\nCODEX_MODEL_FAST='custom-codex-model'\n");
@@ -96,7 +114,7 @@ echo "$*" >> "$PWD/update-actions.log"
     const unknownService = await fetch(`http://127.0.0.1:${port}/api/services`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({service:"worker",action:"restart"})});
     assert.equal(unknownService.status,400);
     const settings = await fetch(`http://127.0.0.1:${port}/api/settings`).then(response => response.json()) as any;
-    assert.deepEqual(settings.groups.map((group: any) => group.id),["project","runtime","dashboard","models","tools","access","notifications"]);
+    assert.deepEqual(settings.groups.map((group: any) => group.id),["credentials","project","runtime","dashboard","models","tools","access","notifications"]);
     const dashboardHost = settings.fields.find((field: any) => field.key === "FACTORY_DASHBOARD_HOST");
     assert.equal(dashboardHost.type,"select"); assert.deepEqual(dashboardHost.options.map((option: any) => option.value),["127.0.0.1","localhost","::1"]);
     const codexModel = settings.fields.find((field: any) => field.key === "CODEX_MODEL_BALANCED");
@@ -106,6 +124,25 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(settings.fields.find((field: any) => field.key === "SLACK_WEBHOOK_URL").value,"");
     assert.equal(settings.fields.find((field: any) => field.key === "SLACK_WEBHOOK_URL").configured,true);
     assert.ok(!JSON.stringify(settings).includes("private"));
+    const credentials = await fetch(`http://127.0.0.1:${port}/api/credentials`).then(response => response.json()) as any;
+    assert.deepEqual(credentials.credentials.map(({id,status}: any) => ({id,status})),[
+      {id:"github",status:"disconnected"},{id:"claude",status:"connected"},{id:"codex",status:"connected"}
+    ]);
+    assert.equal(credentials.credentials.find((item: any) => item.id === "github").account,undefined);
+    assert.equal(credentials.credentials.find((item: any) => item.id === "claude").account,"claude@example.com");
+    assert.ok(!JSON.stringify(credentials).includes("token"));
+    const login = await fetch(`http://127.0.0.1:${port}/api/credentials/connect`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({provider:"github"})});
+    assert.equal(login.status,202);
+    let connected: any;
+    for (let attempt=0; attempt<60; attempt++) {
+      connected = await fetch(`http://127.0.0.1:${port}/api/credentials`).then(response => response.json());
+      if (connected.credentials.find((item: any) => item.id === "github").status === "connected") break;
+      await new Promise(resolve => setTimeout(resolve,25));
+    }
+    assert.equal(connected.credentials.find((item: any) => item.id === "github").status,"connected");
+    assert.equal(connected.credentials.find((item: any) => item.id === "github").account,"demo-user");
+    const unknownCredential = await fetch(`http://127.0.0.1:${port}/api/credentials/connect`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({provider:"other"})});
+    assert.equal(unknownCredential.status,400);
     const saved = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_POLL_INTERVAL_MS:"5000",SLACK_WEBHOOK_URL:""}})});
     assert.equal(saved.status,200);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^FACTORY_POLL_INTERVAL_MS='5000'$/m);
@@ -126,6 +163,8 @@ echo "$*" >> "$PWD/update-actions.log"
     await new Promise<void>(resolve => server.close(() => resolve()));
     store.db.close();
     config.gitCommand=previousGit;
+    config.codexCommand=previousCodex; config.claudeCommand=previousClaude;
+    if (previousGh === undefined) delete process.env.GH_COMMAND; else process.env.GH_COMMAND=previousGh;
     fs.rmSync(settingsRoot,{recursive:true,force:true});
   }
 });

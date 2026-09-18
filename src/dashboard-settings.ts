@@ -6,6 +6,7 @@ type Option = { value: string; label: string };
 type Field = { key: string; label: string; description: string; group: string; secret?: boolean; required?: boolean; type?: "number" | "text" | "select"; options?: Option[]; unit?: string; restart?: "daemon" | "dashboard" | "all" };
 
 const groups = [
+  {id:"credentials",label:"Credentials",description:"Authentication for the services used by the factory."},
   {id:"project",label:"Project & GitHub",description:"Repository, checkout and delivery workflow."},
   {id:"runtime",label:"Runtime",description:"Storage, polling and execution limits."},
   {id:"dashboard",label:"Dashboard",description:"Local administration server."},

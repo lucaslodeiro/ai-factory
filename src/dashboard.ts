@@ -7,6 +7,7 @@ import type { AddressInfo } from "node:net";
 import { config } from "./config.js";
 import { Store } from "./storage.js";
 import { readDashboardSettings, saveDashboardSettings } from "./dashboard-settings.js";
+import { connectCredential, credentialStatuses, type CredentialProvider } from "./dashboard-credentials.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
 const types: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8" };
@@ -165,6 +166,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/settings") return json(res,200,{...readDashboardSettings(settingsRoot),daemonRunning:daemonState(store).running});
+      if (req.method === "GET" && url.pathname === "/api/credentials") return json(res,200,credentialStatuses(settingsRoot));
       if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,{services:[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")],update:updateState(settingsRoot),version:runtimeVersion});
       if (req.method === "POST" && url.pathname === "/api/update/check") return json(res,200,checkUpdate(settingsRoot));
       if (req.method === "GET" && url.pathname === "/healthz") return json(res,200,{ok:true});
@@ -186,6 +188,11 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         const body = await readBody(req) as { service?: string; action?: string };
         if (!['daemon','dashboard'].includes(body.service ?? "") || !['start','stop','restart'].includes(body.action ?? "")) return json(res,400,{error:"Unknown service action"});
         return json(res,202,runService(settingsRoot,body.service as "daemon" | "dashboard",body.action as "start" | "stop" | "restart"));
+      }
+      if (req.method === "POST" && url.pathname === "/api/credentials/connect") {
+        const body = await readBody(req) as { provider?: string };
+        if (!['github','claude','codex'].includes(body.provider ?? "")) return json(res,400,{error:"Unknown credential provider"});
+        return json(res,202,connectCredential(settingsRoot,body.provider as CredentialProvider));
       }
       if (req.method === "POST" && url.pathname === "/api/update") {
         const check = checkUpdate(settingsRoot);

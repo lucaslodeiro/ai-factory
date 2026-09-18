@@ -83,6 +83,17 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .settings-group-title h3 { color:var(--text); font-size:1rem; letter-spacing:0; text-transform:none }
 .settings-group-title p { color:var(--muted); font-size:.8rem }
 .settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem }
+.credentials-intro { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem; color:var(--muted); font-size:.8rem; line-height:1.45 }
+.credentials-grid { display:grid; gap:.75rem }
+.credential-card { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem; background:var(--surface); border:1px solid var(--line); border-radius:10px }
+.credential-copy { display:grid; gap:.45rem; min-width:0 }
+.credential-copy>div { display:flex; align-items:center; flex-wrap:wrap; gap:.65rem }
+.credential-copy h4 { font-size:.9rem }
+.credential-copy p,.credential-copy small { color:var(--muted); font-size:.75rem; line-height:1.4 }
+.credential-copy small { color:var(--danger) }
+.credential-account { color:var(--text); font:600 .7rem ui-monospace,SFMono-Regular,monospace }
+.credential-log { margin-top:1rem; font-size:.72rem }
+.credential-log code { overflow-wrap:anywhere }
 .setting-card { display:flex; flex-direction:column; gap:.55rem; min-width:0; padding:1rem; background:var(--surface); border:1px solid var(--line); border-radius:10px; font-size:.82rem }
 .setting-label { display:flex; align-items:flex-start; justify-content:space-between; gap:.75rem }
 .setting-label>span { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:.3rem }
@@ -100,6 +111,7 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .setting-card em { display:flex; align-items:center; gap:.4rem; color:var(--danger); font-size:.72rem; font-style:normal; font-weight:500 }
 .setting-card em input { width:auto }
 .settings-actions { display:flex; align-items:center; gap:1rem; margin-top:1.25rem; padding-top:1.25rem; border-top:1px solid var(--line) }
+.settings-actions[hidden] { display:none }
 .settings-actions .changed { color:var(--warn); font-weight:700 }
 #toast { position:fixed; right:1.5rem; bottom:1.5rem; background:var(--text); color:var(--bg); padding:.8rem 1rem; border-radius:9px; font-weight:700; opacity:0; transform:translateY(1rem); transition:.2s; pointer-events:none }
 #toast.show { opacity:1; transform:none }
@@ -113,6 +125,7 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
   .settings-layout { grid-template-columns:1fr }
   .settings-navigation { grid-template-columns:repeat(2,minmax(0,1fr)) }
   .settings-grid { grid-template-columns:1fr }
+  .credentials-intro,.credential-card { align-items:flex-start; flex-direction:column }
 }
 @media(max-width:480px) {
   .metrics { grid-template-columns:1fr }
