@@ -51,6 +51,9 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .state-failed,.state-pr-closed,.state-cancelled { color:var(--danger) }
 .actions { display:flex; gap:.4rem }
 .service-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem }
+.service-help { margin:-.35rem 0 1rem; max-width:58rem; font-size:.82rem; line-height:1.45 }
+.update-controls { display:flex; align-items:center; justify-content:flex-end; gap:.75rem }
+.update-controls .state { white-space:nowrap }
 .service-card { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem; background:var(--surface); border:1px solid var(--line); border-radius:10px }
 .service-card>div:first-child { display:grid; gap:.65rem }
 .service-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:.4rem }
@@ -94,5 +97,6 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
   header,main { padding-left:1rem; padding-right:1rem }
   .settings-actions,.panel-title { align-items:flex-start; flex-direction:column }
   .service-card { align-items:flex-start; flex-direction:column }
+  .update-controls { align-items:flex-start; flex-direction:column }
 }
 @media(prefers-reduced-motion:reduce) { .live-badge.connected::before { animation:none } }

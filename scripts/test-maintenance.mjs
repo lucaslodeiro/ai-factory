@@ -33,7 +33,9 @@ fs.mkdirSync(path.join(dest,'.factory','worktrees'),{recursive:true});
 fs.writeFileSync(path.join(dest,'.factory','worktrees','keep'),'worktree');
 const originalEnv=fs.readFileSync(path.join(dest,'.env'),'utf8');
 fs.writeFileSync(path.join(seed,'change.txt'),'upstream');run('git',['add','.'],seed);run('git',['commit','-m','upstream'],seed);run('git',['push','origin','HEAD:main'],seed);
+env.AI_FACTORY_UPDATE_STATE_FILE=path.join(temp,'update-state.json');
 run('bash',['scripts/update.sh','--defaults'],dest);
+assert.equal(JSON.parse(fs.readFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,'utf8')).status,'completed');
 assert.equal(fs.readFileSync(path.join(dest,'change.txt'),'utf8'),'upstream');
 assert.equal(fs.readFileSync(path.join(dest,'.env'),'utf8'),originalEnv);
 assert.equal(fs.readFileSync(path.join(dest,'.factory','worktrees','keep'),'utf8'),'worktree');
@@ -46,5 +48,13 @@ db.prepare('DELETE FROM daemon_lock').run();db.close();
 run('git',['config','user.email','test@example.com'],dest);run('git',['config','user.name','Test'],dest);
 fs.writeFileSync(path.join(dest,'local'),'local');run('git',['add','.'],dest);run('git',['commit','-m','local'],dest);
 assert.match(run('bash',['scripts/update.sh','--defaults'],dest,false).stderr,/merge-base/);
-console.log('PASS: install, existing destination, fast-forward, config/worktree preservation, backup, dirty checkout, daemon lock, local-only commit.');
+env.AI_FACTORY_SKIP_SERVICES='0';
+fs.writeFileSync(path.join(dest,'scripts','services.sh'),`#!/bin/sh
+if [ "$1 $2" = "status dashboard" ]; then echo 'dashboard: loaded'; elif [ "$1" = status ]; then echo "$2: stopped"; else echo "$1 $2" >> '${path.join(temp,'service-recovery.log')}'; fi
+`,{mode:0o755});
+run('bash',['scripts/update.sh','--defaults','--restart-services'],dest,false);
+const recovery=fs.readFileSync(path.join(temp,'service-recovery.log'),'utf8');
+assert.match(recovery,/stop all/);assert.match(recovery,/install dashboard/);assert.match(recovery,/start dashboard/);
+assert.equal(JSON.parse(fs.readFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,'utf8')).status,'failed');
+console.log('PASS: install, existing destination, fast-forward, config/worktree preservation, backup, dirty checkout, daemon lock, local-only commit, persisted update state and dashboard recovery.');
 } finally { fs.rmSync(temp,{recursive:true,force:true}); }

@@ -26,6 +26,7 @@ test("architect questions render as readable instructions without visible line e
  assert.match(markdown,/Should tournaments be configured manually, or derived dynamically\?\nPlease choose one\./);
  assert.match(markdown,/### 3\. Question 3/);
  assert.match(markdown,/\/factory answer\n1\. <answer 1>\n2\. <answer 2>\n3\. <answer 3>/);
+ assert.match(markdown,/Editing a comment the factory already read will not reactivate/);
  assert.doesNotMatch(markdown,/\\(?:\n|$)/);
 });
 test("progress distinguishes workflow stage, approval and human merge", () => {

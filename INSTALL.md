@@ -114,7 +114,7 @@ The `logs` action prints the last 100 stdout/error lines and continues following
 
 Open `http://127.0.0.1:4173` after starting the dashboard. It shows daemon health, the issue queue, recent agent executions and readable audit events. Its persistent theme selector follows the operating-system preference initially and switches between light and dark modes. Issue status badges, the complete issue list, metrics, executions and events update through a local Server-Sent Events stream every two seconds; a visible Live/Reconnecting badge reports stream health and a 15-second poll remains as fallback. Retry, Cancel and Stop actions write to the same durable control queue as the CLI.
 
-The service cards start, restart and stop the daemon or dashboard independently. **Update** is intentionally factory-wide because both services execute the same checkout: it records which services are loaded, stops both, runs `scripts/update.sh --defaults`, refreshes both LaunchAgents and restores the services that were running. The page can disconnect during this operation and reconnects when the dashboard returns. Follow progress with `tail -f .factory/service-logs/update.log`. If validation fails, the updater leaves the services stopped and the log contains the reason; fix it before starting them again.
+The service cards start, restart and stop the daemon or dashboard independently. The single **Update Factory** action is global because both services execute the same checkout: it records which services are loaded, starts a detached updater, stops both, runs `scripts/update.sh --defaults`, refreshes both LaunchAgents and restores the services that were running. Progress is persisted on disk, so both service cards remain at **Updating…** while the dashboard disconnects and recover the current phase when it returns. Follow details with `tail -f .factory/service-logs/update.log`. If validation fails, the daemon remains stopped and the updater attempts to restore the dashboard so it can show the failure; inspect the log and fix the cause before starting the daemon again.
 
 The **Factory settings** panel edits the installation's `.env` without exposing secrets to the browser. Settings are grouped and validated with the same constraints as the terminal configurator. A configured Slack webhook is shown only as present; leaving its field blank preserves it, while the explicit clear checkbox removes it. Each save creates a private `.env.backup-*` and atomically replaces `.env` with owner-only permissions. Unknown existing settings are preserved.
 
@@ -176,13 +176,15 @@ Create the `factory:queued` label in the target repository, then create a featur
 <your answer or requested changes, which may span multiple lines>
 ```
 
+Always post the command as a new comment. Editing a comment the factory already read does not create a new GitHub comment ID and will not reactivate the workflow.
+
 The proposed spec is versioned in SQLite and posted to GitHub. Approve its exact version:
 
 ```text
 /factory approve v1
 ```
 
-Only configured approvers with GitHub user accounts can approve. Quoted commands, stale versions and bot comments are ignored. Editing an old comment is not a new decision: post a new comment. After approval, Developer and QA run in separate Codex processes; Reviewer runs in a separate Claude process. Passing review pushes the work branch and creates a PR. The factory never merges it.
+Only configured approvers with GitHub user accounts can approve. Quoted commands, stale versions and bot comments are ignored. After approval, Developer and QA run in separate Codex processes; Reviewer runs in a separate Claude process. Passing review pushes the work branch and creates a PR. The factory never merges it.
 
 Findings route automatically to Developer or Product/Architect. Product/Architect can resolve tactical consultations under the same approved spec without human interruption. Major changes and revised specs require a new approval. After the configured correction limit, human guidance is required. QA may change files under test/tests/spec directories or files named `.test.*` / `.spec.*`; other changes fail the run for inspection. Adjust your test layout to this MVP policy.
 

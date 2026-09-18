@@ -43,7 +43,7 @@ export function questionsMarkdown(questions: string[]) {
   return `### ${index + 1}. ${title}\n\n${body}`;
  });
  const answerTemplate = questions.map((_, index) => `${index + 1}. <answer ${index + 1}>`).join("\n");
- return `## Product / Architect — input needed\n\nThe factory needs your decisions before it can produce the specification. Please answer each question below.\n\n${sections.join("\n\n")}\n\n## How to continue\n\nPost a new comment on this issue using this format:\n\n\`\`\`text\n/factory answer\n${answerTemplate}\n\`\`\`\n\nYou can replace the placeholders with detailed, multi-line answers. The command may also be the final line after your answer.`;
+ return `## Product / Architect — input needed\n\nThe factory needs your decisions before it can produce the specification. Please answer each question below.\n\n${sections.join("\n\n")}\n\n## How to continue\n\nPost a **new comment** on this issue using this format:\n\n\`\`\`text\n/factory answer\n${answerTemplate}\n\`\`\`\n\nYou can replace the placeholders with detailed, multi-line answers. The command may also be the final line after your answer. Editing a comment the factory already read will not reactivate the workflow.`;
 }
 export function specMarkdown(version: number, r: AgentResult) {
  const a = r.taskAssessment!;

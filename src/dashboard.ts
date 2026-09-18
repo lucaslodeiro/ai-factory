@@ -75,17 +75,33 @@ function serviceStatus(root: string, service: "daemon" | "dashboard") {
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
   return { service, loaded:result.status === 0 && output.includes(`${service}: loaded`), running:/state = (running|active)/.test(output), detail:output.trim() };
 }
-function runService(root: string, service: "daemon" | "dashboard", action: "start" | "stop" | "restart" | "update") {
+type UpdateState = { status: "idle" | "updating" | "completed" | "failed"; phase?: string; pid?: number; startedAt?: string; finishedAt?: string };
+const updateStateFile = (root: string) => path.join(root,".factory","update-state.json");
+function writeUpdateState(root: string, state: UpdateState) {
+  const file = updateStateFile(root);
+  fs.mkdirSync(path.dirname(file),{recursive:true});
+  const temporary = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary,JSON.stringify(state,null,2),{mode:0o600});
+  fs.renameSync(temporary,file);
+}
+function processAlive(pid?: number) {
+  if (!pid) return false;
+  try { process.kill(pid,0); return true; } catch { return false; }
+}
+function updateState(root: string): UpdateState {
+  const file = updateStateFile(root);
+  if (!fs.existsSync(file)) return { status:"idle" };
+  try {
+    const state = JSON.parse(fs.readFileSync(file,"utf8")) as UpdateState;
+    if (state.status === "updating" && !processAlive(state.pid)) {
+      const failed = { ...state,status:"failed" as const,phase:"Update process stopped unexpectedly. Inspect update.log.",finishedAt:new Date().toISOString() };
+      writeUpdateState(root,failed); return failed;
+    }
+    return state;
+  } catch { return { status:"failed",phase:"Update status could not be read. Inspect update.log." }; }
+}
+function runService(root: string, service: "daemon" | "dashboard", action: "start" | "stop" | "restart") {
   const script = path.join(root,"scripts/services.sh");
-  if (action === "update") {
-    const logs = path.join(root,".factory","service-logs");
-    fs.mkdirSync(logs,{recursive:true});
-    const output = fs.openSync(path.join(logs,"update.log"),"a");
-    const child = spawn("/bin/bash",["-c",'sleep 0.75; exec bash "$1" --defaults --restart-services',"factory-dashboard-update",path.join(root,"scripts/update.sh")],{cwd:root,detached:true,stdio:["ignore",output,output]});
-    fs.closeSync(output);
-    child.unref();
-    return { accepted:true, message:"Factory update started. Services will stop, update, and reconnect when ready." };
-  }
   if (service === "dashboard" && ["stop","restart"].includes(action)) {
     const child = spawn("/bin/bash",["-c",'sleep 0.5; exec bash "$1" "$2" dashboard',"factory-dashboard-control",script,action],{cwd:root,detached:true,stdio:"ignore"});
     child.unref();
@@ -94,6 +110,21 @@ function runService(root: string, service: "daemon" | "dashboard", action: "star
   const result = spawnSync("bash",[script,action,service],{cwd:root,encoding:"utf8",timeout:30000});
   if (result.status !== 0) throw new Error((result.stderr || result.stdout || `${service} ${action} failed`).trim());
   return { accepted:true, message:`${service} ${action} completed.` };
+}
+function runUpdate(root: string) {
+  const current = updateState(root);
+  if (current.status === "updating") throw new Error("A factory update is already running");
+  const logs = path.join(root,".factory","service-logs");
+  fs.mkdirSync(logs,{recursive:true});
+  const output = fs.openSync(path.join(logs,"update.log"),"a");
+  const stateFile = updateStateFile(root);
+  const child = spawn("/bin/bash",["-c",'sleep 0.75; exec bash "$1" --defaults --restart-services',"factory-dashboard-update",path.join(root,"scripts/update.sh")],{
+    cwd:root,detached:true,stdio:["ignore",output,output],env:{...process.env,AI_FACTORY_UPDATE_STATE_FILE:stateFile}
+  });
+  fs.closeSync(output);
+  writeUpdateState(root,{status:"updating",phase:"Preparing update…",pid:child.pid,startedAt:new Date().toISOString()});
+  child.unref();
+  return { accepted:true,message:"Factory update started. Services will stop, update, and reconnect when ready.",update:updateState(root) };
 }
 
 export function createDashboardServer(store: Store, settingsRoot = process.cwd()) {
@@ -111,7 +142,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/settings") return json(res,200,{...readDashboardSettings(settingsRoot),daemonRunning:daemonState(store).running});
-      if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,{services:[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")]});
+      if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,{services:[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")],update:updateState(settingsRoot)});
       if (req.method === "GET" && url.pathname === "/healthz") return json(res,200,{ok:true});
       if (req.method === "PUT" && url.pathname === "/api/settings") {
         if (daemonState(store).running) return json(res,409,{error:"Stop the daemon before changing configuration"});
@@ -129,9 +160,10 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       }
       if (req.method === "POST" && url.pathname === "/api/services") {
         const body = await readBody(req) as { service?: string; action?: string };
-        if (!['daemon','dashboard'].includes(body.service ?? "") || !['start','stop','restart','update'].includes(body.action ?? "")) return json(res,400,{error:"Unknown service action"});
-        return json(res,202,runService(settingsRoot,body.service as "daemon" | "dashboard",body.action as "start" | "stop" | "restart" | "update"));
+        if (!['daemon','dashboard'].includes(body.service ?? "") || !['start','stop','restart'].includes(body.action ?? "")) return json(res,400,{error:"Unknown service action"});
+        return json(res,202,runService(settingsRoot,body.service as "daemon" | "dashboard",body.action as "start" | "stop" | "restart"));
       }
+      if (req.method === "POST" && url.pathname === "/api/update") return json(res,202,runUpdate(settingsRoot));
       if (req.method !== "GET") return json(res,405,{error:"Method not allowed"});
       const files: Record<string,string> = { "/":"index.html", "/index.html":"index.html", "/app.js":"app.js", "/styles.css":"styles.css" };
       return files[url.pathname] ? asset(res,files[url.pathname]) : json(res,404,{error:"Not found"});

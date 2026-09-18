@@ -34,6 +34,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(html,/AI Factory/);
     assert.match(html,/theme-toggle/);
     assert.match(html,/live-status/);
+    assert.match(html,/factory-update/);
     assert.doesNotMatch(html,/Stop daemon/);
     const snapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
     assert.equal(snapshot.daemon.running,false);
@@ -55,8 +56,14 @@ echo "$*" >> "$PWD/update-actions.log"
     const restarted = await fetch(`http://127.0.0.1:${port}/api/services`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({service:"daemon",action:"restart"})});
     assert.equal(restarted.status,202);
     assert.match(fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8"),/restart daemon/);
-    const updating = await fetch(`http://127.0.0.1:${port}/api/services`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({service:"daemon",action:"update"})});
+    const perServiceUpdate = await fetch(`http://127.0.0.1:${port}/api/services`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({service:"daemon",action:"update"})});
+    assert.equal(perServiceUpdate.status,400);
+    const updating = await fetch(`http://127.0.0.1:${port}/api/update`,{method:"POST"});
     assert.equal(updating.status,202);
+    const updateResponse = await updating.json() as any;
+    assert.equal(updateResponse.update.status,"updating");
+    const duringUpdate = await fetch(`http://127.0.0.1:${port}/api/services`).then(response => response.json()) as any;
+    assert.equal(duringUpdate.update.status,"updating");
     for (let attempt=0; attempt<60 && !fs.existsSync(path.join(settingsRoot,"update-actions.log")); attempt++) await new Promise(resolve => setTimeout(resolve,25));
     assert.match(fs.readFileSync(path.join(settingsRoot,"update-actions.log"),"utf8"),/--defaults --restart-services/);
     const unknownService = await fetch(`http://127.0.0.1:${port}/api/services`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({service:"worker",action:"restart"})});
