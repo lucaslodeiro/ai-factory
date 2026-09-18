@@ -4,16 +4,15 @@ repo=https://github.com/lucaslodeiro/ai-factory.git
 branch=main
 dest="$HOME/ai-factory"
 skip_tools=false
-configure_defaults=false
 while (($#)); do
   case "$1" in
     --dir|--branch|--repo)
       (($# >= 2)) || { echo "Missing value for $1" >&2; exit 1; }
       case "$1" in --dir) dest=$2;; --branch) branch=$2;; --repo) repo=$2;; esac
       shift 2;;
-    --defaults) configure_defaults=true; shift;;
+    --defaults) shift;;
     --skip-tools) skip_tools=true; shift;;
-    --help) echo 'Usage: bash install.sh [--dir PATH] [--branch BRANCH] [--repo URL] [--skip-tools] [--defaults]'; exit 0;;
+    --help) echo 'Usage: bash install.sh [--dir PATH] [--branch BRANCH] [--repo URL] [--skip-tools]'; echo 'Configuration continues in the dashboard. --defaults is accepted as a deprecated no-op.'; exit 0;;
     *) echo "Unknown option: $1" >&2; exit 1;;
   esac
 done
@@ -56,27 +55,29 @@ cd "$dest"
 npm ci
 npm run build
 npm test
-printf '\nConfiguration\n'
-printf 'The next wizard saves factory settings and can prepare a private demo target after confirmation.\n'
-if "$configure_defaults"; then
-  bash scripts/configure.sh --defaults
-else
-  bash scripts/configure.sh
-fi
-if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install all; fi
-
-if node --input-type=module -e "import fs from 'node:fs'; import {parse} from 'dotenv'; const v=parse(fs.readFileSync('.env')); process.exit(['GITHUB_REPOSITORY','FACTORY_REPO_DIR','FACTORY_APPROVERS'].every(k=>v[k]) ? 0 : 1)"; then
-  configuration_status='complete'
-else
-  configuration_status='saved for later'
+umask 077
+cp .env.example .env
+dashboard_url=$(node scripts/dashboard-url.mjs)
+dashboard_ready=false
+if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
+  AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install all
+  AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start dashboard
+  for _ in {1..40}; do
+    if curl -fsS "$dashboard_url/healthz" >/dev/null 2>&1; then dashboard_ready=true; break; fi
+    sleep 0.25
+  done
+  if [[ $(uname -s) == Darwin && ${AI_FACTORY_NO_OPEN:-0} != 1 ]]; then
+    open "$dashboard_url/?setup=1" || printf 'Open this URL to finish setup: %s/?setup=1\n' "$dashboard_url"
+  fi
 fi
 
 printf '\n============================================================\n'
 printf 'AI Factory installation completed successfully\n'
 printf '============================================================\n'
 printf 'Engine:        %s\n' "$PWD"
-printf 'Configuration: %s\n' "$configuration_status"
+printf 'Configuration: continue in the dashboard\n'
 printf 'Daemon:        not started\n'
+if "$dashboard_ready"; then printf 'Dashboard:     running at %s\n' "$dashboard_url"; else printf 'Dashboard:     started; health check pending at %s (see .factory/service-logs/dashboard.error.log)\n' "$dashboard_url"; fi
 printf 'Services:      daemon and dashboard definitions installed\n'
 if [[ ${AI_FACTORY_INSTALL_MODE:-} == no-brew ]]; then
   printf 'Toolchain:     %s (no Homebrew)\n' "$HOME/.local"
@@ -92,11 +93,10 @@ fi
 cat <<'NEXT'
 
 First-run checklist:
-  1. Run `npm run configure` if GitHub or target-project setup was left for later.
-  2. Authenticate providers: codex login && claude auth login
-  3. Validate with `npm run factory -- doctor`.
-  4. Start services with `npm run service -- start daemon` and `npm run service -- start dashboard`.
+  1. Complete Credentials and Configuration in the dashboard opened by the installer.
+  2. Save the target repository, local clone and authorized approvers.
+  3. Start the daemon from the dashboard Services section.
 
-The installer never starts agents automatically. See INSTALL.md for examples.
+The installer starts only the local dashboard. It never starts agents automatically.
 NEXT
 if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then node scripts/service-summary.mjs; fi

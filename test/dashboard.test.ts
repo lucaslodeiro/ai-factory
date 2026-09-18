@@ -81,6 +81,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(html,/factory-update/);
     assert.match(html,/Configuration/);
     assert.match(html,/settings-navigation/);
+    assert.match(html,/FIRST-TIME SETUP/);
     assert.doesNotMatch(html,/Stop daemon/);
     const snapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
     assert.equal(snapshot.daemon.running,false);
@@ -114,7 +115,7 @@ echo "$*" >> "$PWD/update-actions.log"
     const duringUpdate = await fetch(`http://127.0.0.1:${port}/api/services`).then(response => response.json()) as any;
     assert.equal(duringUpdate.update.status,"updating");
     for (let attempt=0; attempt<60 && !fs.existsSync(path.join(settingsRoot,"update-actions.log")); attempt++) await new Promise(resolve => setTimeout(resolve,25));
-    assert.match(fs.readFileSync(path.join(settingsRoot,"update-actions.log"),"utf8"),/--defaults --restart-services/);
+    assert.match(fs.readFileSync(path.join(settingsRoot,"update-actions.log"),"utf8"),/--restart-services/);
     fs.writeFileSync(path.join(settingsRoot,"up-to-date"),"");
     const currentCheck = await fetch(`http://127.0.0.1:${port}/api/update/check`,{method:"POST"}).then(response => response.json()) as any;
     assert.equal(currentCheck.available,false);

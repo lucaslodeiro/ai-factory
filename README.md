@@ -47,28 +47,24 @@ curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/script
 bash /tmp/ai-factory-install-no-brew.sh --dir "$HOME/ai-factory"
 ```
 
-The installer prepares the engine and opens the configuration wizard. The wizard authenticates GitHub when needed and derives usable defaults from that account: `<login>/ai-factory-demo`, `$HOME/Source/ai-factory-demo`, and the same login as approver. If the target does not exist, it asks before creating a private repository and local clone. It never starts the daemon. In an existing source checkout:
-
-Its final summary clearly distinguishes a successful engine installation from optional target-project setup. If required project fields are left blank, it reports **saved for later** and gives a numbered first-run checklist instead of treating that choice as an installation error.
+The installer prepares the engine, installs both macOS services, starts the local dashboard and opens its first-time setup page. Credentials and environment settings are completed in the browser. The daemon remains stopped until you start it from Services after configuring the target. In an existing source checkout:
 
 ```sh
 npm ci
 npm run build
 npm test
-npm run configure
-# Authenticate Codex and Claude if needed, then:
-npm run factory -- doctor
-npm run service -- start daemon
 npm run service -- start dashboard
+# Complete Dashboard → Configuration, then:
+npm run service -- start daemon
 ```
 
-`npm run configure` can be run at any time while the daemon is stopped. Existing non-empty `.env` values are shown as defaults; empty required target values receive GitHub-derived defaults, and settings added in a newer version use `.env.example` defaults. Installation and update invoke this same wizard. Use `--defaults` with the scripts for unattended operation; that mode performs no authentication or repository provisioning.
+Use **Dashboard → Configuration** whenever settings or credentials change. `npm run configure` remains as a deprecated terminal fallback for a headless Mac; installation and update no longer invoke it. Existing settings are preserved during updates.
 
 The factory engine and target application are separate repositories. `GITHUB_REPOSITORY` selects where issues are read and PRs are created; `FACTORY_REPO_DIR` selects the local clone used for worktrees. Open issues enter the factory only when labelled `factory:queued`.
 
 Queue an issue with `factory:queued`. Answer `/factory answer <text>` and approve the posted version with `/factory approve vN`. The daemon runs independent role processes, routes findings, and creates a pull request after passing QA and review. Human merge remains required.
 
-Configuration command: `npm run configure`. The installer creates separate macOS services for the orchestrator and local dashboard. Control them with `npm run service -- <start|stop|restart|status|logs> <daemon|dashboard|all>`. The dashboard defaults to [http://127.0.0.1:4173](http://127.0.0.1:4173), supports persistent light/dark themes, and updates issue badges, the issue list, metrics, executions and events over a near-real-time local stream. Its service cards can start, restart or stop either service. The global update area shows the package version and Git revision, checks the current branch on `origin`, and only offers Update Factory when a fast-forward version is available. Updating stops both services, downloads and validates the current branch in a background process, refreshes their LaunchAgents, and restores the services that were running. Persistent update state keeps the UI at Updating through the dashboard restart, then a revision change reloads the frontend automatically. Output is written to `.factory/service-logs/update.log`. The Configuration panel organizes `.env` into conceptual categories, uses selects for closed values such as model IDs and dashboard host, preserves existing custom model IDs, and identifies the service affected by every field. Credentials reports GitHub, Claude, Codex and Slack connection state. Notifications securely saves or removes the Slack Incoming Webhook, sends an explicit test message, and shows pending, failed and sent delivery counts without exposing the webhook. Stop the daemon before saving environment settings and restart the indicated services afterward. Factory commands remain available directly: `doctor`, `start`, `dashboard`, `status [id]`, `events [id]`, `cancel <item-or-run-id>`, `retry <item-id>`, `stop`, `notifications`, `slack-test`, `models [id]`, `sync`.
+Configuration is managed from the dashboard. The installer creates separate macOS services for the orchestrator and local dashboard. Control them with `npm run service -- <start|stop|restart|status|logs> <daemon|dashboard|all>`. The dashboard defaults to [http://127.0.0.1:4173](http://127.0.0.1:4173), supports persistent light/dark themes, and updates issue badges, the issue list, metrics, executions and events over a near-real-time local stream. Its service cards can start, restart or stop either service. The global update area shows the package version and Git revision, checks the current branch on `origin`, and only offers Update Factory when a fast-forward version is available. Updating stops both services, downloads and validates the current branch in a background process, refreshes their LaunchAgents, and restores the services that were running. Persistent update state keeps the UI at Updating through the dashboard restart, then a revision change reloads the frontend automatically. Output is written to `.factory/service-logs/update.log`. The Configuration panel organizes `.env` into conceptual categories, uses selects for closed values such as model IDs and dashboard host, preserves existing custom model IDs, and identifies the service affected by every field. Credentials reports GitHub, Claude, Codex and Slack connection state. Notifications securely saves or removes the Slack Incoming Webhook, sends an explicit test message, and shows pending, failed and sent delivery counts without exposing the webhook. Stop the daemon before saving environment settings and restart the indicated services afterward. Factory commands remain available directly: `doctor`, `start`, `dashboard`, `status [id]`, `events [id]`, `cancel <item-or-run-id>`, `retry <item-id>`, `stop`, `notifications`, `slack-test`, `models [id]`, `sync`.
 
 One instance executes agent stages sequentially for one target repository. To run two projects at once, use two installations with separate target clones, `.env` files and data directories. Multiple instances targeting the same repository are not supported.
 

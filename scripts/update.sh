@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
-configure_defaults=false
 restart_services=false
 if [[ ${1:-} == --help ]]; then
-  echo 'Usage: bash scripts/update.sh [--defaults] [--restart-services]'
-  echo '  --defaults          keep the current configuration without prompting'
+  echo 'Usage: bash scripts/update.sh [--restart-services]'
+  echo '  Configuration is preserved and remains editable in the dashboard.'
+  echo '  --defaults is accepted as a deprecated no-op.'
   echo '  --restart-services  stop loaded services, update, then restore them'
   exit 0
 fi
 while (($#)); do
   case $1 in
-    --defaults) configure_defaults=true;;
+    --defaults) ;;
     --restart-services) restart_services=true;;
     *) echo 'Unexpected arguments; see --help.' >&2; exit 1;;
   esac
@@ -57,7 +57,7 @@ fi
 write_update_state updating "Downloading, building and validating…"
 node scripts/update.mjs
 write_update_state updating "Preserving configuration…"
-if "$configure_defaults"; then bash scripts/configure.sh --defaults; else bash scripts/configure.sh; fi
+if [[ ! -f .env ]]; then umask 077; cp .env.example .env; fi
 if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
   write_update_state updating "Installing and restarting services…"
   AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install all

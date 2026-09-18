@@ -142,7 +142,7 @@ function runUpdate(root: string) {
   fs.mkdirSync(logs,{recursive:true});
   const output = fs.openSync(path.join(logs,"update.log"),"a");
   const stateFile = updateStateFile(root);
-  const child = spawn("/bin/bash",["-c",'sleep 0.75; exec bash "$1" --defaults --restart-services',"factory-dashboard-update",path.join(root,"scripts/update.sh")],{
+  const child = spawn("/bin/bash",["-c",'sleep 0.75; exec bash "$1" --restart-services',"factory-dashboard-update",path.join(root,"scripts/update.sh")],{
     cwd:root,detached:true,stdio:["ignore",output,output],env:{...process.env,AI_FACTORY_UPDATE_STATE_FILE:stateFile}
   });
   fs.closeSync(output);

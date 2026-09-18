@@ -9,9 +9,9 @@ curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/script
 bash /tmp/ai-factory-install.sh --dir "$HOME/ai-factory"
 ```
 
-The installer defaults to the stable `main` branch. The repository has only two long-lived branches: `develop` for ongoing work and `main` for stable releases. Pass `--branch develop` only when intentionally testing unreleased factory changes. The installer installs missing tools, clones the engine, installs locked npm dependencies, builds, tests and opens the interactive configurator to create a private `.env`. Enter accepts each displayed default. The configurator opens GitHub login when needed and can prepare a target repository after showing the exact action and receiving confirmation. Use `--defaults` to write installation defaults without prompting (target settings remain blank and no remote action occurs). It does not start agents. Existing destinations are rejected. `--skip-tools` skips machine tool installation; Node 22+, npm and Git must already work. Automatic tool installation is macOS-only. Provider installers: [Codex](https://developers.openai.com/codex/cli), [Claude](https://code.claude.com/docs/en/setup).
+The installer defaults to the stable `main` branch. The repository has only two long-lived branches: `develop` for ongoing work and `main` for stable releases. Pass `--branch develop` only when intentionally testing unreleased factory changes. The installer installs missing tools, clones the engine, installs locked npm dependencies, builds and tests. It creates a private `.env` from safe defaults, installs both user services, starts the dashboard, waits for its health check and opens the first-time setup page in the default browser. Credentials and environment settings are completed there. The daemon stays stopped, so no agent runs before setup is complete. Existing destinations are rejected. `--skip-tools` skips machine tool installation; Node 22+, npm and Git must already work. Automatic tool installation is macOS-only. Provider installers: [Codex](https://developers.openai.com/codex/cli), [Claude](https://code.claude.com/docs/en/setup).
 
-The final screen separates installation, configuration and daemon status, followed by a numbered first-run checklist. The interactive defaults create a ready-to-use private demo target when accepted. Clearing the target repository, clone or approvers is supported: the engine is installed successfully and configuration is marked **saved for later**. Run `npm run configure` to resume. This status is informational, not an installation failure.
+The opened dashboard expands **Configuration** and displays a first-time guide. Connect GitHub, Claude and Codex under **Credentials**; complete **Project & GitHub** and **Access & secrets**; save; then start the daemon from **Services**. The guide can be dismissed without changing configuration.
 
 Installer options:
 
@@ -21,7 +21,8 @@ Installer options:
 | `--repo URL` | This GitHub repository | Engine source repository |
 | `--branch NAME` | `main` | Engine branch to install (`develop` opts into unreleased changes) |
 | `--skip-tools` | off | Require existing tools instead of installing missing ones |
-| `--defaults` | off | Save configuration defaults without interactive questions |
+
+`--defaults` is accepted temporarily as a deprecated no-op so older automated install commands do not break.
 
 ## Alternative macOS installation without Homebrew
 
@@ -33,7 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/script
 bash /tmp/ai-factory-install-no-brew.sh --dir "$HOME/ai-factory"
 ```
 
-It supports Apple Silicon and Intel Macs. It downloads the latest Node 22 archive from Node.js and the latest GitHub CLI macOS archive from GitHub Releases, verifies both SHA-256 checksums published by their projects, and links their executables into `~/.local/bin`. Codex and Claude are installed with their official native installers. It then invokes the standard factory installer with `--skip-tools`, forwarding options such as `--dir`, `--branch` and `--defaults`.
+It supports Apple Silicon and Intel Macs. It downloads the latest Node 22 archive from Node.js and the latest GitHub CLI macOS archive from GitHub Releases, verifies both SHA-256 checksums published by their projects, and links their executables into `~/.local/bin`. Codex and Claude are installed with their official native installers. It then invokes the standard factory installer with `--skip-tools`, forwarding options such as `--dir` and `--branch`.
 
 Git comes from Apple's Command Line Tools. If they are absent, the script runs `xcode-select --install`, exits, and asks you to rerun it after completing Apple's graphical installation. It does not accept an Xcode license or request administrator credentials itself. Existing regular files in `~/.local/bin` are never overwritten. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile for later terminals.
 
@@ -48,39 +49,15 @@ npm run factory -- doctor
 npm run service -- restart all
 ```
 
-The updater requires the existing built runtime and dependencies. It adds `~/.local/bin` to `PATH`, uses the current branch on `origin`, refuses local changes/local-only commits and holds the daemon lock throughout the update. It backs up SQLite and `.env` under `FACTORY_DATA_DIR/update-backup-*`, applies a fast-forward, installs locked dependencies, builds and tests, and then opens the same configurator used by installation. Existing non-empty settings are its defaults; empty required target settings receive the current GitHub account defaults. This lets `bash scripts/update.sh` repair an installation that previously saved those fields blank. It preserves configuration, logs and worktrees; it never restarts the daemon or updates provider CLIs. A failed build/test leaves the daemon stopped and prints the backup and previous revision for diagnosis; there is no destructive automatic rollback. Backups contain private data: keep them local. Use `bash scripts/update.sh --defaults` for a non-interactive update that retains blank values and performs no login, clone or repository creation.
+The updater requires the existing built runtime and dependencies. It adds `~/.local/bin` to `PATH`, uses the current branch on `origin`, refuses local changes/local-only commits and holds the daemon lock throughout the update. It backs up SQLite and `.env` under `FACTORY_DATA_DIR/update-backup-*`, applies a fast-forward, installs locked dependencies, builds and tests, and preserves configuration without prompting. It never opens a terminal wizard, authenticates accounts or provisions a repository. A failed build/test leaves the daemon stopped and prints the backup and previous revision for diagnosis; there is no destructive automatic rollback. Backups contain private data: keep them local.
 
 ## Configuration lifecycle
 
-Installation, update and direct configuration all use the same wizard:
+Installation opens `http://127.0.0.1:4173/?setup=1` by default. The dashboard reads installation defaults plus any saved `.env`, groups them by purpose and writes changes atomically with owner-only permissions. Stop the daemon before saving; the dashboard remains available. Updates preserve `.env` without asking questions.
 
-```sh
-# Inspect or change configuration without installing/updating:
-npm run configure
+Connect GitHub, Claude and Codex from **Configuration → Credentials**. Complete the target repository and clone in **Project & GitHub**, and authorized GitHub users in **Access & secrets**. The clone must already exist and have its `origin`, default branch, and Git author configured. Then start the daemon from **Services**.
 
-# Install without questions, leaving required target values blank:
-bash /tmp/ai-factory-install.sh --defaults
-
-# Update without questions, retaining existing values:
-bash scripts/update.sh --defaults
-```
-
-For each known option, the displayed/effective value is selected in this order:
-
-1. A non-empty value saved in `.env`.
-2. For Codex, Claude and Git commands, a locally discovered executable when no saved value exists.
-3. In interactive mode, the authenticated GitHub login supplies defaults for an empty target repository, clone and approvers.
-4. The installation default in `.env.example` for every other missing value.
-
-Shell environment variables are not imported into `.env`. In the interactive wizard, Enter retains the displayed value and `-` clears a setting. Each save creates an ignored, owner-readable `.env.backup-*` file and atomically replaces `.env`. Stop the daemon before configuring. When the selected target clone is absent, the wizard asks before cloning an existing repository or creating a private one. Changing a configured target path does not move existing data or worktrees.
-
-The unattended installation leaves the target repository, local clone and approvers empty. Interactive configuration derives these defaults from the authenticated GitHub account:
-
-- `GITHUB_REPOSITORY=<login>/ai-factory-demo`
-- `FACTORY_REPO_DIR=$HOME/Source/ai-factory-demo`
-- `FACTORY_APPROVERS=<login>`
-
-Accept the provisioning question to create the private demo repository, clone it, initialize `main`, configure repo-local Git author data and create the `factory:queued` label. You can replace any displayed value to use an existing project instead.
+`npm run configure` remains available as a deprecated terminal fallback for headless operation. It is not called by installation or update.
 
 | Setting | Meaning | Example |
 |---|---|---|
@@ -116,7 +93,7 @@ Open `http://127.0.0.1:4173` after starting the dashboard. It shows daemon healt
 
 The service cards start, restart and stop the daemon or dashboard independently. Above them, the global update area shows the installed package version and Git revision. It fetches the checked-out branch from `origin` on load and every five minutes; **Update Factory** is offered only when the remote commit is a valid fast-forward. The server repeats that check immediately before starting the update.
 
-The update action records which services are loaded, starts a detached updater, stops both, runs `scripts/update.sh --defaults`, refreshes both LaunchAgents and restores the services that were running. Progress is persisted on disk, so both service cards remain at **Updating…** while the dashboard disconnects and recover the current phase when it returns. When the restarted dashboard reports a different revision, the browser reloads the new frontend automatically. Follow details with `tail -f .factory/service-logs/update.log`. If validation fails, the daemon remains stopped and the updater attempts to restore the dashboard so it can show the failure; inspect the log and fix the cause before starting the daemon again.
+The update action records which services are loaded, starts a detached updater, stops both, runs `scripts/update.sh --restart-services`, refreshes both LaunchAgents and restores the services that were running. Progress is persisted on disk, so both service cards remain at **Updating…** while the dashboard disconnects and recover the current phase when it returns. When the restarted dashboard reports a different revision, the browser reloads the new frontend automatically. Follow details with `tail -f .factory/service-logs/update.log`. If validation fails, the daemon remains stopped and the updater attempts to restore the dashboard so it can show the failure; inspect the log and fix the cause before starting the daemon again.
 
 The **Configuration** panel has eight categories. **Credentials** reports authentication for GitHub, Claude and Codex plus the Slack connection state. **Connect** or **Reconnect** starts that provider's official CLI login in the background and opens its browser flow on the Mac running the dashboard; complete the provider page and use **Refresh status** if the card has not updated yet. CLI credentials stay in each provider's local secure store. The dashboard never receives or displays their tokens. Login output is available in `.factory/service-logs/credentials.log`. The Slack card opens its dedicated **Notifications** configuration.
 
@@ -149,10 +126,11 @@ cd ai-factory
 npm ci
 npm run build
 npm test
-npm run configure
+cp .env.example .env
+npm run service -- start dashboard
 ```
 
-Set `FACTORY_REPO_DIR` to a clone of the **target application**, `GITHUB_REPOSITORY` to its owner/name, `GITHUB_DEFAULT_BRANCH` to its base branch and `FACTORY_APPROVERS` to the comma-separated GitHub logins who can make decisions. Use a different `FACTORY_DATA_DIR` per target. The local target clone needs origin configured, the base branch pushed, and Git author name/email configured. Worktrees start at the fetched remote base; uncommitted changes in the source checkout are not included.
+Open Dashboard → Configuration. Set `FACTORY_REPO_DIR` to a clone of the **target application**, `GITHUB_REPOSITORY` to its owner/name, `GITHUB_DEFAULT_BRANCH` to its base branch and `FACTORY_APPROVERS` to the comma-separated GitHub logins who can make decisions. Use a different `FACTORY_DATA_DIR` per target. The local target clone needs origin configured, the base branch pushed, and Git author name/email configured. Worktrees start at the fetched remote base; uncommitted changes in the source checkout are not included.
 
 The daemon reads `.env` from its working directory. Run commands from the factory checkout. `CODEX_COMMAND`, `CLAUDE_COMMAND` and `GIT_COMMAND` accept absolute executable paths (not shell command strings). Ensure Node 22+ and the working Git executable are first in PATH so worker tools find them too. On Macs with multiple Git installations, an Xcode license error can be avoided by selecting a separately installed Git.
 
@@ -238,17 +216,17 @@ To exercise installer/updater safeguards using temporary local repositories and 
 
 ## Configuration details and safeguards
 
-Run this directly from your installation whenever you want to inspect or change settings, without installing or updating:
+The dashboard is the supported configuration interface. The earlier terminal wizard remains available only as a deprecated fallback for a headless Mac:
 
 ```sh
 npm run configure
 # equivalent: bash scripts/configure.sh
 ```
 
-The installer and updater run the same wizard automatically. Every option in `.env.example` is offered, including target repository/clone, approvers, data directory, polling, timeouts, correction limits, CLI executables, models and optional Slack. Invalid values are explained and prompted again. Target repository, clone and approvers can be cleared to finish setup later; `doctor` must pass before starting.
+Installation and update do not invoke this wizard. Dashboard fields cover every option in `.env.example`, including target repository/clone, approvers, data directory, polling, timeouts, correction limits, CLI executables, models and optional Slack. Invalid values are explained when saving; `doctor` must pass before the daemon can operate correctly.
 
-Slack webhook input/defaults are hidden. Unknown existing environment settings are preserved. Saving through the terminal or dashboard creates a private `.env.backup-*` and replaces `.env` atomically with owner-only permissions; these files are ignored by Git. Ctrl+C or incomplete terminal input cancels without saving. Stop the daemon before reconfiguring; do not start another instance while the wizard is open. Changing paths/repositories does not migrate existing data or clone a target repository. Use a separate installation/data directory for a different project.
+Slack webhook input/defaults are hidden. Unknown existing environment settings are preserved. Saving through the terminal fallback or dashboard creates a private `.env.backup-*` and replaces `.env` atomically with owner-only permissions; these files are ignored by Git. Stop the daemon before reconfiguring. Changing paths/repositories does not migrate existing data or clone a target repository. Use a separate installation/data directory for a different project.
 
-`npm run configure -- --defaults` saves existing/template values without questions. The equivalent direct command is `bash scripts/configure.sh --defaults`. This unattended mode never authenticates accounts, clones or creates a target, or starts agents. Interactive configuration may authenticate GitHub and performs repository changes only after showing the exact clone/create action and receiving confirmation. Check configuration with `npm run factory -- doctor`.
+The fallback supports `npm run configure -- --defaults` to save existing/template values without questions. It never runs during installation or update. Check configuration with `npm run factory -- doctor`.
 
 Configuration regression checks: `node scripts/test-configure.mjs`.
