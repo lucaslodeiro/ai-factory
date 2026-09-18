@@ -12,8 +12,12 @@ export function prompt(w: WorkItem, role: AgentRole) {
     role === "product-architect"
       ? "Initially return spec or questions. During a consultation under an approved spec you may return resolved, tactical decisions with rationale, and nextRole, without altering the approved spec or criteria. Major product/architecture/scope/risk decisions or conflicts with human decisions require questions or a revised spec and human approval. Do not route past unfinished QA/review gates."
       : "Implement/verify only the approved spec and documented tactical decisions. Return pass, changes or decision. PASS requires evidence for every acceptance criterion; Developer/QA must report actual successful test commands. Raise major decisions with a decision-required finding.",
+    role === "product-architect" && w.context.architectDraft
+      ? "You are performing the strong-profile architectural review of an unapproved draft. Inspect the repository and draft independently, correct and finalize the complete specification and its assessment, or return questions if human input is needed. Do not use resolved. The draft has not been approved. Explain any revised complexity/risk in the assessment rationale."
+      : "",
     JSON.stringify({ issue: { title: w.context.title, body: w.context.body }, spec: w.context.spec, version: w.context.version,
       taskAssessment: w.context.taskAssessment, acceptanceCriteria: w.context.criteria, approvedVersion: w.context.approvedVersion, decisions: w.context.decisions ?? [],
+      unapprovedArchitectDraft: role === "product-architect" ? w.context.architectDraft : undefined,
       consultation: role === "product-architect" ? w.context.consultation : undefined,
       feedback: role === "qa" || role === "reviewer" ? [] : w.context.feedback,
       recovery: w.context.pendingStage ? "Previous attempt did not complete this workflow stage; inspect retained changes and verify everything again. Do not assume prior success." : undefined,

@@ -173,3 +173,45 @@ test("approved assessment controls model routing, remains immutable during consu
  assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='model.selected'").get() as any).n, f.calls.length);
  f.store.db.close();
 });
+
+const highSpec = () => result("spec", { taskAssessment: { complexity: "high", risk: "low", rationale: "Cross-component architecture requires deeper review" } });
+test("high complexity draft receives a strong review before any approval version exists", async () => {
+ const f = setup({ "product-architect": [highSpec(), highSpec()] });
+ await f.o.tick();
+ assert.equal(f.item().state, "SPEC"); assert.equal(f.item().context.version, 0);
+ assert.ok(f.item().context.architectDraft);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM specs").get() as any).n, 0);
+ assert.ok(![...f.gh.posted.values()].some(body => body.includes("/factory approve")));
+ f.gh.reply("/factory approve v1");
+ await f.o.tick();
+ assert.deepEqual(f.calls.map(call => call.selection.profile), ["balanced", "strong"]);
+ assert.match(f.calls[1].instructions, /unapproved draft/);
+ assert.match(f.calls[1].instructions, /Cross-component architecture/);
+ assert.equal(f.item().state, "WAITING_HUMAN"); assert.equal(f.item().context.version, 1);
+ assert.equal(f.item().context.architectDraft, undefined);
+ await f.o.tick(); assert.equal(f.item().state, "WAITING_HUMAN");
+ f.gh.reply("/factory approve v1"); await f.o.tick();
+ assert.equal(f.item().state, "DEVELOPMENT");
+ assert.equal(f.calls.length, 2); f.store.db.close();
+});
+test("high risk draft survives a failed strong review and retry stays strong", async () => {
+ const draft = result("spec", { taskAssessment: { complexity: "low", risk: "high", rationale: "Authorization changes" } });
+ const f = setup({ "product-architect": [draft, result("spec", { taskAssessment: null }), result("spec")] });
+ await f.o.tick(); await f.o.tick();
+ assert.equal(f.item().state, "FAILED"); assert.ok(f.item().context.architectDraft);
+ assert.equal(f.item().context.version, 0);
+ retry(f.store, f.item().id); await f.o.tick();
+ assert.deepEqual(f.calls.map(call => call.selection.profile), ["balanced", "strong", "strong"]);
+ assert.equal(f.item().state, "WAITING_HUMAN"); assert.equal(f.item().context.version, 1);
+ assert.equal(f.item().context.architectDraft, undefined); f.store.db.close();
+});
+test("strong draft review can ask questions and retains its profile after the human answers", async () => {
+ const f = setup({ "product-architect": [highSpec(), result("questions", { questions: ["Which consistency guarantee?"] }), highSpec()] });
+ await f.o.tick(); await f.o.tick();
+ assert.equal(f.item().context.waiting, "questions"); assert.ok(f.item().context.architectDraft);
+ f.gh.reply("/factory approve v0"); await f.o.tick(); assert.equal(f.item().state, "WAITING_HUMAN");
+ f.gh.reply("/factory answer strict consistency"); await f.o.tick(); await f.o.tick();
+ assert.equal(f.calls[2].selection.profile, "strong"); assert.match(f.calls[2].instructions, /strict consistency/);
+ assert.equal(f.item().context.waiting, "approval"); assert.equal(f.item().context.version, 1);
+ f.store.db.close();
+});

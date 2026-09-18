@@ -21,6 +21,7 @@ export interface AgentResult {
 }
 export interface Context {
   title: string; body: string; url: string; cwd?: string; spec?: string; version: number;
+  architectDraft?: AgentResult;
   taskAssessment?: TaskAssessment;
   criteria?: Criterion[]; decisions?: Decision[]; consultation?: { from: DeliveryStage };
   approvedVersion?: number; approval?: { login: string; commentId: number };

@@ -1,6 +1,6 @@
 import { config } from "./config.js";
 import type { AgentRole, ModelProfile, ModelSelection, TaskAssessment, WorkItem } from "./types.js";
-export const modelPolicyVersion = "balanced-v1";
+export const modelPolicyVersion = "balanced-v2";
 export function selectModel(role: AgentRole, assessment?: TaskAssessment, cycles = 0, consultation = false): ModelSelection {
  const provider = role === "developer" || role === "qa" ? "codex" : "claude";
  let profile: ModelProfile = "balanced", reason = "Standard task; balanced quality, cost and latency";
@@ -15,5 +15,8 @@ export function selectModel(role: AgentRole, assessment?: TaskAssessment, cycles
  return { policy: modelPolicyVersion, provider, profile, model, reason };
 }
 export function modelForWork(w: WorkItem, role: AgentRole) {
+ if (role === "product-architect" && w.context.architectDraft) {
+  return { ...selectModel(role, undefined, 0, true), reason: "Review a high-complexity or high-risk draft before human approval" };
+ }
  return selectModel(role, w.context.taskAssessment, w.context.cycles, Boolean(w.context.consultation));
 }

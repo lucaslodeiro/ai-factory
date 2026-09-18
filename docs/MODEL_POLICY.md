@@ -1,4 +1,4 @@
-# Model selection: balanced-v1
+# Model selection: balanced-v2
 
 The user selected a balance of quality, cost and time. Product/Architect assesses each issue when proposing its spec. The deterministic orchestrator maps that assessment and the role to a configured model profile. The model never supplies an executable model ID. This is per issue and role invocation; the MVP does not decompose an issue into independently routed subtasks.
 
@@ -6,13 +6,14 @@ The user selected a balance of quality, cost and time. Product/Architect assesse
 
 | Condition | Profile |
 |---|---|
+| Architect has an unapproved high-complexity/high-risk draft awaiting review | strong |
 | A correction/decision cycle has occurred, or Architect is handling a consultation | strong |
 | Approved complexity or risk is high | strong |
 | Legacy delivery item without an assessment | strong |
 | Developer on low complexity AND low risk | fast |
 | All other cases, including initial Architect, QA and Reviewer | balanced |
 
-QA and Reviewer have a balanced floor. Initial Architect starts balanced because complexity is not known yet; a task initially assessed as high does not retroactively rerun that first assessment. Subsequent invocations use the new assessment. Corrections escalate subsequent roles for the remaining cycle; timeout/cancellation or transport errors alone do not increase the correction counter. The existing correction limit still applies. Human guidance resets that counter as before.
+QA and Reviewer have a balanced floor. Initial Architect starts balanced because complexity is not known yet; if it proposes a high-complexity or high-risk spec, the orchestrator persists that unapproved draft and invokes a fresh strong-profile Architect before creating a spec version or requesting approval. That invocation can finalize/reassess the spec or ask questions. Failures, restarts and clarification answers retain the draft and strong routing. A strong-profile result is not escalated again, preventing a review loop. Only the finalized spec becomes an approvable version. Initial questions without a spec do not trigger this extra review. Corrections escalate subsequent roles for the remaining cycle; timeout/cancellation or transport errors alone do not increase the correction counter. The existing correction limit still applies. Human guidance resets that counter as before.
 
 Complexity considers scope, algorithms, architecture and concurrency. Risk considers authentication/authorization, secrets, payments, destructive migrations and security boundaries. Unknown scope should prompt clarification or a conservative assessment. This semantic classification remains an AI judgment, visible for human correction; the router itself is deterministic. It does not independently prove the assessment correct.
 

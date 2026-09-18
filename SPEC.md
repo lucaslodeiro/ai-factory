@@ -106,7 +106,7 @@ Provide reproducible Node 22+ installation, explicit repo/data directories, prov
 
 ### F15 — Task-aware model selection
 
-Use the balanced-v1 policy in `docs/MODEL_POLICY.md`: Product/Architect reports complexity, risk and rationale with each new spec; the human approves that assessment with the exact spec version. The orchestrator selects a configured model by role, approved assessment and correction context. QA/Reviewer retain a balanced floor, high-risk/complex work and correction cycles select strong, and only low-risk/simple Developer work selects fast. Every provider call receives an explicit model and records its selection. No silent provider/model fallback. Model mappings remain operator-configurable.
+Use the balanced-v2 policy in `docs/MODEL_POLICY.md`: Product/Architect reports complexity, risk and rationale with each new spec; the human approves that assessment with the exact spec version. The orchestrator selects a configured model by role, approved assessment and correction context. QA/Reviewer retain a balanced floor, high-risk/complex work and correction cycles select strong, and only low-risk/simple Developer work selects fast. A high-complexity or high-risk draft produced below the strong profile receives a fresh strong-profile Architect review before a version is published for approval; questions and retries preserve that review requirement. Every provider call receives an explicit model and records its selection. No silent provider/model fallback. Model mappings remain operator-configurable.
 
 ## Requirements traceability
 

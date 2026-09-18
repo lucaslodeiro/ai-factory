@@ -4,7 +4,7 @@
 
 `npm run build` and `npm test` pass on macOS with Node 26.4.0. A Node 22/Linux GitHub Actions template is provided in `docs/ci.example.yml`. It is not activated: the current GitHub OAuth credential lacks the workflow scope, and GitHub rejected a push containing `.github/workflows/ci.yml`. Copy the template there using a credential permitted to manage workflows when ready.
 
-35 tests cover:
+38 tests cover:
 
 - Full foreground daemon with real SQLite, separate CLI control processes, real Git worktrees and a local bare remote. Deterministic provider executables consume the actual adapter arguments and stdin; a GitHub executable fixture supplies issues/comments and records the PR. The test approves a version, starts Developer, checks status without recovery side effects, cancels, retries, runs QA/Reviewer, publishes a branch and verifies READY_TO_MERGE, then stops the daemon.
 - Native Claude/Codex output envelopes and schema validation.
@@ -22,6 +22,8 @@
 - Transient GitHub comment-read failures preserve WAITING_HUMAN and its approval cursor; polling recovers without a manual retry or another agent invocation.
 
 - Task-aware model profiles, QA/Reviewer floors, high-risk and correction escalation, immutable approved assessments, explicit CLI model arguments, provider mismatch rejection and run-linked selection audit.
+
+- High-complexity/high-risk drafts receive a strong-profile Architect review before an approvable version exists; failed reviews and clarification loops retain the draft/profile, and premature approvals are ignored. This second-review behavior is tested with deterministic providers, not live Claude.
 
 ## Live checks
 

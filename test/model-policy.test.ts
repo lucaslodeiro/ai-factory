@@ -29,7 +29,7 @@ test("policy uses configured model IDs, records its reason and refuses a missing
   config.models.codex.fast = "custom-fast-model";
   const choice = selectModel("developer", assessment("low", "low"));
   assert.equal(choice.model, "custom-fast-model"); assert.equal(choice.provider, "codex");
-  assert.equal(choice.policy, "balanced-v1"); assert.match(choice.reason, /low-risk/);
+  assert.equal(choice.policy, "balanced-v2"); assert.match(choice.reason, /low-risk/);
   config.models.codex.fast = "";
   assert.throws(() => selectModel("developer", assessment("low", "low")), /Missing/);
  } finally { config.models.codex.fast = saved; }

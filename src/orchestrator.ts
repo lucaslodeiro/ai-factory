@@ -88,7 +88,18 @@ export class Orchestrator {
   this.store.event("agent.result", { role, result, specVersion: w.context.version }, w.id);
   w.context.pendingStage = undefined;
   if (role === "product-architect") {
+   if (w.context.architectDraft && result.outcome === "resolved") throw new Error("Architect draft review requires a specification or questions");
    if (result.outcome === "resolved") { this.resolveTactical(w, result); return; }
+   if (result.outcome === "spec" && selection.profile !== "strong" &&
+       (result.taskAssessment!.complexity === "high" || result.taskAssessment!.risk === "high")) {
+    this.store.db.transaction(() => {
+     w.context.architectDraft = result;
+     w.context.approvedVersion = undefined; w.context.approval = undefined; w.context.consultation = undefined;
+     this.store.save(w);
+     this.store.event("spec.review_required", { assessment: result.taskAssessment, previousSelection: selection }, w.id);
+     this.store.post(w.issue_number, "Product/Architect detected high complexity or risk. The draft will receive a strong-profile architectural review before a specification is published for approval.");
+    })(); return;
+   }
    // Ignore commands posted before this new specification exists.
    w.context.cursor = Math.max(w.context.cursor, ...this.github.comments(w.issue_number).map(c => c.id));
    this.store.db.transaction(() => {
@@ -97,6 +108,7 @@ export class Orchestrator {
      w.context.waiting = "questions";
      this.store.post(w.issue_number, `Product/Architect needs input:\n${result.questions.join("\n")}\n\nReply with /factory answer <your answer>.`);
     } else {
+     w.context.architectDraft = undefined;
      w.context.taskAssessment = result.taskAssessment!;
      w.context.spec = result.spec; w.context.criteria = result.acceptanceCriteria; w.context.decisions = result.decisions;
      w.context.version++; w.context.waiting = "approval";
