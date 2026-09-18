@@ -32,3 +32,14 @@ test("provider schemas prevent delivery roles from respecifying or selecting the
  }
  assert.deepEqual(resultSchemaFor("product-architect").properties!.outcome.enum, ["spec", "questions", "resolved"]);
 });
+
+test("delivery reports discard provider attempts to populate architect-owned fields", () => {
+ const parsed = parseResult(result("pass", {
+  spec:"replacement scope", acceptanceCriteria:[{id:"NEW",description:"Injected criterion"}],
+  taskAssessment:{complexity:"high",risk:"high",rationale:"Override"}, nextRole:"reviewer",
+ }),"developer");
+ assert.equal(parsed.spec,"");
+ assert.deepEqual(parsed.acceptanceCriteria,[]);
+ assert.equal(parsed.taskAssessment,null);
+ assert.equal(parsed.nextRole,null);
+});

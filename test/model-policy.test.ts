@@ -36,7 +36,7 @@ test("policy uses configured model IDs, records its reason and refuses a missing
 });
 test("only new specs can set an assessment and every assessment needs valid levels and rationale", () => {
  assert.throws(() => parseResult(result("spec", { taskAssessment: null }), "product-architect"), /requires a taskAssessment/);
- assert.throws(() => parseResult(result("pass", { taskAssessment: assessment("low", "low") }), "developer"), /Only a new specification/);
+ assert.equal(parseResult(result("pass", { taskAssessment: assessment("low", "low") }), "developer").taskAssessment, null);
  assert.throws(() => parseResult(result("spec", { taskAssessment: { ...assessment("low", "low"), rationale: "" } }), "product-architect"), /rationale/);
  assert.throws(() => parseResult(result("spec", { taskAssessment: { ...assessment("low", "low"), risk: "unknown" as any } }), "product-architect"), /risk/);
 });

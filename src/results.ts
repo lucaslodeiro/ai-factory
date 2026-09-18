@@ -51,9 +51,16 @@ function unique(ids: string[], label: string) {
   if (new Set(ids).size !== ids.length) throw new Error(`Duplicate ${label}`);
 }
 export function parseResult(raw: unknown, role: AgentRole): AgentResult {
-  validate(raw, resultSchema);
-  const r = raw as AgentResult;
-  if (JSON.stringify(r).length > 80000) throw new Error("Agent result exceeds publication limits");
+  const serialized = JSON.stringify(raw);
+  if (serialized && serialized.length > 80000) throw new Error("Agent result exceeds publication limits");
+  // Provider structured-output implementations do not all enforce enum/maxItems
+  // constraints consistently. Delivery roles never own these fields, so force
+  // their inert values rather than letting a report attempt rewrite approved scope.
+  const candidate = role !== "product-architect" && raw !== null && typeof raw === "object" && !Array.isArray(raw)
+    ? { ...(raw as Record<string, unknown>), spec:"", acceptanceCriteria:[], taskAssessment:null, nextRole:null }
+    : raw;
+  validate(candidate, resultSchema);
+  const r = candidate as AgentResult;
   unique(r.acceptanceCriteria.map(c => c.id), "acceptance criterion");
   unique(r.coverage.map(c => c.criterionId), "coverage criterion");
   unique(r.reviewChecks.map(c => c.dimension), "review dimension");
