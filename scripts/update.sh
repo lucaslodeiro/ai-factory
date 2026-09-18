@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"
 configure_args=()
 if [[ ${1:-} == --help ]]; then
   echo 'Usage: bash scripts/update.sh [--defaults] (updates current branch, then configures; stop factory first)'
@@ -14,3 +15,4 @@ cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 node -e 'if(Number(process.versions.node.split(".")[0]) < 22) { console.error("Node 22+ is required"); process.exit(1); }'
 node scripts/update.mjs
 bash scripts/configure.sh "${configure_args[@]}"
+if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then bash scripts/services.sh install all; fi

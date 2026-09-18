@@ -57,12 +57,13 @@ npm ci
 npm run build
 npm test
 printf '\nConfiguration\n'
-printf 'The next wizard saves factory settings. Target repository, local clone and approvers may be left blank and completed later.\n'
+printf 'The next wizard saves factory settings and can prepare a private demo target after confirmation.\n'
 if "$configure_defaults"; then
   bash scripts/configure.sh --defaults
 else
   bash scripts/configure.sh
 fi
+if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then bash scripts/services.sh install all; fi
 
 if node --input-type=module -e "import fs from 'node:fs'; import {parse} from 'dotenv'; const v=parse(fs.readFileSync('.env')); process.exit(['GITHUB_REPOSITORY','FACTORY_REPO_DIR','FACTORY_APPROVERS'].every(k=>v[k]) ? 0 : 1)"; then
   configuration_status='complete'
@@ -76,6 +77,7 @@ printf '============================================================\n'
 printf 'Engine:        %s\n' "$PWD"
 printf 'Configuration: %s\n' "$configuration_status"
 printf 'Daemon:        not started\n'
+printf 'Services:      daemon and dashboard definitions installed\n'
 if [[ ${AI_FACTORY_INSTALL_MODE:-} == no-brew ]]; then
   printf 'Toolchain:     %s (no Homebrew)\n' "$HOME/.local"
   cat <<'PATH_NEXT'
@@ -90,12 +92,10 @@ fi
 cat <<'NEXT'
 
 First-run checklist:
-  1. Authenticate: gh auth login && gh auth setup-git
+  1. Run `npm run configure` if GitHub or target-project setup was left for later.
   2. Authenticate providers: codex login && claude auth login
-  3. Clone the application repository that the factory will modify.
-  4. Run `npm run configure` if target-project setup was left for later.
-  5. Validate with `npm run factory -- doctor`.
-  6. Start in the foreground with `npm run factory -- start`.
+  3. Validate with `npm run factory -- doctor`.
+  4. Start services with `npm run service -- start daemon` and `npm run service -- start dashboard`.
 
 The installer never starts agents automatically. See INSTALL.md for examples.
 NEXT

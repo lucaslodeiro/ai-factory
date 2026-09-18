@@ -10,7 +10,7 @@ const temp=fs.mkdtempSync(path.join(os.tmpdir(),'factory-script-test-'));
 const remote=path.join(temp,'remote.git'), seed=path.join(temp,'seed'), dest=path.join(temp,'installed factory'), bin=path.join(temp,'bin');
 fs.mkdirSync(bin);
 fs.writeFileSync(path.join(bin,'npm'),`#!/bin/sh\nif [ \"$1\" = ci ]; then ln -s '${path.join(source,'node_modules').replaceAll("'","'\\''")}' node_modules; fi\nexit 0\n`,{mode:0o755});
-const env={...process.env,PATH:`${bin}:${process.env.PATH}`};
+const env={...process.env,PATH:`${bin}:${process.env.PATH}`,AI_FACTORY_SKIP_SERVICES:'1'};
 for(const k of Object.keys(env)) if(/^(FACTORY_|GITHUB_|CODEX_COMMAND|CLAUDE_COMMAND|GIT_COMMAND)/.test(k)) delete env[k];
 function run(command,args,cwd=temp,ok=true){const r=spawnSync(command,args,{cwd,env,encoding:'utf8'}); if(ok)assert.equal(r.status,0,r.stderr+r.stdout);else assert.notEqual(r.status,0);return r;}
 try {

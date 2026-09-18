@@ -8,6 +8,7 @@ import { doctor } from "./doctor.js";
 import { Store } from "./storage.js";
 import { SlackAdapter } from "./adapters/slack.js";
 import { startDaemon, acquireLock } from "./daemon.js";
+import { startDashboard } from "./dashboard.js";
 const p = new Command().name("factory").description("Local AI Software Factory").version("0.1.0");
 p.command("models").argument("[id]").description("Show model policy or preview role selections for a work item").action(id => {
  console.log(`Model policy: ${modelPolicyVersion}`);
@@ -41,4 +42,11 @@ p.command("slack-test").description("Send one explicit test notification to the 
  await new SlackAdapter().notify("AI Factory: Slack test notification. Workflow decisions remain in GitHub."); console.log("Slack test delivered.");
 });
 p.command("start").action(async () => { const s = new Store(); try { await startDaemon(s); } finally { s.db.close(); } });
+p.command("dashboard").description("Start the local administration dashboard").action(async () => {
+ const s = new Store();
+ try {
+  const server = await startDashboard(s);
+  await new Promise<void>((resolve, reject) => { server.once("close",resolve); server.once("error",reject); });
+ } finally { s.db.close(); }
+});
 try { await p.parseAsync(); } catch (e) { console.error(String(e)); process.exitCode = 1; }

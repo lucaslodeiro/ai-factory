@@ -6,6 +6,8 @@
   "scripts": {
     "build": "tsc && node scripts/copy-assets.mjs",
     "configure": "bash scripts/configure.sh",
+    "dashboard": "tsx src/cli.ts dashboard",
+    "service": "bash scripts/services.sh",
     "dev": "tsx src/cli.ts",
     "factory": "tsx src/cli.ts",
     "test": "node --import tsx --test test/*.test.ts"
