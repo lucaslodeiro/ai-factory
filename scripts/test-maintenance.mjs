@@ -20,7 +20,10 @@ fs.mkdirSync(path.join(seed,'scripts'));
 for(const f of ['install.sh','update.sh','update.mjs','configure.sh','configure.mjs']) fs.copyFileSync(path.join(source,'scripts',f),path.join(seed,'scripts',f));
 for(const f of ['.gitignore','.env.example','package.json']) fs.copyFileSync(path.join(source,f),path.join(seed,f));
 run('git',['add','.'],seed);run('git',['commit','-m','initial'],seed);run('git',['push','origin','HEAD:main'],seed);
-run('bash',[path.join(source,'scripts/install.sh'),'--skip-tools','--defaults','--repo',remote,'--dir',dest]);
+const installation = run('bash',[path.join(source,'scripts/install.sh'),'--skip-tools','--defaults','--repo',remote,'--dir',dest]);
+assert.match(installation.stdout,/installation completed successfully/);
+assert.match(installation.stdout,/saved for later/);
+assert.doesNotMatch(installation.stdout,/Setup incomplete/);
 assert.match(fs.readFileSync(path.join(dest,'.env'),'utf8'),/^GITHUB_REPOSITORY=''$/m);
 run('bash',[path.join(source,'scripts/install.sh'),'--skip-tools','--defaults','--repo',remote,'--dir',dest],temp,false);
 

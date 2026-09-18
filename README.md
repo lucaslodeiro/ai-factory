@@ -47,6 +47,8 @@ bash /tmp/ai-factory-install-no-brew.sh --dir "$HOME/ai-factory"
 
 The installer prepares the engine and opens the configuration wizard. It does not authenticate accounts, clone the target application or start the daemon. In an existing source checkout:
 
+Its final summary clearly distinguishes a successful engine installation from optional target-project setup. If required project fields are left blank, it reports **saved for later** and gives a numbered first-run checklist instead of treating that choice as an installation error.
+
 ```sh
 npm ci
 npm run build

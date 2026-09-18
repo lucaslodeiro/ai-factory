@@ -11,6 +11,8 @@ bash /tmp/ai-factory-install.sh --dir "$HOME/ai-factory"
 
 The installer defaults to the stable `main` branch. The repository has only two long-lived branches: `develop` for ongoing work and `main` for stable releases. Pass `--branch develop` only when intentionally testing unreleased factory changes. The installer installs missing tools, clones the engine, installs locked npm dependencies, builds, tests and opens the interactive configurator to create a private `.env`. Enter accepts each displayed default. Use `--defaults` to write installation defaults without prompting (target settings remain blank). It does not authenticate accounts or start agents. Existing destinations are rejected. `--skip-tools` skips machine tool installation; Node 22+, npm and Git must already work. Automatic tool installation is macOS-only. Provider installers: [Codex](https://developers.openai.com/codex/cli), [Claude](https://code.claude.com/docs/en/setup).
 
+The final screen separates installation, configuration and daemon status, followed by a numbered first-run checklist. Leaving the target repository, clone or approvers blank is supported: the engine is installed successfully and configuration is marked **saved for later**. Run `npm run configure` after choosing and cloning the target project. This status is informational, not an installation failure.
+
 Installer options:
 
 | Option | Default | Purpose |

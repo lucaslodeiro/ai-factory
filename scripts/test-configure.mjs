@@ -21,7 +21,9 @@ try {
     assert.equal(result.status === 0,success,result.stdout + result.stderr);
     return result;
   }
-  run(['--defaults']);
+  const initial = run(['--defaults']);
+  assert.match(initial.stdout,/not an installation error/);
+  assert.doesNotMatch(initial.stdout,/Setup incomplete/);
   assert.equal(parse(fs.readFileSync(file)).FACTORY_POLL_INTERVAL_MS,'15000');
   assert.equal(parse(fs.readFileSync(file)).GITHUB_REPOSITORY,'');
   fs.writeFileSync(file,"GITHUB_REPOSITORY=example/existing\nFACTORY_APPROVERS=alice\nFACTORY_DATA_DIR=.factory\nSLACK_WEBHOOK_URL=https://hooks.example.com/private-secret\nCUSTOM_VALUE='keep # $HOME'\n");

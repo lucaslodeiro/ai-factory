@@ -103,9 +103,16 @@ export async function configure(root, useDefaults = false) {
     assertStopped(root, oldValues);
     assertStopped(root, values);
     saveConfig(root,template,values,original);
-    console.log('Configuration saved to .env. No daemon started.');
-    if (['GITHUB_REPOSITORY','FACTORY_REPO_DIR','FACTORY_APPROVERS'].some(key => !values[key])) console.log('Setup incomplete: configure repository, local clone and approvers before starting.');
-    console.log('Next: npm run factory -- doctor');
+    const missing = ['GITHUB_REPOSITORY','FACTORY_REPO_DIR','FACTORY_APPROVERS'].filter(key => !values[key]);
+    console.log('\nConfiguration saved safely to .env. No daemon was started.');
+    if (missing.length) {
+      console.log('The factory engine is installed. Target-project setup was left for later; this is not an installation error.');
+      console.log(`Still required before the first start: ${missing.join(', ')}`);
+      console.log('After cloning the target project, run: npm run configure');
+    } else {
+      console.log('Target-project configuration is complete.');
+      console.log('Next validation: npm run factory -- doctor');
+    }
   } finally { rl?.close(); }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

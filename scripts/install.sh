@@ -56,22 +56,46 @@ cd "$dest"
 npm ci
 npm run build
 npm test
+printf '\nConfiguration\n'
+printf 'The next wizard saves factory settings. Target repository, local clone and approvers may be left blank and completed later.\n'
 if "$configure_defaults"; then
   bash scripts/configure.sh --defaults
 else
   bash scripts/configure.sh
 fi
-printf '\nFactory installed in %s\n' "$PWD"
-printf 'For this toolchain, add these directories to PATH: %s:%s:%s\n' "$(dirname "$(command -v node)")" "$(dirname "$(command -v git)")" "$HOME/.local/bin"
+
+if node --input-type=module -e "import fs from 'node:fs'; import {parse} from 'dotenv'; const v=parse(fs.readFileSync('.env')); process.exit(['GITHUB_REPOSITORY','FACTORY_REPO_DIR','FACTORY_APPROVERS'].every(k=>v[k]) ? 0 : 1)"; then
+  configuration_status='complete'
+else
+  configuration_status='saved for later'
+fi
+
+printf '\n============================================================\n'
+printf 'AI Factory installation completed successfully\n'
+printf '============================================================\n'
+printf 'Engine:        %s\n' "$PWD"
+printf 'Configuration: %s\n' "$configuration_status"
+printf 'Daemon:        not started\n'
+if [[ ${AI_FACTORY_INSTALL_MODE:-} == no-brew ]]; then
+  printf 'Toolchain:     %s (no Homebrew)\n' "$HOME/.local"
+  cat <<'PATH_NEXT'
+
+Persist the tool path once before opening a new terminal:
+  grep -qxF 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.zprofile" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zprofile"
+  source "$HOME/.zprofile"
+PATH_NEXT
+else
+  printf 'Tool paths:    %s and %s\n' "$(dirname "$(command -v node)")" "$(dirname "$(command -v git)")"
+fi
 cat <<'NEXT'
-Next:
-  gh auth login
-  gh auth setup-git
-  codex login
-  claude auth login
-Clone your target application if needed. Reconfigure with bash scripts/configure.sh (see INSTALL.md).
-Then run:
-  npm run factory -- doctor
-  npm run factory -- start
-No daemon has been started.
+
+First-run checklist:
+  1. Authenticate: gh auth login && gh auth setup-git
+  2. Authenticate providers: codex login && claude auth login
+  3. Clone the application repository that the factory will modify.
+  4. Run `npm run configure` if target-project setup was left for later.
+  5. Validate with `npm run factory -- doctor`.
+  6. Start in the foreground with `npm run factory -- start`.
+
+The installer never starts agents automatically. See INSTALL.md for examples.
 NEXT

@@ -138,7 +138,4 @@ claude --version
 
 curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install.sh \
   -o "$temporary_dir/ai-factory-install.sh"
-bash "$temporary_dir/ai-factory-install.sh" --skip-tools "$@"
-
-printf '\nThe no-Homebrew toolchain lives under %s.\n' "$HOME/.local"
-printf 'Add this line to your shell profile before opening a new terminal:\n  export PATH="$HOME/.local/bin:$PATH"\n'
+AI_FACTORY_INSTALL_MODE=no-brew bash "$temporary_dir/ai-factory-install.sh" --skip-tools "$@"
