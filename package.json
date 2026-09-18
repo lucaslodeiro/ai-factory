@@ -1,1 +1,27 @@
-{"name":"ai-factory","version":"0.1.0","private":true,"type":"module","scripts":{"build":"tsc","dev":"tsx src/cli.ts","factory":"tsx src/cli.ts","test":"node --import tsx --test test/**/*.test.ts"},"engines":{"node":">=20"},"dependencies":{"better-sqlite3":"^12.2.0","commander":"^14.0.0","dotenv":"^17.2.2","pino":"^9.9.0"},"devDependencies":{"@types/better-sqlite3":"^7.6.13","@types/node":"^24.3.0","tsx":"^4.20.5","typescript":"^5.9.2"}}
+{
+  "name": "ai-factory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc && node scripts/copy-assets.mjs",
+    "dev": "tsx src/cli.ts",
+    "factory": "tsx src/cli.ts",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "commander": "^14.0.0",
+    "dotenv": "^17.2.2",
+    "pino": "^9.9.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

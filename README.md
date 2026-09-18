@@ -25,3 +25,21 @@ The human remains the authority for major product/architecture decisions and any
 - Agents may use the Internet. Secrets are exposed only when explicitly configured.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) and [INSTALL.md](INSTALL.md).
+
+## Run the MVP
+
+```sh
+npm ci
+npm run build
+npm test
+cp .env.example .env
+# Configure target repository and approvers, then:
+npm run factory -- doctor
+npm run factory -- start
+```
+
+Queue an issue with `factory:queued`. Answer `/factory answer <text>` and approve the posted version with `/factory approve vN`. The daemon runs independent role processes, routes findings, and creates a pull request after passing QA and review. Human merge remains required.
+
+Available commands: `doctor`, `start`, `status [id]`, `events [id]`, `cancel <item-or-run-id>`, `retry <item-id>`, `stop`.
+
+See [installation and operations](INSTALL.md), [GitHub setup](docs/GITHUB_SETUP.md), and [validation evidence and remaining live check](docs/VALIDATION.md).

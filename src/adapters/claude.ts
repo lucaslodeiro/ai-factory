@@ -1,1 +1,14 @@
-import {config} from "../config.js";import {ExecutionManager} from "../execution-manager.js";import type {AgentAdapter,AgentRunRequest} from "./agent.js";export class ClaudeAdapter implements AgentAdapter{constructor(private executions:ExecutionManager){}run(r:AgentRunRequest){return this.executions.run(r.workItemId,r.role,config.claudeCommand,["-p",r.instructions],r.cwd)}}
+import { config } from "../config.js";
+import { ExecutionManager } from "../execution-manager.js";
+import { resultSchema, parseResult } from "../results.js";
+import type { AgentAdapter, AgentRunRequest } from "./agent.js";
+export class ClaudeAdapter implements AgentAdapter {
+ constructor(private executions: ExecutionManager) {}
+ async run(r: AgentRunRequest) {
+  const { stdout } = await this.executions.run(r.workItemId, r.role, config.claudeCommand,
+   ["-p", "--no-session-persistence", "--output-format", "json", "--json-schema", JSON.stringify(resultSchema), "--tools", "Read,Glob,Grep,WebSearch,WebFetch", "--allowedTools", "Read,Glob,Grep,WebSearch,WebFetch"], r.cwd, r.instructions);
+  const envelope = JSON.parse(stdout);
+  if (envelope.is_error) throw new Error("Claude returned an error result");
+  return parseResult(envelope.structured_output ?? JSON.parse(envelope.result), r.role);
+ }
+}

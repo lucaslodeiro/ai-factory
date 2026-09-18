@@ -1,1 +1,25 @@
-import {spawnSync} from "node:child_process";import {config} from "./config.js";export function doctor(){const checks:[[string,string[]]]|any=[["git",["--version"]],["gh",["--version"]],[config.codexCommand,["--version"]],[config.claudeCommand,["--version"]]];let ok=true;for(const [cmd,args] of checks){const r=spawnSync(cmd,args,{encoding:"utf8"});const pass=r.status===0;ok=ok&&pass;console.log((pass?"✓ ":"✗ ")+cmd+(pass?" — "+(r.stdout||r.stderr).trim().split("\n")[0]:" — not available"))}console.log((config.repo?"✓ ":"! ")+"GITHUB_REPOSITORY"+(config.repo?" — "+config.repo:" — not configured"));console.log((config.slackWebhook?"✓ ":"! ")+"Slack notifications"+(config.slackWebhook?" — configured":" — optional/not configured"));return ok}
+import { spawnSync } from "node:child_process";
+import { config } from "./config.js";
+import { Store } from "./storage.js";
+export function doctor() {
+ let ok = true;
+ const check = (name: string, pass: boolean) => { ok = ok && pass; console.log(`${pass ? "✓" : "✗"} ${name}`); };
+ check("Node >= 22", Number(process.versions.node.split(".")[0]) >= 22);
+ for (const [cmd, args] of [[config.gitCommand, ["--version"]], ["gh", ["auth", "status"]], [config.codexCommand, ["--version"]], [config.claudeCommand, ["--version"]]] as [string, string[]][]) {
+  check(cmd, spawnSync(cmd, args, { encoding: "utf8", timeout: 15000 }).status === 0);
+ }
+ check("Codex authentication", spawnSync(config.codexCommand, ["login", "status"], { encoding: "utf8", timeout: 15000 }).status === 0);
+ const auth = spawnSync(config.claudeCommand, ["auth", "status"], { encoding: "utf8", timeout: 15000 });
+ try { check("Claude authentication", auth.status === 0 && JSON.parse(auth.stdout).loggedIn === true); } catch { check("Claude authentication", false); }
+ check("GITHUB_REPOSITORY", /^[^/]+\/[^/]+$/.test(config.repo));
+ check("FACTORY_APPROVERS", config.approvers.length > 0);
+ for (const key of ["user.name", "user.email"]) {
+  const identity = spawnSync(config.gitCommand, ["config", key], { cwd: config.repoDir, encoding: "utf8" });
+  check(`Git ${key}`, identity.status === 0 && Boolean(identity.stdout.trim()));
+ }
+ const remote = spawnSync(config.gitCommand, ["remote", "get-url", "origin"], { cwd: config.repoDir, encoding: "utf8" });
+ check("Target checkout origin matches repository", Boolean(config.repo) && remote.status === 0 && remote.stdout.trim().replace(/\.git$/, "").endsWith(config.repo));
+ try { const s = new Store(); s.db.prepare("SELECT 1").get(); s.db.close(); check("SQLite writable", true); } catch { check("SQLite writable", false); }
+ console.log(`Slack: ${config.slackWebhook ? "configured" : "optional, disabled"}`);
+ return ok;
+}
