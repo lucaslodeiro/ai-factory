@@ -76,7 +76,29 @@ function serviceStatus(root: string, service: "daemon" | "dashboard") {
   return { service, loaded:result.status === 0 && output.includes(`${service}: loaded`), running:/state = (running|active)/.test(output), detail:output.trim() };
 }
 type UpdateState = { status: "idle" | "updating" | "completed" | "failed"; phase?: string; pid?: number; startedAt?: string; finishedAt?: string };
+type VersionInfo = { number: string; revision: string; branch: string; display: string };
 const updateStateFile = (root: string) => path.join(root,".factory","update-state.json");
+function git(root: string, args: string[], timeout = 10000) {
+  const result = spawnSync(config.gitCommand,args,{cwd:root,encoding:"utf8",timeout});
+  if (result.status !== 0) throw new Error((result.stderr || result.stdout || `git ${args.join(" ")} failed`).trim());
+  return result.stdout.trim();
+}
+function versionInfo(root: string): VersionInfo {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8")) as { version?: string };
+  const revision = git(root,["rev-parse","--short","HEAD"]);
+  const branch = git(root,["symbolic-ref","--quiet","--short","HEAD"]);
+  const number = manifest.version ?? "0.0.0";
+  return { number,revision,branch,display:`v${number} · ${revision}` };
+}
+function checkUpdate(root: string) {
+  const current = versionInfo(root);
+  const currentFull = git(root,["rev-parse","HEAD"]);
+  git(root,["fetch","origin",`refs/heads/${current.branch}`],30000);
+  const latestFull = git(root,["rev-parse","FETCH_HEAD"]);
+  const latest = git(root,["rev-parse","--short","FETCH_HEAD"]);
+  if (latestFull !== currentFull) git(root,["merge-base","--is-ancestor",currentFull,latestFull]);
+  return { current,latest,available:latestFull !== currentFull,checkedAt:new Date().toISOString() };
+}
 function writeUpdateState(root: string, state: UpdateState) {
   const file = updateStateFile(root);
   fs.mkdirSync(path.dirname(file),{recursive:true});
@@ -128,6 +150,7 @@ function runUpdate(root: string) {
 }
 
 export function createDashboardServer(store: Store, settingsRoot = process.cwd()) {
+  const runtimeVersion = versionInfo(settingsRoot);
   return http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
@@ -142,7 +165,8 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/settings") return json(res,200,{...readDashboardSettings(settingsRoot),daemonRunning:daemonState(store).running});
-      if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,{services:[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")],update:updateState(settingsRoot)});
+      if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,{services:[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")],update:updateState(settingsRoot),version:runtimeVersion});
+      if (req.method === "POST" && url.pathname === "/api/update/check") return json(res,200,checkUpdate(settingsRoot));
       if (req.method === "GET" && url.pathname === "/healthz") return json(res,200,{ok:true});
       if (req.method === "PUT" && url.pathname === "/api/settings") {
         if (daemonState(store).running) return json(res,409,{error:"Stop the daemon before changing configuration"});
@@ -163,7 +187,11 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         if (!['daemon','dashboard'].includes(body.service ?? "") || !['start','stop','restart'].includes(body.action ?? "")) return json(res,400,{error:"Unknown service action"});
         return json(res,202,runService(settingsRoot,body.service as "daemon" | "dashboard",body.action as "start" | "stop" | "restart"));
       }
-      if (req.method === "POST" && url.pathname === "/api/update") return json(res,202,runUpdate(settingsRoot));
+      if (req.method === "POST" && url.pathname === "/api/update") {
+        const check = checkUpdate(settingsRoot);
+        if (!check.available) return json(res,409,{error:`${check.current.display} is already up to date`,check});
+        return json(res,202,{...runUpdate(settingsRoot),check});
+      }
       if (req.method !== "GET") return json(res,405,{error:"Method not allowed"});
       const files: Record<string,string> = { "/":"index.html", "/index.html":"index.html", "/app.js":"app.js", "/styles.css":"styles.css" };
       return files[url.pathname] ? asset(res,files[url.pathname]) : json(res,404,{error:"Not found"});

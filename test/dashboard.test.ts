@@ -6,10 +6,27 @@ import os from "node:os";
 import path from "node:path";
 import { Store } from "../src/storage.js";
 import { startDashboard } from "../src/dashboard.js";
+import { config } from "../src/config.js";
 
 test("dashboard serves readable state and queues daemon controls", async () => {
   const store = new Store(":memory:");
   const settingsRoot = fs.mkdtempSync(path.join(os.tmpdir(),"factory-dashboard-settings-"));
+  const previousGit = config.gitCommand;
+  const fakeGit = path.join(settingsRoot,"git");
+  fs.writeFileSync(fakeGit,`#!/usr/bin/env bash
+case "$*" in
+  "rev-parse --short HEAD") echo abc1234;;
+  "symbolic-ref --quiet --short HEAD") echo main;;
+  "rev-parse HEAD") echo abc1234abc1234abc1234abc1234abc1234abc1;;
+  "fetch origin refs/heads/main") ;;
+  "rev-parse FETCH_HEAD") if [[ -f "$PWD/up-to-date" ]]; then echo abc1234abc1234abc1234abc1234abc1234abc1; else echo def5678def5678def5678def5678def5678def5; fi;;
+  "rev-parse --short FETCH_HEAD") if [[ -f "$PWD/up-to-date" ]]; then echo abc1234; else echo def5678; fi;;
+  "merge-base --is-ancestor abc1234abc1234abc1234abc1234abc1234abc1 def5678def5678def5678def5678def5678def5") ;;
+  *) echo "unexpected git args: $*" >&2; exit 1;;
+esac
+`,{mode:0o755});
+  config.gitCommand=fakeGit;
+  fs.writeFileSync(path.join(settingsRoot,"package.json"),JSON.stringify({version:"0.1.0"}));
   fs.copyFileSync(".env.example",path.join(settingsRoot,".env.example"));
   fs.writeFileSync(path.join(settingsRoot,".env"),"FACTORY_POLL_INTERVAL_MS=15000\nSLACK_WEBHOOK_URL='https://hooks.example.com/private'\n");
   fs.mkdirSync(path.join(settingsRoot,"scripts"));
@@ -49,6 +66,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(new TextDecoder().decode(first.value),/"items":\[/);
     await reader.cancel(); controller.abort();
     const services = await fetch(`http://127.0.0.1:${port}/api/services`).then(response => response.json()) as any;
+    assert.deepEqual(services.version,{number:"0.1.0",revision:"abc1234",branch:"main",display:"v0.1.0 · abc1234"});
     assert.deepEqual(services.services.map(({service,loaded,running}: any) => ({service,loaded,running})),[
       {service:"daemon",loaded:true,running:true},
       {service:"dashboard",loaded:false,running:false}
@@ -58,6 +76,8 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8"),/restart daemon/);
     const perServiceUpdate = await fetch(`http://127.0.0.1:${port}/api/services`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({service:"daemon",action:"update"})});
     assert.equal(perServiceUpdate.status,400);
+    const checked = await fetch(`http://127.0.0.1:${port}/api/update/check`,{method:"POST"}).then(response => response.json()) as any;
+    assert.equal(checked.available,true); assert.equal(checked.latest,"def5678");
     const updating = await fetch(`http://127.0.0.1:${port}/api/update`,{method:"POST"});
     assert.equal(updating.status,202);
     const updateResponse = await updating.json() as any;
@@ -66,6 +86,11 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(duringUpdate.update.status,"updating");
     for (let attempt=0; attempt<60 && !fs.existsSync(path.join(settingsRoot,"update-actions.log")); attempt++) await new Promise(resolve => setTimeout(resolve,25));
     assert.match(fs.readFileSync(path.join(settingsRoot,"update-actions.log"),"utf8"),/--defaults --restart-services/);
+    fs.writeFileSync(path.join(settingsRoot,"up-to-date"),"");
+    const currentCheck = await fetch(`http://127.0.0.1:${port}/api/update/check`,{method:"POST"}).then(response => response.json()) as any;
+    assert.equal(currentCheck.available,false);
+    const unnecessaryUpdate = await fetch(`http://127.0.0.1:${port}/api/update`,{method:"POST"});
+    assert.equal(unnecessaryUpdate.status,409);
     const unknownService = await fetch(`http://127.0.0.1:${port}/api/services`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({service:"worker",action:"restart"})});
     assert.equal(unknownService.status,400);
     const settings = await fetch(`http://127.0.0.1:${port}/api/settings`).then(response => response.json()) as any;
@@ -91,6 +116,7 @@ echo "$*" >> "$PWD/update-actions.log"
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));
     store.db.close();
+    config.gitCommand=previousGit;
     fs.rmSync(settingsRoot,{recursive:true,force:true});
   }
 });

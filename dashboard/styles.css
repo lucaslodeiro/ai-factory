@@ -52,6 +52,7 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .actions { display:flex; gap:.4rem }
 .service-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem }
 .service-help { margin:-.35rem 0 1rem; max-width:58rem; font-size:.82rem; line-height:1.45 }
+.version { margin-top:.35rem; color:var(--muted); font:700 .72rem ui-monospace,SFMono-Regular,monospace }
 .update-controls { display:flex; align-items:center; justify-content:flex-end; gap:.75rem }
 .update-controls .state { white-space:nowrap }
 .service-card { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem; background:var(--surface); border:1px solid var(--line); border-radius:10px }
