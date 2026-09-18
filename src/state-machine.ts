@@ -1,7 +1,7 @@
 import type { WorkState } from "./types.js";
 const active: WorkState[] = ["SPEC", "DEVELOPMENT", "QA", "REVIEW"];
 const allowed: Record<WorkState, WorkState[]> = {
- NEW: ["SPEC", "CANCELLED"], SPEC: ["WAITING_HUMAN", "FAILED", "CANCELLED", "PAUSED"],
+ NEW: ["SPEC", "CANCELLED"], SPEC: ["DEVELOPMENT", "QA", "REVIEW", "WAITING_HUMAN", "FAILED", "CANCELLED", "PAUSED"],
  WAITING_HUMAN: ["SPEC", "DEVELOPMENT", "CANCELLED", "FAILED", "PAUSED"],
  DEVELOPMENT: ["QA", "SPEC", "WAITING_HUMAN", "FAILED", "CANCELLED", "PAUSED"],
  QA: ["DEVELOPMENT", "SPEC", "WAITING_HUMAN", "REVIEW", "FAILED", "CANCELLED", "PAUSED"],

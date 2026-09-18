@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+import { result } from "./fixtures.js";
 import { Store } from "../src/storage.js";
 import { git } from "../src/worktrees.js";
 
@@ -39,7 +40,7 @@ if(a[0]==='--version'){console.log('fake-1');process.exit(0)}
 if(a[0]==='login'){process.exit(0)}
 if(a[0]==='auth'){console.log(JSON.stringify({loggedIn:true}));process.exit(0)}
 const input=fs.readFileSync(0,'utf8');const codex=a[0]==='exec';
-let result={outcome:'pass',summary:'Independent validation passed',spec:'',questions:[],findings:[]};
+let result=${JSON.stringify(result("pass"))};
 if(codex){
  if(input.includes('# Developer Contract')){
   const marker=${JSON.stringify(path.join(root, 'first-developer'))};
@@ -51,7 +52,7 @@ if(codex){
  }
  fs.writeFileSync(a[a.indexOf('--output-last-message')+1],JSON.stringify(result));
 } else {
- if(input.includes('# Product / Architect Contract'))result={...result,outcome:'spec',spec:'# SPEC\\nAC1: greet returns Hello plus name'};
+ if(input.includes('# Product / Architect Contract'))result=${JSON.stringify(result("spec"))};
  console.log(JSON.stringify({is_error:false,structured_output:result}));
 }
 `);

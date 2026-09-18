@@ -14,6 +14,7 @@ test("captures output, spawn errors, nonzero exit and timeout", async () => {
  assert.equal((await m.run("w", "developer", process.execPath, ["-e", "console.log('done')"], os.tmpdir())).stdout.trim(), "done");
  await assert.rejects(m.run("w", "qa", "/nonexistent-factory-command", [], os.tmpdir()), /failed/);
  await assert.rejects(m.run("w", "qa", process.execPath, ["-e", "process.exit(4)"], os.tmpdir()), /failed/);
+ assert.equal((s.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE exit_code=4").get() as any).n, 1);
  await assert.rejects(m.run("w", "qa", process.execPath, ["-e", "setInterval(()=>{},100)"], os.tmpdir(), "", 50), /timed_out/);
  assert.equal(s.db.prepare("SELECT COUNT(*) as n FROM executions WHERE status='running'").get() && (s.db.prepare("SELECT COUNT(*) as n FROM executions WHERE status='running'").get() as any).n, 0); s.db.close();
 });

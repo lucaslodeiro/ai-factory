@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { config } from "./config.js";
 import { Store } from "./storage.js";
 import { Orchestrator } from "./orchestrator.js";
-import { ExecutionManager } from "./execution-manager.js";
+import { ExecutionManager, assertRetrySafe } from "./execution-manager.js";
 import { CodexAdapter } from "./adapters/codex.js";
 import { ClaudeAdapter } from "./adapters/claude.js";
 export function acquireLock(store: Store) {
@@ -34,7 +34,7 @@ export function acquireLock(store: Store) {
 export function retry(store: Store, id: string) {
  const w = store.get(id); if (!w) throw new Error("Unknown work item");
  if (!["FAILED", "CANCELLED", "PAUSED"].includes(w.state)) throw new Error("Only failed, cancelled or paused items can retry");
- if (store.db.prepare("SELECT id FROM executions WHERE work_item_id=? AND status='running'").get(id)) throw new Error("Wait for the active process to stop before retry");
+ assertRetrySafe(store, id);
  const to = w.context.resume ?? "SPEC";
  store.transition(w, to); store.event("retry.requested", { to }, id);
 }

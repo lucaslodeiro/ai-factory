@@ -9,7 +9,7 @@ import type { AgentResult, AgentRole, WorkState } from "../src/types.js";
 import type { Comment, GitHubPort } from "../src/adapters/github.js";
 import type { AgentRunRequest } from "../src/adapters/agent.js";
 config.repo = "owner/demo"; config.approvers = ["owner"];
-const result = (outcome: AgentResult["outcome"], more: Partial<AgentResult> = {}): AgentResult => ({ outcome, summary: "Evidence: tests executed", spec: outcome === "spec" ? "# Specification\nAC1: returns 42" : "", questions: [], findings: [], ...more });
+import { result } from "./fixtures.js";
 class GitHub implements GitHubPort {
  replies: Comment[] = []; posted = new Map<string,string>(); states: WorkState[] = []; prs = 0; fail = false;
  listQueued() { return [{ number: 1, title: "Feature", body: "Implement feature", url: "https://example.test/issues/1" }]; }
@@ -26,9 +26,10 @@ function setup(overrides: Partial<Record<AgentRole, AgentResult[]>> = {}) {
   calls.push(req); return overrides[role]?.shift() ?? result(role === "product-architect" ? "spec" : "pass");
  } }])) as any;
  const ws = { ensure: () => "/tmp/fake", head: () => "abc", diff: () => "diff", check() {}, commit() {}, publish() { published++; } };
- const o = new Orchestrator(store, agents, gh, ws, { async notify() {} });
+ const notifications: string[] = [];
+ const o = new Orchestrator(store, agents, gh, ws, { enabled: true, async notify(text) { notifications.push(text); } });
  const item = () => store.items()[0];
- return { store, gh, calls, o, item, published: () => published };
+ return { store, gh, calls, o, item, notifications, published: () => published };
 }
 test("issue -> version approval -> developer -> independent QA -> reviewer -> PR, duplicate polling safe", async () => {
  const f = setup(); await f.o.tick(); assert.equal(f.item().state, "WAITING_HUMAN");
@@ -88,4 +89,51 @@ test("environment allowlist and result contract reject unintended data", () => {
  assert.deepEqual(agentEnvironment({ PATH: "/bin", GITHUB_TOKEN: "secret", SLACK_WEBHOOK_URL: "secret", OPENAI_API_KEY: "allowed", AGENT_SECRET_ALLOWLIST: "OPENAI_API_KEY" }), { PATH: "/bin", OPENAI_API_KEY: "allowed" });
  assert.throws(() => parseResult(result("pass"), "product-architect"));
  assert.throws(() => parseResult(result("spec", { spec: "" }), "product-architect"));
+});
+
+const tactical = (nextRole: AgentResult["nextRole"] = "developer") => result("resolved", {
+ nextRole, decisions: [{ kind: "tactical", decision: "Use the existing parser helper", rationale: "Preserves every approved behavior", conflictsWithHuman: false }],
+});
+test("architect resolves a developer consultation without a new spec or approval", async () => {
+ const f = setup({ developer: [result("decision")], "product-architect": [result("spec"), tactical()] });
+ await f.o.tick(); f.gh.reply("/factory approve v1"); await f.o.tick();
+ const approved = f.item().context.approval; const spec = f.item().context.spec;
+ await f.o.tick(); assert.equal(f.item().state, "SPEC"); await f.o.tick();
+ assert.equal(f.item().state, "DEVELOPMENT"); assert.equal(f.item().context.version, 1);
+ assert.equal(f.item().context.spec, spec); assert.deepEqual(f.item().context.approval, approved);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM specs").get() as any).n, 1);
+ assert.equal(f.item().context.decisions?.[0].kind, "tactical");
+ for (let i=0;i<3;i++) await f.o.tick();
+ assert.equal(f.item().state, "READY_TO_MERGE"); assert.match(f.calls[3].instructions, /existing parser helper/);
+ assert.equal(f.notifications.filter(n => n.includes("WAITING_HUMAN")).length, 1); f.store.db.close();
+});
+test("QA consultation can return to QA without inheriting developer reasoning", async () => {
+ const f = setup({ qa: [result("decision")], "product-architect": [result("spec"), tactical("qa")] });
+ await f.o.tick(); f.gh.reply("/factory approve v1"); await f.o.tick();
+ for (let i=0;i<5;i++) await f.o.tick();
+ assert.equal(f.item().state, "READY_TO_MERGE");
+ assert.deepEqual(f.calls.map(c => c.role), ["product-architect", "developer", "qa", "product-architect", "qa", "reviewer"]);
+ assert.match(f.calls[4].instructions, /existing parser helper/); f.store.db.close();
+});
+test("tactical result cannot skip QA, change spec, override a human, or approve itself initially", async () => {
+ const f = setup({ developer: [result("decision")], "product-architect": [result("spec"), tactical("reviewer")] });
+ await f.o.tick(); f.gh.reply("/factory approve v1"); await f.o.tick(); await f.o.tick(); await f.o.tick();
+ assert.equal(f.item().state, "FAILED"); assert.equal(f.published(), 0); f.store.db.close();
+ assert.throws(() => parseResult({ ...tactical(), spec: "new scope" }, "product-architect"), /Only a new specification/);
+ assert.throws(() => parseResult({ ...tactical(), decisions: [{ kind: "major", decision: "Change auth", rationale: "Different product", conflictsWithHuman: false }] }, "product-architect"), /human decision/);
+ assert.throws(() => parseResult({ ...tactical(), decisions: [{ kind: "tactical", decision: "Ignore human", rationale: "Preference", conflictsWithHuman: true }] }, "product-architect"), /human decision/);
+ const g = setup({ "product-architect": [tactical()] }); await g.o.tick(); assert.equal(g.item().state, "FAILED"); g.store.db.close();
+});
+test("incomplete or unknown coverage prevents downstream roles and publication", async () => {
+ for (const coverage of [[], [{ criterionId: "UNKNOWN", status: "passed" as const, evidence: "not in approved spec" }]]) {
+  const f = setup({ developer: [result("pass", { coverage })] });
+  await f.o.tick(); f.gh.reply("/factory approve v1"); await f.o.tick(); await f.o.tick();
+  assert.equal(f.item().state, "FAILED"); assert.equal(f.published(), 0); assert.equal(f.calls.length, 2); f.store.db.close();
+ }
+});
+test("Slack human-action notification remains deliverable during a GitHub outage", async () => {
+ const f = setup(); f.gh.fail = true; await f.o.tick();
+ assert.equal(f.gh.posted.size, 0);
+ assert.ok(f.notifications.some(n => n.includes("/factory approve v1") && n.includes("https://example.test/issues/1")));
+ f.store.db.close();
 });

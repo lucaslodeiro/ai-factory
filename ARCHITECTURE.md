@@ -66,3 +66,11 @@ Developer does not escalate directly to the human. Ambiguities go to Product/Arc
 - `decision-required`: Product/Architect evaluates; escalate to human only under the human-authority rules.
 - `defer`: record explicitly and continue when it does not block acceptance.
 - Repeated loops automatically escalate rather than retry forever.
+
+## Implemented tactical and recovery paths
+
+A decision-required result enters Product/Architect with the approved spec and the originating role. `resolved` records a tactical decision and returns to an allowed delivery stage without revising the spec or approval. Major questions/revisions enter WAITING_HUMAN. No route may skip unfinished QA or review.
+
+Each agent process now runs under a per-run supervisor that detects daemon IPC disconnection and terminates its process group. A persisted stage checkpoint prevents a process exit being mistaken for a completed workflow transaction after a crash. Retry waits for interrupted groups to exit and preserves partial work for revalidation.
+
+Slack has a separate durable queue, independent of GitHub delivery, with retry backoff and actionable issue links. See [SPEC.md](SPEC.md) for the acceptance criteria and limitations.

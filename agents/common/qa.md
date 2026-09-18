@@ -22,3 +22,6 @@ Include severity, reproduction/evidence, impacted acceptance criterion, and reco
 
 ## Output
 A report conforming to `templates/QA_REPORT.md`.
+
+## Required evidence
+Use the complete execution-result schema. Report criterion IDs and evidence, executed commands with exit codes, changed files and dependency changes with rationale. Do not return PASS with missing coverage or blocking findings. An empty dependency list means none reported.

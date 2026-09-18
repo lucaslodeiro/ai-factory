@@ -1,6 +1,6 @@
 # AI Software Factory
 
-Local-first multi-agent software factory orchestrated from a developer Mac.
+Locally executed multi-agent software factory orchestrated from a developer Mac.
 
 ## MVP
 
@@ -24,6 +24,8 @@ The human remains the authority for major product/architecture decisions and any
 - Slack is notification-only; decisions happen in GitHub.
 - Agents may use the Internet. Secrets are exposed only when explicitly configured.
 
+The consolidated requirements and traceability matrix are in [SPEC.md](SPEC.md).
+
 See [ARCHITECTURE.md](ARCHITECTURE.md) and [INSTALL.md](INSTALL.md).
 
 ## Run the MVP
@@ -40,6 +42,6 @@ npm run factory -- start
 
 Queue an issue with `factory:queued`. Answer `/factory answer <text>` and approve the posted version with `/factory approve vN`. The daemon runs independent role processes, routes findings, and creates a pull request after passing QA and review. Human merge remains required.
 
-Available commands: `doctor`, `start`, `status [id]`, `events [id]`, `cancel <item-or-run-id>`, `retry <item-id>`, `stop`.
+Available commands: `doctor`, `start`, `status [id]`, `events [id]`, `cancel <item-or-run-id>`, `retry <item-id>`, `stop`, `notifications`, `slack-test`.
 
 See [installation and operations](INSTALL.md), [GitHub setup](docs/GITHUB_SETUP.md), and [validation evidence and remaining live check](docs/VALIDATION.md).

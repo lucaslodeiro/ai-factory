@@ -7,6 +7,7 @@ import { Store } from "../src/storage.js";
 import { ExecutionManager } from "../src/execution-manager.js";
 import { ClaudeAdapter } from "../src/adapters/claude.js";
 import { CodexAdapter } from "../src/adapters/codex.js";
+import { result } from "./fixtures.js";
 import { config } from "../src/config.js";
 const root=fs.mkdtempSync(path.join(os.tmpdir(),"factory-adapters-"));
 config.dataDir=root;
@@ -18,7 +19,7 @@ import fs from 'node:fs';
 const args=process.argv.slice(2), input=fs.readFileSync(0,'utf8');
 if(input!=='prompt from orchestrator') process.exit(8);
 const codex=args[0]==='exec';
-const result={outcome:codex?'pass':'spec',summary:'executed',spec:codex?'':'# Spec',questions:[],findings:[]};
+const result=codex?${JSON.stringify(result("pass"))}:${JSON.stringify(result("spec"))};
 if(codex) {
  if(!args.includes('--output-schema')||args.includes('--full-auto')) process.exit(9);
  fs.writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(result));
