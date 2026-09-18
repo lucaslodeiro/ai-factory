@@ -19,10 +19,6 @@ h2 { font-size:1.25rem }
 h3 { font-size:.8rem; text-transform:uppercase; letter-spacing:.12em; color:var(--muted) }
 .eyebrow { color:var(--accent); font:700 .72rem ui-monospace,SFMono-Regular,monospace; letter-spacing:.16em; margin-bottom:.55rem }
 .muted,small { color:var(--muted) }
-.daemon { display:flex; align-items:center; gap:.8rem; padding:1rem; border:1px solid var(--line); background:var(--surface); border-radius:14px }
-.daemon div { display:grid; min-width:8rem }
-.daemon>span { width:.7rem; height:.7rem; border-radius:50%; background:var(--muted) }
-.daemon>span.on { background:var(--accent); box-shadow:0 0 16px var(--accent) }
 button { border:1px solid var(--line); background:var(--surface); color:var(--text); padding:.55rem .8rem; border-radius:8px; font-weight:700; cursor:pointer }
 button:hover { border-color:var(--muted) }
 button:disabled,fieldset:disabled { opacity:.55 }
@@ -90,7 +86,6 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
   .columns { grid-template-columns:1fr }
   .service-grid { grid-template-columns:1fr }
   .item { grid-template-columns:1fr }
-  .daemon { flex:1 }
   .settings-group { grid-template-columns:1fr }
   .settings-grid { grid-template-columns:1fr }
 }
