@@ -8,7 +8,7 @@
 
 - Full foreground daemon with real SQLite, separate CLI control processes, real Git worktrees and a local bare remote. Deterministic provider executables consume the actual adapter arguments and stdin; a GitHub executable fixture supplies issues/comments and records the PR. The test approves a version, starts Developer, checks status without recovery side effects, cancels, retries, runs QA/Reviewer, publishes a branch and verifies READY_TO_MERGE, then stops the daemon.
 - Native Claude/Codex output envelopes, role-specific generation schemas and local validation. Read-only Reviewer receives attributed QA execution evidence without Developer reasoning or QA summary conclusions.
-- Per-role provider/model routing in `balanced-v3`, including an end-to-end run with every role assigned to the opposite provider from its default (Codex Architect/Reviewer and Claude Developer/QA). Claude delivery roles receive editing tools while provider-independent worktree checks preserve read-only and QA boundaries.
+- Per-role provider/model routing in `balanced-v4`, including auto mode argument omission for both adapters and an end-to-end run with every role assigned to the opposite provider from its default (Codex Architect/Reviewer and Claude Developer/QA). Claude delivery roles receive editing tools while provider-independent worktree checks preserve read-only and QA boundaries.
 - Invalid/stale/unauthorized/bot approvals and question/answer loops.
 - QA auto-fix, decision routing, bounded correction loops and deferred findings.
 - Durable GitHub outbox, idempotent delivery and malformed output failure.

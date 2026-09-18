@@ -11,7 +11,7 @@ A GitHub Issue becomes a work item. The local orchestrator coordinates four inde
 3. **QA**: independently derives tests from the specification, may create/modify test code, and reports findings without modifying production code. Default provider: Codex.
 4. **Reviewer**: reviews specification compliance, code quality, security, performance, and product/UI/copy consistency. Default provider: Claude.
 
-Each role can use Codex or Claude independently. The operator configures its provider and fast, balanced and strong models in **Configuration → Agent roles**; the deterministic policy chooses the profile for each invocation.
+Each role can use Codex or Claude independently. In **Configuration → Agent roles**, the operator can let that provider choose its recommended model automatically or configure fast, balanced and strong models; the deterministic policy still chooses the task profile for each invocation.
 
 The human remains the authority for major product/architecture decisions and any change that contradicts a previously approved human decision.
 
@@ -76,7 +76,7 @@ This repository uses two long-lived branches: `develop` for ongoing work and `ma
 
 See [installation and operations](INSTALL.md), [GitHub setup](docs/GITHUB_SETUP.md), and [validation evidence and operational boundaries](docs/VALIDATION.md).
 
-Model routing balances quality, cost and time using an approved complexity/risk assessment, role floors and correction escalation. Configuration → Agent roles chooses Codex or Claude and the fast, balanced and strong model for Product/Architect, Developer, QA and Reviewer independently. See [model selection policy](docs/MODEL_POLICY.md).
+Model routing balances quality, cost and time using an approved complexity/risk assessment, role floors and correction escalation. Configuration → Agent roles chooses Codex or Claude independently for Product/Architect, Developer, QA and Reviewer. Each role can use **Auto**, which delegates model choice to its provider, or **Manual**, which maps fast, balanced and strong profiles to explicit models. See [model selection policy](docs/MODEL_POLICY.md).
 
 GitHub issues show the workflow through colored state labels and an updatable progress comment. Reports use readable Markdown; full JSON evidence stays in the local audit. The issue remains open until the delivered PR is merged.
 

@@ -15,6 +15,11 @@ function provider(name: string, fallback: "codex" | "claude"): "codex" | "claude
   if (value !== "codex" && value !== "claude") throw new Error(`${name} must be codex or claude`);
   return value as "codex" | "claude";
 }
+function modelMode(name: string): "auto" | "manual" {
+  const value = (process.env[name] ?? "manual").trim();
+  if (value !== "auto" && value !== "manual") throw new Error(`${name} must be auto or manual`);
+  return value;
+}
 function dashboardHost() {
   const value = (process.env.FACTORY_DASHBOARD_HOST ?? "127.0.0.1").trim();
   if (!["127.0.0.1", "localhost", "::1"].includes(value)) throw new Error("FACTORY_DASHBOARD_HOST must be a loopback address");
@@ -31,7 +36,7 @@ const models = {
 };
 function role(prefix: string, fallback: "codex" | "claude") {
   const selected = provider(`${prefix}_PROVIDER`,fallback);
-  return { provider:selected,models:{
+  return { provider:selected,modelMode:modelMode(`${prefix}_MODEL_MODE`),models:{
     fast:model(`${prefix}_MODEL_FAST`,models[selected].fast),
     balanced:model(`${prefix}_MODEL_BALANCED`,models[selected].balanced),
     strong:model(`${prefix}_MODEL_STRONG`,models[selected].strong),

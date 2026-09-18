@@ -30,7 +30,10 @@ test("policy uses each role's configured provider and model IDs", () => {
   config.roles.developer.models.fast = "custom-claude-fast";
   const choice = selectModel("developer", assessment("low", "low"));
   assert.equal(choice.model, "custom-claude-fast"); assert.equal(choice.provider, "claude");
-  assert.equal(choice.policy, "balanced-v3"); assert.match(choice.reason, /low-risk/);
+  assert.equal(choice.policy, "balanced-v4"); assert.match(choice.reason, /low-risk/);
+  config.roles.developer.modelMode = "auto";
+  assert.equal(selectModel("developer", assessment("low", "low")).model, "auto");
+  config.roles.developer.modelMode = "manual";
   config.roles.developer.models.fast = "";
   assert.throws(() => selectModel("developer", assessment("low", "low")), /developer profile fast/);
  } finally { config.roles.developer = saved; }

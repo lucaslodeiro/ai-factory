@@ -3,7 +3,7 @@ import path from "node:path";
 import { parse } from "dotenv";
 
 type Option = { value: string; label: string };
-type Field = { key: string; label: string; description: string; group: string; secret?: boolean; required?: boolean; type?: "number" | "text" | "select"; options?: Option[]; unit?: string; restart?: "daemon" | "dashboard" | "all"; hidden?: boolean; section?: string; role?: string; profile?: "fast" | "balanced" | "strong"; kind?: "provider" | "role-model" };
+type Field = { key: string; label: string; description: string; group: string; secret?: boolean; required?: boolean; type?: "number" | "text" | "select"; options?: Option[]; unit?: string; restart?: "daemon" | "dashboard" | "all"; hidden?: boolean; section?: string; role?: string; profile?: "fast" | "balanced" | "strong"; kind?: "provider" | "model-mode" | "role-model" };
 
 const groups = [
   {id:"credentials",label:"Credentials",description:"Authentication for the services used by the factory."},
@@ -19,7 +19,8 @@ const codexModels = ["gpt-5.6-luna","gpt-5.6-terra","gpt-5.6-sol","gpt-6-astra",
 const claudeModels = ["haiku","sonnet","opus"].map(value => ({value,label:value}));
 const providerOptions = [{value:"codex",label:"Codex"},{value:"claude",label:"Claude"}];
 const roleField = (section: string, role: string, label: string): Omit<Field,"key"> => ({label:"Provider",description:`CLI that executes the ${label} role.`,group:"models",type:"select",options:providerOptions,required:true,restart:"daemon",section,role,kind:"provider"});
-const modelField = (section: string, role: string, profile: "fast" | "balanced" | "strong"): Omit<Field,"key"> => ({label:`${profile[0].toUpperCase()}${profile.slice(1)} model`,description:profile === "fast" ? "Used for eligible low-complexity, low-risk work." : profile === "balanced" ? "Used for standard work and role quality floors." : "Used for high-risk, high-complexity and correction work.",group:"models",type:"select",required:true,restart:"daemon",section,role,profile,kind:"role-model"});
+const modeField = (section: string, role: string): Omit<Field,"key"> => ({label:"Model selection",description:"Auto lets the provider choose its recommended/default model. Manual uses the task profile models below.",group:"models",type:"select",options:[{value:"manual",label:"Manual (task profiles)"},{value:"auto",label:"Auto (provider recommended)"}],required:true,restart:"daemon",section,role,kind:"model-mode"});
+const modelField = (section: string, role: string, profile: "fast" | "balanced" | "strong"): Omit<Field,"key"> => ({label:`${profile[0].toUpperCase()}${profile.slice(1)} model`,description:(profile === "fast" ? "Used for eligible low-complexity, low-risk work." : profile === "balanced" ? "Used for standard work and role quality floors." : "Used for high-risk, high-complexity and correction work.") + " Auto delegates model choice to the provider.",group:"models",type:"select",required:true,restart:"daemon",section,role,profile,kind:"role-model"});
 
 const descriptions: Record<string,Omit<Field,"key">> = {
   FACTORY_DATA_DIR:{label:"Data directory",description:"SQLite database, logs and retained worktrees.",group:"runtime",required:true,restart:"all"},
@@ -44,18 +45,22 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   CLAUDE_MODEL_BALANCED:{label:"Claude · Balanced",description:"Provider fallback.",group:"models",hidden:true},
   CLAUDE_MODEL_STRONG:{label:"Claude · Strong",description:"Provider fallback.",group:"models",hidden:true},
   PRODUCT_ARCHITECT_PROVIDER:roleField("Product / Architect","product-architect","Product / Architect"),
+  PRODUCT_ARCHITECT_MODEL_MODE:modeField("Product / Architect","product-architect"),
   PRODUCT_ARCHITECT_MODEL_FAST:modelField("Product / Architect","product-architect","fast"),
   PRODUCT_ARCHITECT_MODEL_BALANCED:modelField("Product / Architect","product-architect","balanced"),
   PRODUCT_ARCHITECT_MODEL_STRONG:modelField("Product / Architect","product-architect","strong"),
   DEVELOPER_PROVIDER:roleField("Developer","developer","Developer"),
+  DEVELOPER_MODEL_MODE:modeField("Developer","developer"),
   DEVELOPER_MODEL_FAST:modelField("Developer","developer","fast"),
   DEVELOPER_MODEL_BALANCED:modelField("Developer","developer","balanced"),
   DEVELOPER_MODEL_STRONG:modelField("Developer","developer","strong"),
   QA_PROVIDER:roleField("QA","qa","QA"),
+  QA_MODEL_MODE:modeField("QA","qa"),
   QA_MODEL_FAST:modelField("QA","qa","fast"),
   QA_MODEL_BALANCED:modelField("QA","qa","balanced"),
   QA_MODEL_STRONG:modelField("QA","qa","strong"),
   REVIEWER_PROVIDER:roleField("Reviewer","reviewer","Reviewer"),
+  REVIEWER_MODEL_MODE:modeField("Reviewer","reviewer"),
   REVIEWER_MODEL_FAST:modelField("Reviewer","reviewer","fast"),
   REVIEWER_MODEL_BALANCED:modelField("Reviewer","reviewer","balanced"),
   REVIEWER_MODEL_STRONG:modelField("Reviewer","reviewer","strong"),
@@ -78,6 +83,7 @@ function validate(key: string, value: string) {
   if (key === "AGENT_SECRET_ALLOWLIST" && value && !value.split(",").every(item => /^[A-Za-z_][A-Za-z0-9_]*$/.test(item.trim()))) throw new Error(`${key}: use comma-separated environment variable names`);
   if (key.includes("_MODEL_") && !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(value)) throw new Error(`${key}: enter a model identifier`);
   if (key.endsWith("_PROVIDER") && !["codex","claude"].includes(value)) throw new Error(`${key}: choose codex or claude`);
+  if (key.endsWith("_MODEL_MODE") && !["auto","manual"].includes(value)) throw new Error(`${key}: choose auto or manual`);
   if (["FACTORY_DATA_DIR","GITHUB_DEFAULT_BRANCH","CODEX_COMMAND","CLAUDE_COMMAND","GIT_COMMAND","FACTORY_DASHBOARD_HOST","FACTORY_DASHBOARD_PORT"].includes(key) && !value.trim()) throw new Error(`${key}: this value cannot be empty`);
   if (key === "SLACK_WEBHOOK_URL" && value) {
     let url: URL; try { url = new URL(value); } catch { throw new Error(`${key}: enter an HTTPS URL`); }

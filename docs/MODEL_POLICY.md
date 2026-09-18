@@ -1,4 +1,4 @@
-# Model selection: balanced-v3
+# Model selection: balanced-v4
 
 The user selected a balance of quality, cost and time. Product/Architect assesses each issue when proposing its spec. The deterministic orchestrator maps that assessment and role to a configured profile, then reads the provider and model configured for that role. The model never supplies a provider or executable model ID. This is per issue and role invocation; the MVP does not decompose an issue into independently routed subtasks.
 
@@ -28,16 +28,16 @@ The assessment and its rationale are published with SPEC vN and stored in that i
 | QA | Codex | gpt-5.6-luna | gpt-5.6-terra | gpt-5.6-sol |
 | Reviewer | Claude | sonnet | sonnet | opus |
 
-Dashboard → Configuration → Agent roles exposes one card per role. Each card selects Codex or Claude and its fast, balanced and strong model IDs. The corresponding environment names are `<ROLE>_PROVIDER` and `<ROLE>_MODEL_FAST|BALANCED|STRONG`, where `<ROLE>` is `PRODUCT_ARCHITECT`, `DEVELOPER`, `QA`, or `REVIEWER`. `CODEX_MODEL_*` and `CLAUDE_MODEL_*` remain provider defaults used to initialize new role settings and migrate existing installations.
+Dashboard → Configuration → Agent roles exposes one card per role. Each card selects Codex or Claude and sets `<ROLE>_MODEL_MODE` to `auto` or `manual`, where `<ROLE>` is `PRODUCT_ARCHITECT`, `DEVELOPER`, `QA`, or `REVIEWER`. Auto delegates model choice to the selected provider for every profile of that role. Manual uses `<ROLE>_MODEL_FAST|BALANCED|STRONG`. `CODEX_MODEL_*` and `CLAUDE_MODEL_*` remain provider defaults used to initialize new manual role settings and migrate existing installations.
 
 Profiles are relative policy tiers, not a provider's premium Fast service tier, a price guarantee or a spending cap. IDs may be the same across profiles when account availability requires it. Claude aliases can resolve to new versions; use full versioned IDs when pinning is required. QA and Reviewer currently have a balanced floor, so their fast setting is reserved for future policy changes.
 
-The Codex defaults follow the [official model catalog](https://learn.chatgpt.com/docs/models). Explicit model arguments follow the [Codex CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli); Claude's installed CLI supports `--model`. Availability still depends on account and provider. The factory passes `--model` for every invocation. A rejected model fails the run; the factory never silently falls back to another model or provider. Changing role settings requires restarting the daemon and affects future attempts, with each selection recorded separately. Both providers receive the same canonical role contract. Product/Architect and Reviewer remain read-only; Developer can edit the worktree; QA remains restricted to test files by the orchestrator's mutation checks.
+The Codex defaults follow the [official model catalog](https://developers.openai.com/es-419/docs/models). OpenAI documents that Codex uses a recommended model when none is specified. Claude's [official CLI reference](https://code.claude.com/docs/en/cli-usage) documents `--model` as an override. In auto mode the factory omits `--model`; in manual mode it passes the configured ID. Availability still depends on the account and provider. A rejected manual model fails the run; the factory never silently changes mode or provider. Changing role settings requires restarting the daemon and affects future attempts, with each selection recorded separately. The audit records `auto` when delegated, but the provider's resolved backend model is not independently attested. Both providers receive the same canonical role contract. Product/Architect and Reviewer remain read-only; Developer can edit the worktree; QA remains restricted to test files by the orchestrator's mutation checks.
 
 ## Inspecting and auditing
 
 - `npm run factory -- models`: show every configured role/provider/profile/model mapping without running an agent.
 - `npm run factory -- models <work-item-id>`: preview selections for each role given current context (not historical usage and not authorization to execute).
-- `npm run factory -- events <work-item-id>`: inspect `model.selected` and `execution.started`. Each started run records policy version, provider, profile, requested model and reason, linked to its run ID. Requested model/alias is recorded; the provider's resolved backend model is not independently attested.
+- `npm run factory -- events <work-item-id>`: inspect `model.selected` and `execution.started`. Each started run records policy version, provider, profile, configured model mode/value and reason, linked to its run ID. Auto records delegation; the provider's resolved backend model is not independently attested.
 
 Existing specs without assessments continue under the strong delivery profile; new spec outputs must contain an assessment. No prices, token budgets or automatic provider switching are inferred. Real live model availability and quality require acceptance runs; subprocess fixtures verify routing and arguments only.
