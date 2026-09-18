@@ -1,0 +1,1 @@
+import {config} from "../config.js";import {ExecutionManager} from "../execution-manager.js";import type {AgentAdapter,AgentRunRequest} from "./agent.js";export class ClaudeAdapter implements AgentAdapter{constructor(private executions:ExecutionManager){}run(r:AgentRunRequest){return this.executions.run(r.workItemId,r.role,config.claudeCommand,["-p",r.instructions],r.cwd)}}
