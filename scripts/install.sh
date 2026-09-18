@@ -63,7 +63,7 @@ if "$configure_defaults"; then
 else
   bash scripts/configure.sh
 fi
-if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then bash scripts/services.sh install all; fi
+if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install all; fi
 
 if node --input-type=module -e "import fs from 'node:fs'; import {parse} from 'dotenv'; const v=parse(fs.readFileSync('.env')); process.exit(['GITHUB_REPOSITORY','FACTORY_REPO_DIR','FACTORY_APPROVERS'].every(k=>v[k]) ? 0 : 1)"; then
   configuration_status='complete'
@@ -99,3 +99,4 @@ First-run checklist:
 
 The installer never starts agents automatically. See INSTALL.md for examples.
 NEXT
+if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then node scripts/service-summary.mjs; fi

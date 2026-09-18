@@ -105,7 +105,12 @@ npm run service -- status all
 npm run service -- restart dashboard
 npm run service -- stop daemon
 npm run service -- stop all
+npm run service -- logs daemon
+npm run service -- logs dashboard
+npm run service -- logs all
 ```
+
+The `logs` action prints the last 100 stdout/error lines and continues following both files until `Ctrl+C`. Installation, update, service start and service restart print the configured dashboard URL plus the status, restart, log and stop commands so the next operational step is visible without reopening this document.
 
 Open `http://127.0.0.1:4173` after starting the dashboard. It shows daemon health, the issue queue, recent agent executions and readable audit events. Its Retry, Cancel and Stop actions write to the same durable control queue as the CLI.
 

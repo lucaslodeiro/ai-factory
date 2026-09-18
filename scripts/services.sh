@@ -7,7 +7,7 @@ logs="$root/.factory/service-logs"
 domain="gui/$UID"
 
 usage() {
-  echo 'Usage: bash scripts/services.sh <install|start|stop|restart|status> <daemon|dashboard|all>'
+  echo 'Usage: bash scripts/services.sh <install|start|stop|restart|status|logs> <daemon|dashboard|all>'
 }
 xml() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'; }
 label() { printf 'com.ai-factory.%s' "$1"; }
@@ -64,10 +64,21 @@ status_one() {
   local service=$1
   if loaded "$service"; then echo "$service: loaded"; launchctl print "$domain/$(label "$service")" | awk '/state =|pid =|last exit code =/{sub(/^[[:space:]]*/,"  ");print}'; else echo "$service: stopped"; fi
 }
+logs_for() {
+  local service=$1
+  mkdir -p "$logs"
+  if [[ $service == all ]]; then
+    touch "$logs/daemon.log" "$logs/daemon.error.log" "$logs/dashboard.log" "$logs/dashboard.error.log"
+    exec tail -n 100 -F "$logs/daemon.log" "$logs/daemon.error.log" "$logs/dashboard.log" "$logs/dashboard.error.log"
+  fi
+  touch "$logs/$service.log" "$logs/$service.error.log"
+  exec tail -n 100 -F "$logs/$service.log" "$logs/$service.error.log"
+}
 
 [[ $(uname -s) == Darwin ]] || { echo 'Factory services require macOS launchd.' >&2; exit 1; }
 action=${1:-}; target=${2:-}
-[[ $action =~ ^(install|start|stop|restart|status)$ && $target =~ ^(daemon|dashboard|all)$ && $# == 2 ]] || { usage >&2; exit 1; }
+[[ $action =~ ^(install|start|stop|restart|status|logs)$ && $target =~ ^(daemon|dashboard|all)$ && $# == 2 ]] || { usage >&2; exit 1; }
+if [[ $action == logs ]]; then logs_for "$target"; fi
 services=($target); [[ $target == all ]] && services=(daemon dashboard)
 for service in "${services[@]}"; do
   case $action in
@@ -78,3 +89,4 @@ for service in "${services[@]}"; do
     status) status_one "$service";;
   esac
 done
+if [[ ${AI_FACTORY_HIDE_SERVICE_SUMMARY:-0} != 1 && ( $action == install || $action == start || $action == restart ) ]]; then node scripts/service-summary.mjs; fi

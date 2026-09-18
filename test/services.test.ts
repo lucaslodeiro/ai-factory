@@ -27,13 +27,13 @@ esac
     return result.stdout;
   };
   try {
-    run("install","all");
+    assert.match(run("install","all"),/Dashboard: http:\/\/127\.0\.0\.1:4173/);
     const agentDir = path.join(home,"Library","LaunchAgents");
     const daemon = fs.readFileSync(path.join(agentDir,"com.ai-factory.daemon.plist"),"utf8");
     const dashboard = fs.readFileSync(path.join(agentDir,"com.ai-factory.dashboard.plist"),"utf8");
     assert.match(daemon,/<string>start<\/string>/);
     assert.match(dashboard,/<string>dashboard<\/string>/);
-    run("start","daemon");
+    assert.match(run("start","daemon"),/Logs:\s+npm run service -- logs daemon/);
     assert.match(run("status","daemon"),/daemon: loaded/);
     assert.match(run("status","dashboard"),/dashboard: stopped/);
     run("restart","dashboard");
