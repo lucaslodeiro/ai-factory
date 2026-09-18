@@ -1,4 +1,4 @@
-import { specMarkdown, reportMarkdown, decisionsMarkdown, progressMarkdown } from "./presentation.js";
+import { specMarkdown, reportMarkdown, decisionsMarkdown, progressMarkdown, questionsMarkdown } from "./presentation.js";
 import { modelForWork } from "./model-policy.js";
 import { randomUUID } from "node:crypto";
 import { Store } from "./storage.js";
@@ -130,7 +130,7 @@ export class Orchestrator {
     w.context.approvedVersion = undefined; w.context.approval = undefined; w.context.consultation = undefined;
     if (result.outcome === "questions") {
      w.context.waiting = "questions";
-     this.store.post(w.issue_number, `Product/Architect needs input:\n${result.questions.join("\n")}\n\nReply with /factory answer <your answer>.`);
+     this.store.post(w.issue_number, questionsMarkdown(result.questions));
     } else {
      w.context.architectDraft = undefined;
      w.context.taskAssessment = result.taskAssessment!;

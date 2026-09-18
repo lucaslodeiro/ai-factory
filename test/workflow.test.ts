@@ -56,7 +56,10 @@ test("reject unknown approver, bots, quoted command and stale spec version", asy
 });
 test("questions and answer return to architect; approval cannot skip questions", async () => {
  const f = setup({ "product-architect": [result("questions", { questions: ["Which behavior?"] })] });
- await f.o.tick(); f.gh.reply("/factory approve v0"); await f.o.tick(); assert.equal(f.item().state, "WAITING_HUMAN");
+ await f.o.tick();
+ const questionComment = [...f.gh.posted.values()].find(body => body.includes("input needed"))!;
+ assert.match(questionComment,/### 1\. Question 1/); assert.match(questionComment,/How to continue/); assert.doesNotMatch(questionComment,/\\$/m);
+ f.gh.reply("/factory approve v0"); await f.o.tick(); assert.equal(f.item().state, "WAITING_HUMAN");
  f.gh.reply("/factory answer return 42"); await f.o.tick(); await f.o.tick();
  assert.equal(f.item().context.version, 1); assert.match(f.calls[1].instructions, /return 42/); f.store.db.close();
 });

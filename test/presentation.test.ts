@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { reportMarkdown, specMarkdown, progressMarkdown } from "../src/presentation.js";
+import { reportMarkdown, specMarkdown, progressMarkdown, questionsMarkdown } from "../src/presentation.js";
 import { GitHubAdapter } from "../src/adapters/github.js";
 import { result } from "./fixtures.js";
 import type { WorkItem } from "../src/types.js";
@@ -13,6 +13,20 @@ test("human reports render evidence and actions as Markdown instead of serialize
  assert.match(report, /Optional &#124; optimization<br>next line/);
  assert.match(report, /node --test/); assert.match(report, /AC1/);
  assert.doesNotMatch(report, /"outcome":|"coverage":/);
+});
+test("architect questions render as readable instructions without visible line escapes", () => {
+ const markdown = questionsMarkdown([
+  "Data source: Do we already have an approved provider?\\",
+  "Competition scope: Should tournaments be configured manually, or derived dynamically?\\nPlease choose one.",
+  "Is there a required hosting target?\\"
+ ]);
+ assert.match(markdown,/## Product \/ Architect — input needed/);
+ assert.match(markdown,/### 1\. Data source\n\nDo we already have an approved provider\?/);
+ assert.match(markdown,/### 2\. Competition scope/);
+ assert.match(markdown,/Should tournaments be configured manually, or derived dynamically\?\nPlease choose one\./);
+ assert.match(markdown,/### 3\. Question 3/);
+ assert.match(markdown,/\/factory answer 1\. <answer 1>\n2\. <answer 2>\n3\. <answer 3>/);
+ assert.doesNotMatch(markdown,/\\(?:\n|$)/);
 });
 test("progress distinguishes workflow stage, approval and human merge", () => {
  const w: WorkItem = { id: "w", repo: "owner/demo", issue_number: 1, branch: "factory/demo", state: "WAITING_HUMAN", context: { title: "Demo", body: "", url: "", version: 2, cursor: 0, feedback: [], cycles: 0, reports: {}, waiting: "approval" } };

@@ -24,6 +24,27 @@ function details(title: string, body: string) { return `<details>\n<summary>${ti
 export function decisionsMarkdown(decisions: Decision[]) {
  return table(["Decision", "Rationale", "Type"], decisions.map(d => [d.decision, d.rationale, d.conflictsWithHuman ? "Requires human decision" : d.kind]));
 }
+function cleanQuestion(value: string) {
+ return value
+  .replace(/\\n/g, "\n")
+  .split(/\r?\n/)
+  .map(line => line.replace(/\\+\s*$/, "").trimEnd())
+  .join("\n")
+  .replace(/\n{3,}/g, "\n\n")
+  .trim();
+}
+export function questionsMarkdown(questions: string[]) {
+ const sections = questions.map((raw, index) => {
+  const question = cleanQuestion(raw);
+  const separator = question.indexOf(":");
+  const hasTitle = separator > 0 && separator <= 100 && !question.slice(0, separator).includes("\n");
+  const title = hasTitle ? question.slice(0, separator).replace(/^#+\s*/, "").trim() : `Question ${index + 1}`;
+  const body = hasTitle ? question.slice(separator + 1).trim() : question;
+  return `### ${index + 1}. ${title}\n\n${body}`;
+ });
+ const answerTemplate = questions.map((_, index) => `${index + 1}. <answer ${index + 1}>`).join("\n");
+ return `## Product / Architect — input needed\n\nThe factory needs your decisions before it can produce the specification. Please answer each question below.\n\n${sections.join("\n\n")}\n\n## How to continue\n\nPost a new comment on this issue using this format:\n\n\`\`\`text\n/factory answer ${answerTemplate}\n\`\`\`\n\nYou can replace the placeholders with detailed, multi-line answers.`;
+}
 export function specMarkdown(version: number, r: AgentResult) {
  const a = r.taskAssessment!;
  return `## SPEC v${version} — awaiting approval\n\n${r.spec}\n\n### Task assessment\n\n**Complexity:** ${a.complexity} · **Risk:** ${a.risk}\n\n${a.rationale}\n\n${details("Acceptance criteria", table(["ID", "Expected behavior"], r.acceptanceCriteria.map(c => [c.id, c.description])))}\n\n### Your next step\n\nApprove by posting \`/factory approve v${version}\` as a new comment, or request changes with \`/factory answer <feedback>\`.`;
