@@ -107,7 +107,18 @@ npm run service -- stop daemon
 npm run service -- stop all
 ```
 
-Open `http://127.0.0.1:4173` after starting the dashboard. It shows daemon health, the issue queue, recent agent executions and readable audit events. Its Retry, Cancel and Stop actions write to the same durable control queue as the CLI. The HTTP server accepts only a loopback bind address; it is not a remote administration endpoint. Service stdout and stderr are stored under `.factory/service-logs`.
+Open `http://127.0.0.1:4173` after starting the dashboard. It shows daemon health, the issue queue, recent agent executions and readable audit events. Its Retry, Cancel and Stop actions write to the same durable control queue as the CLI.
+
+The **Factory settings** panel edits the installation's `.env` without exposing secrets to the browser. Settings are grouped and validated with the same constraints as the terminal configurator. A configured Slack webhook is shown only as present; leaving its field blank preserves it, while the explicit clear checkbox removes it. Each save creates a private `.env.backup-*` and atomically replaces `.env` with owner-only permissions. Unknown existing settings are preserved.
+
+Stop the daemon before saving configuration from the dashboard; the UI disables the form while a live daemon lock exists and the API independently rejects the write. The dashboard can remain running during the edit. Restart the daemon after any runtime change, and restart the dashboard if its host or port changed:
+
+```sh
+npm run service -- restart daemon
+npm run service -- restart dashboard
+```
+
+The HTTP server accepts only a loopback bind address; it is not a remote administration endpoint. Service stdout and stderr are stored under `.factory/service-logs`.
 
 `install` and `update` refresh both service definitions. Existing loaded services are reloaded so path/runtime changes take effect; stopped services remain stopped. Stop the daemon before updating because the updater refuses to modify an installation with an active orchestration lock.
 
@@ -216,7 +227,7 @@ npm run configure
 
 The installer and updater run the same wizard automatically. Every option in `.env.example` is offered, including target repository/clone, approvers, data directory, polling, timeouts, correction limits, CLI executables, models and optional Slack. Invalid values are explained and prompted again. Target repository, clone and approvers can be cleared to finish setup later; `doctor` must pass before starting.
 
-Slack webhook input/defaults are hidden. Unknown existing environment settings are preserved. Saving creates a private `.env.backup-*` and replaces `.env` atomically with owner-only permissions; these files are ignored by Git. Ctrl+C or incomplete input cancels without saving. Stop the daemon before reconfiguring; do not start another instance while the wizard is open. Changing paths/repositories does not migrate existing data or clone a target repository. Use a separate installation/data directory for a different project.
+Slack webhook input/defaults are hidden. Unknown existing environment settings are preserved. Saving through the terminal or dashboard creates a private `.env.backup-*` and replaces `.env` atomically with owner-only permissions; these files are ignored by Git. Ctrl+C or incomplete terminal input cancels without saving. Stop the daemon before reconfiguring; do not start another instance while the wizard is open. Changing paths/repositories does not migrate existing data or clone a target repository. Use a separate installation/data directory for a different project.
 
 `npm run configure -- --defaults` saves existing/template values without questions. The equivalent direct command is `bash scripts/configure.sh --defaults`. This unattended mode never authenticates accounts, clones or creates a target, or starts agents. Interactive configuration may authenticate GitHub and performs repository changes only after showing the exact clone/create action and receiving confirmation. Check configuration with `npm run factory -- doctor`.
 

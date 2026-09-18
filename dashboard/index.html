@@ -18,6 +18,11 @@
       <article><span>Ready</span><strong id="ready-count">—</strong></article>
       <article><span>Failed</span><strong id="failed-count">—</strong></article>
     </section>
+    <details class="panel settings-panel">
+      <summary><div><p class="eyebrow">CONFIGURATION</p><h2>Factory settings</h2></div><span id="settings-summary" class="muted">Edit local .env</span></summary>
+      <p id="settings-status" class="settings-status">Loading configuration…</p>
+      <form id="settings-form"><fieldset id="settings-fieldset"><div id="settings-groups"></div><div class="settings-actions"><button type="submit" class="primary">Save configuration</button><span class="muted">Changes apply after restarting the affected service.</span></div></fieldset></form>
+    </details>
     <section class="panel"><div class="panel-title"><div><p class="eyebrow">WORK QUEUE</p><h2>Issues</h2></div><span id="updated" class="muted"></span></div><div id="items" class="items"></div></section>
     <div class="columns">
       <section class="panel"><div class="panel-title"><div><p class="eyebrow">AGENTS</p><h2>Recent executions</h2></div></div><div id="executions" class="timeline"></div></section>
