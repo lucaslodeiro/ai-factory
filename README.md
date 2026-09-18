@@ -28,21 +28,36 @@ The consolidated requirements and traceability matrix are in [SPEC.md](SPEC.md).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) and [INSTALL.md](INSTALL.md).
 
-## Run the MVP
+## Install and run the MVP
+
+On a new Mac, download the installer from the current MVP branch:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/bootstrap/mvp/scripts/install.sh -o /tmp/ai-factory-install.sh
+bash /tmp/ai-factory-install.sh --dir "$HOME/ai-factory"
+```
+
+The installer prepares the engine and opens the configuration wizard. It does not authenticate accounts, clone the target application or start the daemon. In an existing source checkout:
 
 ```sh
 npm ci
 npm run build
 npm test
-cp .env.example .env
-# Configure target repository and approvers, then:
+npm run configure
+# Authenticate gh, Codex and Claude, then:
 npm run factory -- doctor
 npm run factory -- start
 ```
 
+`npm run configure` can be run at any time while the daemon is stopped. Existing `.env` values are shown as defaults; settings added in a newer version use `.env.example` defaults. Installation and update invoke this same wizard. Use `--defaults` with the scripts for unattended operation.
+
+The factory engine and target application are separate repositories. `GITHUB_REPOSITORY` selects where issues are read and PRs are created; `FACTORY_REPO_DIR` selects the local clone used for worktrees. Open issues enter the factory only when labelled `factory:queued`.
+
 Queue an issue with `factory:queued`. Answer `/factory answer <text>` and approve the posted version with `/factory approve vN`. The daemon runs independent role processes, routes findings, and creates a pull request after passing QA and review. Human merge remains required.
 
-Available commands: `doctor`, `start`, `status [id]`, `events [id]`, `cancel <item-or-run-id>`, `retry <item-id>`, `stop`, `notifications`, `slack-test`, `models [id]`, `sync`.
+Configuration command: `npm run configure`. Factory commands: `doctor`, `start`, `status [id]`, `events [id]`, `cancel <item-or-run-id>`, `retry <item-id>`, `stop`, `notifications`, `slack-test`, `models [id]`, `sync`.
+
+One instance executes agent stages sequentially for one target repository. To run two projects at once, use two installations with separate target clones, `.env` files and data directories. Multiple instances targeting the same repository are not supported.
 
 See [installation and operations](INSTALL.md), [GitHub setup](docs/GITHUB_SETUP.md), and [validation evidence and operational boundaries](docs/VALIDATION.md).
 

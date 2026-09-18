@@ -11,6 +11,16 @@ bash /tmp/ai-factory-install.sh --dir "$HOME/ai-factory"
 
 The default branch is `bootstrap/mvp`; use `--branch main` once the MVP is merged there. The installer installs missing tools, clones the engine, installs locked npm dependencies, builds, tests and opens the interactive configurator to create a private `.env`. Enter accepts each displayed default. Use `--defaults` to write installation defaults without prompting (target settings remain blank). It does not authenticate accounts or start agents. Existing destinations are rejected. `--skip-tools` skips machine tool installation; Node 22+, npm and Git must already work. Automatic tool installation is macOS-only. Provider installers: [Codex](https://developers.openai.com/codex/cli), [Claude](https://code.claude.com/docs/en/setup).
 
+Installer options:
+
+| Option | Default | Purpose |
+|---|---|---|
+| `--dir PATH` | `$HOME/ai-factory` | Engine installation directory |
+| `--repo URL` | This GitHub repository | Engine source repository |
+| `--branch NAME` | `bootstrap/mvp` | Engine branch to install |
+| `--skip-tools` | off | Require existing tools instead of installing missing ones |
+| `--defaults` | off | Save configuration defaults without interactive questions |
+
 To update an existing installation, first stop its daemon and wait for it to exit:
 
 ```sh
@@ -24,7 +34,42 @@ npm run factory -- start
 
 The updater requires the existing built runtime and dependencies. It uses the current branch on `origin`, refuses local changes/local-only commits and holds the daemon lock throughout the update. It backs up SQLite and `.env` under `FACTORY_DATA_DIR/update-backup-*`, applies a fast-forward, installs locked dependencies, builds and tests, and then opens the same configurator used by installation. Existing settings are its defaults and newly added settings use the installation defaults. It preserves configuration, logs and worktrees; it never restarts the daemon or updates provider CLIs. A failed build/test leaves the daemon stopped and prints the backup and previous revision for diagnosis; there is no destructive automatic rollback. Backups contain private data: keep them local. Use the same Node/Git PATH as for running the daemon. Use `bash scripts/update.sh --defaults` for a non-interactive update that accepts all existing/default values.
 
-## Configure projects and concurrency
+## Configuration lifecycle
+
+Installation, update and direct configuration all use the same wizard:
+
+```sh
+# Inspect or change configuration without installing/updating:
+npm run configure
+
+# Install without questions, leaving required target values blank:
+bash /tmp/ai-factory-install.sh --defaults
+
+# Update without questions, retaining existing values:
+bash scripts/update.sh --defaults
+```
+
+For each known option, the displayed/effective value is selected in this order:
+
+1. The value saved in `.env`, including an intentionally empty value.
+2. For Codex, Claude and Git commands, a locally discovered executable when no saved value exists.
+3. The installation default in `.env.example` for every other missing value.
+
+Shell environment variables are not imported into `.env`. In the interactive wizard, Enter retains the displayed value and `-` clears an optional setting. Each save creates an ignored, owner-readable `.env.backup-*` file and atomically replaces `.env`. Stop the daemon before configuring. Changing target paths does not move data, migrate worktrees or clone another repository.
+
+The target repository, local clone and approvers intentionally have no installation default. Configure these before starting:
+
+| Setting | Meaning | Example |
+|---|---|---|
+| `GITHUB_REPOSITORY` | GitHub repository used for issues, comments and PRs | `owner/application` |
+| `FACTORY_REPO_DIR` | Absolute path to a local clone of that repository | `/Users/me/Source/application` |
+| `GITHUB_DEFAULT_BRANCH` | PR/worktree base branch | `main` |
+| `FACTORY_APPROVERS` | Comma-separated GitHub users allowed to answer/approve | `alice,bob` |
+| `FACTORY_DATA_DIR` | SQLite, logs and retained worktrees for this target | `/Users/me/.ai-factory/application` |
+
+Run `npm run factory -- doctor` after configuring. It validates the required values, target clone, Git/GitHub access, provider authentication and writable database.
+
+## Projects and concurrency
 
 The engine repository and target application repository are separate. Set `GITHUB_REPOSITORY=owner/application` and `FACTORY_REPO_DIR=/absolute/path/to/application`; issues and PRs belong to that target. Only open issues labeled `factory:queued` are ingested.
 
@@ -40,7 +85,7 @@ cd ai-factory
 npm ci
 npm run build
 npm test
-cp .env.example .env
+npm run configure
 ```
 
 Set `FACTORY_REPO_DIR` to a clone of the **target application**, `GITHUB_REPOSITORY` to its owner/name, `GITHUB_DEFAULT_BRANCH` to its base branch and `FACTORY_APPROVERS` to the comma-separated GitHub logins who can make decisions. Use a different `FACTORY_DATA_DIR` per target. The local target clone needs origin configured, the base branch pushed, and Git author name/email configured. Worktrees start at the fetched remote base; uncommitted changes in the source checkout are not included.
@@ -108,7 +153,7 @@ All provider results now require coverage, test evidence, changed files, depende
 
 ## Models per task
 
-Run `npm run factory -- models` to inspect the balanced policy's explicit model mappings. Override the six model variables in `.env.example` to match your account. `npm run factory -- models <work-item-id>` previews the next selections without running providers. New specs include a complexity/risk assessment for your approval. See [model policy](docs/MODEL_POLICY.md) for routing, correction escalation, audit events and legacy behavior. Model availability is checked by the actual provider invocation, not by `doctor`; a rejected model requires configuration correction and explicit retry.
+Run `npm run factory -- models` to inspect the balanced policy's explicit model mappings. Use `npm run configure` to change the six model settings in `.env` to match your account; `.env.example` remains the installation-default template. `npm run factory -- models <work-item-id>` previews the next selections without running providers. New specs include a complexity/risk assessment for your approval. See [model policy](docs/MODEL_POLICY.md) for routing, correction escalation, audit events and legacy behavior. Model availability is checked by the actual provider invocation, not by `doctor`; a rejected model requires configuration correction and explicit retry.
 
 Worker prompts include the actual daemon Node executable and configured Git, plus an explicit PATH prefix for shell commands: login-shell startup files may otherwise select an older Node or Xcode Git. Verify the tool versions in run logs. Reviewer receives QA commands/results as attributed evidence and does not claim to have executed them personally.
 
@@ -118,7 +163,7 @@ The daemon reconciles READY_TO_MERGE and PR_CLOSED items against GitHub. Merge r
 
 To exercise installer/updater safeguards using temporary local repositories and a stub npm (no CLI installations or agents), run `node scripts/test-maintenance.mjs` after `npm run build`. The regular `npm test` suite validates the actual runtime.
 
-## Interactive configuration
+## Configuration details and safeguards
 
 Run this directly from your installation whenever you want to inspect or change settings, without installing or updating:
 
@@ -127,10 +172,10 @@ npm run configure
 # equivalent: bash scripts/configure.sh
 ```
 
-The installer runs the same wizard automatically. Every option in `.env.example` is offered, including target repository/clone, approvers, data directory, polling, timeouts, correction limits, CLI executables, models and optional Slack. Saved `.env` values (including intentionally empty values) take precedence; missing options use `.env.example` installation defaults, with locally discovered CLI paths. Environment variables from the invoking shell are not saved as defaults. Enter keeps the displayed value; `-` clears an optional setting. Invalid values are explained and prompted again. Target repository, clone and approvers can remain blank to finish setup later; `doctor` must pass before starting.
+The installer and updater run the same wizard automatically. Every option in `.env.example` is offered, including target repository/clone, approvers, data directory, polling, timeouts, correction limits, CLI executables, models and optional Slack. Invalid values are explained and prompted again. Target repository, clone and approvers can remain blank to finish setup later; `doctor` must pass before starting.
 
 Slack webhook input/defaults are hidden. Unknown existing environment settings are preserved. Saving creates a private `.env.backup-*` and replaces `.env` atomically with owner-only permissions; these files are ignored by Git. Ctrl+C or incomplete input cancels without saving. Stop the daemon before reconfiguring; do not start another instance while the wizard is open. Changing paths/repositories does not migrate existing data or clone a target repository. Use a separate installation/data directory for a different project.
 
-`bash scripts/configure.sh --defaults` saves existing/default values without questions. For unattended installation use `bash install.sh --defaults` (plus the usual installer options). No configuration command authenticates accounts or starts agents. Check configuration with `npm run factory -- doctor`.
+`npm run configure -- --defaults` saves existing/default values without questions. The equivalent direct command is `bash scripts/configure.sh --defaults`. No configuration command authenticates accounts, clones a target or starts agents. Check configuration with `npm run factory -- doctor`.
 
 Configuration regression checks: `node scripts/test-configure.mjs`.

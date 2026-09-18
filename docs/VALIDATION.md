@@ -29,14 +29,14 @@
 
 - PR lifecycle reconciliation: exactly-once transition notices, terminal merge evidence, close-without-merge, reopen, and API outage recovery without agent execution. Standalone sync refuses to race the daemon.
 
-## Completed live four-role demo
+## Completed live four-role demo (historical evidence)
 
-On 2026-09-18, the real pipeline reached **READY_TO_MERGE** and created [demo PR #2](https://github.com/lucaslodeiro/ai-factory-demo/pull/2). The human subsequently merged PR #2; the orchestrator reconciled it to MERGED and the issue is closed.
+On 2026-09-18, the real pipeline reached **READY_TO_MERGE** and created demo PR #2. The human subsequently merged it; the orchestrator reconciled it to MERGED and the issue closed. The temporary private demo repository was deliberately deleted after validation, so it no longer has browsable GitHub URLs. The retained local SQLite database, logs and clone are the audit evidence for this historical run.
 
-- Target: private [ai-factory-demo](https://github.com/lucaslodeiro/ai-factory-demo), [issue #1](https://github.com/lucaslodeiro/ai-factory-demo/issues/1).
+- Target at execution time: private `lucaslodeiro/ai-factory-demo`, issue #1, PR #2.
 - Work item: `e3d45eaf-fad3-48c0-8e99-fccc121cecd7`.
 - Claude authenticated successfully; doctor passed for both providers, Git/GitHub, target repository and SQLite.
-- Product/Architect (Sonnet) published SPEC v1 with ten acceptance criteria and low complexity/low risk. The human `lucaslodeiro` approved the exact version in [comment 5732900319](https://github.com/lucaslodeiro/ai-factory-demo/issues/1#issuecomment-5732900319).
+- Product/Architect (Sonnet) published SPEC v1 with ten acceptance criteria and low complexity/low risk. The human `lucaslodeiro` approved the exact version in comment `5732900319`.
 - Developer (Luna) implemented the pure Unicode text-analysis function, stdin/stdout CLI, README, ESM package and nine tests without dependencies.
 - QA (Terra), in a fresh execution, ran all nine tests successfully with Node 26.4.0 and additional independent function/CLI, exit-status, output and dependency checks.
 - Reviewer (Sonnet), in a fresh read-only execution, independently inspected code, tests and all review dimensions. It explicitly attributed runtime evidence to QA, reported no blocking findings and returned PASS.
@@ -60,7 +60,7 @@ This was not an uninterrupted first-attempt success. Two validation failures wer
 | Reviewer first attempt | `a7250093-7fc1-4d22-b051-9fea2b0dc6f9` | Process succeeded; coverage rejected |
 | Reviewer retry | `e5d80fb7-42a5-480d-91d7-60b38178543f` | PASS |
 
-Logs and SQLite remain under `.factory/demo/` on the user's machine. Full accepted reports are on the issue. Earlier standalone Codex protocol checks also passed, including explicit Terra selection (`d83d51bd-d69f-49da-bed3-97e3baca45a1`).
+Logs and SQLite remain under `.factory/demo/` on the original validation machine. Earlier standalone Codex protocol checks also passed, including explicit Terra selection (`d83d51bd-d69f-49da-bed3-97e3baca45a1`).
 
 ## Remaining operational validation
 

@@ -1,6 +1,6 @@
 # GitHub setup
 
-Authenticate `gh` with issue, content and pull-request write access to the target repository. Configure `GITHUB_REPOSITORY`, `FACTORY_REPO_DIR`, `GITHUB_DEFAULT_BRANCH` and `FACTORY_APPROVERS` in `.env`.
+Authenticate `gh` with issue, content and pull-request write access to the target repository. Run `npm run configure` and set `GITHUB_REPOSITORY`, `FACTORY_REPO_DIR`, `GITHUB_DEFAULT_BRANCH` and `FACTORY_APPROVERS`. The wizard uses existing `.env` values as defaults and installation defaults for missing settings. Run it only while the daemon is stopped, then validate with `npm run factory -- doctor`.
 
 ```sh
 gh label create factory:queued --repo OWNER/REPO --color 7057ff
