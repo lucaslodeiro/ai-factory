@@ -4,10 +4,11 @@
 
 `npm run build` and `npm test` pass on macOS with Node 26.4.0. A Node 22/Linux GitHub Actions template is provided in `docs/ci.example.yml`. It is not activated: the current GitHub OAuth credential lacks the workflow scope, and GitHub rejected a push containing `.github/workflows/ci.yml`. Copy the template there using a credential permitted to manage workflows when ready.
 
-45 tests cover:
+50 tests cover:
 
 - Full foreground daemon with real SQLite, separate CLI control processes, real Git worktrees and a local bare remote. Deterministic provider executables consume the actual adapter arguments and stdin; a GitHub executable fixture supplies issues/comments and records the PR. The test approves a version, starts Developer, checks status without recovery side effects, cancels, retries, runs QA/Reviewer, publishes a branch and verifies READY_TO_MERGE, then stops the daemon.
 - Native Claude/Codex output envelopes, role-specific generation schemas and local validation. Read-only Reviewer receives attributed QA execution evidence without Developer reasoning or QA summary conclusions.
+- Per-role provider/model routing in `balanced-v3`, including an end-to-end run with every role assigned to the opposite provider from its default (Codex Architect/Reviewer and Claude Developer/QA). Claude delivery roles receive editing tools while provider-independent worktree checks preserve read-only and QA boundaries.
 - Invalid/stale/unauthorized/bot approvals and question/answer loops.
 - QA auto-fix, decision routing, bounded correction loops and deferred findings.
 - Durable GitHub outbox, idempotent delivery and malformed output failure.

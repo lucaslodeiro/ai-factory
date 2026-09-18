@@ -6,24 +6,24 @@
 GitHub Issue
     |
     v
-Product / Architect (Claude)
+Product / Architect (configured provider; Claude by default)
     |  <---- clarification / human feedback loop
     v
 WAITING_SPEC_APPROVAL
     |
     | human approves
     v
-Developer (Codex)
+Developer (configured provider; Codex by default)
     |
     v
-QA (independent Codex context)
+QA (configured provider; independent context; Codex by default)
     |
     +-- auto-fix ----------> Developer
     +-- decision-required -> Product / Architect -> human only when major
     +-- defer -------------> record issue/finding and continue
     |
     v
-Reviewer (independent Claude context)
+Reviewer (configured provider; independent context; Claude by default)
     |
     +-- changes required --> appropriate upstream role
     |
@@ -49,7 +49,7 @@ Each agent invocation receives a run ID and tracked OS process. It supports canc
 Each work item gets an isolated Git worktree and branch. Agents cannot push directly to the default branch.
 
 ### Adapters
-Provider-specific adapters isolate Claude CLI, Codex CLI, GitHub, and Slack from orchestration logic.
+Provider-specific adapters isolate Claude CLI, Codex CLI, GitHub, and Slack from orchestration logic. Each role maps independently to a provider and fast/balanced/strong model set. The deterministic router selects a profile from approved task complexity/risk and correction context, then dispatches through that role's configured adapter.
 
 ### Observability
 Structured event logs contain timestamps, work-item ID, run ID, role, transition, duration, exit status, and references to inputs/outputs. Human-readable logs are retained alongside them.

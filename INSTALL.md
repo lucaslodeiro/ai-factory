@@ -173,7 +173,7 @@ Agent timeouts are configurable. SIGTERM escalates to SIGKILL after one second f
 
 ## First end-to-end run
 
-Create the `factory:queued` label in the target repository, then create a feature issue carrying that label. Product/Architect runs in a fresh Claude process. Questions are posted on the issue; answer with a standalone command:
+Create the `factory:queued` label in the target repository, then create a feature issue carrying that label. Product/Architect runs in a fresh process using its configured provider (Claude by default). Questions are posted on the issue; answer with a standalone command:
 
 ```text
 /factory answer
@@ -196,7 +196,7 @@ Findings route automatically to Developer or Product/Architect. Product/Architec
 
 Dashboard credential actions invoke only the installed `gh`, Claude and Codex login commands. They do not accept a command or token from the browser. GitHub login also runs `gh auth setup-git` after authentication so HTTPS Git operations use the stored account. A detached login can continue while the dashboard refreshes; its card remains **Connecting…** until the CLI exits or authentication becomes valid.
 
-Worker environments contain only basic OS variables, provider config location and explicitly allowlisted variables. Local provider credential stores remain available for CLI authentication. This is an environment filter, not a security boundary against malicious code running as your user. Use trusted repositories or an external sandbox/account for untrusted code. Codex uses workspace-write sandbox with network access. Claude Product/Reviewer receive read/search/web tools only. Role mutation checks reject unexpected worktree edits before committing. The orchestrator owns commits, pushes and PR creation. It verifies the assigned branch before executing agents and before committing, rejects detached HEAD, and checks both source and destination of renames against role restrictions.
+Worker environments contain only basic OS variables, provider config location and explicitly allowlisted variables. Local provider credential stores remain available for CLI authentication. This is an environment filter, not a security boundary against malicious code running as your user. Use trusted repositories or an external sandbox/account for untrusted code. Codex uses its workspace sandbox with network access. Claude receives edit/write/shell tools only for Developer and QA; Product/Architect and Reviewer remain read-only. Provider-independent role mutation checks reject unexpected worktree edits before committing, including every Product/Architect or Reviewer edit and QA production-code edits. The orchestrator owns commits, pushes and PR creation. It verifies the assigned branch before executing agents and before committing, rejects detached HEAD, and checks both source and destination of renames against role restrictions.
 
 GitHub comments use a durable, idempotent delivery queue. If reading human replies fails, the item remains waiting and retries on the next poll without losing its approval cursor. Slack is optional and uses its own persistent queue. Failures retry with backoff up to five minutes without blocking the workflow. Human-action messages contain an issue link, question/spec summary and response command. Delivery is at least once, so a crash during acknowledgement can cause a duplicate. SQLite, specs, reports and execution logs live under `FACTORY_DATA_DIR`. Do not commit them or `.env`.
 

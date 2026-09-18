@@ -6,10 +6,12 @@ Locally executed multi-agent software factory orchestrated from a developer Mac.
 
 A GitHub Issue becomes a work item. The local orchestrator coordinates four independent roles:
 
-1. **Product / Architect — Claude**: clarifies the request, challenges assumptions, proposes alternatives, and produces the specification.
-2. **Developer — Codex**: implements the approved specification in an isolated Git worktree.
-3. **QA — Codex**: independently derives tests from the specification, may create/modify test code, and reports findings without modifying production code.
-4. **Reviewer — Claude**: reviews specification compliance, code quality, security, performance, and product/UI/copy consistency.
+1. **Product / Architect**: clarifies the request, challenges assumptions, proposes alternatives, and produces the specification. Default provider: Claude.
+2. **Developer**: implements the approved specification in an isolated Git worktree. Default provider: Codex.
+3. **QA**: independently derives tests from the specification, may create/modify test code, and reports findings without modifying production code. Default provider: Codex.
+4. **Reviewer**: reviews specification compliance, code quality, security, performance, and product/UI/copy consistency. Default provider: Claude.
+
+Each role can use Codex or Claude independently. The operator configures its provider and fast, balanced and strong models in **Configuration → Agent roles**; the deterministic policy chooses the profile for each invocation.
 
 The human remains the authority for major product/architecture decisions and any change that contradicts a previously approved human decision.
 

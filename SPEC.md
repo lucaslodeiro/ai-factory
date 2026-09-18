@@ -11,7 +11,7 @@ Run a software factory on the user's Mac that turns a GitHub Issue into a tested
 | ID | Decision |
 |---|---|
 | D01 | Orchestration and agent processes always execute locally. GitHub is the collaboration UI, not the execution engine. Initial platform: macOS, without Docker. |
-| D02 | Four independent roles: Claude Product/Architect, Codex Developer, Codex QA, Claude Reviewer. Each invocation starts a fresh context. Provider adapters remain replaceable. |
+| D02 | Four independent roles: Product/Architect, Developer, QA and Reviewer. Each invocation starts a fresh context. The operator configures Codex or Claude plus fast/balanced/strong model IDs independently for every role; defaults remain Claude, Codex, Codex and Claude respectively. |
 | D03 | GitHub Issues accept requests and human feedback; comments and labels mirror progress. SQLite is authoritative for workflow state and audit history. |
 | D04 | Initial specs and material revisions need explicit human approval. Approved specs are immutable versioned contracts with verifiable acceptance criteria. |
 | D05 | Product/Architect may challenge a human decision and propose alternatives, but cannot silently override it. Major product, architecture, scope, risk or conflicting decisions go to the human. |
@@ -106,7 +106,7 @@ Provide reproducible Node 22+ installation, explicit repo/data directories, prov
 
 ### F15 — Task-aware model selection
 
-Use the balanced-v2 policy in `docs/MODEL_POLICY.md`: Product/Architect reports complexity, risk and rationale with each new spec; the human approves that assessment with the exact spec version. The orchestrator selects a configured model by role, approved assessment and correction context. QA/Reviewer retain a balanced floor, high-risk/complex work and correction cycles select strong, and only low-risk/simple Developer work selects fast. A high-complexity or high-risk draft produced below the strong profile receives a fresh strong-profile Architect review before a version is published for approval; questions and retries preserve that review requirement. Every provider call receives an explicit model and records its selection. No silent provider/model fallback. Model mappings remain operator-configurable.
+Use the balanced-v3 policy in `docs/MODEL_POLICY.md`: Product/Architect reports complexity, risk and rationale with each new spec; the human approves that assessment with the exact spec version. The orchestrator deterministically selects a profile by role, approved assessment and correction context, then uses that role's configured Codex/Claude provider and model ID. QA/Reviewer retain a balanced floor, high-risk/complex work and correction cycles select strong, and only low-risk/simple Developer work selects fast. A high-complexity or high-risk draft produced below the strong profile receives a fresh strong-profile Architect review before a version is published for approval; questions and retries preserve that review requirement. Every provider call receives an explicit model and records its selection. No silent provider/model fallback. Provider and model mappings remain operator-configurable per role.
 
 ## Requirements traceability
 
