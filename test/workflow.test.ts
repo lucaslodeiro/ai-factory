@@ -11,9 +11,9 @@ import type { AgentRunRequest } from "../src/adapters/agent.js";
 config.repo = "owner/demo"; config.approvers = ["owner"];
 import { result } from "./fixtures.js";
 class GitHub implements GitHubPort {
- replies: Comment[] = []; posted = new Map<string,string>(); states: WorkState[] = []; prs = 0; fail = false;
+ replies: Comment[] = []; posted = new Map<string,string>(); states: WorkState[] = []; prs = 0; fail = false; failComments = false;
  listQueued() { return [{ number: 1, title: "Feature", body: "Implement feature", url: "https://example.test/issues/1" }]; }
- comments() { return this.replies; }
+ comments() { if (this.failComments) throw new Error("GitHub temporarily unavailable"); return this.replies; }
  commentOnce(_n: number, body: string, key: string) { if (this.fail) throw new Error("offline"); this.posted.set(key, body); }
  syncState(_n: number, state: WorkState) { this.states.push(state); }
  ensurePR() { this.prs++; return "https://example.test/pull/1"; }
@@ -25,7 +25,7 @@ function setup(overrides: Partial<Record<AgentRole, AgentResult[]>> = {}) {
  const agents = Object.fromEntries((["product-architect", "developer", "qa", "reviewer"] as AgentRole[]).map(role => [role, { async run(req: AgentRunRequest) {
   calls.push(req); return overrides[role]?.shift() ?? result(role === "product-architect" ? "spec" : "pass");
  } }])) as any;
- const ws = { ensure: () => "/tmp/fake", head: () => "abc", diff: () => "diff", check() {}, commit() {}, publish() { published++; } };
+ const ws = { assertBranch() {}, ensure: () => "/tmp/fake", head: () => "abc", diff: () => "diff", check() {}, commit() {}, publish() { published++; } };
  const notifications: string[] = [];
  const o = new Orchestrator(store, agents, gh, ws, { enabled: true, async notify(text) { notifications.push(text); } });
  const item = () => store.items()[0];
@@ -136,4 +136,20 @@ test("Slack human-action notification remains deliverable during a GitHub outage
  assert.equal(f.gh.posted.size, 0);
  assert.ok(f.notifications.some(n => n.includes("/factory approve v1") && n.includes("https://example.test/issues/1")));
  f.store.db.close();
+});
+
+test("comment-read outage preserves human approval gate and resumes without manual retry", async () => {
+ const f = setup(); await f.o.tick();
+ const before = f.item().context;
+ f.gh.reply("/factory approve v1"); f.gh.failComments = true;
+ await f.o.tick(); await f.o.tick();
+ assert.equal(f.item().state, "WAITING_HUMAN");
+ assert.deepEqual(f.item().context, before);
+ assert.equal(f.calls.length, 1);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='github.comments_failed'").get() as any).n, 2);
+ f.gh.failComments = false; await f.o.tick();
+ assert.equal(f.item().state, "DEVELOPMENT");
+ assert.equal(f.item().context.approval?.commentId, 1);
+ for (let i = 0; i < 3; i++) await f.o.tick();
+ assert.equal(f.item().state, "READY_TO_MERGE"); f.store.db.close();
 });

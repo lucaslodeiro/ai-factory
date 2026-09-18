@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Store } from "./storage.js";
 import { config } from "./config.js";
-import { GitHubAdapter, type GitHubPort, type Issue } from "./adapters/github.js";
+import { GitHubAdapter, type GitHubPort, type Issue, type Comment } from "./adapters/github.js";
 import { SlackAdapter } from "./adapters/slack.js";
 import type { AgentAdapter } from "./adapters/agent.js";
 import { Workspaces, type WorkspacePort } from "./worktrees.js";
@@ -70,6 +70,7 @@ export class Orchestrator {
   const role = ({ SPEC: "product-architect", DEVELOPMENT: "developer", QA: "qa", REVIEW: "reviewer" } as const)[w.state as "SPEC" | "DEVELOPMENT" | "QA" | "REVIEW"];
   if (!role) return;
   if (role !== "product-architect" && (!w.context.approvedVersion || w.context.approvedVersion !== w.context.version)) throw new Error("No approval for current specification");
+  this.workspaces.assertBranch(w.context.cwd, w.branch);
   const before = this.workspaces.head(w.context.cwd);
   const instructions = prompt(w, role) + (role === "reviewer" ? "\n\nImplementation diff:\n" + this.workspaces.diff(w.context.cwd) : "");
   w.context.pendingStage = { stage: w.state, beforeHead: before, startedAt: new Date().toISOString() };
@@ -77,9 +78,9 @@ export class Orchestrator {
   const result = parseResult(await this.agents[role].run({ workItemId: w.id, role, cwd: w.context.cwd, instructions }), role);
   if (this.store.get(w.id)!.state !== w.state) return;
   if (role !== "product-architect") validateCoverage(result, w.context.criteria ?? []);
-  this.workspaces.check(w.context.cwd, role, before);
+  this.workspaces.check(w.context.cwd, role, before, w.branch);
   // Only the orchestrator commits; preserve evidence of all role outputs separately.
-  if (role === "developer" || role === "qa") this.workspaces.commit(w.context.cwd, `factory: ${role} for #${w.issue_number}`);
+  if (role === "developer" || role === "qa") this.workspaces.commit(w.context.cwd, `factory: ${role} for #${w.issue_number}`, w.branch);
   w.context.reports[role] = result;
   this.store.event("agent.result", { role, result, specVersion: w.context.version }, w.id);
   w.context.pendingStage = undefined;
@@ -150,7 +151,13 @@ export class Orchestrator {
   })();
  }
  private human(w: WorkItem) {
-  const comments = this.github.comments(w.issue_number).filter(c => c.id > w.context.cursor).sort((a,b) => a.id-b.id);
+  let replies: Comment[];
+  try { replies = this.github.comments(w.issue_number); }
+  catch (e) {
+   // No agent failed: retain the approval gate and retry the remote read next tick.
+   this.store.event("github.comments_failed", { error: String(e) }, w.id); return;
+  }
+  const comments = replies.filter(c => c.id > w.context.cursor).sort((a,b) => a.id-b.id);
   for (const c of comments) {
    w.context.cursor = c.id;
    if (c.user.type !== "User" || !config.approvers.includes(c.user.login)) { this.store.save(w); continue; }
