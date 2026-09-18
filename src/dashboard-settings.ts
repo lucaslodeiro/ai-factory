@@ -2,30 +2,43 @@ import fs from "node:fs";
 import path from "node:path";
 import { parse } from "dotenv";
 
-type Field = { key: string; label: string; description: string; group: string; secret?: boolean; required?: boolean; type?: "number" | "text" };
+type Option = { value: string; label: string };
+type Field = { key: string; label: string; description: string; group: string; secret?: boolean; required?: boolean; type?: "number" | "text" | "select"; options?: Option[]; unit?: string; restart?: "daemon" | "dashboard" | "all" };
+
+const groups = [
+  {id:"project",label:"Project & GitHub",description:"Repository, checkout and delivery workflow."},
+  {id:"runtime",label:"Runtime",description:"Storage, polling and execution limits."},
+  {id:"dashboard",label:"Dashboard",description:"Local administration server."},
+  {id:"models",label:"Model routing",description:"Models selected for each workload profile."},
+  {id:"tools",label:"Agent tools",description:"Executables used by workers and Git operations."},
+  {id:"access",label:"Access & secrets",description:"Human approvers and environment exposure."},
+  {id:"notifications",label:"Notifications",description:"Optional outbound integrations."},
+];
+const codexModels = ["gpt-5.6-luna","gpt-5.6-terra","gpt-5.6-sol","gpt-6-astra","gpt-5.5"].map(value => ({value,label:value}));
+const claudeModels = ["haiku","sonnet","opus"].map(value => ({value,label:value}));
 
 const descriptions: Record<string,Omit<Field,"key">> = {
-  FACTORY_DATA_DIR:{label:"Data directory",description:"SQLite, logs and retained worktrees.",group:"Factory",required:true},
-  FACTORY_REPO_DIR:{label:"Target checkout",description:"Absolute path to the application clone.",group:"Target",required:true},
-  FACTORY_POLL_INTERVAL_MS:{label:"Polling interval",description:"Milliseconds between GitHub polls.",group:"Factory",type:"number"},
-  FACTORY_EXECUTION_TIMEOUT_MS:{label:"Agent timeout",description:"Maximum milliseconds for one agent execution.",group:"Factory",type:"number"},
-  FACTORY_MAX_FIX_CYCLES:{label:"Correction cycles",description:"Maximum automatic developer/QA correction loops.",group:"Factory",type:"number"},
-  FACTORY_DASHBOARD_HOST:{label:"Dashboard host",description:"Loopback address used by this dashboard.",group:"Dashboard",required:true},
-  FACTORY_DASHBOARD_PORT:{label:"Dashboard port",description:"Local HTTP port; restart dashboard after changing it.",group:"Dashboard",type:"number",required:true},
-  GITHUB_REPOSITORY:{label:"GitHub repository",description:"Owner/name used for issues and pull requests.",group:"Target",required:true},
-  GITHUB_DEFAULT_BRANCH:{label:"Default branch",description:"Base branch for worktrees and pull requests.",group:"Target",required:true},
-  FACTORY_APPROVERS:{label:"Approvers",description:"Comma-separated GitHub logins allowed to approve.",group:"Target",required:true},
-  SLACK_WEBHOOK_URL:{label:"Slack webhook",description:"Optional. Leave blank to keep the configured secret.",group:"Notifications",secret:true},
-  CODEX_COMMAND:{label:"Codex command",description:"Absolute Codex CLI path.",group:"Tools",required:true},
-  CLAUDE_COMMAND:{label:"Claude command",description:"Absolute Claude CLI path.",group:"Tools",required:true},
-  GIT_COMMAND:{label:"Git command",description:"Absolute Git executable path.",group:"Tools",required:true},
-  AGENT_SECRET_ALLOWLIST:{label:"Agent secret allowlist",description:"Extra environment variable names forwarded to agents.",group:"Security"},
-  CODEX_MODEL_FAST:{label:"Codex fast",description:"Model for low-complexity Codex work.",group:"Models",required:true},
-  CODEX_MODEL_BALANCED:{label:"Codex balanced",description:"Model for standard Codex work.",group:"Models",required:true},
-  CODEX_MODEL_STRONG:{label:"Codex strong",description:"Model for demanding Codex work.",group:"Models",required:true},
-  CLAUDE_MODEL_FAST:{label:"Claude fast",description:"Model for low-complexity Claude work.",group:"Models",required:true},
-  CLAUDE_MODEL_BALANCED:{label:"Claude balanced",description:"Model for standard Claude work.",group:"Models",required:true},
-  CLAUDE_MODEL_STRONG:{label:"Claude strong",description:"Model for demanding Claude work.",group:"Models",required:true},
+  FACTORY_DATA_DIR:{label:"Data directory",description:"SQLite database, logs and retained worktrees.",group:"runtime",required:true,restart:"all"},
+  FACTORY_REPO_DIR:{label:"Target checkout",description:"Absolute path to the application clone.",group:"project",required:true,restart:"daemon"},
+  FACTORY_POLL_INTERVAL_MS:{label:"GitHub polling interval",description:"How often the daemon checks issues and comments.",group:"runtime",type:"number",unit:"milliseconds",restart:"daemon"},
+  FACTORY_EXECUTION_TIMEOUT_MS:{label:"Agent execution timeout",description:"Maximum duration of one agent process.",group:"runtime",type:"number",unit:"milliseconds",restart:"daemon"},
+  FACTORY_MAX_FIX_CYCLES:{label:"Automatic correction cycles",description:"Maximum Developer and QA correction loops before human input.",group:"runtime",type:"number",unit:"cycles",restart:"daemon"},
+  FACTORY_DASHBOARD_HOST:{label:"Listen address",description:"Loopback address used by the administration UI.",group:"dashboard",type:"select",options:["127.0.0.1","localhost","::1"].map(value => ({value,label:value})),required:true,restart:"dashboard"},
+  FACTORY_DASHBOARD_PORT:{label:"HTTP port",description:"Local port for the administration UI.",group:"dashboard",type:"number",unit:"port",required:true,restart:"dashboard"},
+  GITHUB_REPOSITORY:{label:"Repository",description:"GitHub owner/name used for issues and pull requests.",group:"project",required:true,restart:"daemon"},
+  GITHUB_DEFAULT_BRANCH:{label:"Default branch",description:"Base branch for worktrees and pull requests.",group:"project",required:true,restart:"daemon"},
+  FACTORY_APPROVERS:{label:"Authorized approvers",description:"Comma-separated GitHub logins allowed to answer and approve.",group:"access",required:true,restart:"daemon"},
+  SLACK_WEBHOOK_URL:{label:"Slack webhook",description:"Optional HTTPS webhook. Blank preserves the configured secret.",group:"notifications",secret:true,restart:"daemon"},
+  CODEX_COMMAND:{label:"Codex CLI",description:"Absolute path or command used to start Codex.",group:"tools",required:true,restart:"daemon"},
+  CLAUDE_COMMAND:{label:"Claude CLI",description:"Absolute path or command used to start Claude.",group:"tools",required:true,restart:"daemon"},
+  GIT_COMMAND:{label:"Git executable",description:"Absolute path or command used for Git operations.",group:"tools",required:true,restart:"all"},
+  AGENT_SECRET_ALLOWLIST:{label:"Agent environment allowlist",description:"Extra environment variable names forwarded to worker processes.",group:"access",restart:"daemon"},
+  CODEX_MODEL_FAST:{label:"Codex · Fast",description:"Low-complexity implementation and QA work.",group:"models",type:"select",options:codexModels,required:true,restart:"daemon"},
+  CODEX_MODEL_BALANCED:{label:"Codex · Balanced",description:"Standard implementation and QA work.",group:"models",type:"select",options:codexModels,required:true,restart:"daemon"},
+  CODEX_MODEL_STRONG:{label:"Codex · Strong",description:"Demanding implementation and QA work.",group:"models",type:"select",options:codexModels,required:true,restart:"daemon"},
+  CLAUDE_MODEL_FAST:{label:"Claude · Fast",description:"Low-complexity product and review work.",group:"models",type:"select",options:claudeModels,required:true,restart:"daemon"},
+  CLAUDE_MODEL_BALANCED:{label:"Claude · Balanced",description:"Standard product and review work.",group:"models",type:"select",options:claudeModels,required:true,restart:"daemon"},
+  CLAUDE_MODEL_STRONG:{label:"Claude · Strong",description:"Demanding product and architectural review work.",group:"models",type:"select",options:claudeModels,required:true,restart:"daemon"},
 };
 
 function encode(value: string) {
@@ -62,9 +75,11 @@ export function readDashboardSettings(root: string) {
   const values = {...defaults,...saved};
   const fields = Object.keys(defaults).map(key => {
     const meta = descriptions[key] ?? {label:key,description:"Factory setting.",group:"Other"};
-    return {key,...meta,value:meta.secret ? "" : values[key] ?? "",configured:meta.secret ? Boolean(values[key]) : undefined};
+    const value = meta.secret ? "" : values[key] ?? "";
+    const options = meta.options && value && !meta.options.some(option => option.value === value) ? [...meta.options,{value,label:`${value} (current custom value)`}] : meta.options;
+    return {key,...meta,options,value,configured:meta.secret ? Boolean(values[key]) : undefined};
   });
-  return { fields };
+  return { groups,fields };
 }
 export function saveDashboardSettings(root: string, changes: Record<string,unknown>, clearSecrets: string[] = []) {
   const names = files(root);

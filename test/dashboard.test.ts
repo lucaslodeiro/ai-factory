@@ -28,7 +28,7 @@ esac
   config.gitCommand=fakeGit;
   fs.writeFileSync(path.join(settingsRoot,"package.json"),JSON.stringify({version:"0.1.0"}));
   fs.copyFileSync(".env.example",path.join(settingsRoot,".env.example"));
-  fs.writeFileSync(path.join(settingsRoot,".env"),"FACTORY_POLL_INTERVAL_MS=15000\nSLACK_WEBHOOK_URL='https://hooks.example.com/private'\n");
+  fs.writeFileSync(path.join(settingsRoot,".env"),"FACTORY_POLL_INTERVAL_MS=15000\nSLACK_WEBHOOK_URL='https://hooks.example.com/private'\nCODEX_MODEL_FAST='custom-codex-model'\n");
   fs.mkdirSync(path.join(settingsRoot,"scripts"));
   fs.writeFileSync(path.join(settingsRoot,"scripts","services.sh"),`#!/usr/bin/env bash
 if [[ $1 == status ]]; then
@@ -52,6 +52,8 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(html,/theme-toggle/);
     assert.match(html,/live-status/);
     assert.match(html,/factory-update/);
+    assert.match(html,/Configuration/);
+    assert.match(html,/settings-navigation/);
     assert.doesNotMatch(html,/Stop daemon/);
     const snapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
     assert.equal(snapshot.daemon.running,false);
@@ -94,6 +96,13 @@ echo "$*" >> "$PWD/update-actions.log"
     const unknownService = await fetch(`http://127.0.0.1:${port}/api/services`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({service:"worker",action:"restart"})});
     assert.equal(unknownService.status,400);
     const settings = await fetch(`http://127.0.0.1:${port}/api/settings`).then(response => response.json()) as any;
+    assert.deepEqual(settings.groups.map((group: any) => group.id),["project","runtime","dashboard","models","tools","access","notifications"]);
+    const dashboardHost = settings.fields.find((field: any) => field.key === "FACTORY_DASHBOARD_HOST");
+    assert.equal(dashboardHost.type,"select"); assert.deepEqual(dashboardHost.options.map((option: any) => option.value),["127.0.0.1","localhost","::1"]);
+    const codexModel = settings.fields.find((field: any) => field.key === "CODEX_MODEL_BALANCED");
+    assert.equal(codexModel.group,"models"); assert.equal(codexModel.type,"select"); assert.ok(codexModel.options.some((option: any) => option.value === "gpt-5.6-terra"));
+    const customModel = settings.fields.find((field: any) => field.key === "CODEX_MODEL_FAST");
+    assert.ok(customModel.options.some((option: any) => option.value === "custom-codex-model" && option.label.includes("current custom value")));
     assert.equal(settings.fields.find((field: any) => field.key === "SLACK_WEBHOOK_URL").value,"");
     assert.equal(settings.fields.find((field: any) => field.key === "SLACK_WEBHOOK_URL").configured,true);
     assert.ok(!JSON.stringify(settings).includes("private"));
