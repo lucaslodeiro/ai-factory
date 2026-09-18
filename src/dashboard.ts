@@ -2,6 +2,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawn, spawnSync } from "node:child_process";
 import type { AddressInfo } from "node:net";
 import { config } from "./config.js";
 import { Store } from "./storage.js";
@@ -69,13 +70,48 @@ function asset(res: http.ServerResponse, name: string) {
     res.end(content);
   } catch { res.writeHead(404).end("Not found"); }
 }
+function serviceStatus(root: string, service: "daemon" | "dashboard") {
+  const result = spawnSync("bash",[path.join(root,"scripts/services.sh"),"status",service],{cwd:root,encoding:"utf8",timeout:10000});
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  return { service, loaded:result.status === 0 && output.includes(`${service}: loaded`), running:/state = (running|active)/.test(output), detail:output.trim() };
+}
+function runService(root: string, service: "daemon" | "dashboard", action: "start" | "stop" | "restart" | "update") {
+  const script = path.join(root,"scripts/services.sh");
+  if (action === "update") {
+    const logs = path.join(root,".factory","service-logs");
+    fs.mkdirSync(logs,{recursive:true});
+    const output = fs.openSync(path.join(logs,"update.log"),"a");
+    const child = spawn("/bin/bash",["-c",'sleep 0.75; exec bash "$1" --defaults --restart-services',"factory-dashboard-update",path.join(root,"scripts/update.sh")],{cwd:root,detached:true,stdio:["ignore",output,output]});
+    fs.closeSync(output);
+    child.unref();
+    return { accepted:true, message:"Factory update started. Services will stop, update, and reconnect when ready." };
+  }
+  if (service === "dashboard" && ["stop","restart"].includes(action)) {
+    const child = spawn("/bin/bash",["-c",'sleep 0.5; exec bash "$1" "$2" dashboard',"factory-dashboard-control",script,action],{cwd:root,detached:true,stdio:"ignore"});
+    child.unref();
+    return { accepted:true, message:`Dashboard ${action} scheduled; this page may reconnect.` };
+  }
+  const result = spawnSync("bash",[script,action,service],{cwd:root,encoding:"utf8",timeout:30000});
+  if (result.status !== 0) throw new Error((result.stderr || result.stdout || `${service} ${action} failed`).trim());
+  return { accepted:true, message:`${service} ${action} completed.` };
+}
 
 export function createDashboardServer(store: Store, settingsRoot = process.cwd()) {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
       if (req.method === "GET" && url.pathname === "/api/snapshot") return json(res,200,snapshot(store));
+      if (req.method === "GET" && url.pathname === "/api/stream") {
+        res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache, no-transform","connection":"keep-alive"});
+        const send = () => { if (!res.destroyed) res.write(`data: ${JSON.stringify(snapshot(store))}\n\n`); };
+        send();
+        const timer = setInterval(send,2000);
+        timer.unref();
+        req.on("close",() => clearInterval(timer));
+        return;
+      }
       if (req.method === "GET" && url.pathname === "/api/settings") return json(res,200,{...readDashboardSettings(settingsRoot),daemonRunning:daemonState(store).running});
+      if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,{services:[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")]});
       if (req.method === "GET" && url.pathname === "/healthz") return json(res,200,{ok:true});
       if (req.method === "PUT" && url.pathname === "/api/settings") {
         if (daemonState(store).running) return json(res,409,{error:"Stop the daemon before changing configuration"});
@@ -90,6 +126,11 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         if (body.kind !== "stop" && !body.target) return json(res,400,{error:"A work item or run id is required"});
         store.request(body.kind!,body.target ?? "");
         return json(res,202,{ok:true,message:`${body.kind} queued`});
+      }
+      if (req.method === "POST" && url.pathname === "/api/services") {
+        const body = await readBody(req) as { service?: string; action?: string };
+        if (!['daemon','dashboard'].includes(body.service ?? "") || !['start','stop','restart','update'].includes(body.action ?? "")) return json(res,400,{error:"Unknown service action"});
+        return json(res,202,runService(settingsRoot,body.service as "daemon" | "dashboard",body.action as "start" | "stop" | "restart" | "update"));
       }
       if (req.method !== "GET") return json(res,405,{error:"Method not allowed"});
       const files: Record<string,string> = { "/":"index.html", "/index.html":"index.html", "/app.js":"app.js", "/styles.css":"styles.css" };

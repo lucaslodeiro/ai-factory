@@ -4,12 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>AI Factory</title>
+  <script>document.documentElement.dataset.theme=localStorage.getItem('factory-theme')||((matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark')</script>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <header>
     <div><p class="eyebrow">LOCAL CONTROL PLANE</p><h1>AI Factory</h1><p id="repository" class="muted">Loading configuration…</p></div>
-    <div class="daemon"><span id="daemon-dot"></span><div><strong id="daemon-state">Checking daemon</strong><small id="daemon-pid"></small></div><button id="stop" class="danger">Stop daemon</button></div>
+    <div class="header-actions"><button id="theme-toggle" aria-label="Switch color theme">Light mode</button><div class="daemon"><span id="daemon-dot"></span><div><strong id="daemon-state">Checking daemon</strong><small id="daemon-pid"></small></div><button id="stop" class="danger">Stop daemon</button></div></div>
   </header>
   <main>
     <section class="metrics" aria-label="Summary">
@@ -18,12 +19,13 @@
       <article><span>Ready</span><strong id="ready-count">—</strong></article>
       <article><span>Failed</span><strong id="failed-count">—</strong></article>
     </section>
+    <section class="panel"><div class="panel-title"><div><p class="eyebrow">SERVICES</p><h2>Runtime controls</h2></div><span class="muted">Update stops both services, downloads the current branch and restores the services that were running.</span></div><div id="services" class="service-grid"><p class="empty">Loading services…</p></div></section>
     <details class="panel settings-panel">
       <summary><div><p class="eyebrow">CONFIGURATION</p><h2>Factory settings</h2></div><span id="settings-summary" class="muted">Edit local .env</span></summary>
       <p id="settings-status" class="settings-status">Loading configuration…</p>
       <form id="settings-form"><fieldset id="settings-fieldset"><div id="settings-groups"></div><div class="settings-actions"><button type="submit" class="primary">Save configuration</button><span class="muted">Changes apply after restarting the affected service.</span></div></fieldset></form>
     </details>
-    <section class="panel"><div class="panel-title"><div><p class="eyebrow">WORK QUEUE</p><h2>Issues</h2></div><span id="updated" class="muted"></span></div><div id="items" class="items"></div></section>
+    <section class="panel"><div class="panel-title"><div><p class="eyebrow">WORK QUEUE</p><h2>Issues</h2></div><div class="live-meta"><span id="live-status" class="live-badge">Connecting</span><span id="updated" class="muted"></span></div></div><div id="items" class="items"></div></section>
     <div class="columns">
       <section class="panel"><div class="panel-title"><div><p class="eyebrow">AGENTS</p><h2>Recent executions</h2></div></div><div id="executions" class="timeline"></div></section>
       <section class="panel"><div class="panel-title"><div><p class="eyebrow">AUDIT</p><h2>Recent events</h2></div></div><div id="events" class="timeline"></div></section>
