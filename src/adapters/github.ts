@@ -4,7 +4,9 @@ import { config } from "../config.js";
 import type { WorkState } from "../types.js";
 export type Issue = { number: number; title: string; body: string; url: string; };
 export type Comment = { id: number; body: string; user: { login: string; type: string }; };
+export interface PullRequestState { state: "OPEN" | "CLOSED" | "MERGED"; mergedAt: string | null; mergeCommit: { oid: string } | null; }
 export interface GitHubPort {
+ pullRequestState(url: string): PullRequestState;
  listQueued(): Issue[]; comments(n: number): Comment[];
  commentOnce(n: number, body: string, key: string): void;
  syncState(n: number, state: WorkState, progress?: string): void;
@@ -46,6 +48,11 @@ export class GitHubAdapter implements GitHubPort {
    if (!existing) this.invoke(["issue", "comment", String(n), "--repo", config.repo, "--body", body]);
    else if (existing.body !== body) this.invoke(["api", `repos/${config.repo}/issues/comments/${existing.id}`, "--method", "PATCH", "--input", "-"], { body });
   }
+ }
+ pullRequestState(url: string): PullRequestState {
+  const result = JSON.parse(this.invoke(["pr", "view", url, "--repo", config.repo, "--json", "state,mergedAt,mergeCommit"]));
+  if (!["OPEN", "CLOSED", "MERGED"].includes(result.state) || (result.state === "MERGED" && !result.mergedAt)) throw new Error("Invalid pull request state from GitHub");
+  return result;
  }
  ensurePR(branch: string, title: string, body: string) {
   const prs = JSON.parse(this.invoke(["pr", "list", "--repo", config.repo, "--head", branch, "--base", config.defaultBranch, "--state", "open", "--json", "url"]));

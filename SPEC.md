@@ -80,7 +80,7 @@ Correction cycles are bounded by configuration. Reaching the limit requires huma
 
 ### F10 — Pull request delivery
 
-After Developer, QA and Reviewer pass for the current approved work, push only the work item's `factory/*` branch and create or reuse its open PR against the configured base. The PR contains the approved spec, summaries and a link to complete reports/decisions/deferred findings. Do not merge automatically or push to the default branch.
+After Developer, QA and Reviewer pass for the current approved work, push only the work item's `factory/*` branch and create or reuse its open PR against the configured base. The PR contains the approved spec, summaries and a link to complete reports/decisions/deferred findings. Do not merge automatically or push to the default branch. Reconcile the published PR with GitHub: MERGED is terminal and records the merge timestamp/commit; PR_CLOSED distinguishes closure without integration and can return to READY_TO_MERGE on reopening. Preserve state on API errors and emit each lifecycle transition once. The daemon and standalone sync command perform this without executing agents.
 
 ### F11 — Execution, cancellation and recovery
 

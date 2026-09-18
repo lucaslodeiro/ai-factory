@@ -7,6 +7,8 @@ export function notificationText(w: WorkItem, detail?: string) {
       : w.context.waiting === "loop" ? "Correction limit reached. Reply /factory answer <guidance> in GitHub."
       : "Product/Architect needs your answer. Reply /factory answer <answer> in GitHub."
     : w.state === "FAILED" ? `Inspect logs, then factory retry ${w.id}.`
+    : w.state === "MERGED" ? `Delivery merged: ${w.context.pr}`
+    : w.state === "PR_CLOSED" ? `PR closed without merge. Review or reopen: ${w.context.pr}`
     : w.state === "READY_TO_MERGE" ? `Review the PR and merge manually: ${w.context.pr}` : "";
   const summary = w.state === "WAITING_HUMAN" ? w.context.waiting === "questions"
     ? w.context.reports?.["product-architect"]?.questions.join("; ")

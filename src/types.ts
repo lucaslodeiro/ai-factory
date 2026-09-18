@@ -1,4 +1,4 @@
-export type WorkState = "NEW" | "SPEC" | "WAITING_HUMAN" | "DEVELOPMENT" | "QA" | "REVIEW" | "READY_TO_MERGE" | "PAUSED" | "FAILED" | "CANCELLED";
+export type WorkState = "NEW" | "SPEC" | "WAITING_HUMAN" | "DEVELOPMENT" | "QA" | "REVIEW" | "READY_TO_MERGE" | "MERGED" | "PR_CLOSED" | "PAUSED" | "FAILED" | "CANCELLED";
 export type AgentRole = "product-architect" | "developer" | "qa" | "reviewer";
 export type DeliveryStage = "DEVELOPMENT" | "QA" | "REVIEW";
 export interface Criterion { id: string; description: string; }
@@ -28,6 +28,6 @@ export interface Context {
   cursor: number; waiting?: "questions" | "approval" | "loop";
   feedback: string[]; cycles: number; resume?: WorkState;
   pendingStage?: { stage: WorkState; beforeHead: string; startedAt: string };
-  reports: Partial<Record<AgentRole, AgentResult>>; pr?: string;
+  reports: Partial<Record<AgentRole, AgentResult>>; pr?: string; merge?: { at: string; commit: string | null };
 }
 export interface WorkItem { id: string; issue_number: number; repo: string; state: WorkState; branch: string; context: Context; }

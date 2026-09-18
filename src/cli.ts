@@ -2,11 +2,12 @@
 import { config } from "./config.js";
 import { modelForWork, modelPolicyVersion } from "./model-policy.js";
 import type { AgentRole } from "./types.js";
+import { Orchestrator } from "./orchestrator.js";
 import { Command } from "commander";
 import { doctor } from "./doctor.js";
 import { Store } from "./storage.js";
 import { SlackAdapter } from "./adapters/slack.js";
-import { startDaemon } from "./daemon.js";
+import { startDaemon, acquireLock } from "./daemon.js";
 const p = new Command().name("factory").description("Local AI Software Factory").version("0.1.0");
 p.command("models").argument("[id]").description("Show model policy or preview role selections for a work item").action(id => {
  console.log(`Model policy: ${modelPolicyVersion}`);
@@ -16,6 +17,9 @@ p.command("models").argument("[id]").description("Show model policy or preview r
   const w = s.get(id); if (!w) throw new Error("Unknown work item");
   console.table((["product-architect", "developer", "qa", "reviewer"] as AgentRole[]).map(role => ({ role, ...modelForWork(w, role) })));
  } finally { s.db.close(); }
+});
+p.command("sync").description("Reconcile PR lifecycle and publish pending status/reports without running agents").action(async () => {
+ const s = new Store(); try { const release = acquireLock(s); try { const o = new Orchestrator(s, {}); await o.reconcilePullRequests(); await o.flush(); } finally { release(); } } finally { s.db.close(); }
 });
 p.command("doctor").action(() => { process.exitCode = doctor() ? 0 : 1; });
 p.command("status").argument("[id]").action(id => {

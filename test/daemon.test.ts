@@ -30,6 +30,7 @@ else if(a[0]==='issue'&&a[1]==='list'){out([{number:1,title:'Add greet',body:'Ad
 else if(a[0]==='issue'&&a[1]==='view'){out({labels:[{name:s.label}]})}
 else if(a[0]==='issue'&&a[1]==='edit'){s.label=a[a.indexOf('--add-label')+1];save()}
 else if(a[0]==='issue'&&a[1]==='comment'){s.comments.push({id:s.comments.length+1,body:a[a.indexOf('--body')+1],user:{login:'factory',type:'Bot'}});save()}
+else if(a[0]==='pr'&&a[1]==='view'){out({state:'OPEN',mergedAt:null,mergeCommit:null})}
 else if(a[0]==='pr'&&a[1]==='list'){out(s.prs?[{url:'https://example.test/pull/1'}]:[])}
 else if(a[0]==='pr'&&a[1]==='create'){s.prs++;save();console.log('https://example.test/pull/1')}
 else {console.error('Unexpected gh command',a);process.exit(2)}
@@ -80,6 +81,7 @@ if(codex){
   const command = (name: string, id?: string) => spawnSync(process.execPath, ["--import", "tsx", cli, name, ...(id ? [id] : [])], { env, encoding: "utf8" });
   const workId = store.items()[0].id;
   assert.equal(command("status").status, 0);
+  assert.equal(command("sync").status, 1, "Standalone sync must not race the active daemon");
   assert.equal((store.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='running'").get() as any).n, 1);
   assert.equal(command("cancel", workId).status, 0);
   await waitFor(() => store!.items()[0]?.state === "CANCELLED" && (store!.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='running'").get() as any).n === 0);

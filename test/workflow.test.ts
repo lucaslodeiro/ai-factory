@@ -11,6 +11,8 @@ import type { AgentRunRequest } from "../src/adapters/agent.js";
 config.repo = "owner/demo"; config.approvers = ["owner"];
 import { result } from "./fixtures.js";
 class GitHub implements GitHubPort {
+ prState: "OPEN" | "CLOSED" | "MERGED" = "OPEN"; failPR = false;
+ pullRequestState() { if (this.failPR) throw new Error("offline"); return { state: this.prState, mergedAt: this.prState === "MERGED" ? "2026-09-18T18:00:00Z" : null, mergeCommit: this.prState === "MERGED" ? { oid: "abc123" } : null }; }
  replies: Comment[] = []; posted = new Map<string,string>(); states: WorkState[] = []; prs = 0; fail = false; failComments = false;
  listQueued() { return [{ number: 1, title: "Feature", body: "Implement feature", url: "https://example.test/issues/1" }]; }
  comments() { if (this.failComments) throw new Error("GitHub temporarily unavailable"); return this.replies; }
@@ -225,4 +227,28 @@ test("read-only reviewer receives attributed QA execution evidence without devel
  assert.match(instructions, /explicitly attributing it to QA/);
  assert.doesNotMatch(instructions, /PRIVATE_DEVELOPER_REASONING|QA_CONCLUSION_NOT_SHARED/);
  assert.equal(f.item().state, "READY_TO_MERGE"); f.store.db.close();
+});
+
+test("merged PR reconciles once, records merge evidence and never starts another agent", async () => {
+ const f = setup(); await f.o.tick(); f.gh.reply("/factory approve v1"); await f.o.tick();
+ for(let i=0;i<3;i++) await f.o.tick();
+ const calls=f.calls.length; f.gh.prState="MERGED";
+ await f.o.tick(); await f.o.tick();
+ assert.equal(f.item().state,"MERGED"); assert.equal(f.calls.length,calls);
+ assert.deepEqual(f.item().context.merge,{at:"2026-09-18T18:00:00Z",commit:"abc123"});
+ assert.equal(f.notifications.filter(n=>n.includes(": MERGED")).length,1);
+ assert.equal([...f.gh.posted.values()].filter(body=>body.includes("## Delivery merged")).length,1);
+ assert.throws(()=>retry(f.store,f.item().id),/Only failed/); f.store.db.close();
+});
+test("closed unmerged PR is distinct, can reopen, and API outages preserve its state", async () => {
+ const f=setup(); await f.o.tick(); f.gh.reply("/factory approve v1"); await f.o.tick();
+ for(let i=0;i<3;i++) await f.o.tick();
+ f.gh.prState="CLOSED"; f.gh.failPR=true; await f.o.tick();
+ assert.equal(f.item().state,"READY_TO_MERGE");
+ f.gh.failPR=false; await f.o.tick(); assert.equal(f.item().state,"PR_CLOSED");
+ assert.equal(f.item().context.merge,undefined);
+ f.gh.prState="OPEN"; await f.o.tick(); assert.equal(f.item().state,"READY_TO_MERGE");
+ f.gh.prState="CLOSED"; await f.o.tick();
+ f.gh.prState="MERGED"; await f.o.tick(); assert.equal(f.item().state,"MERGED");
+ assert.equal(f.calls.length,4); f.store.db.close();
 });

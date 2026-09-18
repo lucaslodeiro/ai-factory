@@ -6,7 +6,7 @@ const allowed: Record<WorkState, WorkState[]> = {
  DEVELOPMENT: ["QA", "SPEC", "WAITING_HUMAN", "FAILED", "CANCELLED", "PAUSED"],
  QA: ["DEVELOPMENT", "SPEC", "WAITING_HUMAN", "REVIEW", "FAILED", "CANCELLED", "PAUSED"],
  REVIEW: ["DEVELOPMENT", "SPEC", "WAITING_HUMAN", "READY_TO_MERGE", "FAILED", "CANCELLED", "PAUSED"],
- READY_TO_MERGE: ["CANCELLED"], PAUSED: [...active, "WAITING_HUMAN", "CANCELLED"],
+ READY_TO_MERGE: ["MERGED", "PR_CLOSED", "CANCELLED"], MERGED: [], PR_CLOSED: ["READY_TO_MERGE", "MERGED", "CANCELLED"], PAUSED: [...active, "WAITING_HUMAN", "CANCELLED"],
  FAILED: [...active, "WAITING_HUMAN", "CANCELLED"], CANCELLED: [...active, "WAITING_HUMAN"],
 };
 export function canTransition(from: WorkState, to: WorkState) { return allowed[from].includes(to); }

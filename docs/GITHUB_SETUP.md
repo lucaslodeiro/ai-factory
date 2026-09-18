@@ -14,7 +14,7 @@ The final PR includes the approved spec, QA/review evidence and deferred finding
 
 ## Visible workflow state
 
-GitHub issue Open/Closed tracks whether the work is still outstanding. The issue stays open through specification, implementation, QA, review and ready-to-merge. The delivered PR includes `Closes #N`; GitHub closes the issue when that PR merges into the default branch. The MVP orchestrator ends at READY_TO_MERGE and does not yet reconcile a separate merged state into SQLite.
+GitHub issue Open/Closed tracks whether the work is still outstanding. The issue stays open through specification, implementation, QA, review and ready-to-merge. The delivered PR includes `Closes #N`; GitHub closes the issue when that PR merges into the default branch. The orchestrator polls delivered PRs: a confirmed merge records MERGED, merge time and commit; a closed unmerged PR records PR_CLOSED; reopening restores READY_TO_MERGE. These updates never execute agents or merge anything. GitHub outages retain the previous state for a later retry.
 
 Workflow progress is mirrored in a colored label and one updatable **AI Factory** status comment with milestones and the next human action:
 
@@ -26,6 +26,8 @@ Workflow progress is mirrored in a colored label and one updatable **AI Factory*
 | QA | factory:qa | Independent testing |
 | REVIEW | factory:review | Reviewing |
 | READY_TO_MERGE | factory:ready-to-merge | Human merge pending |
+| MERGED | factory:merged | GitHub confirmed completed delivery |
+| PR_CLOSED | factory:pr-closed | Closed without integration; can be reopened |
 | FAILED | factory:failed | Inspect and retry |
 | PAUSED | factory:paused | Paused |
 | CANCELLED | factory:cancelled | Cancelled |
@@ -33,3 +35,5 @@ Workflow progress is mirrored in a colored label and one updatable **AI Factory*
 Only known workflow labels are replaced; unrelated labels, including other `factory:*` labels, remain intact. The progress comment is updated only when its content changes. During GitHub outages, the next daemon flush retries reconciliation from SQLite. This does not create or manage a GitHub Projects board.
 
 Spec and role reports are Markdown with summaries, findings, and expandable criteria/test/review evidence. Long evidence is abbreviated for readability (up to 20 rows per section); the complete structured report remains in SQLite and execution logs. Human commands remain standalone new comments. Formatting changes to an existing generated spec do not change the approved version or overwrite human approval comments.
+
+Lifecycle reconciliation runs during normal daemon polling. With the daemon stopped, run `npm run factory -- sync` to reconcile PR state and publish pending status/reports without authenticating or running agent providers. It uses the same singleton lock and refuses to race an active daemon. MERGED is terminal; ordinary retry cannot restart it.

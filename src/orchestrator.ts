@@ -12,17 +12,18 @@ import { deliverNotifications, type NotificationPort } from "./notifications.js"
 import { parseResult, validateCoverage } from "./results.js";
 import type { WorkItem, WorkState, AgentRole, AgentResult, DeliveryStage } from "./types.js";
 export class Orchestrator {
- constructor(readonly store: Store, private agents: Record<AgentRole, AgentAdapter>,
+ constructor(readonly store: Store, private agents: Partial<Record<AgentRole, AgentAdapter>>,
   private github: GitHubPort = new GitHubAdapter(), private workspaces: WorkspacePort = new Workspaces(),
   private slack: NotificationPort = new SlackAdapter()) {}
  async tick() {
   try { for (const issue of this.github.listQueued()) this.ingest(issue); }
   catch (e) { this.store.event("github.poll_failed", { error: String(e) }); }
+  await this.reconcilePullRequests();
   await this.flush();
   for (const snapshot of this.store.items()) {
    const w = this.store.get(snapshot.id)!;
    if (w.repo !== config.repo) throw new Error("Data directory belongs to a different repository");
-   if (["FAILED", "CANCELLED", "PAUSED", "READY_TO_MERGE"].includes(w.state)) continue;
+   if (["FAILED", "CANCELLED", "PAUSED", "READY_TO_MERGE", "MERGED", "PR_CLOSED"].includes(w.state)) continue;
    try { await this.advance(w); }
    catch (e) {
     // A control command may have changed the item while its child process was running.
@@ -36,6 +37,26 @@ export class Orchestrator {
     this.store.event("workflow.error", { error: String(e) }, w.id);
    }
    await this.flush();
+  }
+ }
+ async reconcilePullRequests() {
+  for (const w of this.store.items()) {
+   if (w.repo !== config.repo || !["READY_TO_MERGE", "PR_CLOSED"].includes(w.state) || !w.context.pr) continue;
+   try {
+    const pr = this.github.pullRequestState(w.context.pr);
+    const next = pr.state === "MERGED" ? "MERGED" : pr.state === "CLOSED" ? "PR_CLOSED" : "READY_TO_MERGE";
+    if (next === w.state) continue;
+    this.store.db.transaction(() => {
+     if (next === "MERGED") w.context.merge = { at: pr.mergedAt!, commit: pr.mergeCommit?.oid ?? null };
+     w.context.resume = undefined;
+     this.store.transition(w, next);
+     this.store.event("pull_request.reconciled", { url: w.context.pr, ...pr }, w.id);
+     const message = next === "MERGED" ? `## Delivery merged\n\nGitHub confirmed that [the pull request](${w.context.pr}) was merged. Work is complete.`
+      : next === "PR_CLOSED" ? `## Pull request closed without merge\n\n[The pull request](${w.context.pr}) was closed without integrating the changes. This is not completed delivery. Reopen it in GitHub to resume merge tracking.`
+      : `## Pull request reopened\n\n[The pull request](${w.context.pr}) is open again and awaits human review/merge.`;
+     this.store.post(w.issue_number, message);
+    })();
+   } catch (e) { this.store.event("github.pr_poll_failed", { error: String(e), url: w.context.pr }, w.id); }
   }
  }
  private ingest(issue: Issue) {
@@ -79,7 +100,9 @@ export class Orchestrator {
   this.store.save(w);
   const selection = modelForWork(w, role);
   this.store.event("model.selected", { role, specVersion: w.context.version, selection }, w.id);
-  const result = parseResult(await this.agents[role].run({ workItemId: w.id, role, cwd: w.context.cwd, instructions, selection }), role);
+  const adapter = this.agents[role];
+  if (!adapter) throw new Error(`No adapter configured for ${role}`);
+  const result = parseResult(await adapter.run({ workItemId: w.id, role, cwd: w.context.cwd, instructions, selection }), role);
   if (this.store.get(w.id)!.state !== w.state) return;
   if (role !== "product-architect") validateCoverage(result, w.context.criteria ?? []);
   this.workspaces.check(w.context.cwd, role, before, w.branch);

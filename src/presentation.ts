@@ -1,5 +1,7 @@
 import type { AgentResult, AgentRole, Decision, WorkItem, WorkState } from "./types.js";
 export const statePresentation: Record<WorkState, { title: string; color: string; description: string }> = {
+ MERGED: { title: "Merged — completed", color: "8250df", description: "GitHub confirmed the pull request was merged" },
+ PR_CLOSED: { title: "PR closed without merge", color: "d73a4a", description: "Changes were not integrated; reopen the PR to resume tracking" },
  NEW: { title: "Queued", color: "d4c5f9", description: "Waiting for initial assessment" },
  SPEC: { title: "Designing the specification", color: "5319e7", description: "Product/Architect is preparing the work" },
  WAITING_HUMAN: { title: "Waiting for your response", color: "fbca04", description: "Human approval, clarification or guidance required" },
@@ -45,6 +47,8 @@ export function progressMarkdown(w: WorkItem) {
  const c = w.context;
  const action = w.state === "WAITING_HUMAN"
   ? c.waiting === "approval" ? `Review SPEC v${c.version} and post \`/factory approve v${c.version}\` or \`/factory answer <feedback>\`.` : "Post `/factory answer <your response>` to continue."
+  : w.state === "MERGED" ? `Delivery completed: [merged pull request](${c.pr}). No further action required by the factory.`
+  : w.state === "PR_CLOSED" ? `Review why [the PR](${c.pr}) was closed; reopen it if delivery should continue.`
   : w.state === "READY_TO_MERGE" ? `Review and merge the [pull request](${c.pr}).`
   : ["FAILED", "PAUSED", "CANCELLED"].includes(w.state) ? `Inspect the latest report/logs, then run \`factory retry ${w.id}\` when ready.`
   : "No action needed; the factory is working.";
@@ -53,5 +57,5 @@ export function progressMarkdown(w: WorkItem) {
   ["Specification", c.architectDraft ? "Strong-profile draft review" : c.version ? `v${c.version}` : "In preparation"],
   ["Human approval", c.approvedVersion === c.version && c.approval ? `v${c.version} approved by ${c.approval.login}` : "Pending"],
   ["Development", stage("developer")], ["Independent QA", stage("qa")], ["Review", stage("reviewer")],
- ])}\n\n**Next action:** ${action}\n\nThe issue stays open while delivery or merge is pending. The linked PR closes it when merged into the default branch.\n\n<sub>Orchestrator state: ${w.state} · Work item: ${w.id}</sub>`;
+ ])}\n\n**Next action:** ${action}\n\n${w.state === "MERGED" ? "The linked PR has been merged. GitHub manages issue closure through the PR closing reference." : "The issue stays open while delivery or merge is pending. The linked PR closes it when merged into the default branch."}\n\n<sub>Orchestrator state: ${w.state} · Work item: ${w.id}</sub>`;
 }

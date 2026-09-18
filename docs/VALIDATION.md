@@ -4,7 +4,7 @@
 
 `npm run build` and `npm test` pass on macOS with Node 26.4.0. A Node 22/Linux GitHub Actions template is provided in `docs/ci.example.yml`. It is not activated: the current GitHub OAuth credential lacks the workflow scope, and GitHub rejected a push containing `.github/workflows/ci.yml`. Copy the template there using a credential permitted to manage workflows when ready.
 
-43 tests cover:
+45 tests cover:
 
 - Full foreground daemon with real SQLite, separate CLI control processes, real Git worktrees and a local bare remote. Deterministic provider executables consume the actual adapter arguments and stdin; a GitHub executable fixture supplies issues/comments and records the PR. The test approves a version, starts Developer, checks status without recovery side effects, cancels, retries, runs QA/Reviewer, publishes a branch and verifies READY_TO_MERGE, then stops the daemon.
 - Native Claude/Codex output envelopes, role-specific generation schemas and local validation. Read-only Reviewer receives attributed QA execution evidence without Developer reasoning or QA summary conclusions.
@@ -27,9 +27,11 @@
 
 - Human-readable Markdown spec/reports, actionable progress summaries, in-place status comment updates, and preservation of unrelated labels.
 
+- PR lifecycle reconciliation: exactly-once transition notices, terminal merge evidence, close-without-merge, reopen, and API outage recovery without agent execution. Standalone sync refuses to race the daemon.
+
 ## Completed live four-role demo
 
-On 2026-09-18, the real pipeline reached **READY_TO_MERGE** and created [demo PR #2](https://github.com/lucaslodeiro/ai-factory-demo/pull/2). The PR remains open for human review/merge.
+On 2026-09-18, the real pipeline reached **READY_TO_MERGE** and created [demo PR #2](https://github.com/lucaslodeiro/ai-factory-demo/pull/2). The human subsequently merged PR #2; the orchestrator reconciled it to MERGED and the issue is closed.
 
 - Target: private [ai-factory-demo](https://github.com/lucaslodeiro/ai-factory-demo), [issue #1](https://github.com/lucaslodeiro/ai-factory-demo/issues/1).
 - Work item: `e3d45eaf-fad3-48c0-8e99-fccc121cecd7`.
@@ -62,8 +64,12 @@ Logs and SQLite remain under `.factory/demo/` on the user's machine. Full accept
 
 ## Remaining operational validation
 
-The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge remains separate. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.
+The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.
 
 ## Issue presentation follow-up
 
 The demo issue’s four generated spec/report comments were reformatted as Markdown, preserving the approved spec body and the human approval comment. Original comments were backed up locally; raw SQLite/outbox/agent evidence was preserved. A green ready-to-merge label and a single milestone/status comment now make the final stage visible. No agent execution or merge was triggered by this presentation update.
+
+## Live merge reconciliation
+
+After the user merged demo PR #2, `factory sync` confirmed GitHub MERGED at `2026-09-18T16:55:38Z`, commit `81ee5d2094efa4795994b107925abbe915c93671`. SQLite now records MERGED; the issue is CLOSED with `factory:merged`, and its progress comment says completed. No agents were invoked and no merge was performed by the factory. The factory implementation PR #1 remains open.
