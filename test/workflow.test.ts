@@ -63,6 +63,20 @@ test("questions and answer return to architect; approval cannot skip questions",
  f.gh.reply("/factory answer return 42"); await f.o.tick(); await f.o.tick();
  assert.equal(f.item().context.version, 1); assert.match(f.calls[1].instructions, /return 42/); f.store.db.close();
 });
+test("answer command accepts readable multi-line comments at the beginning or end", async () => {
+ const trailing = setup({ "product-architect": [result("questions", { questions: ["Choose a stack"] }), result("spec")] });
+ await trailing.o.tick(); trailing.gh.reply("Use a lightweight modern stack.\n\nFind public content sources.\n\n/factory answer"); await trailing.o.tick();
+ assert.equal(trailing.item().state,"SPEC"); await trailing.o.tick();
+ assert.match(trailing.calls[1].instructions,/Use a lightweight modern stack\./); assert.match(trailing.calls[1].instructions,/Find public content sources\./); trailing.store.db.close();
+
+ const leading = setup({ "product-architect": [result("questions", { questions: ["Choose a stack"] }), result("spec")] });
+ await leading.o.tick(); leading.gh.reply("/factory answer\nUse React.\nUse a public API."); await leading.o.tick();
+ assert.equal(leading.item().state,"SPEC"); await leading.o.tick(); assert.match(leading.calls[1].instructions,/Use React\.\\nUse a public API\./); leading.store.db.close();
+
+ const ignored = setup({ "product-architect": [result("questions", { questions: ["Choose a stack"] })] });
+ await ignored.o.tick(); ignored.gh.reply("Use React.\n\n> /factory answer"); await ignored.o.tick();
+ assert.equal(ignored.item().state,"WAITING_HUMAN"); ignored.store.db.close();
+});
 test("QA fixes rerun developer and QA; deferred findings permit review", async () => {
  const f = setup({ qa: [result("changes", { findings: [{ classification: "auto-fix", evidence: "AC1 fails" }] }), result("pass", { findings: [{ classification: "defer", evidence: "optional optimization" }] })] });
  await f.o.tick(); f.gh.reply("/factory approve v1"); await f.o.tick();

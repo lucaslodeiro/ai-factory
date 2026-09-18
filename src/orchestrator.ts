@@ -11,6 +11,15 @@ import { prompt } from "./prompts.js";
 import { deliverNotifications, type NotificationPort } from "./notifications.js";
 import { parseResult, validateCoverage } from "./results.js";
 import type { WorkItem, WorkState, AgentRole, AgentResult, DeliveryStage } from "./types.js";
+function humanAnswer(body: string) {
+ const lines = body.trim().split(/\r?\n/);
+ const first = lines[0]?.trim();
+ const last = lines.at(-1)?.trim();
+ if (first === "/factory answer") return lines.slice(1).join("\n").trim();
+ if (first?.startsWith("/factory answer ")) return [first.slice(16), ...lines.slice(1)].join("\n").trim();
+ if (last === "/factory answer") return lines.slice(0, -1).join("\n").trim();
+ return "";
+}
 export class Orchestrator {
  constructor(readonly store: Store, private agents: Partial<Record<AgentRole, AgentAdapter>>,
   private github: GitHubPort = new GitHubAdapter(), private workspaces: WorkspacePort = new Workspaces(),
@@ -209,8 +218,9 @@ export class Orchestrator {
      this.store.transition(w, "DEVELOPMENT");
     })(); return;
    }
-   if (body.startsWith("/factory answer ") && body.slice(16).trim()) {
-    w.context.feedback.push(`${c.user.login}: ${body.slice(16).trim()}`); w.context.cycles = 0;
+   const answer = humanAnswer(body);
+   if (answer) {
+    w.context.feedback.push(`${c.user.login}: ${answer}`); w.context.cycles = 0;
     w.context.consultation = undefined;
     this.store.transition(w, "SPEC"); return;
    }

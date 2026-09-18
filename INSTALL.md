@@ -172,7 +172,8 @@ Agent timeouts are configurable. SIGTERM escalates to SIGKILL after one second f
 Create the `factory:queued` label in the target repository, then create a feature issue carrying that label. Product/Architect runs in a fresh Claude process. Questions are posted on the issue; answer with a standalone command:
 
 ```text
-/factory answer <your answer or requested changes>
+/factory answer
+<your answer or requested changes, which may span multiple lines>
 ```
 
 The proposed spec is versioned in SQLite and posted to GitHub. Approve its exact version:
