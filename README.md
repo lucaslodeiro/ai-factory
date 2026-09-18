@@ -42,6 +42,8 @@ npm run factory -- start
 
 Queue an issue with `factory:queued`. Answer `/factory answer <text>` and approve the posted version with `/factory approve vN`. The daemon runs independent role processes, routes findings, and creates a pull request after passing QA and review. Human merge remains required.
 
-Available commands: `doctor`, `start`, `status [id]`, `events [id]`, `cancel <item-or-run-id>`, `retry <item-id>`, `stop`, `notifications`, `slack-test`.
+Available commands: `doctor`, `start`, `status [id]`, `events [id]`, `cancel <item-or-run-id>`, `retry <item-id>`, `stop`, `notifications`, `slack-test`, `models [id]`.
 
 See [installation and operations](INSTALL.md), [GitHub setup](docs/GITHUB_SETUP.md), and [validation evidence and remaining live check](docs/VALIDATION.md).
+
+Model routing balances quality, cost and time using an approved complexity/risk assessment, role floors and correction escalation. See [model selection policy](docs/MODEL_POLICY.md).

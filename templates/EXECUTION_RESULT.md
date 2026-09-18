@@ -1,10 +1,11 @@
 # Execution result contract
 
-The machine-readable source of truth is `resultSchema` in `src/results.ts`, used by both provider adapters and validated locally. Every field is required; use empty arrays, empty `spec`, and null `nextRole` when inapplicable.
+The machine-readable source of truth is `resultSchema` in `src/results.ts`, used by both provider adapters and validated locally. Every field is required; use empty arrays, empty `spec`, and null `taskAssessment` and `nextRole` when inapplicable.
 
 | Field | Meaning |
 |---|---|
 | `outcome` | Architect: spec/questions/resolved. Delivery roles: pass/changes/decision. |
+| `taskAssessment` | New spec only: complexity/risk low, medium or high and concrete rationale. Human approves this with the spec; all other outcomes use null. |
 | `summary` | Concise role conclusion and evidence summary. |
 | `spec`, `acceptanceCriteria` | Only for a new specification: markdown plus unique IDs/descriptions. |
 | `coverage` | Each criterion's ID, passed/failed/not-run status and evidence. PASS covers every approved ID. |

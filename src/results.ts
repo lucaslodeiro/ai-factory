@@ -6,6 +6,7 @@ const enumeration = (...values: string[]): Schema => ({ type: "string", enum: va
 const list = (items: Schema): Schema => ({ type: "array", items, maxItems: 100 });
 const object = (properties: Record<string, Schema>): Schema => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
 export const resultSchema = object({
+  taskAssessment: { ...object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), rationale: text() }), type: ["object", "null"] },
   outcome: enumeration("spec", "questions", "resolved", "pass", "changes", "decision"),
   summary: text(10000), spec: { type: "string", maxLength: 30000 }, questions: list(text()),
   findings: list(object({ classification: enumeration("auto-fix", "decision-required", "defer"), evidence: text() })),
@@ -51,6 +52,8 @@ export function parseResult(raw: unknown, role: AgentRole): AgentResult {
   if (!allowed.includes(r.outcome)) throw new Error(`Invalid ${role} outcome: ${r.outcome}`);
   if (r.outcome === "spec" && (r.questions.length || !r.spec.trim() || !r.acceptanceCriteria.length || r.acceptanceCriteria.some(c => !r.spec.includes(c.id)))) throw new Error("Specification needs named acceptance criteria in markdown and structured form");
   if (r.outcome !== "spec" && (r.spec !== "" || r.acceptanceCriteria.length)) throw new Error("Only a new specification may contain spec/acceptanceCriteria");
+  if (r.outcome === "spec" && !r.taskAssessment) throw new Error("Specification requires a taskAssessment");
+  if (r.outcome !== "spec" && r.taskAssessment !== null) throw new Error("Only a new specification may change taskAssessment");
   if (r.outcome === "questions" && !r.questions.length) throw new Error("No clarification questions");
   if (r.outcome === "resolved") {
     if (!r.nextRole || !r.decisions.length || r.decisions.some(d => d.kind !== "tactical" || d.conflictsWithHuman) || r.questions.length || r.findings.some(f => f.classification === "decision-required")) throw new Error("Tactical resolution cannot require a human decision");

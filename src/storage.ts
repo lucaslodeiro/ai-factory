@@ -24,7 +24,7 @@ export class Store {
       CREATE UNIQUE INDEX IF NOT EXISTS issue_identity ON work_items(repo,issue_number);`);
     const cols = this.db.prepare("PRAGMA table_info(work_items)").all() as { name: string }[];
     if (!cols.some(c => c.name === "context")) this.db.exec("ALTER TABLE work_items ADD COLUMN context TEXT NOT NULL DEFAULT '{}'");
-    for (const [table, column, type] of [["specs", "criteria", "TEXT NOT NULL DEFAULT '[]'"], ["executions", "recovery_pending", "INTEGER NOT NULL DEFAULT 0"]]) {
+    for (const [table, column, type] of [["specs", "assessment", "TEXT"], ["specs", "criteria", "TEXT NOT NULL DEFAULT '[]'"], ["executions", "recovery_pending", "INTEGER NOT NULL DEFAULT 0"]]) {
       const existing = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
       if (!existing.some(c => c.name === column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
     }

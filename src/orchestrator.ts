@@ -1,3 +1,4 @@
+import { modelForWork } from "./model-policy.js";
 import { randomUUID } from "node:crypto";
 import { Store } from "./storage.js";
 import { config } from "./config.js";
@@ -75,7 +76,9 @@ export class Orchestrator {
   const instructions = prompt(w, role) + (role === "reviewer" ? "\n\nImplementation diff:\n" + this.workspaces.diff(w.context.cwd) : "");
   w.context.pendingStage = { stage: w.state, beforeHead: before, startedAt: new Date().toISOString() };
   this.store.save(w);
-  const result = parseResult(await this.agents[role].run({ workItemId: w.id, role, cwd: w.context.cwd, instructions }), role);
+  const selection = modelForWork(w, role);
+  this.store.event("model.selected", { role, specVersion: w.context.version, selection }, w.id);
+  const result = parseResult(await this.agents[role].run({ workItemId: w.id, role, cwd: w.context.cwd, instructions, selection }), role);
   if (this.store.get(w.id)!.state !== w.state) return;
   if (role !== "product-architect") validateCoverage(result, w.context.criteria ?? []);
   this.workspaces.check(w.context.cwd, role, before, w.branch);
@@ -94,11 +97,12 @@ export class Orchestrator {
      w.context.waiting = "questions";
      this.store.post(w.issue_number, `Product/Architect needs input:\n${result.questions.join("\n")}\n\nReply with /factory answer <your answer>.`);
     } else {
+     w.context.taskAssessment = result.taskAssessment!;
      w.context.spec = result.spec; w.context.criteria = result.acceptanceCriteria; w.context.decisions = result.decisions;
      w.context.version++; w.context.waiting = "approval";
      w.context.reports = { "product-architect": result };
-     this.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria) VALUES(?,?,?,?)").run(w.id, w.context.version, result.spec, JSON.stringify(result.acceptanceCriteria));
-     this.store.post(w.issue_number, `SPEC v${w.context.version}\n\n${result.spec}\n\nAcceptance criteria:\n${JSON.stringify(result.acceptanceCriteria, null, 2)}\n\nApprove with /factory approve v${w.context.version}, or revise with /factory answer <feedback>.`);
+     this.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment) VALUES(?,?,?,?,?)").run(w.id, w.context.version, result.spec, JSON.stringify(result.acceptanceCriteria), JSON.stringify(result.taskAssessment));
+     this.store.post(w.issue_number, `SPEC v${w.context.version}\n\n${result.spec}\n\nTask assessment (approved with this spec):\n${JSON.stringify(result.taskAssessment, null, 2)}\n\nAcceptance criteria:\n${JSON.stringify(result.acceptanceCriteria, null, 2)}\n\nApprove with /factory approve v${w.context.version}, or revise with /factory answer <feedback>.`);
     }
     this.store.transition(w, "WAITING_HUMAN");
    })(); return;

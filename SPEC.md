@@ -104,6 +104,10 @@ Retain versioned specs/criteria, approval identity, tactical decisions, full str
 
 Provide reproducible Node 22+ installation, explicit repo/data directories, provider executable overrides, Git/GitHub author/auth checks and `factory doctor`. A separate demo issue must complete the live four-role flow and produce a PR before the MVP is accepted end-to-end. Unit/integration fixtures do not substitute for this live check.
 
+### F15 — Task-aware model selection
+
+Use the balanced-v1 policy in `docs/MODEL_POLICY.md`: Product/Architect reports complexity, risk and rationale with each new spec; the human approves that assessment with the exact spec version. The orchestrator selects a configured model by role, approved assessment and correction context. QA/Reviewer retain a balanced floor, high-risk/complex work and correction cycles select strong, and only low-risk/simple Developer work selects fast. Every provider call receives an explicit model and records its selection. No silent provider/model fallback. Model mappings remain operator-configurable.
+
 ## Requirements traceability
 
 | Requirement | Implementation | Automated evidence |
@@ -116,6 +120,7 @@ Provide reproducible Node 22+ installation, explicit repo/data directories, prov
 | F11 | `src/execution-manager.ts`, `src/worker-supervisor.mjs`, `src/daemon.ts` | `test/execution.test.ts`, `test/recovery.test.ts`, `test/storage.test.ts`, cross-process cancel/retry/stop in `test/daemon.test.ts` |
 | F12 | `src/notifications.ts`, `src/adapters/slack.ts`, SQLite queues | `test/notifications.test.ts`, GitHub-outage notification case |
 | F13 | `src/storage.ts`, `src/cli.ts` | Persistence/reopening tests and full daemon test |
+| F15 | `src/model-policy.ts`, adapters, spec snapshots and execution events | `test/model-policy.test.ts`, workflow routing and subprocess argument/audit assertions |
 | F14 | `INSTALL.md`, `src/doctor.ts`, demo repository | Local checks implemented; live four-role acceptance **pending Claude authentication** |
 
 ## Operational boundaries and remaining acceptance work

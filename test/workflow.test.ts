@@ -153,3 +153,23 @@ test("comment-read outage preserves human approval gate and resumes without manu
  for (let i = 0; i < 3; i++) await f.o.tick();
  assert.equal(f.item().state, "READY_TO_MERGE"); f.store.db.close();
 });
+
+test("approved assessment controls model routing, remains immutable during consultation and escalates fixes", async () => {
+ const assessment = { complexity: "low" as const, risk: "low" as const, rationale: "One localized behavior" };
+ const f = setup({ "product-architect": [result("spec", { taskAssessment: assessment }), tactical()], developer: [result("decision")] });
+ await f.o.tick();
+ assert.equal(f.calls[0].selection.profile, "balanced");
+ assert.deepEqual(f.item().context.taskAssessment, assessment);
+ assert.ok([...f.gh.posted.values()].some(body => body.includes("Task assessment") && body.includes(assessment.rationale)));
+ f.gh.reply("/factory approve v1"); await f.o.tick(); await f.o.tick();
+ assert.equal(f.calls[1].selection.profile, "fast");
+ await f.o.tick(); assert.equal(f.calls[2].selection.profile, "strong");
+ assert.deepEqual(f.item().context.taskAssessment, assessment);
+ assert.equal(f.item().context.approvedVersion, 1);
+ for (let i = 0; i < 3; i++) await f.o.tick();
+ assert.equal(f.item().state, "READY_TO_MERGE");
+ assert.ok(f.calls.slice(3).every(call => call.selection.profile === "strong"));
+ assert.deepEqual(JSON.parse((f.store.db.prepare("SELECT assessment FROM specs WHERE version=1").get() as any).assessment), assessment);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='model.selected'").get() as any).n, f.calls.length);
+ f.store.db.close();
+});

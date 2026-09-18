@@ -8,11 +8,12 @@ import type { AgentAdapter, AgentRunRequest } from "./agent.js";
 export class CodexAdapter implements AgentAdapter {
  constructor(private executions: ExecutionManager) {}
  async run(r: AgentRunRequest) {
+  if (r.selection.provider !== "codex") throw new Error("Model selection/provider mismatch");
   const dir = path.join(config.dataDir, "outputs", randomUUID()); fs.mkdirSync(dir, { recursive: true });
   const schema = path.join(dir, "schema.json"), output = path.join(dir, "result.json");
   fs.writeFileSync(schema, JSON.stringify(resultSchema));
   await this.executions.run(r.workItemId, r.role, config.codexCommand,
-   ["exec", "--ephemeral", "--sandbox", "workspace-write", "--config", "sandbox_workspace_write.network_access=true", "--output-schema", schema, "--output-last-message", output, "-"], r.cwd, r.instructions);
+   ["exec", "--model", r.selection.model, "--ephemeral", "--sandbox", "workspace-write", "--config", "sandbox_workspace_write.network_access=true", "--output-schema", schema, "--output-last-message", output, "-"], r.cwd, r.instructions, config.timeoutMs, r.selection);
   return parseResult(JSON.parse(fs.readFileSync(output, "utf8")), r.role);
  }
 }

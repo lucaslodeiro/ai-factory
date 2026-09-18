@@ -73,3 +73,7 @@ Set `SLACK_WEBHOOK_URL` only in your local `.env`. Run `npm run factory -- slack
 All provider results now require coverage, test evidence, changed files, dependency rationale, decisions and review checks. See `templates/EXECUTION_RESULT.md`. Schemas migrate transactionally when opening SQLite, including concurrent CLI/daemon startup. Previously approved specs without structured acceptance criteria are not silently grandfathered into PASS: regenerate and approve a new spec. Existing raw agent outputs remain in the audit history.
 
 `status` shows the saved retry stage and any interrupted stage checkpoint. Partial work is retained; retry reruns the stage and asks the worker to inspect and verify it. Processes that deliberately detach into other groups and legacy pre-supervisor runs may require manual inspection.
+
+## Models per task
+
+Run `npm run factory -- models` to inspect the balanced policy's explicit model mappings. Override the six model variables in `.env.example` to match your account. `npm run factory -- models <work-item-id>` previews the next selections without running providers. New specs include a complexity/risk assessment for your approval. See [model policy](docs/MODEL_POLICY.md) for routing, correction escalation, audit events and legacy behavior. Model availability is checked by the actual provider invocation, not by `doctor`; a rejected model requires configuration correction and explicit retry.

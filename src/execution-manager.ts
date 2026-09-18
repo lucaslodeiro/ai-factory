@@ -5,11 +5,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { Store } from "./storage.js";
 import { config, agentEnvironment } from "./config.js";
-import type { AgentRole } from "./types.js";
+import type { AgentRole, ModelSelection } from "./types.js";
 export class ExecutionManager {
   private running = new Map<string, { child: ChildProcess; cancel: () => void }>();
   constructor(private store: Store) {}
-  async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs): Promise<{id: string; stdout: string}> {
+  async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs, selection?: ModelSelection): Promise<{id: string; stdout: string}> {
     const id = randomUUID();
     const logDir = path.join(config.dataDir, "runs", id);
     fs.mkdirSync(logDir, { recursive: true });
@@ -17,7 +17,7 @@ export class ExecutionManager {
     const err = fs.openSync(path.join(logDir, "stderr.log"), "w", 0o600);
     this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,status,started_at) VALUES(?,?,?,?,?)")
       .run(id, workItemId, role, "running", new Date().toISOString());
-    this.store.event("execution.started", { role, command, cwd, logDir }, workItemId, id);
+    this.store.event("execution.started", { role, command, cwd, logDir, selection }, workItemId, id);
     return new Promise((resolve, reject) => {
       let cancelled = false, timedOut = false, force: NodeJS.Timeout | undefined;
       const child = spawn(process.execPath, [fileURLToPath(new URL("./worker-supervisor.mjs", import.meta.url)), id, logDir], { cwd, env: agentEnvironment(), detached: true, stdio: ["pipe", out, err, "ipc"] });

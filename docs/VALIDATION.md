@@ -4,7 +4,7 @@
 
 `npm run build` and `npm test` pass on macOS with Node 26.4.0. A Node 22/Linux GitHub Actions template is provided in `docs/ci.example.yml`. It is not activated: the current GitHub OAuth credential lacks the workflow scope, and GitHub rejected a push containing `.github/workflows/ci.yml`. Copy the template there using a credential permitted to manage workflows when ready.
 
-30 tests cover:
+35 tests cover:
 
 - Full foreground daemon with real SQLite, separate CLI control processes, real Git worktrees and a local bare remote. Deterministic provider executables consume the actual adapter arguments and stdin; a GitHub executable fixture supplies issues/comments and records the PR. The test approves a version, starts Developer, checks status without recovery side effects, cancels, retries, runs QA/Reviewer, publishes a branch and verifies READY_TO_MERGE, then stops the daemon.
 - Native Claude/Codex output envelopes and schema validation.
@@ -21,12 +21,15 @@
 - Assigned-branch checks before agent execution and commits, including same-commit branch switches and detached HEAD. Real Git regression cases preserve raw Unicode/newline/tab/space filenames and reject renaming production files into test paths during QA.
 - Transient GitHub comment-read failures preserve WAITING_HUMAN and its approval cursor; polling recovers without a manual retry or another agent invocation.
 
+- Task-aware model profiles, QA/Reviewer floors, high-risk and correction escalation, immutable approved assessments, explicit CLI model arguments, provider mismatch rejection and run-linked selection audit.
+
 ## Live checks
 
 - Private demo repository created: https://github.com/lucaslodeiro/ai-factory-demo
 - Acceptance issue queued: https://github.com/lucaslodeiro/ai-factory-demo/issues/1
 - Both repositories cloned locally; `.env` points the factory at the demo.
 - Codex was already installed and authenticated. The initial adapter connectivity check passed. A second real run through the new supervisor and expanded schema executed a Node assertion, produced `smoke assertion passed` with exit code 0, and returned criterion coverage plus test evidence. The CLI execution trace confirms the command ran. No demo files changed. These are provider/protocol checks, not the live demo workflow.
+- The balanced model policy passed a real Codex smoke run with explicit `gpt-5.6-terra` and the new nullable taskAssessment field. The CLI trace identifies Terra and shows the Node assertion executing successfully (exit 0, `model routing smoke passed`); run `d83d51bd-d69f-49da-bed3-97e3baca45a1`. The demo checkout stayed clean. Luna/Sol and Claude model availability were not live-tested in this change.
 - Claude Code 2.1.267 installed successfully. Authentication is still required; the user was away from the machine. Login was cancelled rather than left waiting.
 
 The real four-role demo has **not** completed. No simulated approval was posted to the real issue, and no real demo PR exists yet. Automated tests use deterministic provider/GitHub substitutes; they do not establish Claude reasoning quality or successful live Claude authentication.

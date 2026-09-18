@@ -5,7 +5,16 @@ function positive(name: string, fallback: number) {
   if (!Number.isSafeInteger(n) || n < 1) throw new Error(`${name} must be a positive integer`);
   return n;
 }
+function model(name: string, fallback: string) {
+  const value = (process.env[name] ?? fallback).trim();
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(value)) throw new Error(`${name} must be a nonempty model identifier`);
+  return value;
+}
 export const config = {
+  models: {
+    codex: { fast: model("CODEX_MODEL_FAST", "gpt-5.6-luna"), balanced: model("CODEX_MODEL_BALANCED", "gpt-5.6-terra"), strong: model("CODEX_MODEL_STRONG", "gpt-5.6-sol") },
+    claude: { fast: model("CLAUDE_MODEL_FAST", "sonnet"), balanced: model("CLAUDE_MODEL_BALANCED", "sonnet"), strong: model("CLAUDE_MODEL_STRONG", "opus") },
+  },
   dataDir: path.resolve(process.env.FACTORY_DATA_DIR ?? ".factory"),
   repoDir: path.resolve(process.env.FACTORY_REPO_DIR ?? "."),
   pollMs: positive("FACTORY_POLL_INTERVAL_MS", 15000),

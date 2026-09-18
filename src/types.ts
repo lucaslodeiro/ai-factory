@@ -4,7 +4,11 @@ export type DeliveryStage = "DEVELOPMENT" | "QA" | "REVIEW";
 export interface Criterion { id: string; description: string; }
 export interface Finding { classification: "auto-fix" | "decision-required" | "defer"; evidence: string; }
 export interface Decision { kind: "tactical" | "major"; decision: string; rationale: string; conflictsWithHuman: boolean; }
+export interface TaskAssessment { complexity: "low" | "medium" | "high"; risk: "low" | "medium" | "high"; rationale: string; }
+export type ModelProfile = "fast" | "balanced" | "strong";
+export interface ModelSelection { policy: string; provider: "codex" | "claude"; profile: ModelProfile; model: string; reason: string; }
 export interface AgentResult {
+  taskAssessment: TaskAssessment | null;
   outcome: "spec" | "questions" | "resolved" | "pass" | "changes" | "decision";
   summary: string; spec: string; questions: string[]; findings: Finding[];
   acceptanceCriteria: Criterion[];
@@ -17,6 +21,7 @@ export interface AgentResult {
 }
 export interface Context {
   title: string; body: string; url: string; cwd?: string; spec?: string; version: number;
+  taskAssessment?: TaskAssessment;
   criteria?: Criterion[]; decisions?: Decision[]; consultation?: { from: DeliveryStage };
   approvedVersion?: number; approval?: { login: string; commentId: number };
   cursor: number; waiting?: "questions" | "approval" | "loop";
