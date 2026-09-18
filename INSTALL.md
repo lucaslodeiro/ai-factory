@@ -11,7 +11,7 @@ bash /tmp/ai-factory-install.sh --dir "$HOME/ai-factory"
 
 The installer defaults to the stable `main` branch. The repository has only two long-lived branches: `develop` for ongoing work and `main` for stable releases. Pass `--branch develop` only when intentionally testing unreleased factory changes. The installer installs missing tools, clones the engine, installs locked npm dependencies, builds and tests. It creates a private `.env` from safe defaults, installs both user services, starts the dashboard, waits for its health check and opens the first-time setup page in the default browser. Credentials and environment settings are completed there. The daemon stays stopped, so no agent runs before setup is complete. Existing destinations are rejected. `--skip-tools` skips machine tool installation; Node 22+, npm and Git must already work. Automatic tool installation is macOS-only. Provider installers: [Codex](https://developers.openai.com/codex/cli), [Claude](https://code.claude.com/docs/en/setup).
 
-The opened dashboard expands **Configuration** and displays a first-time guide. Connect GitHub, Claude and Codex under **Credentials**; complete **Project & GitHub** and **Access & secrets**; save; then start the daemon from **Services**. The guide can be dismissed without changing configuration.
+The opened dashboard expands **Configuration** and displays a first-time guide. Every setting with a safe universal value starts with an installation default. After GitHub connects, empty target fields receive editable suggestions for `<login>/ai-factory-demo`, `$HOME/Source/ai-factory-demo`, and the same login as approver. Optional secrets and allowlists remain empty intentionally. Review and save the configuration, then start the daemon from **Services**. The guide can be dismissed without changing configuration.
 
 Installer options:
 
@@ -62,7 +62,7 @@ The updater requires the existing built runtime and dependencies. It adds `~/.lo
 
 Installation opens `http://127.0.0.1:4173/?setup=1` by default, or the effective custom/fallback address selected during installation. The dashboard reads installation defaults plus any saved `.env`, groups them by purpose and writes changes atomically with owner-only permissions. Stop the daemon before saving; the dashboard remains available. Updates preserve `.env` without asking questions.
 
-Connect GitHub, Claude and Codex from **Configuration → Credentials**. Complete the target repository and clone in **Project & GitHub**, and authorized GitHub users in **Access & secrets**. The clone must already exist and have its `origin`, default branch, and Git author configured. Then start the daemon from **Services**.
+Connect GitHub, Claude and Codex from **Configuration → Credentials**. Once GitHub reports Connected, the dashboard fills editable defaults for the target repository, clone and authorized approver when those fields are empty. The clone must already exist and have its `origin`, default branch, and Git author configured. Then save and start the daemon from **Services**.
 
 `npm run configure` remains available as a deprecated terminal fallback for headless operation. It is not called by installation or update.
 

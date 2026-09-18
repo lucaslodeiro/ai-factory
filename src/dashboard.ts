@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import http from "node:http";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
@@ -156,6 +157,15 @@ function slackStatus(root: string, store: Store) {
   const last = store.db.prepare("SELECT last_error FROM notifications WHERE last_error IS NOT NULL ORDER BY id DESC LIMIT 1").get() as { last_error:string } | undefined;
   return { configured,pending:counts.pending ?? 0,failed:counts.failed ?? 0,sent:counts.sent ?? 0,lastError:last?.last_error ?? null };
 }
+function dashboardSettings(root: string) {
+  const github = credentialStatuses(root).credentials.find(item => item.id === "github");
+  const login = github?.status === "connected" ? github.account : undefined;
+  return readDashboardSettings(root,login ? {
+    GITHUB_REPOSITORY:`${login}/ai-factory-demo`,
+    FACTORY_REPO_DIR:path.join(os.homedir(),"Source","ai-factory-demo"),
+    FACTORY_APPROVERS:login,
+  } : {});
+}
 
 export function createDashboardServer(store: Store, settingsRoot = process.cwd()) {
   const runtimeVersion = versionInfo(settingsRoot);
@@ -172,7 +182,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         req.on("close",() => clearInterval(timer));
         return;
       }
-      if (req.method === "GET" && url.pathname === "/api/settings") return json(res,200,{...readDashboardSettings(settingsRoot),daemonRunning:daemonState(store).running});
+      if (req.method === "GET" && url.pathname === "/api/settings") return json(res,200,{...dashboardSettings(settingsRoot),daemonRunning:daemonState(store).running});
       if (req.method === "GET" && url.pathname === "/api/credentials") return json(res,200,credentialStatuses(settingsRoot));
       if (req.method === "GET" && url.pathname === "/api/slack") return json(res,200,slackStatus(settingsRoot,store));
       if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,{services:[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")],update:updateState(settingsRoot),version:runtimeVersion});

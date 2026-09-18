@@ -166,6 +166,11 @@ echo "$*" >> "$PWD/update-actions.log"
     }
     assert.equal(connected.credentials.find((item: any) => item.id === "github").status,"connected");
     assert.equal(connected.credentials.find((item: any) => item.id === "github").account,"demo-user");
+    const suggestedSettings = await fetch(`http://127.0.0.1:${port}/api/settings`).then(response => response.json()) as any;
+    const suggestedValue = (key: string) => suggestedSettings.fields.find((field: any) => field.key === key);
+    assert.deepEqual({value:suggestedValue("GITHUB_REPOSITORY").value,suggested:suggestedValue("GITHUB_REPOSITORY").suggested},{value:"demo-user/ai-factory-demo",suggested:true});
+    assert.deepEqual({value:suggestedValue("FACTORY_REPO_DIR").value,suggested:suggestedValue("FACTORY_REPO_DIR").suggested},{value:path.join(os.homedir(),"Source","ai-factory-demo"),suggested:true});
+    assert.deepEqual({value:suggestedValue("FACTORY_APPROVERS").value,suggested:suggestedValue("FACTORY_APPROVERS").suggested},{value:"demo-user",suggested:true});
     const unknownCredential = await fetch(`http://127.0.0.1:${port}/api/credentials/connect`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({provider:"other"})});
     assert.equal(unknownCredential.status,400);
     const saved = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_POLL_INTERVAL_MS:"5000",SLACK_WEBHOOK_URL:"",DEVELOPER_PROVIDER:"claude",DEVELOPER_MODEL:"auto"}})});

@@ -81,12 +81,13 @@ export function readDashboardSetting(root: string, key: string) {
   if (!(key in defaults)) throw new Error(`Unknown setting: ${key}`);
   return saved[key] ?? defaults[key] ?? "";
 }
-export function readDashboardSettings(root: string) {
+export function readDashboardSettings(root: string, suggestions: Record<string,string> = {}) {
   const names = files(root);
   const template = fs.readFileSync(names.template,"utf8");
   const defaults = parse(template);
   const saved = fs.existsSync(names.env) ? parse(fs.readFileSync(names.env,"utf8")) : {};
   const values: Record<string,string> = {...defaults,...saved};
+  for (const [key,value] of Object.entries(suggestions)) if (key in defaults && !values[key]) values[key]=value;
   for (const prefix of ["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"]) {
     if (`${prefix}_MODEL` in saved) continue;
     const selected = values[`${prefix}_PROVIDER`] === "claude" ? "CLAUDE" : "CODEX";
@@ -107,7 +108,7 @@ export function readDashboardSettings(root: string) {
       baseOptions = [...catalog.options];
     }
     const options = baseOptions && value && !baseOptions.some(option => option.value === value) ? [...baseOptions,{value,label:`${value} (current custom value)`}] : baseOptions;
-    return {key,...meta,options,value,configured:meta.secret ? Boolean(values[key]) : undefined};
+    return {key,...meta,options,value,suggested:Boolean(value && suggestions[key] === value && !saved[key]),configured:meta.secret ? Boolean(values[key]) : undefined};
   }).filter(field => !field.hidden);
   return { groups,fields,modelCatalog:providerCatalog };
 }
