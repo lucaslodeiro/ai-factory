@@ -32,7 +32,7 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   GITHUB_REPOSITORY:{label:"Repository",description:"GitHub owner/name used for issues and pull requests.",group:"project",required:true,restart:"daemon"},
   GITHUB_DEFAULT_BRANCH:{label:"Default branch",description:"Base branch for worktrees and pull requests.",group:"project",required:true,restart:"daemon"},
   FACTORY_APPROVERS:{label:"Authorized approvers",description:"Comma-separated GitHub logins allowed to answer and approve.",group:"access",required:true,restart:"daemon"},
-  SLACK_WEBHOOK_URL:{label:"Slack webhook",description:"Optional HTTPS webhook. Blank preserves the configured secret.",group:"notifications",secret:true,restart:"daemon"},
+  SLACK_WEBHOOK_URL:{label:"Slack webhook",description:"Optional HTTPS webhook. Blank preserves the configured secret.",group:"notifications",secret:true,restart:"daemon",hidden:true},
   CODEX_COMMAND:{label:"Codex CLI",description:"Absolute path or command used to start Codex.",group:"tools",required:true,restart:"daemon"},
   CLAUDE_COMMAND:{label:"Claude CLI",description:"Absolute path or command used to start Claude.",group:"tools",required:true,restart:"daemon"},
   GIT_COMMAND:{label:"Git executable",description:"Absolute path or command used for Git operations.",group:"tools",required:true,restart:"all"},
@@ -87,6 +87,12 @@ function validate(key: string, value: string) {
 
 function files(root: string) {
   return { template:path.join(root,".env.example"), env:path.join(root,".env") };
+}
+export function readDashboardSetting(root: string, key: string) {
+  const names = files(root), defaults = parse(fs.readFileSync(names.template,"utf8"));
+  const saved = fs.existsSync(names.env) ? parse(fs.readFileSync(names.env,"utf8")) : {};
+  if (!(key in defaults)) throw new Error(`Unknown setting: ${key}`);
+  return saved[key] ?? defaults[key] ?? "";
 }
 export function readDashboardSettings(root: string) {
   const names = files(root);

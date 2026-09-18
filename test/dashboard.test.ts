@@ -64,6 +64,15 @@ echo "$*" >> "$PWD/update-actions.log"
   store.event("agent.result",{role:"qa",result:{outcome:"pass",summary:"All acceptance criteria passed",coverage:Array(20).fill({})}},"owner-demo-7");
   const server = await startDashboard(store,"127.0.0.1",0,settingsRoot);
   const port = (server.address() as AddressInfo).port;
+  const originalFetch = globalThis.fetch;
+  let slackPayload: any;
+  globalThis.fetch = ((input: URL | RequestInfo, init?: RequestInit) => {
+    if (String(input) === "https://hooks.example.com/private") {
+      slackPayload=JSON.parse(String(init?.body));
+      return Promise.resolve(new Response("ok",{status:200}));
+    }
+    return originalFetch(input,init);
+  }) as typeof fetch;
   try {
     const html = await fetch(`http://127.0.0.1:${port}/`).then(response => response.text());
     assert.match(html,/AI Factory/);
@@ -124,9 +133,16 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.ok(settings.modelCatalog.codex.defaults.fast === "custom-codex-model");
     assert.ok(settings.modelCatalog.codex.options.some((option: any) => option.value === "gpt-5.6-luna"));
     assert.equal(settings.fields.some((field: any) => field.key === "CODEX_MODEL_FAST"),false);
-    assert.equal(settings.fields.find((field: any) => field.key === "SLACK_WEBHOOK_URL").value,"");
-    assert.equal(settings.fields.find((field: any) => field.key === "SLACK_WEBHOOK_URL").configured,true);
+    assert.equal(settings.fields.some((field: any) => field.key === "SLACK_WEBHOOK_URL"),false);
     assert.ok(!JSON.stringify(settings).includes("private"));
+    const slack = await fetch(`http://127.0.0.1:${port}/api/slack`).then(response => response.json()) as any;
+    assert.deepEqual({configured:slack.configured,pending:slack.pending,failed:slack.failed,sent:slack.sent},{configured:true,pending:0,failed:0,sent:0});
+    assert.ok(!JSON.stringify(slack).includes("private"));
+    const slackSaved = await fetch(`http://127.0.0.1:${port}/api/slack`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({webhook:"",clear:false})});
+    assert.equal(slackSaved.status,200);
+    const slackTest = await fetch(`http://127.0.0.1:${port}/api/slack/test`,{method:"POST"});
+    assert.equal(slackTest.status,200);
+    assert.match(slackPayload.text,/Slack test notification from the dashboard/);
     const credentials = await fetch(`http://127.0.0.1:${port}/api/credentials`).then(response => response.json()) as any;
     assert.deepEqual(credentials.credentials.map(({id,status}: any) => ({id,status})),[
       {id:"github",status:"disconnected"},{id:"claude",status:"connected"},{id:"codex",status:"connected"}
@@ -162,11 +178,14 @@ echo "$*" >> "$PWD/update-actions.log"
     store.db.prepare("INSERT INTO daemon_lock VALUES(1,?,?)").run(process.pid,"dashboard-test");
     const blocked = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_POLL_INTERVAL_MS:"6000"}})});
     assert.equal(blocked.status,409);
+    const blockedSlack = await fetch(`http://127.0.0.1:${port}/api/slack`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({webhook:"",clear:true})});
+    assert.equal(blockedSlack.status,409);
     store.db.prepare("DELETE FROM daemon_lock").run();
     const response = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"retry",target:"owner-demo-7"})});
     assert.equal(response.status,202);
     assert.deepEqual(store.db.prepare("SELECT kind,target FROM controls").get(),{kind:"retry",target:"owner-demo-7"});
   } finally {
+    globalThis.fetch=originalFetch;
     await new Promise<void>(resolve => server.close(() => resolve()));
     store.db.close();
     config.gitCommand=previousGit;

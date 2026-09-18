@@ -94,6 +94,18 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .credential-account { color:var(--text); font:600 .7rem ui-monospace,SFMono-Regular,monospace }
 .credential-log { margin-top:1rem; font-size:.72rem }
 .credential-log code { overflow-wrap:anywhere }
+.slack-status { display:flex; align-items:flex-start; justify-content:space-between; gap:1.5rem; margin-bottom:1rem; padding:1rem; background:color-mix(in srgb,var(--surface) 60%,transparent); border:1px solid var(--line); border-radius:12px }
+.slack-status>div { display:grid; gap:.55rem }
+.slack-status h4 { font-size:1rem }
+.slack-status p { max-width:46rem; color:var(--muted); font-size:.78rem; line-height:1.5 }
+.slack-status dl { display:grid; grid-template-columns:repeat(3,minmax(4rem,1fr)); gap:.5rem; margin:0 }
+.slack-status dl div { min-width:4.5rem; padding:.65rem; text-align:center; background:var(--panel); border:1px solid var(--line); border-radius:9px }
+.slack-status dt { color:var(--muted); font-size:.62rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase }
+.slack-status dd { margin:.2rem 0 0; color:var(--text); font-size:1rem; font-weight:800 }
+.slack-actions { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:1rem }
+.slack-error { margin-top:1rem; padding:.75rem 1rem; color:var(--danger); background:color-mix(in srgb,var(--danger) 8%,transparent); border:1px solid color-mix(in srgb,var(--danger) 30%,var(--line)); border-radius:9px; font-size:.75rem }
+.slack-error p { margin-top:.3rem; overflow-wrap:anywhere }
+#slack-connection>.muted { margin-top:.75rem; font-size:.72rem; line-height:1.45 }
 .role-routing-grid { display:grid; gap:1rem }
 .role-routing-card { padding:1rem; background:color-mix(in srgb,var(--surface) 60%,transparent); border:1px solid var(--line); border-radius:12px }
 .role-routing-title { margin-bottom:.8rem }
@@ -134,7 +146,8 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
   .settings-grid { grid-template-columns:1fr }
   .role-settings-grid { grid-template-columns:1fr }
   .role-settings-grid .provider-setting { grid-column:auto }
-  .credentials-intro,.credential-card { align-items:flex-start; flex-direction:column }
+  .credentials-intro,.credential-card,.slack-status { align-items:flex-start; flex-direction:column }
+  .slack-status dl { width:100% }
 }
 @media(max-width:480px) {
   .metrics { grid-template-columns:1fr }

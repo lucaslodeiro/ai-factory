@@ -6,8 +6,9 @@ import { spawn, spawnSync } from "node:child_process";
 import type { AddressInfo } from "node:net";
 import { config } from "./config.js";
 import { Store } from "./storage.js";
-import { readDashboardSettings, saveDashboardSettings } from "./dashboard-settings.js";
+import { readDashboardSetting, readDashboardSettings, saveDashboardSettings } from "./dashboard-settings.js";
 import { connectCredential, credentialStatuses, type CredentialProvider } from "./dashboard-credentials.js";
+import { SlackAdapter } from "./adapters/slack.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
 const types: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8" };
@@ -149,6 +150,12 @@ function runUpdate(root: string) {
   child.unref();
   return { accepted:true,message:"Factory update started. Services will stop, update, and reconnect when ready.",update:updateState(root) };
 }
+function slackStatus(root: string, store: Store) {
+  const configured = Boolean(readDashboardSetting(root,"SLACK_WEBHOOK_URL"));
+  const counts = store.db.prepare("SELECT COUNT(*) AS total,SUM(CASE WHEN sent=0 THEN 1 ELSE 0 END) AS pending,SUM(CASE WHEN sent=0 AND attempts>0 THEN 1 ELSE 0 END) AS failed,SUM(CASE WHEN sent=1 THEN 1 ELSE 0 END) AS sent FROM notifications").get() as { total:number; pending:number | null; failed:number | null; sent:number | null };
+  const last = store.db.prepare("SELECT last_error FROM notifications WHERE last_error IS NOT NULL ORDER BY id DESC LIMIT 1").get() as { last_error:string } | undefined;
+  return { configured,pending:counts.pending ?? 0,failed:counts.failed ?? 0,sent:counts.sent ?? 0,lastError:last?.last_error ?? null };
+}
 
 export function createDashboardServer(store: Store, settingsRoot = process.cwd()) {
   const runtimeVersion = versionInfo(settingsRoot);
@@ -167,6 +174,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       }
       if (req.method === "GET" && url.pathname === "/api/settings") return json(res,200,{...readDashboardSettings(settingsRoot),daemonRunning:daemonState(store).running});
       if (req.method === "GET" && url.pathname === "/api/credentials") return json(res,200,credentialStatuses(settingsRoot));
+      if (req.method === "GET" && url.pathname === "/api/slack") return json(res,200,slackStatus(settingsRoot,store));
       if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,{services:[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")],update:updateState(settingsRoot),version:runtimeVersion});
       if (req.method === "POST" && url.pathname === "/api/update/check") return json(res,200,checkUpdate(settingsRoot));
       if (req.method === "GET" && url.pathname === "/healthz") return json(res,200,{ok:true});
@@ -193,6 +201,19 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         const body = await readBody(req) as { provider?: string };
         if (!['github','claude','codex'].includes(body.provider ?? "")) return json(res,400,{error:"Unknown credential provider"});
         return json(res,202,connectCredential(settingsRoot,body.provider as CredentialProvider));
+      }
+      if (req.method === "PUT" && url.pathname === "/api/slack") {
+        if (daemonState(store).running) return json(res,409,{error:"Stop the daemon before changing the Slack connection"});
+        const body = await readBody(req) as { webhook?: unknown; clear?: unknown };
+        if (typeof body.webhook !== "string" || typeof body.clear !== "boolean") return json(res,400,{error:"Webhook and clear flag are required"});
+        saveDashboardSettings(settingsRoot,{SLACK_WEBHOOK_URL:body.clear ? "" : body.webhook},body.clear ? ["SLACK_WEBHOOK_URL"] : []);
+        return json(res,200,{...slackStatus(settingsRoot,store),message:body.clear ? "Slack connection removed. Restart the daemon to apply it." : "Slack webhook saved. Send a test, then restart the daemon to enable queued delivery."});
+      }
+      if (req.method === "POST" && url.pathname === "/api/slack/test") {
+        const webhook = readDashboardSetting(settingsRoot,"SLACK_WEBHOOK_URL");
+        if (!webhook) return json(res,409,{error:"Configure and save a Slack webhook first"});
+        await new SlackAdapter(webhook).notify("AI Factory: Slack test notification from the dashboard. Workflow decisions remain in GitHub.");
+        return json(res,200,{...slackStatus(settingsRoot,store),message:"Slack test notification delivered."});
       }
       if (req.method === "POST" && url.pathname === "/api/update") {
         const check = checkUpdate(settingsRoot);
