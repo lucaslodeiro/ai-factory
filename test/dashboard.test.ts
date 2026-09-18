@@ -83,6 +83,8 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(html,/settings-navigation/);
     assert.match(html,/FIRST-TIME SETUP/);
     assert.doesNotMatch(html,/Stop daemon/);
+    const client = await fetch(`http://127.0.0.1:${port}/app.js`).then(response => response.text());
+    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/);
     const snapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
     assert.equal(snapshot.daemon.running,false);
     assert.equal(snapshot.items[0].title,"Repair login");

@@ -17,10 +17,11 @@ const env={...process.env,PATH:`${bin}:${process.env.PATH}`,AI_FACTORY_SKIP_SERV
 for(const k of Object.keys(env)) if(/^(FACTORY_|GITHUB_|CODEX_COMMAND|CLAUDE_COMMAND|GIT_COMMAND)/.test(k)) delete env[k];
 function run(command,args,cwd=temp,ok=true){const r=spawnSync(command,args,{cwd,env,encoding:'utf8'}); if(ok)assert.equal(r.status,0,r.stderr+r.stdout);else assert.notEqual(r.status,0);return r;}
 try {
+run(process.execPath,[path.join(source,'scripts/test-dashboard-config.mjs')]);
 run('git',['init','--bare',remote]);run('git',['clone',remote,seed]);
 run('git',['config','user.email','test@example.com'],seed);run('git',['config','user.name','Test'],seed);
 fs.mkdirSync(path.join(seed,'scripts'));
-for(const f of ['install.sh','update.sh','update.mjs','configure.sh','configure.mjs','dashboard-url.mjs']) fs.copyFileSync(path.join(source,'scripts',f),path.join(seed,'scripts',f));
+for(const f of ['install.sh','update.sh','update.mjs','configure.sh','configure.mjs','dashboard-url.mjs','prepare-dashboard-config.mjs']) fs.copyFileSync(path.join(source,'scripts',f),path.join(seed,'scripts',f));
 fs.writeFileSync(path.join(seed,'scripts','services.sh'),`#!/bin/sh\nprintf '%s %s\\n' \"$1\" \"$2\" >> \"$AI_FACTORY_SERVICE_LOG\"\n`,{mode:0o755});
 fs.writeFileSync(path.join(seed,'scripts','service-summary.mjs'),`console.log('Dashboard: http://127.0.0.1:4173');\n`);
 for(const f of ['.gitignore','.env.example','package.json']) fs.copyFileSync(path.join(source,f),path.join(seed,f));

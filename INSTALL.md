@@ -20,9 +20,16 @@ Installer options:
 | `--dir PATH` | `$HOME/ai-factory` | Engine installation directory |
 | `--repo URL` | This GitHub repository | Engine source repository |
 | `--branch NAME` | `main` | Engine branch to install (`develop` opts into unreleased changes) |
+| `--dashboard-host LOOPBACK` | `127.0.0.1` | Initial dashboard address: `127.0.0.1`, `localhost` or `::1` |
+| `--dashboard-port PORT` | `4173` | Initial dashboard port |
 | `--skip-tools` | off | Require existing tools instead of installing missing ones |
 
 `--defaults` is accepted temporarily as a deprecated no-op so older automated install commands do not break.
+If the selected port is already occupied, installation chooses the next available port, saves it in `.env`, prints the change and opens the effective URL. For example:
+
+```sh
+bash /tmp/ai-factory-install.sh --dashboard-host localhost --dashboard-port 5173
+```
 
 ## Alternative macOS installation without Homebrew
 
@@ -53,7 +60,7 @@ The updater requires the existing built runtime and dependencies. It adds `~/.lo
 
 ## Configuration lifecycle
 
-Installation opens `http://127.0.0.1:4173/?setup=1` by default. The dashboard reads installation defaults plus any saved `.env`, groups them by purpose and writes changes atomically with owner-only permissions. Stop the daemon before saving; the dashboard remains available. Updates preserve `.env` without asking questions.
+Installation opens `http://127.0.0.1:4173/?setup=1` by default, or the effective custom/fallback address selected during installation. The dashboard reads installation defaults plus any saved `.env`, groups them by purpose and writes changes atomically with owner-only permissions. Stop the daemon before saving; the dashboard remains available. Updates preserve `.env` without asking questions.
 
 Connect GitHub, Claude and Codex from **Configuration → Credentials**. Complete the target repository and clone in **Project & GitHub**, and authorized GitHub users in **Access & secrets**. The clone must already exist and have its `origin`, default branch, and Git author configured. Then start the daemon from **Services**.
 
@@ -99,7 +106,7 @@ The **Configuration** panel has eight categories. **Credentials** reports authen
 
 The other seven categories edit the installation's `.env` without exposing secrets to the browser. They cover project and GitHub, runtime, dashboard, agent roles, agent tools, access and secrets, and notifications. **Agent roles** has a card for Product/Architect, Developer, QA and Reviewer. Each card selects Codex or Claude and one direct model. **Auto** omits the model argument and lets that provider use its recommended/default model; choosing a concrete model passes that exact ID on every invocation of the role. Changing the provider refreshes the choices, and existing custom model IDs remain selectable. Every field shows its environment-variable name and which service must restart. **Notifications** accepts an HTTPS Slack Incoming Webhook, reports pending, failed and sent delivery counts, and can send a test notification. The webhook is write-only: the API reports only whether it is configured and never sends its value back to the browser. Leaving the input blank preserves it; **Remove connection** clears it explicitly. Values are validated with the same constraints as the terminal configurator. Each save creates a private `.env.backup-*` and atomically replaces `.env` with owner-only permissions. Unknown existing settings are preserved.
 
-Stop the daemon before saving configuration from the dashboard; the UI disables the form while a live daemon lock exists and the API independently rejects the write. The dashboard can remain running during the edit. Restart the daemon after any runtime change, and restart the dashboard if its host or port changed:
+Stop the daemon before saving configuration from the dashboard; the UI disables the form while a live daemon lock exists and the API independently rejects the write. The dashboard can remain running during the edit. Restart the daemon after any runtime change. If its host or port changed, the UI shows the new URL and navigates there after **Restart dashboard**:
 
 ```sh
 npm run service -- restart daemon

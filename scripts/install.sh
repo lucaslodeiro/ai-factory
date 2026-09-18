@@ -4,18 +4,22 @@ repo=https://github.com/lucaslodeiro/ai-factory.git
 branch=main
 dest="$HOME/ai-factory"
 skip_tools=false
+dashboard_host=
+dashboard_port=
 while (($#)); do
   case "$1" in
-    --dir|--branch|--repo)
+    --dir|--branch|--repo|--dashboard-host|--dashboard-port)
       (($# >= 2)) || { echo "Missing value for $1" >&2; exit 1; }
-      case "$1" in --dir) dest=$2;; --branch) branch=$2;; --repo) repo=$2;; esac
+      case "$1" in --dir) dest=$2;; --branch) branch=$2;; --repo) repo=$2;; --dashboard-host) dashboard_host=$2;; --dashboard-port) dashboard_port=$2;; esac
       shift 2;;
     --defaults) shift;;
     --skip-tools) skip_tools=true; shift;;
-    --help) echo 'Usage: bash install.sh [--dir PATH] [--branch BRANCH] [--repo URL] [--skip-tools]'; echo 'Configuration continues in the dashboard. --defaults is accepted as a deprecated no-op.'; exit 0;;
+    --help) echo 'Usage: bash install.sh [--dir PATH] [--branch BRANCH] [--repo URL] [--dashboard-host LOOPBACK] [--dashboard-port PORT] [--skip-tools]'; echo 'If the selected/default port is occupied, the installer saves and opens the next available port. --defaults is accepted as a deprecated no-op.'; exit 0;;
     *) echo "Unknown option: $1" >&2; exit 1;;
   esac
 done
+[[ -z $dashboard_host || $dashboard_host == 127.0.0.1 || $dashboard_host == localhost || $dashboard_host == ::1 ]] || { echo 'Dashboard host must be 127.0.0.1, localhost or ::1.' >&2; exit 1; }
+[[ -z $dashboard_port || ( $dashboard_port =~ ^[0-9]+$ && $dashboard_port -ge 1 && $dashboard_port -le 65535 ) ]] || { echo 'Dashboard port must be from 1 to 65535.' >&2; exit 1; }
 [[ ! -e "$dest" ]] || { echo "Destination already exists; use scripts/update.sh: $dest" >&2; exit 1; }
 export PATH="$HOME/.local/bin:$PATH"
 node_ok() { command -v node >/dev/null && node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)'; }
@@ -57,7 +61,7 @@ npm run build
 npm test
 umask 077
 cp .env.example .env
-dashboard_url=$(node scripts/dashboard-url.mjs)
+dashboard_url=$(node scripts/prepare-dashboard-config.mjs "$dashboard_host" "$dashboard_port")
 dashboard_ready=false
 if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
   AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install all

@@ -58,7 +58,7 @@ npm run service -- start dashboard
 npm run service -- start daemon
 ```
 
-Use **Dashboard → Configuration** whenever settings or credentials change. `npm run configure` remains as a deprecated terminal fallback for a headless Mac; installation and update no longer invoke it. Existing settings are preserved during updates.
+Use **Dashboard → Configuration** whenever settings or credentials change. The installer accepts `--dashboard-host` and `--dashboard-port`; when the selected port is occupied it saves and opens the next available port automatically. Changing the address later in Configuration shows the new URL and redirects after restarting the dashboard. `npm run configure` remains as a deprecated terminal fallback for a headless Mac; installation and update no longer invoke it. Existing settings are preserved during updates.
 
 The factory engine and target application are separate repositories. `GITHUB_REPOSITORY` selects where issues are read and PRs are created; `FACTORY_REPO_DIR` selects the local clone used for worktrees. Open issues enter the factory only when labelled `factory:queued`.
 

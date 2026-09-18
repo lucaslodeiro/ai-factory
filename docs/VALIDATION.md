@@ -21,7 +21,7 @@
 - Single-daemon lock, environment filtering, QA file restrictions and branch publication restrictions.
 - Assigned-branch checks before agent execution and commits, including same-commit branch switches and detached HEAD. Real Git regression cases preserve raw Unicode/newline/tab/space filenames and reject renaming production files into test paths during QA.
 - Transient GitHub comment-read failures preserve WAITING_HUMAN and its approval cursor; polling recovers without a manual retry or another agent invocation.
-- Dashboard-first installation creates a private default `.env`, installs both service definitions, starts only the dashboard and opens the first-time setup URL. Update preserves configuration without invoking the deprecated terminal wizard.
+- Dashboard-first installation creates a private default `.env`, accepts a loopback host and port, selects the next available port when occupied, installs both service definitions, starts only the dashboard and opens the effective first-time setup URL. Update preserves configuration without invoking the deprecated terminal wizard.
 
 - Direct per-role model selection, immutable approved assessments, explicit and automatic CLI model behavior, provider mismatch rejection and run-linked selection audit.
 
