@@ -1,5 +1,37 @@
 # macOS installation
 
+## Installation and updates from GitHub
+
+Download the installer and run it on the destination Mac (Homebrew is needed if Git, Node or gh are missing):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/bootstrap/mvp/scripts/install.sh -o /tmp/ai-factory-install.sh
+bash /tmp/ai-factory-install.sh --dir "$HOME/ai-factory"
+```
+
+The default branch is `bootstrap/mvp`; use `--branch main` once the MVP is merged there. The installer installs missing tools, clones the engine, installs locked npm dependencies, builds, tests and creates a private `.env` with blank target settings. It does not authenticate accounts or start agents. Existing destinations are rejected. `--skip-tools` skips machine tool installation; Node 22+, npm and Git must already work. Automatic tool installation is macOS-only. Provider installers: [Codex](https://developers.openai.com/codex/cli), [Claude](https://code.claude.com/docs/en/setup).
+
+To update an existing installation, first stop its daemon and wait for it to exit:
+
+```sh
+cd "$HOME/ai-factory"
+npm run factory -- stop
+# After the daemon has exited:
+bash scripts/update.sh
+npm run factory -- doctor
+npm run factory -- start
+```
+
+The updater requires the existing built runtime and dependencies. It uses the current branch on `origin`, refuses local changes/local-only commits and holds the daemon lock throughout the update. It backs up SQLite and `.env` under `FACTORY_DATA_DIR/update-backup-*`, applies a fast-forward, installs locked dependencies, builds and tests. It preserves configuration, logs and worktrees; it never restarts the daemon or updates provider CLIs. A failed build/test leaves the daemon stopped and prints the backup and previous revision for diagnosis; there is no destructive automatic rollback. Backups contain private data: keep them local. Use the same Node/Git PATH as for running the daemon.
+
+## Configure projects and concurrency
+
+The engine repository and target application repository are separate. Set `GITHUB_REPOSITORY=owner/application` and `FACTORY_REPO_DIR=/absolute/path/to/application`; issues and PRs belong to that target. Only open issues labeled `factory:queued` are ingested.
+
+For two projects, use two factory installations with separate `.env`, target clones and `FACTORY_DATA_DIR` values, and start each in its own terminal. Within one instance, agent stages run sequentially; another issue can advance while one is waiting for human approval. Simultaneous agents within one project and multiple instances targeting the same repository are not supported. Locks protect a data directory on one host, not a repository across hosts.
+
+## Manual installation
+
 Use Node 22 or newer (Node 22 LTS recommended), Git, GitHub CLI, Codex CLI and Claude Code. Authenticate `gh auth login`, `codex login`, and `claude auth login` before starting.
 
 ```sh
@@ -83,3 +115,5 @@ Worker prompts include the actual daemon Node executable and configured Git, plu
 ## After PR delivery
 
 The daemon reconciles READY_TO_MERGE and PR_CLOSED items against GitHub. Merge records MERGED with timestamp/commit; closing without merging records PR_CLOSED; reopening resumes READY_TO_MERGE tracking. GitHub handles issue closure via the PR closing reference. With the daemon stopped, `npm run factory -- sync` performs one synchronization and flushes pending reports/notifications without running agents. The shared singleton lock prevents concurrent daemon/sync execution.
+
+To exercise installer/updater safeguards using temporary local repositories and a stub npm (no CLI installations or agents), run `node scripts/test-maintenance.mjs` after `npm run build`. The regular `npm test` suite validates the actual runtime.
