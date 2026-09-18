@@ -96,6 +96,7 @@ export function validate(key, value) {
   if (key === 'FACTORY_APPROVERS' && value && !value.split(',').every(v => /^[a-zA-Z0-9-]+$/.test(v.trim()))) throw new Error('Use comma-separated GitHub usernames.');
   if (key === 'AGENT_SECRET_ALLOWLIST' && value && !value.split(',').every(v => /^[A-Za-z_][A-Za-z0-9_]*$/.test(v.trim()))) throw new Error('Use comma-separated environment variable names.');
   if (key.includes('_MODEL_') && !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(value)) throw new Error('Enter a model identifier.');
+  if (key.endsWith('_PROVIDER') && !['codex','claude'].includes(value)) throw new Error('Choose codex or claude.');
   if (['FACTORY_DATA_DIR','GITHUB_DEFAULT_BRANCH','CODEX_COMMAND','CLAUDE_COMMAND','GIT_COMMAND'].includes(key) && !value.trim()) throw new Error('This value cannot be empty.');
   if (key === 'SLACK_WEBHOOK_URL' && value) {
     let url; try { url = new URL(value); } catch { throw new Error('Enter an HTTPS URL.'); }
@@ -145,6 +146,13 @@ export async function configure(root, useDefaults = false) {
     if (found.status === 0) defaults[key] = found.stdout.trim();
   }
   const values = {...defaults,...saved};
+  for (const prefix of ['PRODUCT_ARCHITECT','DEVELOPER','QA','REVIEWER']) {
+    const selected = (values[`${prefix}_PROVIDER`] || defaults[`${prefix}_PROVIDER`]).toUpperCase();
+    for (const profile of ['FAST','BALANCED','STRONG']) {
+      const roleKey = `${prefix}_MODEL_${profile}`;
+      if (!(roleKey in saved)) values[roleKey] = values[`${selected}_MODEL_${profile}`] || defaults[roleKey];
+    }
+  }
   assertStopped(root, values);
   const oldValues = {...values};
   let targetPrepared;
@@ -185,7 +193,16 @@ export async function configure(root, useDefaults = false) {
           if (secret && process.stdin.isTTY) process.stdout.write('\n');
           if (answer.done) throw new Error('Configuration cancelled; no changes saved.');
           const value = answer.value === '' ? values[key] : answer.value === '-' ? '' : answer.value.trim();
-          try { validate(key,value); values[key] = value; break; }
+          try {
+            validate(key,value);
+            const previous = values[key];
+            values[key] = value;
+            if (key.endsWith('_PROVIDER') && value !== previous) {
+              const prefix = key.slice(0,-'_PROVIDER'.length), selected = value.toUpperCase();
+              for (const profile of ['FAST','BALANCED','STRONG']) values[`${prefix}_MODEL_${profile}`] = values[`${selected}_MODEL_${profile}`];
+            }
+            break;
+          }
           catch (error) { console.log(error.message); }
         }
       }

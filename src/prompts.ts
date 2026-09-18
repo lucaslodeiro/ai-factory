@@ -2,11 +2,11 @@ import path from "node:path";
 import { config } from "./config.js";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { AgentRole, WorkItem } from "./types.js";
+import type { AgentProvider, AgentRole, WorkItem } from "./types.js";
 const root = new URL("../", import.meta.url);
-export function prompt(w: WorkItem, role: AgentRole) {
+export function prompt(w: WorkItem, role: AgentRole, selectedProvider: AgentProvider) {
   const read = (p: string) => fs.readFileSync(fileURLToPath(new URL(p, root)), "utf8");
-  const provider = role === "developer" || role === "qa" ? "codex/AGENTS.md" : "claude/CLAUDE.md";
+  const provider = selectedProvider === "codex" ? "codex/AGENTS.md" : "claude/CLAUDE.md";
   const template = role === "product-architect" ? "SPEC" : role === "qa" ? "QA_REPORT" : role === "reviewer" ? "REVIEW_REPORT" : null;
   const toolDirs = [path.dirname(process.execPath), ...(path.isAbsolute(config.gitCommand) ? [path.dirname(config.gitCommand)] : [])].join(path.delimiter);
   const shellPrefix = `export PATH='${toolDirs.replaceAll("'", "'\\''") }':"$PATH";`;

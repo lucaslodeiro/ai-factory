@@ -43,7 +43,13 @@ export async function startDaemon(store = new Store()) {
  if (!doctor()) throw new Error("Preflight failed; fix doctor checks before starting");
  const release = acquireLock(store), executions = new ExecutionManager(store);
  const codex = new CodexAdapter(executions), claude = new ClaudeAdapter(executions);
- const o = new Orchestrator(store, { "product-architect": claude, developer: codex, qa: codex, reviewer: claude });
+ const adapters = { codex,claude };
+ const o = new Orchestrator(store, {
+  "product-architect":adapters[config.roles["product-architect"].provider],
+  developer:adapters[config.roles.developer.provider],
+  qa:adapters[config.roles.qa.provider],
+  reviewer:adapters[config.roles.reviewer.provider],
+ });
  let stopping = false;
  const stop = () => {
   stopping = true;

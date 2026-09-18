@@ -1,12 +1,13 @@
 export type WorkState = "NEW" | "SPEC" | "WAITING_HUMAN" | "DEVELOPMENT" | "QA" | "REVIEW" | "READY_TO_MERGE" | "MERGED" | "PR_CLOSED" | "PAUSED" | "FAILED" | "CANCELLED";
 export type AgentRole = "product-architect" | "developer" | "qa" | "reviewer";
+export type AgentProvider = "codex" | "claude";
 export type DeliveryStage = "DEVELOPMENT" | "QA" | "REVIEW";
 export interface Criterion { id: string; description: string; }
 export interface Finding { classification: "auto-fix" | "decision-required" | "defer"; evidence: string; }
 export interface Decision { kind: "tactical" | "major"; decision: string; rationale: string; conflictsWithHuman: boolean; }
 export interface TaskAssessment { complexity: "low" | "medium" | "high"; risk: "low" | "medium" | "high"; rationale: string; }
 export type ModelProfile = "fast" | "balanced" | "strong";
-export interface ModelSelection { policy: string; provider: "codex" | "claude"; profile: ModelProfile; model: string; reason: string; }
+export interface ModelSelection { policy: string; provider: AgentProvider; profile: ModelProfile; model: string; reason: string; }
 export interface AgentResult {
   taskAssessment: TaskAssessment | null;
   outcome: "spec" | "questions" | "resolved" | "pass" | "changes" | "decision";

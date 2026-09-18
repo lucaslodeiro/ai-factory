@@ -23,16 +23,17 @@ test("initial assessment is balanced; legacy delivery and corrections are conser
  assert.equal(selectModel("developer", assessment("low", "low"), 1).profile, "strong");
  assert.equal(selectModel("product-architect", assessment("low", "low"), 0, true).profile, "strong");
 });
-test("policy uses configured model IDs, records its reason and refuses a missing mapping", () => {
- const saved = config.models.codex.fast;
+test("policy uses each role's configured provider and model IDs", () => {
+ const saved = structuredClone(config.roles.developer);
  try {
-  config.models.codex.fast = "custom-fast-model";
+  config.roles.developer.provider = "claude";
+  config.roles.developer.models.fast = "custom-claude-fast";
   const choice = selectModel("developer", assessment("low", "low"));
-  assert.equal(choice.model, "custom-fast-model"); assert.equal(choice.provider, "codex");
-  assert.equal(choice.policy, "balanced-v2"); assert.match(choice.reason, /low-risk/);
-  config.models.codex.fast = "";
-  assert.throws(() => selectModel("developer", assessment("low", "low")), /Missing/);
- } finally { config.models.codex.fast = saved; }
+  assert.equal(choice.model, "custom-claude-fast"); assert.equal(choice.provider, "claude");
+  assert.equal(choice.policy, "balanced-v3"); assert.match(choice.reason, /low-risk/);
+  config.roles.developer.models.fast = "";
+  assert.throws(() => selectModel("developer", assessment("low", "low")), /developer profile fast/);
+ } finally { config.roles.developer = saved; }
 });
 test("only new specs can set an assessment and every assessment needs valid levels and rationale", () => {
  assert.throws(() => parseResult(result("spec", { taskAssessment: null }), "product-architect"), /requires a taskAssessment/);

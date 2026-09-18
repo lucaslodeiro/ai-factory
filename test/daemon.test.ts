@@ -41,25 +41,26 @@ if(a[0]==='--version'){console.log('fake-1');process.exit(0)}
 if(a[0]==='login'){process.exit(0)}
 if(a[0]==='auth'){console.log(JSON.stringify({loggedIn:true}));process.exit(0)}
 const input=fs.readFileSync(0,'utf8');const codex=a[0]==='exec';
-let result=${JSON.stringify(result("pass"))};
-if(codex){
- if(input.includes('# Developer Contract')){
+const architect=input.includes('# Product / Architect Contract'),developer=input.includes('# Developer Contract'),qa=input.includes('# QA Contract');
+let result=architect?${JSON.stringify(result("spec"))}:${JSON.stringify(result("pass"))};
+if(developer){
   const marker=${JSON.stringify(path.join(root, 'first-developer'))};
   if(!fs.existsSync(marker)){fs.writeFileSync(marker,'running');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,60000);}
   fs.mkdirSync('src',{recursive:true});fs.writeFileSync('src/greet.mjs','export const greet = name => "Hello " + name;');
- } else {
+} else if(qa){
   fs.mkdirSync('test',{recursive:true});fs.writeFileSync('test/greet.test.mjs','import {greet} from "../src/greet.mjs";import assert from "node:assert/strict";assert.equal(greet("world"),"Hello world");');
   const r=cp.spawnSync(process.execPath,['--test','test/greet.test.mjs']);if(r.status!==0)process.exit(5);
- }
+}
+if(codex){
  fs.writeFileSync(a[a.indexOf('--output-last-message')+1],JSON.stringify(result));
 } else {
- if(input.includes('# Product / Architect Contract'))result=${JSON.stringify(result("spec"))};
  console.log(JSON.stringify({is_error:false,structured_output:result}));
 }
 `);
  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, FACTORY_DATA_DIR: data, FACTORY_REPO_DIR: repo,
   GITHUB_REPOSITORY: "owner/demo", GITHUB_DEFAULT_BRANCH: "main", FACTORY_APPROVERS: "owner", FACTORY_POLL_INTERVAL_MS: "50",
-  CODEX_COMMAND: provider, CLAUDE_COMMAND: provider, SLACK_WEBHOOK_URL: "" };
+  CODEX_COMMAND: provider, CLAUDE_COMMAND: provider, PRODUCT_ARCHITECT_PROVIDER:"codex", DEVELOPER_PROVIDER:"claude",
+  QA_PROVIDER:"claude", REVIEWER_PROVIDER:"codex", SLACK_WEBHOOK_URL: "" };
  const cli = path.resolve("src/cli.ts");
  const log = fs.openSync(path.join(root, "daemon.log"), "w");
  const child = spawn(process.execPath, ["--import", "tsx", cli, "start"], { env, stdio: ["ignore", log, log], detached: true }); fs.closeSync(log);

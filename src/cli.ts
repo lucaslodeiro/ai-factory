@@ -12,7 +12,7 @@ import { startDashboard } from "./dashboard.js";
 const p = new Command().name("factory").description("Local AI Software Factory").version("0.1.0");
 p.command("models").argument("[id]").description("Show model policy or preview role selections for a work item").action(id => {
  console.log(`Model policy: ${modelPolicyVersion}`);
- if (!id) { console.table(Object.entries(config.models).flatMap(([provider, profiles]) => Object.entries(profiles).map(([profile, model]) => ({ provider, profile, model })))); return; }
+ if (!id) { console.table(Object.entries(config.roles).flatMap(([role, routing]) => Object.entries(routing.models).map(([profile, model]) => ({ role,provider:routing.provider,profile,model })))); return; }
  const s = new Store();
  try {
   const w = s.get(id); if (!w) throw new Error("Unknown work item");

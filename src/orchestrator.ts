@@ -104,10 +104,10 @@ export class Orchestrator {
   if (role !== "product-architect" && (!w.context.approvedVersion || w.context.approvedVersion !== w.context.version)) throw new Error("No approval for current specification");
   this.workspaces.assertBranch(w.context.cwd, w.branch);
   const before = this.workspaces.head(w.context.cwd);
-  const instructions = prompt(w, role) + (role === "reviewer" ? "\n\nImplementation diff:\n" + this.workspaces.diff(w.context.cwd) : "");
+  const selection = modelForWork(w, role);
+  const instructions = prompt(w, role, selection.provider) + (role === "reviewer" ? "\n\nImplementation diff:\n" + this.workspaces.diff(w.context.cwd) : "");
   w.context.pendingStage = { stage: w.state, beforeHead: before, startedAt: new Date().toISOString() };
   this.store.save(w);
-  const selection = modelForWork(w, role);
   this.store.event("model.selected", { role, specVersion: w.context.version, selection }, w.id);
   const adapter = this.agents[role];
   if (!adapter) throw new Error(`No adapter configured for ${role}`);

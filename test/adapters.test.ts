@@ -21,7 +21,8 @@ const args=process.argv.slice(2), input=fs.readFileSync(0,'utf8');
 if(input!=='prompt from orchestrator') process.exit(8);
 const codex=args[0]==='exec';
 if(args[args.indexOf('--model')+1] !== (codex?'test-codex':'test-claude')) process.exit(10);
-const result=codex?${JSON.stringify(result("pass"))}:${JSON.stringify(result("spec"))};
+const claudeDelivery=!codex&&args[args.indexOf('--tools')+1].includes('Edit');
+const result=codex||claudeDelivery?${JSON.stringify(result("pass"))}:${JSON.stringify(result("spec"))};
 if(codex) {
  if(!args.includes('--output-schema')||args.includes('--full-auto')) process.exit(9);
  fs.writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(result));
@@ -35,6 +36,7 @@ if(codex) {
  const s=new Store(":memory:"), m=new ExecutionManager(s);
  assert.equal((await new ClaudeAdapter(m).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'prompt from orchestrator',selection:{...selectModel('product-architect'),model:'test-claude'}})).outcome,'spec');
  assert.equal((await new CodexAdapter(m).run({workItemId:'w',role:'developer',cwd:root,instructions:'prompt from orchestrator',selection:{...selectModel('developer'),model:'test-codex'}})).outcome,'pass');
+ assert.equal((await new ClaudeAdapter(m).run({workItemId:'w',role:'developer',cwd:root,instructions:'prompt from orchestrator',selection:{...selectModel('developer'),provider:'claude',model:'test-claude'}})).outcome,'pass');
  await assert.rejects(new ClaudeAdapter(m).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'unused',selection:selectModel('developer')}), /mismatch/);
- assert.equal((s.db.prepare('SELECT COUNT(*) AS n FROM executions WHERE status=?').get('succeeded') as any).n,2);assert.equal(JSON.parse((s.db.prepare("SELECT payload FROM events WHERE type='execution.started' ORDER BY id DESC LIMIT 1").get() as any).payload).selection.model,'test-codex');s.db.close();
+ assert.equal((s.db.prepare('SELECT COUNT(*) AS n FROM executions WHERE status=?').get('succeeded') as any).n,3);assert.equal(JSON.parse((s.db.prepare("SELECT payload FROM events WHERE type='execution.started' ORDER BY id DESC LIMIT 1").get() as any).payload).selection.model,'test-claude');s.db.close();
 });

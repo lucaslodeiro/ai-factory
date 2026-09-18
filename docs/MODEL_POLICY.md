@@ -1,6 +1,6 @@
-# Model selection: balanced-v2
+# Model selection: balanced-v3
 
-The user selected a balance of quality, cost and time. Product/Architect assesses each issue when proposing its spec. The deterministic orchestrator maps that assessment and the role to a configured model profile. The model never supplies an executable model ID. This is per issue and role invocation; the MVP does not decompose an issue into independently routed subtasks.
+The user selected a balance of quality, cost and time. Product/Architect assesses each issue when proposing its spec. The deterministic orchestrator maps that assessment and role to a configured profile, then reads the provider and model configured for that role. The model never supplies a provider or executable model ID. This is per issue and role invocation; the MVP does not decompose an issue into independently routed subtasks.
 
 ## Routing rules (in priority order)
 
@@ -19,20 +19,24 @@ Complexity considers scope, algorithms, architecture and concurrency. Risk consi
 
 The assessment and its rationale are published with SPEC vN and stored in that immutable spec snapshot. Approving the spec approves the assessment. Use `/factory answer ...` to request a correction before approval. Tactical resolutions and delivery results cannot replace it; a new assessment requires a new spec version and approval.
 
-## Configured model table
+## Configured role table
 
-| Provider | fast | balanced | strong |
-|---|---|---|---|
-| Codex | gpt-5.6-luna | gpt-5.6-terra | gpt-5.6-sol |
-| Claude | sonnet (reserved) | sonnet | opus |
+| Role | Default provider | fast | balanced | strong |
+|---|---|---|---|---|
+| Product / Architect | Claude | sonnet | sonnet | opus |
+| Developer | Codex | gpt-5.6-luna | gpt-5.6-terra | gpt-5.6-sol |
+| QA | Codex | gpt-5.6-luna | gpt-5.6-terra | gpt-5.6-sol |
+| Reviewer | Claude | sonnet | sonnet | opus |
 
-Override `CODEX_MODEL_FAST`, `CODEX_MODEL_BALANCED`, `CODEX_MODEL_STRONG`, `CLAUDE_MODEL_FAST`, `CLAUDE_MODEL_BALANCED`, and `CLAUDE_MODEL_STRONG` in the factory environment. No current Claude role uses fast. These profiles are relative policy tiers, not a provider's premium Fast service tier, a price guarantee or a spending cap. IDs may be the same across profiles when account availability requires it. Claude aliases can resolve to new versions; use full versioned IDs when pinning is required.
+Dashboard → Configuration → Agent roles exposes one card per role. Each card selects Codex or Claude and its fast, balanced and strong model IDs. The corresponding environment names are `<ROLE>_PROVIDER` and `<ROLE>_MODEL_FAST|BALANCED|STRONG`, where `<ROLE>` is `PRODUCT_ARCHITECT`, `DEVELOPER`, `QA`, or `REVIEWER`. `CODEX_MODEL_*` and `CLAUDE_MODEL_*` remain provider defaults used to initialize new role settings and migrate existing installations.
 
-The Codex defaults follow the [official model catalog](https://learn.chatgpt.com/docs/models). Explicit model arguments follow the [Codex CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli); Claude's installed CLI supports `--model`. Availability still depends on account and provider. The factory passes `--model` for every invocation. A rejected model fails the run; the factory never silently falls back to another model or provider. Changing environment settings requires restarting the daemon and affects future attempts, with each selection recorded separately.
+Profiles are relative policy tiers, not a provider's premium Fast service tier, a price guarantee or a spending cap. IDs may be the same across profiles when account availability requires it. Claude aliases can resolve to new versions; use full versioned IDs when pinning is required. QA and Reviewer currently have a balanced floor, so their fast setting is reserved for future policy changes.
+
+The Codex defaults follow the [official model catalog](https://learn.chatgpt.com/docs/models). Explicit model arguments follow the [Codex CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli); Claude's installed CLI supports `--model`. Availability still depends on account and provider. The factory passes `--model` for every invocation. A rejected model fails the run; the factory never silently falls back to another model or provider. Changing role settings requires restarting the daemon and affects future attempts, with each selection recorded separately. Both providers receive the same canonical role contract. Product/Architect and Reviewer remain read-only; Developer can edit the worktree; QA remains restricted to test files by the orchestrator's mutation checks.
 
 ## Inspecting and auditing
 
-- `npm run factory -- models`: show the configured model table without running any agent.
+- `npm run factory -- models`: show every configured role/provider/profile/model mapping without running an agent.
 - `npm run factory -- models <work-item-id>`: preview selections for each role given current context (not historical usage and not authorization to execute).
 - `npm run factory -- events <work-item-id>`: inspect `model.selected` and `execution.started`. Each started run records policy version, provider, profile, requested model and reason, linked to its run ID. Requested model/alias is recorded; the provider's resolved backend model is not independently attested.
 

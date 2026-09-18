@@ -1,8 +1,8 @@
 import { config } from "./config.js";
 import type { AgentRole, ModelProfile, ModelSelection, TaskAssessment, WorkItem } from "./types.js";
-export const modelPolicyVersion = "balanced-v2";
+export const modelPolicyVersion = "balanced-v3";
 export function selectModel(role: AgentRole, assessment?: TaskAssessment, cycles = 0, consultation = false): ModelSelection {
- const provider = role === "developer" || role === "qa" ? "codex" : "claude";
+ const routing = config.roles[role], provider = routing.provider;
  let profile: ModelProfile = "balanced", reason = "Standard task; balanced quality, cost and latency";
  if (cycles > 0 || consultation) { profile = "strong"; reason = "Correction or architectural consultation requires stronger reasoning"; }
  else if (assessment?.complexity === "high" || assessment?.risk === "high") { profile = "strong"; reason = "Approved assessment has high complexity or risk"; }
@@ -10,8 +10,8 @@ export function selectModel(role: AgentRole, assessment?: TaskAssessment, cycles
  else if (assessment?.complexity === "low" && assessment.risk === "low" && role === "developer") { profile = "fast"; reason = "Approved low-complexity, low-risk implementation"; }
  else if (role === "product-architect" && !assessment) reason = "Initial task assessment uses the balanced architect profile";
  // QA and Reviewer never use the fast profile, even for a simple implementation.
- const model = config.models[provider][profile];
- if (!model?.trim()) throw new Error(`Missing ${provider} model for profile ${profile}`);
+ const model = routing.models[profile];
+ if (!model?.trim()) throw new Error(`Missing ${provider} model for ${role} profile ${profile}`);
  return { policy: modelPolicyVersion, provider, profile, model, reason };
 }
 export function modelForWork(w: WorkItem, role: AgentRole) {

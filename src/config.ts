@@ -10,6 +10,11 @@ function model(name: string, fallback: string) {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(value)) throw new Error(`${name} must be a nonempty model identifier`);
   return value;
 }
+function provider(name: string, fallback: "codex" | "claude"): "codex" | "claude" {
+  const value = (process.env[name] ?? fallback).trim();
+  if (value !== "codex" && value !== "claude") throw new Error(`${name} must be codex or claude`);
+  return value as "codex" | "claude";
+}
 function dashboardHost() {
   const value = (process.env.FACTORY_DASHBOARD_HOST ?? "127.0.0.1").trim();
   if (!["127.0.0.1", "localhost", "::1"].includes(value)) throw new Error("FACTORY_DASHBOARD_HOST must be a loopback address");
@@ -20,10 +25,25 @@ function dashboardPort() {
   if (value > 65535) throw new Error("FACTORY_DASHBOARD_PORT must be at most 65535");
   return value;
 }
+const models = {
+  codex: { fast: model("CODEX_MODEL_FAST", "gpt-5.6-luna"), balanced: model("CODEX_MODEL_BALANCED", "gpt-5.6-terra"), strong: model("CODEX_MODEL_STRONG", "gpt-5.6-sol") },
+  claude: { fast: model("CLAUDE_MODEL_FAST", "sonnet"), balanced: model("CLAUDE_MODEL_BALANCED", "sonnet"), strong: model("CLAUDE_MODEL_STRONG", "opus") },
+};
+function role(prefix: string, fallback: "codex" | "claude") {
+  const selected = provider(`${prefix}_PROVIDER`,fallback);
+  return { provider:selected,models:{
+    fast:model(`${prefix}_MODEL_FAST`,models[selected].fast),
+    balanced:model(`${prefix}_MODEL_BALANCED`,models[selected].balanced),
+    strong:model(`${prefix}_MODEL_STRONG`,models[selected].strong),
+  }};
+}
 export const config = {
-  models: {
-    codex: { fast: model("CODEX_MODEL_FAST", "gpt-5.6-luna"), balanced: model("CODEX_MODEL_BALANCED", "gpt-5.6-terra"), strong: model("CODEX_MODEL_STRONG", "gpt-5.6-sol") },
-    claude: { fast: model("CLAUDE_MODEL_FAST", "sonnet"), balanced: model("CLAUDE_MODEL_BALANCED", "sonnet"), strong: model("CLAUDE_MODEL_STRONG", "opus") },
+  models,
+  roles: {
+    "product-architect":role("PRODUCT_ARCHITECT","claude"),
+    developer:role("DEVELOPER","codex"),
+    qa:role("QA","codex"),
+    reviewer:role("REVIEWER","claude"),
   },
   dataDir: path.resolve(process.env.FACTORY_DATA_DIR ?? ".factory"),
   repoDir: path.resolve(process.env.FACTORY_REPO_DIR ?? "."),

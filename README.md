@@ -74,7 +74,7 @@ This repository uses two long-lived branches: `develop` for ongoing work and `ma
 
 See [installation and operations](INSTALL.md), [GitHub setup](docs/GITHUB_SETUP.md), and [validation evidence and operational boundaries](docs/VALIDATION.md).
 
-Model routing balances quality, cost and time using an approved complexity/risk assessment, role floors and correction escalation. See [model selection policy](docs/MODEL_POLICY.md).
+Model routing balances quality, cost and time using an approved complexity/risk assessment, role floors and correction escalation. Configuration → Agent roles chooses Codex or Claude and the fast, balanced and strong model for Product/Architect, Developer, QA and Reviewer independently. See [model selection policy](docs/MODEL_POLICY.md).
 
 GitHub issues show the workflow through colored state labels and an updatable progress comment. Reports use readable Markdown; full JSON evidence stays in the local audit. The issue remains open until the delivered PR is merged.
 

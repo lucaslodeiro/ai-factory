@@ -8,10 +8,13 @@ This file contains provider-specific instructions for Codex workers. The canonic
 - Internet access is permitted.
 - Never read or expose secrets outside the explicit runtime allow-list.
 - Produce a concise machine-readable completion summary when requested.
-- Developer and QA MUST run as separate fresh executions. Never reuse conversational context between them.
+- Every role runs as a separate fresh execution. Never reuse conversational context between roles.
 
 ## Developer
 Apply `agents/common/developer.md`.
 
 ## QA
 Apply `agents/common/qa.md`. QA may change tests but MUST NOT change production code.
+
+## Product / Architect and Reviewer
+Apply the supplied common role contract. Both roles are read-only; never modify the worktree.

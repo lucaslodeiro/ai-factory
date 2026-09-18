@@ -94,6 +94,13 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .credential-account { color:var(--text); font:600 .7rem ui-monospace,SFMono-Regular,monospace }
 .credential-log { margin-top:1rem; font-size:.72rem }
 .credential-log code { overflow-wrap:anywhere }
+.role-routing-grid { display:grid; gap:1rem }
+.role-routing-card { padding:1rem; background:color-mix(in srgb,var(--surface) 60%,transparent); border:1px solid var(--line); border-radius:12px }
+.role-routing-title { margin-bottom:.8rem }
+.role-routing-title h4 { margin-top:.2rem; font-size:1rem }
+.role-settings-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.75rem }
+.role-settings-grid .provider-setting { grid-column:1/-1 }
+.role-settings-grid .setting-card { padding:.85rem }
 .setting-card { display:flex; flex-direction:column; gap:.55rem; min-width:0; padding:1rem; background:var(--surface); border:1px solid var(--line); border-radius:10px; font-size:.82rem }
 .setting-label { display:flex; align-items:flex-start; justify-content:space-between; gap:.75rem }
 .setting-label>span { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:.3rem }
@@ -125,6 +132,8 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
   .settings-layout { grid-template-columns:1fr }
   .settings-navigation { grid-template-columns:repeat(2,minmax(0,1fr)) }
   .settings-grid { grid-template-columns:1fr }
+  .role-settings-grid { grid-template-columns:1fr }
+  .role-settings-grid .provider-setting { grid-column:auto }
   .credentials-intro,.credential-card { align-items:flex-start; flex-direction:column }
 }
 @media(max-width:480px) {
