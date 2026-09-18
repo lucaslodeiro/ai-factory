@@ -1,0 +1,1 @@
+export type WorkState="NEW"|"SPEC"|"WAITING_HUMAN"|"DEVELOPMENT"|"QA"|"REVIEW"|"READY_TO_MERGE"|"PAUSED"|"FAILED"|"CANCELLED"; export type AgentRole="product-architect"|"developer"|"qa"|"reviewer";
