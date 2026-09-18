@@ -45,6 +45,20 @@ It supports Apple Silicon and Intel Macs. It downloads the latest Node 22 archiv
 
 Git comes from Apple's Command Line Tools. If they are absent, the script runs `xcode-select --install`, exits, and asks you to rerun it after completing Apple's graphical installation. It does not accept an Xcode license or request administrator credentials itself. Existing regular files in `~/.local/bin` are never overwritten. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile for later terminals.
 
+## Uninstall and clean reinstall
+
+From the installed factory directory, run:
+
+```sh
+cd "$HOME/ai-factory"
+npm run uninstall
+cd "$HOME"
+```
+
+The uninstaller prints the exact installation, runtime-data and LaunchAgent paths, then requires typing `uninstall`. For an automated disposable-machine test, use `npm run uninstall -- --yes`.
+
+It stops and removes both factory LaunchAgents, the engine checkout, `.env` and backups, SQLite, logs and retained worktrees. A configured external data directory is removed only when it contains the factory database marker; unsafe paths are rejected. The target application repository is preserved, as are global GitHub/Codex/Claude credentials and shared Node, Git, `gh`, Codex and Claude installations. This leaves the Mac ready to exercise the installer again without deleting unrelated development data.
+
 To update an existing installation, first stop its daemon and wait for it to exit:
 
 ```sh
@@ -237,3 +251,4 @@ Slack webhook input/defaults are hidden. Unknown existing environment settings a
 The fallback supports `npm run configure -- --defaults` to save existing/template values without questions. It never runs during installation or update. Check configuration with `npm run factory -- doctor`.
 
 Configuration regression checks: `node scripts/test-configure.mjs`.
+Uninstall regression check: `node scripts/test-uninstall.mjs`.

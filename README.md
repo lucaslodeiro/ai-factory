@@ -60,6 +60,8 @@ npm run service -- start daemon
 
 Use **Dashboard → Configuration** whenever settings or credentials change. Every option with a safe universal value opens with a default; after GitHub connects, the dashboard suggests the account's demo repository, local clone and approver for any empty required fields. Optional secrets and allowlists remain empty. The installer accepts `--dashboard-host` and `--dashboard-port`; when the selected port is occupied it saves and opens the next available port automatically. Changing the address later in Configuration shows the new URL and redirects after restarting the dashboard. `npm run configure` remains as a deprecated terminal fallback for a headless Mac; installation and update no longer invoke it. Existing settings are preserved during updates.
 
+For a clean installer retest, `npm run uninstall` removes both factory services, the engine checkout and its local runtime data after showing the exact paths and asking for confirmation. It preserves the target repository, provider credentials and shared command-line tools. Use `npm run uninstall -- --yes` only for an automated disposable-machine run.
+
 The factory engine and target application are separate repositories. `GITHUB_REPOSITORY` selects where issues are read and PRs are created; `FACTORY_REPO_DIR` selects the local clone used for worktrees. Open issues enter the factory only when labelled `factory:queued`.
 
 Queue an issue with `factory:queued`. Answer `/factory answer <text>` and approve the posted version with `/factory approve vN`. The daemon runs independent role processes, routes findings, and creates a pull request after passing QA and review. Human merge remains required.

@@ -18,6 +18,7 @@ for(const k of Object.keys(env)) if(/^(FACTORY_|GITHUB_|CODEX_COMMAND|CLAUDE_COM
 function run(command,args,cwd=temp,ok=true){const r=spawnSync(command,args,{cwd,env,encoding:'utf8'}); if(ok)assert.equal(r.status,0,r.stderr+r.stdout);else assert.notEqual(r.status,0);return r;}
 try {
 run(process.execPath,[path.join(source,'scripts/test-dashboard-config.mjs')]);
+run(process.execPath,[path.join(source,'scripts/test-uninstall.mjs')]);
 run('git',['init','--bare',remote]);run('git',['clone',remote,seed]);
 run('git',['config','user.email','test@example.com'],seed);run('git',['config','user.name','Test'],seed);
 fs.mkdirSync(path.join(seed,'scripts'));
