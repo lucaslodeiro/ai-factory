@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo=https://github.com/lucaslodeiro/ai-factory.git
-branch=bootstrap/mvp
+branch=main
 dest="$HOME/ai-factory"
 skip_tools=false
 configure_defaults=false

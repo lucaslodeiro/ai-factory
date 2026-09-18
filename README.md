@@ -33,7 +33,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and [INSTALL.md](INSTALL.md).
 On a new Mac, download the installer from the current MVP branch:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/bootstrap/mvp/scripts/install.sh -o /tmp/ai-factory-install.sh
+curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install.sh -o /tmp/ai-factory-install.sh
 bash /tmp/ai-factory-install.sh --dir "$HOME/ai-factory"
 ```
 
@@ -58,6 +58,8 @@ Queue an issue with `factory:queued`. Answer `/factory answer <text>` and approv
 Configuration command: `npm run configure`. Factory commands: `doctor`, `start`, `status [id]`, `events [id]`, `cancel <item-or-run-id>`, `retry <item-id>`, `stop`, `notifications`, `slack-test`, `models [id]`, `sync`.
 
 One instance executes agent stages sequentially for one target repository. To run two projects at once, use two installations with separate target clones, `.env` files and data directories. Multiple instances targeting the same repository are not supported.
+
+This repository uses two long-lived branches: `develop` for ongoing work and `main` for stable releases. The installer defaults to `main`; pass `--branch develop` only when intentionally testing unreleased factory changes.
 
 See [installation and operations](INSTALL.md), [GitHub setup](docs/GITHUB_SETUP.md), and [validation evidence and operational boundaries](docs/VALIDATION.md).
 
