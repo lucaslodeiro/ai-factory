@@ -74,11 +74,11 @@ The updater requires the existing built runtime and dependencies. It adds `~/.lo
 
 ## Configuration lifecycle
 
-Installation opens `http://127.0.0.1:4173/?setup=1` by default, or the effective custom/fallback address selected during installation. The dashboard reads installation defaults plus any saved `.env`, groups them by purpose and writes changes atomically with owner-only permissions. Stop the daemon before saving; the dashboard remains available. Updates preserve `.env` without asking questions.
+Installation opens `http://127.0.0.1:4173/?setup=1` by default, or the effective custom/fallback address selected during installation. The dashboard reads installation defaults plus any saved `.env` and groups them by purpose. **Save and apply** validates the complete candidate configuration before changing `.env`, temporarily stops affected running services, writes atomically with owner-only permissions, and restores those services. Stopped services remain stopped. Updates preserve `.env` without asking questions.
 
 Connect GitHub, Claude and Codex from **Configuration → Credentials**. Once GitHub reports Connected, the dashboard fills editable defaults for the target repository, clone and authorized approver when those fields are empty. The clone must already exist and have its `origin`, default branch, and Git author configured. Then save and start the daemon from **Services**.
 
-`npm run configure` remains available as a deprecated terminal fallback for headless operation. It is not called by installation or update.
+`npm run configure` remains a supported terminal recovery path when the dashboard cannot start or its address is misconfigured. It is not called by installation or update.
 
 | Setting | Meaning | Example |
 |---|---|---|
@@ -120,14 +120,28 @@ The **Configuration** panel has eight categories. **Credentials** reports authen
 
 The other seven categories edit the installation's `.env` without exposing secrets to the browser. They cover project and GitHub, runtime, dashboard, agent roles, agent tools, access and secrets, and notifications. **Agent roles** has a card for Product/Architect, Developer, QA and Reviewer. Each card selects Codex or Claude and one direct model. **Auto** omits the model argument and lets that provider use its recommended/default model; choosing a concrete model passes that exact ID on every invocation of the role. Changing the provider refreshes the choices, and existing custom model IDs remain selectable. Every field shows its environment-variable name and which service must restart. **Notifications** accepts an HTTPS Slack Incoming Webhook, reports pending, failed and sent delivery counts, and can send a test notification. The webhook is write-only: the API reports only whether it is configured and never sends its value back to the browser. Leaving the input blank preserves it; **Remove connection** clears it explicitly. Values are validated with the same constraints as the terminal configurator. Each save creates a private `.env.backup-*` and atomically replaces `.env` with owner-only permissions. Unknown existing settings are preserved.
 
-Stop the daemon before saving configuration from the dashboard; the UI disables the form while a live daemon lock exists and the API independently rejects the write. The dashboard can remain running during the edit. Restart the daemon after any runtime change. If its host or port changed, the UI shows the new URL and navigates there after **Restart dashboard**:
+The configuration form remains editable while the daemon is running. On save, the server validates every value first; invalid input leaves both `.env` and service state untouched. It then stops only affected running services, saves, and starts them again. When the dashboard itself must restart, the page displays the effective URL and reconnects there automatically.
+
+If broken configuration prevents the dashboard from starting, recover from a terminal:
 
 ```sh
-npm run service -- restart daemon
-npm run service -- restart dashboard
+cd "$HOME/ai-factory"
+npm run service -- stop all
+npm run configure
+npm run factory -- doctor
+npm run service -- start all
 ```
 
-The HTTP server accepts only a loopback bind address; it is not a remote administration endpoint. Service stdout and stderr are stored under `.factory/service-logs`.
+The terminal configurator also validates before replacing `.env`, creates a private backup, and preserves unknown settings. It intentionally requires services to be stopped because it cannot coordinate a dashboard restart while repairing it.
+
+The HTTP server accepts only a loopback bind address. For private remote access, keep it on `127.0.0.1` and publish it inside your tailnet with Tailscale Serve:
+
+```sh
+tailscale serve --bg http://127.0.0.1:4173
+tailscale serve status
+```
+
+On a Mac where the Tailscale application is installed but its CLI is not in `PATH`, use `/Applications/Tailscale.app/Contents/MacOS/Tailscale` in place of `tailscale`. Open the HTTPS `.ts.net` URL printed by Serve; `http://100.x.y.z:4173` does not work because the dashboard deliberately does not bind to the Tailscale interface. Tailnet access rules determine who can reach the administrative UI. Do not use Tailscale Funnel, which would publish it to the public internet. Service stdout and stderr are stored under `.factory/service-logs`.
 
 `install` and `update` refresh both service definitions. Existing loaded services are reloaded so path/runtime changes take effect; stopped services remain stopped. Stop the daemon before updating because the updater refuses to modify an installation with an active orchestration lock.
 
@@ -211,7 +225,7 @@ One foreground daemon per target/data directory, sequential work-item execution,
 
 ## Slack configuration and diagnosis
 
-In the dashboard, stop the daemon, open **Configuration → Notifications**, paste the Slack Incoming Webhook and choose **Save connection**. **Send test notification** uses the saved value immediately. Restart the daemon after the test so normal queued delivery uses the connection. The same screen shows pending, failed and sent counts plus the most recent delivery error. Slack also appears in **Credentials** as a connection summary.
+In the dashboard, open **Configuration → Notifications**, paste the Slack Incoming Webhook and choose **Save connection**. The URL is validated before saving and a running daemon is restarted automatically. **Send test notification** uses the saved value immediately. The same screen shows pending, failed and sent counts plus the most recent delivery error. Slack also appears in **Credentials** as a connection summary.
 
 The terminal alternative is to set `SLACK_WEBHOOK_URL` only in your local `.env` and run `npm run factory -- slack-test`. Use `npm run factory -- notifications` to inspect individual pending/sent deliveries, attempts and retry times. The daemon retries pending notifications after restart. If Slack is disabled, messages remain pending until it is configured. Do not put webhook secrets into GitHub issues or tracked files.
 
@@ -237,7 +251,7 @@ To exercise installer/updater safeguards using temporary local repositories and 
 
 ## Configuration details and safeguards
 
-The dashboard is the supported configuration interface. The earlier terminal wizard remains available only as a deprecated fallback for a headless Mac:
+The dashboard is the normal configuration interface. The terminal wizard remains a supported recovery interface for a headless Mac or a dashboard that cannot start:
 
 ```sh
 npm run configure
@@ -246,7 +260,7 @@ npm run configure
 
 Installation and update do not invoke this wizard. Dashboard fields cover every option in `.env.example`, including target repository/clone, approvers, data directory, polling, timeouts, correction limits, CLI executables, models and optional Slack. Invalid values are explained when saving; `doctor` must pass before the daemon can operate correctly.
 
-Slack webhook input/defaults are hidden. Unknown existing environment settings are preserved. Saving through the terminal fallback or dashboard creates a private `.env.backup-*` and replaces `.env` atomically with owner-only permissions; these files are ignored by Git. Stop the daemon before reconfiguring. Changing paths/repositories does not migrate existing data or clone a target repository. Use a separate installation/data directory for a different project.
+Slack webhook input/defaults are hidden. Unknown existing environment settings are preserved. Saving through the terminal recovery flow or dashboard creates a private `.env.backup-*` and replaces `.env` atomically with owner-only permissions; these files are ignored by Git. The dashboard coordinates affected services automatically; stop all services before using terminal recovery. Changing paths/repositories does not migrate existing data or clone a target repository. Use a separate installation/data directory for a different project.
 
 The fallback supports `npm run configure -- --defaults` to save existing/template values without questions. It never runs during installation or update. Check configuration with `npm run factory -- doctor`.
 

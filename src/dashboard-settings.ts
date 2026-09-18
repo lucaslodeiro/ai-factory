@@ -75,6 +75,36 @@ function validate(key: string, value: string) {
 function files(root: string) {
   return { template:path.join(root,".env.example"), env:path.join(root,".env") };
 }
+function prepareDashboardSettings(root: string, changes: Record<string,unknown>, clearSecrets: string[] = []) {
+  const names = files(root);
+  const template = fs.readFileSync(names.template,"utf8");
+  const original = fs.existsSync(names.env) ? fs.readFileSync(names.env,"utf8") : null;
+  const defaults = parse(template), saved = parse(original ?? ""), previous: Record<string,string> = {...defaults,...saved}, values: Record<string,string> = {...previous};
+  for (const [key,input] of Object.entries(changes)) {
+    if (!(key in defaults)) throw new Error(`Unknown setting: ${key}`);
+    if (typeof input !== "string") throw new Error(`${key}: expected text`);
+    if (descriptions[key]?.secret && input === "" && !clearSecrets.includes(key)) continue;
+    values[key] = input.trim();
+  }
+  for (const key of clearSecrets) {
+    if (!descriptions[key]?.secret) throw new Error(`Cannot clear non-secret setting: ${key}`);
+    values[key] = "";
+  }
+  for (const key of Object.keys(defaults)) validate(key,values[key] ?? "");
+  let output = template.replace(/^([A-Z_][A-Z0-9_]*)=.*$/gm,(_,key) => `${key}=${encode(values[key] ?? "")}`);
+  const retiredModelSetting = (key: string) => /^(CODEX|CLAUDE)_MODEL_(FAST|BALANCED|STRONG)$/.test(key) || /^(PRODUCT_ARCHITECT|DEVELOPER|QA|REVIEWER)_MODEL_(MODE|FAST|BALANCED|STRONG)$/.test(key);
+  for (const [key,value] of Object.entries(saved)) if (!(key in defaults) && !retiredModelSetting(key)) output += `\n${key}=${encode(value)}`;
+  const changedKeys = Object.keys(defaults).filter(key => values[key] !== previous[key]);
+  const restartServices = [...new Set(changedKeys.flatMap(key => {
+    const restart = descriptions[key]?.restart;
+    return restart === "all" ? ["daemon","dashboard"] : restart ? [restart] : [];
+  }))] as Array<"daemon" | "dashboard">;
+  return { names,original,output,changedKeys,restartServices };
+}
+export function validateDashboardSettings(root: string, changes: Record<string,unknown>, clearSecrets: string[] = []) {
+  const { changedKeys,restartServices } = prepareDashboardSettings(root,changes,clearSecrets);
+  return { changedKeys,restartServices };
+}
 export function readDashboardSetting(root: string, key: string) {
   const names = files(root), defaults = parse(fs.readFileSync(names.template,"utf8"));
   const saved = fs.existsSync(names.env) ? parse(fs.readFileSync(names.env,"utf8")) : {};
@@ -113,24 +143,7 @@ export function readDashboardSettings(root: string, suggestions: Record<string,s
   return { groups,fields,modelCatalog:providerCatalog };
 }
 export function saveDashboardSettings(root: string, changes: Record<string,unknown>, clearSecrets: string[] = []) {
-  const names = files(root);
-  const template = fs.readFileSync(names.template,"utf8");
-  const original = fs.existsSync(names.env) ? fs.readFileSync(names.env,"utf8") : null;
-  const defaults = parse(template), saved = parse(original ?? ""), values: Record<string,string> = {...defaults,...saved};
-  for (const [key,input] of Object.entries(changes)) {
-    if (!(key in defaults)) throw new Error(`Unknown setting: ${key}`);
-    if (typeof input !== "string") throw new Error(`${key}: expected text`);
-    if (descriptions[key]?.secret && input === "" && !clearSecrets.includes(key)) continue;
-    values[key] = input.trim();
-  }
-  for (const key of clearSecrets) {
-    if (!descriptions[key]?.secret) throw new Error(`Cannot clear non-secret setting: ${key}`);
-    values[key] = "";
-  }
-  for (const key of Object.keys(defaults)) validate(key,values[key] ?? "");
-  let output = template.replace(/^([A-Z_][A-Z0-9_]*)=.*$/gm,(_,key) => `${key}=${encode(values[key] ?? "")}`);
-  const retiredModelSetting = (key: string) => /^(CODEX|CLAUDE)_MODEL_(FAST|BALANCED|STRONG)$/.test(key) || /^(PRODUCT_ARCHITECT|DEVELOPER|QA|REVIEWER)_MODEL_(MODE|FAST|BALANCED|STRONG)$/.test(key);
-  for (const [key,value] of Object.entries(saved)) if (!(key in defaults) && !retiredModelSetting(key)) output += `\n${key}=${encode(value)}`;
+  const { names,original,output } = prepareDashboardSettings(root,changes,clearSecrets);
   if ((fs.existsSync(names.env) ? fs.readFileSync(names.env,"utf8") : null) !== original) throw new Error("Configuration changed while saving; reload and retry");
   if (original !== null) fs.writeFileSync(path.join(root,`.env.backup-${Date.now()}-${process.pid}`),original,{flag:"wx",mode:0o600});
   const temporary = `${names.env}.tmp-${process.pid}`;

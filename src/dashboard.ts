@@ -7,7 +7,7 @@ import { spawn, spawnSync } from "node:child_process";
 import type { AddressInfo } from "node:net";
 import { config } from "./config.js";
 import { Store } from "./storage.js";
-import { readDashboardSetting, readDashboardSettings, saveDashboardSettings } from "./dashboard-settings.js";
+import { readDashboardSetting, readDashboardSettings, saveDashboardSettings, validateDashboardSettings } from "./dashboard-settings.js";
 import { connectCredential, credentialStatuses, type CredentialProvider } from "./dashboard-credentials.js";
 import { SlackAdapter } from "./adapters/slack.js";
 
@@ -166,6 +166,31 @@ function dashboardSettings(root: string) {
     FACTORY_APPROVERS:login,
   } : {});
 }
+function saveConfiguration(store: Store, root: string, values: Record<string,unknown>, clearSecrets: string[] = []) {
+  const plan = validateDashboardSettings(root,values,clearSecrets);
+  if (!plan.changedKeys.length) return {...dashboardSettings(root),daemonRunning:daemonState(store).running,restartedServices:[],dashboardRestarting:false,message:"Configuration is already up to date."};
+  const daemon = serviceStatus(root,"daemon"), dashboard = serviceStatus(root,"dashboard");
+  const daemonActive = daemonState(store).running || daemon.running;
+  const restartDaemon = plan.restartServices.includes("daemon") && daemonActive;
+  const restartDashboard = plan.restartServices.includes("dashboard") && dashboard.running;
+  if (plan.restartServices.includes("daemon") && daemonActive && !daemon.loaded) throw new Error("The daemon is running outside the service manager. Stop it, then save again.");
+  let daemonStopped = false;
+  try {
+    if (restartDaemon) { runService(root,"daemon","stop"); daemonStopped=true; }
+    saveDashboardSettings(root,values,clearSecrets);
+  } catch (error) {
+    if (daemonStopped) try { runService(root,"daemon","start"); } catch {}
+    throw error;
+  }
+  const restartedServices: string[] = [];
+  if (restartDaemon) {
+    try { runService(root,"daemon","start"); restartedServices.push("daemon"); }
+    catch (error) { throw new Error(`Configuration was saved, but the daemon could not restart: ${error instanceof Error ? error.message : String(error)}`); }
+  }
+  if (restartDashboard) { runService(root,"dashboard","restart"); restartedServices.push("dashboard"); }
+  const message = restartedServices.length ? `Configuration saved. Restarting ${restartedServices.join(" and ")}.` : "Configuration saved. Stopped services were left stopped.";
+  return {...dashboardSettings(root),daemonRunning:daemonState(store).running,restartedServices,dashboardRestarting:restartDashboard,message};
+}
 
 export function createDashboardServer(store: Store, settingsRoot = process.cwd()) {
   const runtimeVersion = versionInfo(settingsRoot);
@@ -189,11 +214,9 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if (req.method === "POST" && url.pathname === "/api/update/check") return json(res,200,checkUpdate(settingsRoot));
       if (req.method === "GET" && url.pathname === "/healthz") return json(res,200,{ok:true});
       if (req.method === "PUT" && url.pathname === "/api/settings") {
-        if (daemonState(store).running) return json(res,409,{error:"Stop the daemon before changing configuration"});
         const body = await readBody(req) as { values?: Record<string,unknown>; clearSecrets?: string[] };
         if (!body.values || typeof body.values !== "object" || Array.isArray(body.values)) return json(res,400,{error:"Settings are required"});
-        const saved = saveDashboardSettings(settingsRoot,body.values,Array.isArray(body.clearSecrets) ? body.clearSecrets : []);
-        return json(res,200,{...saved,message:"Configuration saved. Restart affected services to apply it."});
+        return json(res,200,saveConfiguration(store,settingsRoot,body.values,Array.isArray(body.clearSecrets) ? body.clearSecrets : []));
       }
       if (req.method === "POST" && url.pathname === "/api/control") {
         const body = await readBody(req) as { kind?: string; target?: string };
@@ -213,11 +236,10 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         return json(res,202,connectCredential(settingsRoot,body.provider as CredentialProvider));
       }
       if (req.method === "PUT" && url.pathname === "/api/slack") {
-        if (daemonState(store).running) return json(res,409,{error:"Stop the daemon before changing the Slack connection"});
         const body = await readBody(req) as { webhook?: unknown; clear?: unknown };
         if (typeof body.webhook !== "string" || typeof body.clear !== "boolean") return json(res,400,{error:"Webhook and clear flag are required"});
-        saveDashboardSettings(settingsRoot,{SLACK_WEBHOOK_URL:body.clear ? "" : body.webhook},body.clear ? ["SLACK_WEBHOOK_URL"] : []);
-        return json(res,200,{...slackStatus(settingsRoot,store),message:body.clear ? "Slack connection removed. Restart the daemon to apply it." : "Slack webhook saved. Send a test, then restart the daemon to enable queued delivery."});
+        const saved = saveConfiguration(store,settingsRoot,{SLACK_WEBHOOK_URL:body.clear ? "" : body.webhook},body.clear ? ["SLACK_WEBHOOK_URL"] : []);
+        return json(res,200,{...slackStatus(settingsRoot,store),message:body.clear ? `Slack connection removed. ${saved.message}` : `Slack webhook saved. ${saved.message}`});
       }
       if (req.method === "POST" && url.pathname === "/api/slack/test") {
         const webhook = readDashboardSetting(settingsRoot,"SLACK_WEBHOOK_URL");
