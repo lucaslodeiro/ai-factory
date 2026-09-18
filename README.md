@@ -37,6 +37,14 @@ curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/script
 bash /tmp/ai-factory-install.sh --dir "$HOME/ai-factory"
 ```
 
+On a Mac without Homebrew, use the alternative installer. It places Node 22 and GitHub CLI under `~/.local`, uses Apple's Command Line Tools for Git, installs the provider CLIs through their native installers, verifies downloaded Node/GitHub CLI checksums, and then runs the standard installer:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install-macos-no-brew.sh \
+  -o /tmp/ai-factory-install-no-brew.sh
+bash /tmp/ai-factory-install-no-brew.sh --dir "$HOME/ai-factory"
+```
+
 The installer prepares the engine and opens the configuration wizard. It does not authenticate accounts, clone the target application or start the daemon. In an existing source checkout:
 
 ```sh

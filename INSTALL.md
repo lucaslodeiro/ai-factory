@@ -21,6 +21,20 @@ Installer options:
 | `--skip-tools` | off | Require existing tools instead of installing missing ones |
 | `--defaults` | off | Save configuration defaults without interactive questions |
 
+## Alternative macOS installation without Homebrew
+
+This installer keeps user-managed binaries under `~/.local` and never installs Homebrew:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install-macos-no-brew.sh \
+  -o /tmp/ai-factory-install-no-brew.sh
+bash /tmp/ai-factory-install-no-brew.sh --dir "$HOME/ai-factory"
+```
+
+It supports Apple Silicon and Intel Macs. It downloads the latest Node 22 archive from Node.js and the latest GitHub CLI macOS archive from GitHub Releases, verifies both SHA-256 checksums published by their projects, and links their executables into `~/.local/bin`. Codex and Claude are installed with their official native installers. It then invokes the standard factory installer with `--skip-tools`, forwarding options such as `--dir`, `--branch` and `--defaults`.
+
+Git comes from Apple's Command Line Tools. If they are absent, the script runs `xcode-select --install`, exits, and asks you to rerun it after completing Apple's graphical installation. It does not accept an Xcode license or request administrator credentials itself. Existing regular files in `~/.local/bin` are never overwritten. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile for later terminals.
+
 To update an existing installation, first stop its daemon and wait for it to exit:
 
 ```sh
