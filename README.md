@@ -34,6 +34,8 @@ The consolidated requirements and traceability matrix are in [SPEC.md](SPEC.md).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) and [INSTALL.md](INSTALL.md).
 
+The draft [context and workflow evolution specification](docs/CONTEXT_AND_WORKFLOW_DESIGN.md) documents the current context/state limitations and a candidate architecture for design review. It is not an implemented requirement baseline.
+
 ## Install and run the MVP
 
 On a new Mac, download the installer from the current MVP branch:
