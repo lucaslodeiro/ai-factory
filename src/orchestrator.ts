@@ -9,6 +9,7 @@ import type { AgentAdapter } from "./adapters/agent.js";
 import { Workspaces, type WorkspacePort } from "./worktrees.js";
 import { prompt } from "./prompts.js";
 import { deliverNotifications, type NotificationPort } from "./notifications.js";
+import { retry, retryStageLabel } from "./retry.js";
 import { parseResult, validateCoverage } from "./results.js";
 import type { WorkItem, WorkState, AgentRole, AgentResult, DeliveryStage } from "./types.js";
 function humanAnswer(body: string) {
@@ -32,7 +33,12 @@ export class Orchestrator {
   for (const snapshot of this.store.items()) {
    const w = this.store.get(snapshot.id)!;
    if (w.repo !== config.repo) throw new Error("Data directory belongs to a different repository");
-   if (["FAILED", "CANCELLED", "PAUSED", "READY_TO_MERGE", "MERGED", "PR_CLOSED"].includes(w.state)) continue;
+   if (["FAILED", "CANCELLED", "PAUSED"].includes(w.state)) {
+    this.retryFromComment(w);
+    await this.flush();
+    continue;
+   }
+   if (["READY_TO_MERGE", "MERGED", "PR_CLOSED"].includes(w.state)) continue;
    try { await this.advance(w); }
    catch (e) {
     // A control command may have changed the item while its child process was running.
@@ -41,12 +47,34 @@ export class Orchestrator {
      current.context.resume = current.state;
      current.context.lastFailure = String(e);
      this.store.db.transaction(() => {
-      this.store.transition(current, "FAILED"); this.store.post(w.issue_number, `Execution failed: ${String(e)}. Inspect logs, then use factory retry ${w.id}.`);
+      this.store.transition(current, "FAILED");
+      this.store.post(w.issue_number, `## Execution failed\n\n${String(e)}\n\n### How to continue\n\nInspect the execution logs and fix the cause. Then post a new comment containing exactly:\n\n\`\`\`text\n/factory retry\n\`\`\`\n\nYou can also use **Retry** in the dashboard or run \`npm run factory -- retry ${w.id}\`.`);
      })();
     }
     this.store.event("workflow.error", { error: String(e) }, w.id);
    }
    await this.flush();
+  }
+ }
+ private retryFromComment(w: WorkItem) {
+  let replies: Comment[];
+  try { replies = this.github.comments(w.issue_number); }
+  catch (e) { this.store.event("github.comments_failed", { error: String(e) }, w.id); return; }
+  const cursor = this.store.commentCursorHighWater(w.id,w.context.cursor);
+  const comments = replies.filter(c => c.id > cursor).sort((a,b) => a.id-b.id);
+  for (const c of comments) {
+   w.context.cursor = c.id;
+   this.store.save(w);
+   if (c.user.type !== "User" || !config.approvers.includes(c.user.login) || c.body.trim() !== "/factory retry") continue;
+   try {
+    const to = retry(this.store,w.id);
+    this.store.event("retry.comment_accepted",{ login:c.user.login,commentId:c.id,to },w.id);
+    this.store.post(w.issue_number,`## Retry accepted\n\n@${c.user.login} requested \`/factory retry\`. The factory will resume from **${retryStageLabel(to)}**.`);
+   } catch (e) {
+    this.store.event("retry.comment_rejected",{ login:c.user.login,commentId:c.id,error:String(e) },w.id);
+    this.store.post(w.issue_number,`## Retry could not start\n\n${String(e)}\n\nResolve the condition, then post a new \`/factory retry\` comment.`);
+   }
+   return;
   }
  }
  async reconcilePullRequests() {
@@ -82,15 +110,17 @@ export class Orchestrator {
   w.context.title = remote.title;
   w.context.body = remote.body;
   w.context.url = remote.url;
-  // WAITING_HUMAN evaluates only the newest comment through the normal command
-  // rules. Never move a cursor backwards if a previously observed comment was
-  // deleted or omitted by GitHub. Other states only advance to the newest ID.
+  // Human gates and retryable states evaluate only the newest comment through
+  // their normal command rules. Never move a cursor backwards if a previously
+  // observed comment was deleted or omitted by GitHub.
   const hasNewLatest = Boolean(latest && latest.id > previousCursor);
-  w.context.cursor = w.state === "WAITING_HUMAN" && hasNewLatest
+  const acceptsCommand = w.state === "WAITING_HUMAN" || ["FAILED","CANCELLED","PAUSED"].includes(w.state);
+  w.context.cursor = acceptsCommand && hasNewLatest
    ? Math.max(previousCursor,comments.at(-2)?.id ?? 0)
    : Math.max(previousCursor,latest?.id ?? 0);
   this.store.save(w);
   if (w.state === "WAITING_HUMAN" && hasNewLatest) this.human(w);
+  else if (["FAILED","CANCELLED","PAUSED"].includes(w.state) && hasNewLatest) this.retryFromComment(w);
   const refreshed = this.store.get(w.id)!;
   this.store.event("github.issue_refreshed",{ previousCursor,cursor:refreshed.context.cursor,latestCommentId:latest?.id ?? null,state:refreshed.state },w.id);
   this.github.syncState(refreshed.issue_number,refreshed.state,progressMarkdown(refreshed));

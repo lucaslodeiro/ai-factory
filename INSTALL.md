@@ -146,7 +146,7 @@ Open `http://127.0.0.1:4173` after starting the dashboard. It shows daemon healt
 
 **Refresh from GitHub** on an issue reloads its current title, body and URL, moves the comment cursor to the newest comment and evaluates only that newest comment under the issue's current workflow state. A valid latest approval or answer can therefore resume a waiting issue. Earlier comments and completed agent stages are never replayed. The CLI equivalent is `npm run factory -- refresh <work-item-id>`; the daemon processes the queued action.
 
-**Refresh issue list** asks the running daemon to fetch open issues carrying any managed `factory:*` workflow label, adds newly queued work and updates the title, body and URL of known items. The dashboard reports when the request is queued and then shows the found, added and updated counts or the concrete GitHub error; if the daemon is stopped, it tells you to start it instead of silently leaving a request pending. If an issue has a managed state label but its local database record is missing, the factory restores it as `PAUSED`, aligns it to the latest comment and records the latest human answer. Retry explicitly starts again at Product Architect because GitHub labels and comments do not contain enough evidence to resume a later agent stage safely. An already tracked item waiting on a human evaluates only its latest comment under its current state. Earlier comments and completed stages are not replayed. The CLI equivalent is `ai-factory refresh-list` or `npm run factory -- refresh-list`.
+**Refresh issue list** asks the running daemon to fetch open issues carrying any managed `factory:*` workflow label, adds newly queued work and updates the title, body and URL of known items. The dashboard reports when the request is queued and then shows the found, added and updated counts or the concrete GitHub error; if the daemon is stopped, it tells you to start it instead of silently leaving a request pending. If an issue has a managed state label but its local database record is missing, the factory restores it as `PAUSED`, aligns it to the latest comment and records the latest human answer. Retry explicitly starts again at Product Architect because GitHub labels and comments do not contain enough evidence to resume a later agent stage safely. An already tracked item waiting on a human or eligible for retry evaluates only its latest comment under its current state. A valid latest `/factory retry` command is executed; earlier comments and completed stages are not replayed. The CLI equivalent is `ai-factory refresh-list` or `npm run factory -- refresh-list`.
 
 The service cards start, restart and stop the daemon or dashboard independently. Above them, the global update area shows the installed package version and Git revision. It fetches the checked-out branch from `origin` on load and every five minutes; **Update Factory** is offered only when the remote commit is a valid fast-forward. The server repeats that check immediately before starting the update.
 
@@ -217,6 +217,14 @@ npm run factory -- stop
 ```
 
 `start` runs in the foreground. A lock prevents a second daemon for the same data directory. `cancel`, `retry` and `stop` persist requests; the running daemon acknowledges them in `events`. If stopped, run `start` to process queued requests. Stop pauses active items and terminates their agents; restart then retry each paused item explicitly. Status and events never perform recovery. Cancelled/failed/paused items preserve their retry stage. Retry only after the previous process has stopped and its worktree has been inspected.
+
+An authorized approver can also retry from the same GitHub issue by posting this as a new standalone comment:
+
+```text
+/factory retry
+```
+
+The daemon validates the author, consumes each comment only once and resumes the saved stage. Bot comments, quoted commands and comments from users outside `FACTORY_APPROVERS` cannot trigger a retry. The dashboard Retry action and the CLI command use the same safety checks.
 
 Agent timeouts are configurable. SIGTERM escalates to SIGKILL after one second for a process group that does not exit. After a crash, interrupted executions are recorded as interrupted and the work item becomes FAILED. A stage checkpoint also detects crashes after provider exit but before the workflow state was committed. Each new run has a supervisor connected to the daemon by IPC. If the daemon dies, the supervisor terminates its worker group. Retry checks that any interrupted group is gone before proceeding, without signalling saved PIDs. Old bootstrap runs without a supervisor may still require manual process inspection. Worktrees and logs are retained for diagnosis.
 

@@ -71,7 +71,7 @@ export function progressMarkdown(w: WorkItem) {
   : w.state === "MERGED" ? `Delivery completed: [merged pull request](${c.pr}). No further action required by the factory.`
   : w.state === "PR_CLOSED" ? `Review why [the PR](${c.pr}) was closed; reopen it if delivery should continue.`
   : w.state === "READY_TO_MERGE" ? `Review and merge the [pull request](${c.pr}).`
-  : ["FAILED", "PAUSED", "CANCELLED"].includes(w.state) ? `Inspect the latest report/logs, then run \`factory retry ${w.id}\` when ready.`
+  : ["FAILED", "PAUSED", "CANCELLED"].includes(w.state) ? `Inspect the latest report/logs, then post a new \`/factory retry\` comment or run \`factory retry ${w.id}\` when ready.`
   : "No action needed; the factory is working.";
  const stage = (role: AgentRole) => c.reports[role]?.outcome === "pass" ? "Passed" : "Pending";
  return `## AI Factory — ${statePresentation[w.state].title}\n\n${statePresentation[w.state].description}.\n\n${table(["Milestone", "Status"], [

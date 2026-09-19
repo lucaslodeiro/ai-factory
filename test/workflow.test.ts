@@ -168,6 +168,27 @@ test("durable GitHub outbox retries; malformed outputs fail closed and retry rou
  assert.equal(f.item().state, "FAILED"); retry(f.store, f.item().id); assert.equal(f.item().state, "DEVELOPMENT");
  await f.o.tick(); assert.equal(f.item().state, "QA"); f.store.db.close();
 });
+test("authorized standalone issue comment retries the saved stage exactly once", async () => {
+ const f = setup(); await f.o.tick();
+ const failed = f.item(); failed.context.resume = "SPEC"; f.store.transition(failed,"FAILED");
+ f.gh.reply("/factory retry","stranger"); f.gh.reply("> /factory retry");
+ await f.o.tick(); assert.equal(f.item().state,"FAILED"); assert.equal(f.item().context.cursor,2);
+ f.gh.reply("/factory retry"); await f.o.tick();
+ assert.equal(f.item().state,"SPEC"); assert.equal(f.calls.length,1); assert.equal(f.item().context.cursor,3);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='retry.comment_accepted'").get() as any).n,1);
+ assert.ok([...f.gh.posted.values()].some(body=>body.includes("## Retry accepted") && body.includes("Product Architect")));
+ await f.o.tick(); assert.equal(f.item().state,"WAITING_HUMAN"); assert.equal(f.calls.length,2);
+ f.store.db.close();
+});
+test("manual refresh evaluates only the latest retry command", async () => {
+ const f = setup(); await f.o.tick();
+ const failed = f.item(); failed.context.resume = "SPEC"; f.store.transition(failed,"FAILED");
+ f.gh.reply("older context"); f.gh.reply("/factory retry");
+ const refreshed=f.o.refreshIssue(f.item().id);
+ assert.equal(refreshed.state,"SPEC"); assert.equal(refreshed.context.cursor,2);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='retry.comment_accepted'").get() as any).n,1);
+ f.store.db.close();
+});
 test("environment allowlist and result contract reject unintended data", () => {
  assert.deepEqual(agentEnvironment({ PATH: "/bin", GITHUB_TOKEN: "secret", SLACK_WEBHOOK_URL: "secret", OPENAI_API_KEY: "allowed", AGENT_SECRET_ALLOWLIST: "OPENAI_API_KEY" }), { PATH: "/bin", OPENAI_API_KEY: "allowed" });
  assert.throws(() => parseResult(result("pass"), "product-architect"));

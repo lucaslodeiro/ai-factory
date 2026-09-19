@@ -5,9 +5,11 @@ import { randomUUID } from "node:crypto";
 import { config } from "./config.js";
 import { Store } from "./storage.js";
 import { Orchestrator } from "./orchestrator.js";
-import { ExecutionManager, assertRetrySafe } from "./execution-manager.js";
+import { ExecutionManager } from "./execution-manager.js";
 import { CodexAdapter } from "./adapters/codex.js";
 import { ClaudeAdapter } from "./adapters/claude.js";
+import { retry } from "./retry.js";
+export { retry } from "./retry.js";
 export function acquireLock(store: Store) {
  fs.mkdirSync(config.dataDir, { recursive: true });
  const file = path.join(config.dataDir, "daemon.lock"), token = randomUUID();
@@ -30,14 +32,6 @@ export function acquireLock(store: Store) {
    }
   }).immediate();
  };
-}
-export function retry(store: Store, id: string) {
- const w = store.get(id); if (!w) throw new Error("Unknown work item");
- if (!["FAILED", "CANCELLED", "PAUSED"].includes(w.state)) throw new Error("Only failed, cancelled or paused items can retry");
- assertRetrySafe(store, id);
- const to = w.context.resume ?? "SPEC";
- delete w.context.lastFailure;
- store.transition(w, to); store.event("retry.requested", { to }, id);
 }
 export async function startDaemon(store = new Store()) {
  if (!config.repo || !config.approvers.length) throw new Error("Configure GITHUB_REPOSITORY and FACTORY_APPROVERS first");
