@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { prompt } from "../src/prompts.js";
+import { prompt, promptParts } from "../src/prompts.js";
 import type { AgentRole, WorkItem } from "../src/types.js";
 
 const item: WorkItem = {
@@ -47,4 +47,14 @@ test("architect receives an explicit, machine-aligned tactical return route", ()
  assert.match(output,/Allowed nextRole value: developer/);
  assert.match(output,/"allowedNextRoles": \[\s*"developer"\s*\]/);
  assert.doesNotMatch(output,/Allowed nextRole values?: qa/);
+});
+
+test("roles on one provider share a byte-identical common prefix",()=>{
+ const architect=promptParts(item,"product-architect","codex");
+ const tester=promptParts(item,"qa","codex");
+ assert.equal(architect.prefix,tester.prefix);
+ assert.notEqual(architect.roleContract,tester.roleContract);
+ assert.ok(prompt(item,"qa","codex").startsWith(tester.prefix));
+ assert.ok(tester.prefix.indexOf("AI Factory worker rules")<tester.prefix.indexOf("Codex Worker Instructions"));
+ assert.ok(tester.prefix.indexOf("Codex Worker Instructions")<prompt(item,"qa","codex").indexOf("Verification Engineer (Tester) Contract"));
 });
