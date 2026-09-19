@@ -1,10 +1,18 @@
-# MVP validation — 2026-09-18
+# MVP validation — 2026-09-19
 
 ## Automated checks
 
-`npm run build` and `npm test` pass on macOS with Node 26.4.0. A Node 22/Linux GitHub Actions template is provided in `docs/ci.example.yml`. It is not activated: the current GitHub OAuth credential lacks the workflow scope, and GitHub rejected a push containing `.github/workflows/ci.yml`. Copy the template there using a credential permitted to manage workflows when ready.
+`npm run build` and `npm test` pass on macOS with Node 26.4.0. The current suite has 148 passing tests, zero failures and zero skips. Shell syntax validation passes for every `scripts/*.sh`; the isolated configuration, dashboard-address, maintenance/update, no-Homebrew installer and uninstall scenarios also pass. `shellcheck` was not installed on the validation host.
 
-65 tests cover:
+A Node 22/Linux GitHub Actions template is provided in `docs/ci.example.yml`. It is not activated: the current GitHub OAuth credential lacks the workflow scope, and GitHub rejected a push containing `.github/workflows/ci.yml`. Copy the template there using a credential permitted to manage workflows when ready.
+
+The automated suite covers:
+
+- The complete V3 stage/status model: Design, Build, Test, Review and Delivery crossed with queued, running, waiting, failed, paused, cancelled and completed conditions; revision-checked transitions, requests, failures, findings, correction cycles and one authoritative GitHub CTA.
+- Context selection, protected budget behavior, role filtering, deterministic ordering, exact prompt/hash persistence, sensitive prompt reveal acknowledgement and 30-day artifact retention.
+- Planned maintenance preflight, confirmation revalidation, global scheduler barrier, interrupt-versus-cancel semantics, timeout refusal, batch resume and unexpected-shutdown recovery with the worktree preserved.
+- Closed-issue exclusion/reopen behavior, idempotent GitHub projection, sanitized human-readable failure diagnosis and retry guidance, plus durable Slack delivery independent from GitHub availability.
+- Bounded repository Check, Sync, Publish, Clear and Restore behavior, including dirty/diverged/protected-branch and unsafe-path refusal.
 
 - Full foreground daemon with real SQLite, separate CLI control processes, real Git worktrees and a local bare remote. Deterministic provider executables consume the actual adapter arguments and stdin; a GitHub executable fixture supplies issues/comments and records the PR. The test approves a version, starts Implementation Engineer, checks status without recovery side effects, cancels, retries, runs Verification Engineer/Delivery Reviewer, publishes a branch and verifies READY_TO_MERGE, then stops the daemon.
 - Native Claude/Codex output envelopes, role-specific generation schemas and local validation. Read-only Delivery Reviewer receives attributed Verification Engineer execution evidence without Implementation Engineer reasoning or Verification Engineer summary conclusions.

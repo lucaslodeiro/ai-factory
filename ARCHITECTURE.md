@@ -2,75 +2,49 @@
 
 ## End-to-end flow
 
+The workflow stores **stage** and **status** independently. Stage is one of `DESIGN`, `BUILD`, `TEST`, `REVIEW`, `DELIVERY`; status is one of `QUEUED`, `RUNNING`, `WAITING`, `FAILED`, `PAUSED`, `CANCELLED`, `COMPLETED`.
+
 ```text
-GitHub Issue
-    |
-    v
-Design — Product Architect (Architect; configured provider; Claude by default)
-    |  <---- clarification / human feedback loop
-    v
-WAITING_SPEC_APPROVAL
-    |
-    | human approves
-    v
-Build — Implementation Engineer (Builder; configured provider; Codex by default)
-    |
-    v
-Test — Verification Engineer (Tester; configured provider; independent context; Codex by default)
-    |
-    +-- auto-fix ----------> Implementation Engineer
-    +-- decision-required -> Product Architect -> human only when major
-    +-- defer -------------> record issue/finding and continue
-    |
-    v
-Review — Delivery Reviewer (Reviewer; configured provider; independent context; Claude by default)
-    |
-    +-- changes required --> appropriate upstream role
-    |
-    v
-READY_TO_MERGE
-    |
-    v
-Human merge
+Open GitHub issue + /factory start
+  → DESIGN/QUEUED → Architect → DESIGN/WAITING
+  → exact SPEC approval
+  → BUILD/QUEUED → Builder
+  → TEST/QUEUED → Tester
+  → REVIEW/QUEUED → Reviewer
+  → DELIVERY/WAITING → human PR merge
+  → DELIVERY/COMPLETED
 ```
 
-## Components
+Findings can return to Builder, request an Architect tactical decision, or be explicitly deferred. A tactical decision retains the approved SPEC and can return only to an allowed unfinished stage. Automatic correction cycles are bounded.
 
-### Local Orchestrator
-A TypeScript daemon/CLI owns workflow state. GitHub labels/comments are events and a visible mirror; they are not the authoritative state machine.
+## Authoritative data
 
-### State Store
-SQLite stores work items, executions, transitions, decisions, agent outputs, durations, retries, and audit events.
+SQLite is authoritative. `work_items` stores the current projection and monotonic revision. Typed `records` store instructions, decisions, findings and requests with provenance and lifecycle. `failures`, immutable SPEC versions, executions, maintenance operations, outboxes and audit events remain separate durable concepts. Runtime never rebuilds state by replaying events.
 
-### Execution Manager
-Each agent invocation receives a run ID and tracked OS process. It supports cancellation, timeout, retry, pause, and crash recovery. After orchestrator restart, an interrupted execution is never assumed successful.
+Every accepted projection change atomically writes one `workflow.transition`, refreshes derived active request/failure pointers and queues its Slack notification. A stale expected revision fails rather than overwriting concurrent work.
 
-### Workspaces
-Each work item gets an isolated Git worktree and branch. Agents cannot push directly to the default branch.
+GitHub mirrors the projection with one stage label, an optional condition label and one editable status comment containing exactly one current next action. It is not the execution engine. Closed issues are removed from operational views; reopening returns the same item paused without replaying comments posted while closed.
 
-### Adapters
-Provider-specific adapters isolate Claude CLI, Codex CLI, GitHub, and Slack from orchestration logic. Each role maps independently to a provider and fast/balanced/strong model set. The deterministic router selects a profile from approved task complexity/risk and correction context, then dispatches through that role's configured adapter.
+## Agent context
 
-### Observability
-Structured event logs contain timestamps, work-item ID, run ID, role, transition, duration, exit status, and references to inputs/outputs. Human-readable logs are retained alongside them.
+Each invocation starts a fresh provider process. `ContextAssembler` selects active records by lifecycle, SPEC version and role. Approved SPEC, active human decisions, active instructions, relevant open findings, active request chain and active failure are protected from budget pruning. Optional history is deterministic and byte-bounded.
 
-## Human authority
+Every execution persists the exact `prompt.md`, a permanent `prompt.json` inclusion manifest, byte count and SHA-256. Tester receives changed-file manifest plus diff stat without Builder conclusions. Reviewer receives the same stat, attributed Tester evidence and a full diff in an owner-marked, Git-excluded `.factory-context` directory that is deleted after the run.
 
-Product Architect may make tactical decisions autonomously and document them. It must escalate decisions that materially change product behavior, architecture, scope, risk, or contradict an explicit human decision. It may challenge human proposals and present alternatives, but never silently override an explicit human decision.
+## Execution and recovery
 
-Implementation Engineer does not escalate directly to the human. Ambiguities go to Product Architect first.
+`ExecutionManager` starts each provider below a per-run supervisor. Explicit cancellation records `cancelled` and may escalate TERM to KILL. Planned interruption uses supervisor IPC, records `interrupted` with a reason and does not use the cancellation escalation timer. Unexpected daemon loss terminates the worker group; restart converts the same stage to `FAILED` with a recovery failure and preserves its worktree for explicit Retry.
 
-## Finding policy
+Disruptive update, daemon stop/restart and daemon-affecting configuration changes use a durable maintenance handshake. Preflight captures exact runnable item revisions, confirmation revalidates them, the scheduler barrier prevents a new run, active work becomes `PAUSED`, and service work begins only after processes exit. Tasks remain paused until individual Retry or batch resume.
 
-- `auto-fix`: safe correction consistent with approved decisions; automatically return to Implementation Engineer.
-- `decision-required`: Product Architect evaluates; escalate to human only under the human-authority rules.
-- `defer`: record explicitly and continue when it does not block acceptance.
-- Repeated loops automatically escalate rather than retry forever.
+## Repository and delivery
 
-## Implemented tactical and recovery paths
+Each work item owns a `factory/*` branch and isolated worktree. Agents cannot commit or push; the orchestrator verifies role mutation boundaries, creates commits and publishes only the assigned branch. Reviewer pass creates or reuses a PR. Human merge is mandatory.
 
-A decision-required result enters Product Architect with the approved spec and the originating role. `resolved` records a tactical decision and returns to an allowed delivery stage without revising the spec or approval. Major questions/revisions enter WAITING_HUMAN. No route may skip unfinished Test or Review.
+Repository recovery exposes only Check, Sync from remote, Publish branch, Clear local copy and Restore from remote. Check is read-only; Sync is clean fast-forward only; Publish refuses unrelated/default branches; Clear requires the exact configured path twice and pauses affected work; Restore requires an empty directory.
 
-Each agent process now runs under a per-run supervisor that detects daemon IPC disconnection and terminates its process group. A persisted stage checkpoint prevents a process exit being mistaken for a completed workflow transaction after a crash. Retry waits for interrupted groups to exit and preserves partial work for revalidation.
+## Adapters and observability
 
-Slack has a separate durable queue, independent of GitHub delivery, with retry backoff and actionable issue links. See [SPEC.md](SPEC.md) for the acceptance criteria and limitations.
+Claude, Codex, GitHub and Slack are isolated behind adapters. Each role selects one provider and direct model ID or `auto`; the deterministic policy uses the approved complexity/risk assessment for safeguards without translating model names into arbitrary tiers.
+
+The dashboard and CLI read the same V3 projection. Recent executions expose stage, role, model, duration, token usage and interruption reason. Prompt content requires an explicit local sensitive-content acknowledgement. Exact prompts and logs are pruned 30 days after completion/cancellation by default while manifests and hashes remain. Slack and GitHub delivery use independent durable queues.

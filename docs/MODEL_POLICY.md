@@ -11,7 +11,7 @@ The factory does not translate task complexity into `fast`, `balanced`, or `stro
 | Architect has an unapproved high-complexity/high-risk draft awaiting review | strong |
 | A correction/decision cycle has occurred, or Architect is handling a consultation | strong |
 | Approved complexity or risk is high | strong |
-| Legacy delivery item without an assessment | strong |
+| Delivery item with a missing assessment | strong |
 | Builder on low complexity AND low risk | fast |
 | All other cases, including initial Architect, Tester and Reviewer | balanced |
 
@@ -32,8 +32,6 @@ The assessment and rationale are published with SPEC vN and stored in its immuta
 
 Dashboard → Configuration → Agent roles exposes one card per role. Each card writes `<ROLE>_PROVIDER` and `<ROLE>_MODEL`, where `<ROLE>` is `PRODUCT_ARCHITECT`, `DEVELOPER`, `QA`, or `REVIEWER`. The model selector offers `Auto (provider recommended)`, known model IDs for the selected provider, and preserves an existing custom ID.
 
-When an older installation is loaded, an old `auto` mode migrates to `auto`; otherwise its balanced model becomes the role's single model. Saving removes the retired mode and fast/balanced/strong variables.
-
 The Codex choices follow the [official model catalog](https://developers.openai.com/es-419/docs/models). OpenAI documents that Codex uses a recommended model when none is specified. Claude's [official CLI reference](https://code.claude.com/docs/en/cli-usage) documents `--model` as an override. Availability depends on the account and provider. A rejected model fails the run; the factory never silently changes provider or model. Changing role settings requires restarting the daemon and affects future attempts.
 
 Both providers receive the same canonical role contract. Product Architect and Delivery Reviewer remain read-only; Implementation Engineer can edit the worktree; Verification Engineer remains restricted to test files by the orchestrator's mutation checks.
@@ -44,4 +42,4 @@ Both providers receive the same canonical role contract. Product Architect and D
 - `npm run factory -- models <work-item-id>`: preview the same configured model with the workflow assessment and reason for each role.
 - `npm run factory -- events <work-item-id>`: inspect `model.selected` and `execution.started`. Each run records policy version, provider, configured model, internal workflow tier and reason. With `auto`, the provider's resolved backend model is not independently attested.
 
-Existing specs without assessments retain conservative workflow handling. No prices, token budgets or automatic provider switching are inferred. Real model availability and quality require acceptance runs; subprocess fixtures verify routing and arguments only.
+Missing assessments retain conservative workflow handling. No prices, token budgets or automatic provider switching are inferred. Real model availability and quality require acceptance runs; subprocess fixtures verify routing and arguments only.

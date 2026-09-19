@@ -217,10 +217,11 @@ npm run factory -- status
 npm run factory -- events <work-item-id>
 npm run factory -- cancel <work-item-id-or-run-id>
 npm run factory -- retry <work-item-id>
-npm run factory -- stop
+npm run factory -- stop --pause-active
+npm run factory -- repo check
 ```
 
-`start` runs in the foreground. A lock prevents a second daemon for the same data directory. `cancel`, `retry` and `stop` persist requests; the running daemon acknowledges them in `events`. If stopped, run `start` to process queued requests. Stop pauses active items and terminates their agents; restart then retry each paused item explicitly. Status and events never perform recovery. Cancelled/failed/paused items preserve their retry stage. Retry only after the previous process has stopped and its worktree has been inspected.
+`start` runs in the foreground. A lock prevents a second daemon for the same data directory. `cancel`, `retry` and `stop` persist requests; the running daemon acknowledges them in `events`. Non-interactive stop refuses active work unless `--pause-active` is explicit. Planned interruption records the execution as interrupted, keeps the same stage as `PAUSED`, and preserves context/worktrees. Explicit cancellation alone produces `CANCELLED`. The dashboard offers batch resume after maintenance.
 
 An authorized approver can also retry from the same GitHub issue by posting:
 
@@ -228,7 +229,7 @@ An authorized approver can also retry from the same GitHub issue by posting:
 /factory retry
 ```
 
-The retry command may be the entire comment or the first/last line of a multiline comment. Any surrounding text is saved as guidance and included in the next agent's context. The daemon validates the author, consumes each comment only once and resumes the saved stage. Bot comments, quoted commands and comments from users outside `FACTORY_APPROVERS` cannot trigger a retry. The dashboard Retry action and the CLI command use the same safety checks. Factory-authored issue comments end with **Next action** or **Next actions**. Copyable commands use fenced blocks, each alternative is labeled, and automatic workflow messages explicitly state when no response is needed. The persistent `WAITING_HUMAN` progress comment explains whether it needs specification approval, clarification, or guidance after the correction limit.
+The retry command may be the entire comment or the first/last line of a multiline comment. Any surrounding text becomes a typed instruction in the next applicable agent context. The daemon validates the author, consumes each comment once and resumes the stored stage. Bot comments, quoted commands and comments from users outside `FACTORY_APPROVERS` cannot trigger it. The single editable status comment always contains exactly one **Next action** block and explains approval, clarification, correction-limit, retry or merge gates.
 
 Agent timeouts are configurable. SIGTERM escalates to SIGKILL after one second for a process group that does not exit. After a crash, interrupted executions are recorded as interrupted and the work item becomes FAILED. A stage checkpoint also detects crashes after provider exit but before the workflow state was committed. Each new run has a supervisor connected to the daemon by IPC. If the daemon dies, the supervisor terminates its worker group. Retry checks that any interrupted group is gone before proceeding, without signalling saved PIDs. Old bootstrap runs without a supervisor may still require manual process inspection. Worktrees and logs are retained for diagnosis.
 
@@ -277,13 +278,31 @@ GitHub comments use a durable, idempotent delivery queue. If reading human repli
 - [Claude programmatic execution](https://code.claude.com/docs/en/headless)
 - [Claude installation and authentication](https://code.claude.com/docs/en/setup)
 
+## Safe maintenance and repository recovery
+
+The dashboard previews every `QUEUED` or `RUNNING` task before update, daemon stop/restart or a daemon-affecting configuration apply. Confirmation is tied to exact workflow revisions. The daemon pauses those tasks, interrupts active agents without recording cancellation, waits for their processes to exit and only then permits the service operation. Use **Resume paused tasks** afterward, or Retry items individually.
+
+Configuration → Project exposes the same bounded repository operations as the CLI:
+
+```sh
+npm run factory -- repo check
+npm run factory -- repo sync
+npm run factory -- repo publish <work-item-id>
+npm run factory -- repo clear --confirm "$FACTORY_REPO_DIR" --repeat "$FACTORY_REPO_DIR"
+npm run factory -- repo restore
+```
+
+Check is read-only. Sync refuses dirt, divergence and local-only commits. Publish accepts only the selected `factory/*` worktree. Clear is irreversible, refuses protected/symlinked paths and requires the exact configured path twice. Restore requires an empty target directory and never resumes paused work automatically.
+
+Exact prompts, stdout, stderr and supervisor completion files are retained for `FACTORY_ARTIFACT_RETENTION_DAYS` after a work item reaches `COMPLETED` or `CANCELLED` (30 days by default; 0 disables pruning). Prompt manifests, hashes, execution metadata, records, failures, events and SPECs remain. Dashboard prompt reveal requires an explicit sensitive-content acknowledgement and is available only on the loopback dashboard.
+
 ## Current boundaries
 
 One foreground daemon per target/data directory, sequential work-item execution, no automatic merge, and no remote execution service. Claude and Codex accounts must be authenticated locally. V3 requires a fresh factory data directory and does not import or read databases created by earlier workflow versions. Use the supported uninstaller and reinstall, or select an empty `FACTORY_DATA_DIR`; the target application repository and provider credentials are preserved. Unit/integration tests simulate provider reasoning and GitHub; a live provider demo is a separate acceptance check.
 
 ## Slack configuration and diagnosis
 
-In the dashboard, open **Configuration → Notifications**, paste the Slack Incoming Webhook and choose **Save connection**. The URL is validated before saving and a running daemon is restarted automatically. **Send test notification** uses the saved value immediately. The same screen shows pending, failed and sent counts plus the most recent delivery error. Slack also appears in **Credentials** as a connection summary.
+In the dashboard, open **Configuration → Notifications**, paste the Slack Incoming Webhook and choose the global **Save and apply** action. The URL is validated before saving and a running daemon is restarted automatically. **Send test notification** uses the saved value immediately. The same screen shows pending, failed and sent counts plus the most recent delivery error. Slack also appears in **Credentials** as a connection summary.
 
 The terminal alternative is to set `SLACK_WEBHOOK_URL` only in your local `.env` and run `npm run factory -- slack-test`. Use `npm run factory -- notifications` to inspect individual pending/sent deliveries, attempts and retry times. Notifications use Slack Block Kit and identify the project, issue, readable workflow status, relevant evidence and direct GitHub link. Human gates emphasize the required action and exact command; failures include the recorded cause and retry command. The daemon retries pending notifications after restart. If Slack is disabled, messages remain pending until it is configured. Do not put webhook secrets into GitHub issues or tracked files.
 
@@ -293,17 +312,17 @@ All provider results require coverage, test evidence, changed files, dependency 
 
 Delivery roles cannot alter the approved specification. The provider schema requests inert values for `spec`, `acceptanceCriteria`, `taskAssessment` and `nextRole`; the orchestrator also forces those fields to inert values before validating Implementation Engineer, Verification Engineer and Delivery Reviewer reports because provider structured-output implementations may not enforce every enum or zero-length-array constraint. Coverage, test evidence, findings and all other delivery requirements remain strictly validated.
 
-`status` shows the saved retry stage and any interrupted stage checkpoint. Partial work is retained; retry reruns the stage and asks the worker to inspect and verify it. Processes that deliberately detach into other groups and legacy pre-supervisor runs may require manual inspection.
+`status` shows V3 stage, status, attempt, revision, SPEC and PR. Partial work is retained; retry reruns the stored stage with active decisions, instructions, requests and failures assembled deterministically.
 
 ## Models per task
 
-Run `npm run factory -- models` to inspect each role's provider and direct model selection. Use the dashboard or `npm run configure` to choose the eight role settings in `.env` (provider and model for four roles); `.env.example` remains the installation-default template. `npm run factory -- models <work-item-id>` previews the configured selections and workflow assessment without running providers. New specs include a complexity/risk assessment for your approval. See [model policy](docs/MODEL_POLICY.md) for workflow safeguards, audit events and legacy migration. Model availability is checked by the actual provider invocation, not by `doctor`; a rejected model requires configuration correction and explicit retry.
+Run `npm run factory -- models` to inspect each role's provider and direct model selection. Use the dashboard or `npm run configure` to choose the eight role settings in `.env` (provider and model for four roles); `.env.example` remains the installation-default template. `npm run factory -- models <work-item-id>` previews the configured selections and workflow assessment without running providers. New specs include a complexity/risk assessment for your approval. See [model policy](docs/MODEL_POLICY.md) for workflow safeguards and audit events. Model availability is checked by the actual provider invocation, not by `doctor`; a rejected model requires configuration correction and explicit retry.
 
 Worker prompts include the actual daemon Node executable and configured Git, plus an explicit PATH prefix for shell commands: login-shell startup files may otherwise select an older Node or Xcode Git. Verify the tool versions in run logs. Delivery Reviewer receives Tester commands/results as attributed evidence and does not claim to have executed them personally.
 
 ## After PR delivery
 
-The daemon reconciles READY_TO_MERGE and PR_CLOSED items against GitHub. Merge records MERGED with timestamp/commit; closing without merging records PR_CLOSED; reopening resumes READY_TO_MERGE tracking. GitHub handles issue closure via the PR closing reference. With the daemon stopped, `npm run factory -- sync` performs one synchronization and flushes pending reports/notifications without running agents. The shared singleton lock prevents concurrent daemon/sync execution.
+The daemon reconciles `DELIVERY/WAITING` items against GitHub. Merge records `DELIVERY/COMPLETED` with timestamp/commit; closing without merge remains waiting and reopening resumes the same merge request. With the daemon stopped, `npm run factory -- sync` performs one reconciliation and flushes pending GitHub/Slack deliveries without running agents. The shared singleton lock prevents concurrent daemon/sync execution.
 
 To exercise installer/updater safeguards using temporary local repositories and a stub npm (no CLI installations or agents), run `node scripts/test-maintenance.mjs` after `npm run build`. The regular `npm test` suite validates the actual runtime.
 

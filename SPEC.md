@@ -1,6 +1,6 @@
 # AI Factory — consolidated MVP specification
 
-Version: 1.0, 2026-09-18. This document consolidates the user's decisions from the complete available “Orquestador Software Factory” conversation and the implementation follow-up. It is a requirements baseline, not a claim that live acceptance is complete. Superseded suggestions (cloud execution, GitHub Actions orchestration, a combined Claude context) are excluded.
+Version: 1.1, 2026-09-19. This document is the implemented MVP requirements baseline. Superseded suggestions (cloud execution, GitHub Actions orchestration, a combined provider context and legacy state compatibility) are excluded.
 
 ## Objective
 
@@ -11,7 +11,7 @@ Run a software factory on the user's Mac that turns a GitHub Issue into a tested
 | ID | Decision |
 |---|---|
 | D01 | Orchestration and agent processes always execute locally. GitHub is the collaboration UI, not the execution engine. Initial platform: macOS, without Docker. |
-| D02 | Four independent roles: Product Architect (Architect) in Design, Implementation Engineer (Builder) in Build, Verification Engineer (Tester) in Test and Delivery Reviewer (Reviewer) in Review. Each invocation starts a fresh context. The operator configures Codex or Claude independently for every role, then selects automatic provider model choice or explicit fast/balanced/strong model IDs; defaults remain Claude, Codex, Codex and Claude respectively. |
+| D02 | Four independent roles: Product Architect (Architect) in Design, Implementation Engineer (Builder) in Build, Verification Engineer (Tester) in Test and Delivery Reviewer (Reviewer) in Review. Each invocation starts a fresh context. The operator configures Codex or Claude independently for every role, then selects the direct model ID or `auto`; defaults remain Claude, Codex, Codex and Claude respectively. |
 | D03 | GitHub Issues accept requests and human feedback; comments and labels mirror progress. SQLite is authoritative for workflow state and audit history. |
 | D04 | Initial specs and material revisions need explicit human approval. Approved specs are immutable versioned contracts with verifiable acceptance criteria. |
 | D05 | Product Architect may challenge a human decision and propose alternatives, but cannot silently override it. Major product, architecture, scope, risk or conflicting decisions go to the human. |
@@ -38,7 +38,7 @@ Artifacts: immutable spec markdown plus structured acceptance criteria; approval
 
 ### F01 — Issue ingestion
 
-Given an open issue with `factory:queued` in the configured repository, polling creates one work item and a work branch name. Repeated polls or daemon restarts must not duplicate the repository/issue identity. Unrelated issue labels remain unchanged.
+An authorized standalone `/factory start` comment, dashboard action or CLI action accepts one open issue and creates one work item and branch name. Ordinary polling never imports unrequested issues. Repeated starts or daemon restarts cannot duplicate the repository/issue identity. The factory owns only its stage and condition labels; unrelated labels remain unchanged.
 
 ### F02 — Fresh role contexts
 
@@ -80,13 +80,13 @@ Correction cycles are bounded by configuration. Reaching the limit requires huma
 
 ### F10 — Pull request delivery
 
-After Implementation Engineer, Verification Engineer and Delivery Reviewer pass for the current approved work, push only the work item's `factory/*` branch and create or reuse its open PR against the configured base. The PR contains the approved spec, summaries and a link to complete reports/decisions/deferred findings. Do not merge automatically or push to the default branch. Reconcile the published PR with GitHub: MERGED is terminal and records the merge timestamp/commit; PR_CLOSED distinguishes closure without integration and can return to READY_TO_MERGE on reopening. Preserve state on API errors and emit each lifecycle transition once. The daemon and standalone sync command perform this without executing agents.
+After Builder, Tester and Reviewer pass for the current approved work, push only the work item's `factory/*` branch and create or reuse its open PR against the configured base. Do not merge automatically or push to the default branch. The item remains `DELIVERY/WAITING` until merge. Merge records `DELIVERY/COMPLETED` with timestamp/commit; an unmerged closed PR remains waiting with a closed merge request and can resume tracking on reopen. API errors never alter the projection.
 
 ### F11 — Execution, cancellation and recovery
 
 Every invocation has a run ID, role, supervisor PID/process group, timestamps, exit code, stdout/stderr and completion record. The CLI can cancel an item/run or stop the daemon from another process. Timeouts terminate the group, escalating to SIGKILL. Status is read-only with respect to execution recovery.
 
-A per-run supervisor detects loss of its daemon IPC channel and terminates its worker group. On restart, interrupted runs/stages become FAILED, preserve their previous stage and worktree, and require explicit retry. Retry refuses to start while an interrupted group remains live. A checkpoint also covers a crash after process exit but before the workflow transaction. Partial work is retained and the next attempt must inspect and reverify it; recovery never silently approves it.
+A per-run supervisor detects loss of its daemon IPC channel and terminates its worker group. On restart, interrupted runs become the same stage with `FAILED`, preserve their worktree, and require explicit retry. Planned service maintenance is distinct from cancellation: it records `interrupted/planned-maintenance`, leaves work `PAUSED`, blocks new execution starts and supports batch resume. Confirmation is bound to exact item revisions. Partial work is retained and recovery never silently approves it.
 
 A transactional singleton lock prevents simultaneous daemons for a data directory. Schema migrations are serialized across daemon and CLI startup.
 
@@ -112,20 +112,20 @@ Use the direct-v1 policy in `docs/MODEL_POLICY.md`: Product Architect reports co
 
 | Requirement | Implementation | Automated evidence |
 |---|---|---|
-| F01 | `src/orchestrator.ts`, `src/storage.ts` | `test/workflow.test.ts`, `test/daemon.test.ts` |
-| F02 | `src/prompts.ts`, `src/adapters/`, role contracts | `test/adapters.test.ts`, `test/workflow.test.ts` |
-| F03–F05 | `src/orchestrator.ts`, `src/results.ts`, `specs` table | Approval, revision, tactical resolution and forbidden-route cases in `test/workflow.test.ts` |
+| F01 | `src/workflow-inbox.ts`, `src/workflow-orchestrator.ts` | `test/workflow-inbox.test.ts`, `test/daemon.test.ts` |
+| F02 | `src/context-assembly.ts`, `src/workflow-records.ts`, provider contracts | `test/context-assembly.test.ts`, `test/worktree-context.test.ts` |
+| F03–F05 | `src/workflow-commands.ts`, `src/workflow-results.ts`, `specs` and `records` | `test/workflow-commands.test.ts`, `test/workflow-results.test.ts` |
 | F06–F08 | `src/results.ts`, `src/worktrees.ts` | `test/results.test.ts`, `test/workspaces.test.ts` |
-| F09–F10 | `src/orchestrator.ts`, `src/adapters/github.ts` | Fix/decision/defer loops and full daemon test |
+| F09–F10 | `src/workflow-results.ts`, `src/workflow-github.ts` | Result routing, GitHub projection and full daemon tests |
 | F11 | `src/execution-manager.ts`, `src/worker-supervisor.mjs`, `src/daemon.ts` | `test/execution.test.ts`, `test/recovery.test.ts`, `test/storage.test.ts`, cross-process cancel/retry/stop in `test/daemon.test.ts` |
 | F12 | `src/notifications.ts`, `src/adapters/slack.ts`, SQLite queues | `test/notifications.test.ts`, GitHub-outage notification case |
-| F13 | `src/storage.ts`, `src/cli.ts` | Persistence/reopening tests and full daemon test |
+| F13 | `src/workflow-projection.ts`, `src/workflow-status.ts`, `src/cli.ts`, `src/dashboard.ts` | Projection, publisher, dashboard and daemon tests |
 | F15 | `src/model-policy.ts`, adapters, spec snapshots and execution events | `test/model-policy.test.ts`, workflow routing and subprocess argument/audit assertions |
 | F14 | `INSTALL.md`, `src/doctor.ts`, demo repository | Real four-role demo reached READY_TO_MERGE and created demo PR #2; see `docs/VALIDATION.md` |
 
 ## Operational boundaries and remaining acceptance work
 
-The orchestrator runs locally, sequentially, one target repository/data directory per daemon. No dashboard, Docker, remote runner, automatic merge or multi-repository scheduler is required for this MVP. The optional CI template runs deterministic project tests, not production agents.
+The orchestrator runs locally, sequentially, one target repository/data directory per daemon. The installed local dashboard is the normal control plane. Docker, a remote runner, automatic merge and a multi-repository scheduler remain outside this MVP.
 
 The environment allowlist and role mutation checks are implemented. Worktrees, provider sandboxes and prompts are **not a complete OS security boundary** against malicious code running as the local user. Strong read isolation from unrelated repositories/credential files is not established by these checks; trusted repositories are the operational assumption. Provider auth stores remain accessible. Detached processes that deliberately leave the managed process group are outside supervisor cleanup guarantees.
 

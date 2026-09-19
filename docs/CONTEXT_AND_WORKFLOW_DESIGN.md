@@ -1,10 +1,10 @@
 # AI Factory — Context and Workflow Evolution Specification (v3.4)
 
-**Status:** Approved for implementation — supersedes v1 through v3.3 (2026-09-19)
+**Status:** Implemented — supersedes v1 through v3.3 (2026-09-19)
 **Date:** 2026-09-19
 **Audience:** Product and architecture reviewers, AI agents, future implementers
 **Scope:** Agent context management, workflow state, audit events, GitHub issue projection
-**Implementation status:** In progress. The V3 storage, record lifecycle, projection, prompt provenance, bounded context and diagnostics are implemented; runtime cutover remains pending.
+**Implementation status:** Complete. The daemon, dashboard and CLI use the V3 projection; context records, prompt provenance, GitHub projection, maintenance handshake, retention and bounded repository recovery are implemented and covered by automated unit and integration tests.
 
 ## 0. What changed in v3
 
