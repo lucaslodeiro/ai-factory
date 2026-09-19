@@ -151,7 +151,7 @@ function runUpdate(root: string) {
   writeUpdateState(root,{status:"updating",phase:"Preparing update…",startedAt:new Date().toISOString()});
   if (process.platform === "darwin" && serviceStatus(root,"dashboard").loaded) {
     const label = `com.ai-factory.update.${Date.now()}`;
-    const submitted = spawnSync("launchctl",["submit","-l",label,"-o",logFile,"-e",logFile,"--","/bin/bash",path.join(root,"scripts/update-job.sh"),stateFile,path.join(root,"scripts/update.sh")],{cwd:root,encoding:"utf8",timeout:10000});
+    const submitted = spawnSync("launchctl",["submit","-l",label,"-o",logFile,"-e",logFile,"--","/bin/bash",path.join(root,"scripts/update-job.sh"),stateFile,path.join(root,"scripts/update.sh"),label],{cwd:root,encoding:"utf8",timeout:10000});
     if (submitted.status !== 0) {
       writeUpdateState(root,{status:"failed",phase:"Could not start the independent update job.",finishedAt:new Date().toISOString()});
       throw new Error((submitted.stderr || submitted.stdout || "Could not start the independent update job").trim());
