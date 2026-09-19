@@ -45,6 +45,7 @@ export class WorkflowCommands {
    const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:"DESIGN",status:"QUEUED",actor,source,reason:{code:"human-answer",summary:"Human guidance recorded"},recordIds:ids,correctionCycles:0},()=>{
     ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:"spec",payload:{kind:"decision",category:"human",decision:command.text,rationale:`Answer from @${context.login}`,supersedes:[]},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
     this.records.resolveRequest(request.id);
+    if(request.payload.kind==="request"&&request.payload.type==="correction-limit")ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:"spec",payload:{kind:"request",type:"tactical-decision",owner:"architect",originatingStage:request.payload.originatingStage,allowedReturnStages:this.returnStages(request.payload.originatingStage),openedAfterCommentId:context.commentId,findingIds:request.payload.findingIds},sourceType:"orchestrator",sourceId:`answer:${context.commentId}`,actor:"orchestrator"}).id);
    });
    return {projection:result,recordIds:ids};
   }
@@ -82,4 +83,5 @@ export class WorkflowCommands {
   if(rows.length!==1)throw new Error(rows.length?`Record prefix ${prefix} is ambiguous`:`Record ${prefix} was not found`);return rows[0].id;
  }
  private requireMutable(status:string,command:string) {if(["COMPLETED","CANCELLED"].includes(status))throw new Error(`Cannot ${command} while workflow is ${status}`);}
+ private returnStages(stage:"DESIGN"|"BUILD"|"TEST"|"REVIEW"|"DELIVERY") {return stage==="BUILD"?["BUILD" as const]:stage==="TEST"?["BUILD" as const,"TEST" as const]:stage==="REVIEW"?["BUILD" as const,"TEST" as const,"REVIEW" as const]:[stage];}
 }

@@ -103,3 +103,16 @@ test("cancel closes request chain and failure, while terminal workflows stay imm
   assert.throws(()=>terminal.commands.apply({kind:"note",text:"change",scope:"spec",appliesTo:[]},context()),/Cannot note/);
  } finally {terminal.store.db.close();}
 });
+
+test("answering a correction limit queues Architect with the preserved return route",()=>{
+ const s=setup("TEST","WAITING");
+ try {
+  const limit=s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"request",type:"correction-limit",owner:"human",originatingStage:"TEST",allowedReturnStages:["BUILD","TEST"],openedAfterCommentId:8,findingIds:[]},sourceType:"agent-result",sourceId:"run",actor:"qa"});
+  s.initialize();
+  const result=s.commands.apply({kind:"answer",text:"Use the API fixture"},context(9));
+  const active=s.records.activeRequest("work-1");
+  assert.equal(s.records.get(limit.id)?.status,"resolved");assert.equal(active?.payload.kind==="request"&&active.payload.type,"tactical-decision");
+  assert.deepEqual(active?.payload.kind==="request"&&active.payload.allowedReturnStages,["BUILD","TEST"]);
+  assert.deepEqual({stage:result.projection.stage,status:result.projection.status,active:result.projection.activeRequestId},{stage:"DESIGN",status:"QUEUED",active:active?.id});
+ } finally {s.store.db.close();}
+});
