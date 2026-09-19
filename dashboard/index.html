@@ -24,7 +24,7 @@
       <summary><div><p class="eyebrow">OBSERVABILITY</p><h2>Daemon logs</h2></div><span id="daemon-logs-summary" class="muted">Open to inspect recent output</span></summary>
       <div class="log-toolbar">
         <div class="log-tabs" role="tablist" aria-label="Daemon log source"><button type="button" role="tab" data-log-source="all" aria-selected="true">All output</button><button type="button" role="tab" data-log-source="output" aria-selected="false">Standard output</button><button type="button" role="tab" data-log-source="errors" aria-selected="false">Errors</button></div>
-        <div class="log-actions"><label>Lines <select id="daemon-log-lines"><option value="100">100</option><option value="200" selected>200</option><option value="500">500</option><option value="1000">1,000</option></select></label><button id="copy-daemon-logs" type="button">Copy</button><button id="refresh-daemon-logs" type="button">Refresh</button></div>
+        <div class="log-actions"><label>Lines <select id="daemon-log-lines"><option value="100">100</option><option value="200" selected>200</option><option value="500">500</option><option value="1000">1,000</option></select></label><button id="copy-daemon-logs" type="button" title="Copy the currently selected log output">Copy visible logs</button><button id="refresh-daemon-logs" type="button">Refresh</button></div>
       </div>
       <div class="log-meta"><span id="daemon-log-status" class="live-badge">Paused</span><span id="daemon-log-paths" class="muted">.factory/service-logs/daemon.log · daemon.error.log</span></div>
       <pre id="daemon-log-content" class="log-view" tabindex="0"><code>Open this section to load daemon logs.</code></pre>

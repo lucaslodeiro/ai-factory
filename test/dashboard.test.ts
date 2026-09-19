@@ -89,6 +89,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(html,/live-status/);
     assert.match(html,/factory-update/);
     assert.match(html,/daemon-logs-panel/);
+    assert.match(html,/Copy visible logs/);
     assert.match(html,/Configuration/);
     assert.match(html,/settings-navigation/);
     assert.match(html,/ACTION REQUIRED/);
@@ -96,7 +97,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.doesNotMatch(html,/Dismiss guide/);
     assert.doesNotMatch(html,/Stop daemon/);
     const client = await fetch(`http://127.0.0.1:${port}/app.js`).then(response => response.text());
-    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/); assert.match(client,/loadDaemonLogs/); assert.doesNotMatch(client,/refreshIssue/);
+    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/); assert.match(client,/loadDaemonLogs/); assert.match(client,/execCommand\('copy'\)/); assert.doesNotMatch(client,/refreshIssue/);
     const daemonLogs = await fetch(`http://127.0.0.1:${port}/api/logs/daemon?lines=50`).then(response => response.json()) as any;
     assert.equal(daemonLogs.lines,50); assert.equal(daemonLogs.logs.length,2);
     assert.equal(daemonLogs.logs[0].path,".factory/service-logs/daemon.log");

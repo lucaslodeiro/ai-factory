@@ -96,6 +96,10 @@ if(codex){
   const stop = spawnSync(process.execPath, ["--import", "tsx", cli, "stop"], { env, encoding: "utf8" }); assert.equal(stop.status, 0, stop.stderr);
   await waitFor(() => child.exitCode !== null); assert.equal(await exited, 0);
   assert.equal(fs.existsSync(path.join(data, "daemon.lock")), false);
+  const daemonLog=fs.readFileSync(path.join(root,"daemon.log"),"utf8");
+  assert.match(daemonLog,/INFO\s+daemon\.starting/); assert.match(daemonLog,/INFO\s+daemon\.ready/);
+  assert.match(daemonLog,/INFO\s+execution_started[\s\S]*role="developer"/); assert.match(daemonLog,/INFO\s+state_changed/);
+  assert.match(daemonLog,/INFO\s+daemon\.stopped/); assert.doesNotMatch(daemonLog,/Add greet function and tests/);
  } finally {
   if (child.exitCode === null && child.pid) { try { process.kill(-child.pid, "SIGKILL"); } catch {} await exited; }
   store?.db.close(); fs.rmSync(root, { recursive: true, force: true });
