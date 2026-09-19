@@ -24,5 +24,6 @@ test("failure report provides useful execution evidence and redacts troubleshoot
     assert.match(markdown,/Last 30 stderr lines/); assert.match(markdown,/compilation failed/); assert.doesNotMatch(markdown,/diagnostic 0/);
     assert.doesNotMatch(markdown,/secret-value-123456|\u001b\[31m/); assert.match(markdown,/\[REDACTED\]/);
     assert.match(markdown,/<target-checkout>\/src\/app\.ts failed/); assert.match(markdown,/\/factory retry/);
+    assert.match(markdown,/### Next actions[\s\S]*From this GitHub issue[\s\S]*From the dashboard[\s\S]*From the factory terminal[\s\S]*npm run factory -- retry work-1\n```$/);
   } finally { store.db.close(); config.dataDir=previousDataDir; fs.rmSync(root,{recursive:true,force:true}); }
 });

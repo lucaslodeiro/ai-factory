@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { reportMarkdown, specMarkdown, progressMarkdown, questionsMarkdown, startedMarkdown, pausedMarkdown, cancelledMarkdown, recoveredMarkdown, readyToMergeMarkdown, prClosedMarkdown, mergedMarkdown } from "../src/presentation.js";
+import { reportMarkdown, specMarkdown, progressMarkdown, questionsMarkdown, startedMarkdown, pausedMarkdown, cancelledMarkdown, recoveredMarkdown, readyToMergeMarkdown, prClosedMarkdown, mergedMarkdown, architecturalReviewMarkdown, correctionLimitMarkdown, retryAcceptedMarkdown, retryRejectedMarkdown, pullRequestReopenedMarkdown, tacticalResolutionMarkdown } from "../src/presentation.js";
 import { GitHubAdapter } from "../src/adapters/github.js";
 import { config } from "../src/config.js";
 import { result } from "./fixtures.js";
@@ -38,6 +38,16 @@ test("progress distinguishes workflow stage, approval and human merge", () => {
  assert.match(progressMarkdown(w), /issue stays open/);
  assert.match(progressMarkdown(w), /https:\/\/example.test\/pr\/1/);
 });
+test("waiting-for-human progress explains the gate and ends with boxed action choices", () => {
+ const w: WorkItem = { id:"w",repo:"owner/demo",issue_number:1,branch:"factory/demo",state:"WAITING_HUMAN",context:{title:"Demo",body:"",url:"",version:2,cursor:0,feedback:[],cycles:0,reports:{},waiting:"approval"} };
+ const approval=progressMarkdown(w);
+ assert.match(approval,/Why the factory is waiting/); assert.match(approval,/SPEC v2 needs your approval/);
+ assert.match(approval,/### Next actions[\s\S]*```text\n\/factory approve v2\n```[\s\S]*```text\n\/factory answer <feedback>\n```$/);
+ w.context.waiting="questions";
+ assert.match(progressMarkdown(w),/Product Architect needs clarification[\s\S]*```text\n\/factory answer\n<your response>\n```$/);
+ w.context.waiting="loop";
+ assert.match(progressMarkdown(w),/automatic correction limit was reached[\s\S]*```text\n\/factory answer <guidance>\n```$/i);
+});
 test("actionable lifecycle messages explain preserved work and next steps", () => {
  const w: WorkItem = { id:"work-1",repo:"owner/demo",issue_number:1,branch:"factory/issue-1",state:"PAUSED",context:{title:"Demo",body:"",url:"https://example.test/issues/1",version:2,cursor:0,feedback:[],cycles:0,resume:"QA",reports:{qa:result("pass"),reviewer:result("pass")},approval:{login:"owner",commentId:7},approvedVersion:2,pr:"https://example.test/pr/1",merge:{at:"2026-09-19T12:00:00Z",commit:"abc123"}} };
  assert.match(startedMarkdown(w,"owner","comment"),/GitHub command from @owner/);
@@ -47,6 +57,13 @@ test("actionable lifecycle messages explain preserved work and next steps", () =
  assert.match(readyToMergeMarkdown(w,"def456"),/Published commit \| `def456`/);
  assert.match(prClosedMarkdown(w),/Delivery status \| Not integrated/);
  assert.match(mergedMarkdown(w),/Merge commit \| `abc123`/);
+ const comments=[
+  startedMarkdown(w,"owner","comment"),pausedMarkdown(w,"Daemon stopped",true),cancelledMarkdown(w,false),recoveredMarkdown(w,"factory:review",42),
+  readyToMergeMarkdown(w,"def456"),prClosedMarkdown(w),mergedMarkdown(w),architecturalReviewMarkdown(),correctionLimitMarkdown(),
+  retryAcceptedMarkdown("owner","QA"),retryRejectedMarkdown("still running"),pullRequestReopenedMarkdown(w.context.pr!),
+  tacticalResolutionMarkdown(2,[{kind:"tactical",decision:"Keep the API",rationale:"Approved scope",conflictsWithHuman:false}],"QA"),
+ ];
+ for (const comment of comments) assert.match(comment,/### Next actions?\n\n[\s\S]+$/);
 });
 test("GitHub adapter reads repository-wide recent issue comments", () => {
  const calls:string[][]=[];

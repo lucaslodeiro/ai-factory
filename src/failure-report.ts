@@ -63,5 +63,5 @@ export function failureMarkdown(store: Store, w: WorkItem, error: unknown) {
   const troubleshooting=stderr
     ? `\n\n<details>\n<summary>Last ${Math.min(30,stderr.split("\n").length)} stderr lines</summary>\n\n\`\`\`text\n${stderr}\n\`\`\`\n\n</details>`
     : `\n\n_No stderr output was available. Use **Daemon logs** in the dashboard for additional context._`;
-  return `## Execution failed\n\n${facts.join("  \n")}\n\n### What happened\n\n${reason}\n\n### Troubleshooting${troubleshooting}\n\n### How to continue\n\n1. Correct the reported cause.\n2. Post a new comment containing exactly:\n\n\`\`\`text\n/factory retry\n\`\`\`\n\nYou can also use **Retry** in the dashboard or run \`npm run factory -- retry ${w.id}\`.`;
+  return `## Execution failed\n\n${facts.join("  \n")}\n\n### What happened\n\n${reason}\n\n### Troubleshooting${troubleshooting}\n\n### Next actions\n\nCorrect the reported cause, then choose one retry option.\n\n**From this GitHub issue**\n\n\`\`\`text\n/factory retry\n\`\`\`\n\n**From the dashboard**\n\n> Open this issue and select **Retry**.\n\n**From the factory terminal**\n\n\`\`\`bash\nnpm run factory -- retry ${w.id}\n\`\`\``;
 }

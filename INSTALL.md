@@ -228,7 +228,7 @@ An authorized approver can also retry from the same GitHub issue by posting this
 /factory retry
 ```
 
-The daemon validates the author, consumes each comment only once and resumes the saved stage. Bot comments, quoted commands and comments from users outside `FACTORY_APPROVERS` cannot trigger a retry. The dashboard Retry action and the CLI command use the same safety checks.
+The daemon validates the author, consumes each comment only once and resumes the saved stage. Bot comments, quoted commands and comments from users outside `FACTORY_APPROVERS` cannot trigger a retry. The dashboard Retry action and the CLI command use the same safety checks. Factory-authored issue comments end with **Next action** or **Next actions**. Copyable commands use fenced blocks, each alternative is labeled, and automatic workflow messages explicitly state when no response is needed. The persistent `WAITING_HUMAN` progress comment explains whether it needs specification approval, clarification, or guidance after the correction limit.
 
 Agent timeouts are configurable. SIGTERM escalates to SIGKILL after one second for a process group that does not exit. After a crash, interrupted executions are recorded as interrupted and the work item becomes FAILED. A stage checkpoint also detects crashes after provider exit but before the workflow state was committed. Each new run has a supervisor connected to the daemon by IPC. If the daemon dies, the supervisor terminates its worker group. Retry checks that any interrupted group is gone before proceeding, without signalling saved PIDs. Old bootstrap runs without a supervisor may still require manual process inspection. Worktrees and logs are retained for diagnosis.
 

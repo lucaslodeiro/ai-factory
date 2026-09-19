@@ -1,4 +1,4 @@
-import { specMarkdown, reportMarkdown, decisionsMarkdown, progressMarkdown, questionsMarkdown, startedMarkdown, recoveredMarkdown, readyToMergeMarkdown, prClosedMarkdown, mergedMarkdown } from "./presentation.js";
+import { specMarkdown, reportMarkdown, progressMarkdown, questionsMarkdown, startedMarkdown, recoveredMarkdown, readyToMergeMarkdown, prClosedMarkdown, mergedMarkdown, architecturalReviewMarkdown, correctionLimitMarkdown, retryAcceptedMarkdown, retryRejectedMarkdown, pullRequestReopenedMarkdown, tacticalResolutionMarkdown } from "./presentation.js";
 import { modelForWork } from "./model-policy.js";
 import { randomUUID } from "node:crypto";
 import { Store } from "./storage.js";
@@ -137,10 +137,10 @@ export class Orchestrator {
   try {
    const to = retry(this.store,w.id);
    this.store.event("retry.comment_accepted",{ login:c.user.login,commentId:c.id,to },w.id);
-   this.store.post(w.issue_number,`## Retry accepted\n\n@${c.user.login} requested \`/factory retry\`. The factory will resume from **${retryStageLabel(to)}**.`);
+   this.store.post(w.issue_number,retryAcceptedMarkdown(c.user.login,retryStageLabel(to)));
   } catch (e) {
    this.store.event("retry.comment_rejected",{ login:c.user.login,commentId:c.id,error:String(e) },w.id);
-   this.store.post(w.issue_number,`## Retry could not start\n\n${String(e)}\n\nResolve the condition, then post a new \`/factory retry\` comment.`);
+   this.store.post(w.issue_number,retryRejectedMarkdown(e));
   }
   return true;
  }
@@ -158,7 +158,7 @@ export class Orchestrator {
      this.store.event("pull_request.reconciled", { url: w.context.pr, ...pr }, w.id);
      const message = next === "MERGED" ? mergedMarkdown(w)
       : next === "PR_CLOSED" ? prClosedMarkdown(w)
-      : `## Pull request reopened\n\n[The pull request](${w.context.pr}) is open again and awaits human review/merge.`;
+      : pullRequestReopenedMarkdown(w.context.pr!);
      this.store.post(w.issue_number, message);
     })();
    } catch (e) { this.store.event("github.pr_poll_failed", { error: String(e), url: w.context.pr }, w.id); }
@@ -292,7 +292,7 @@ export class Orchestrator {
      w.context.approvedVersion = undefined; w.context.approval = undefined; w.context.consultation = undefined;
      this.store.save(w);
      this.store.event("spec.review_required", { assessment: result.taskAssessment, previousSelection: selection }, w.id);
-     this.store.post(w.issue_number, "Product Architect detected high complexity or risk. The draft will receive an additional architectural review before a specification is published for approval.");
+     this.store.post(w.issue_number,architecturalReviewMarkdown());
     })(); return;
    }
    // Ignore commands posted before this new specification exists.
@@ -322,7 +322,7 @@ export class Orchestrator {
     this.store.post(w.issue_number, reportMarkdown(role, w.context.version, result));
     if (w.context.cycles >= config.maxCycles) {
      w.context.waiting = "loop";
-     this.store.post(w.issue_number, "Automatic correction limit reached. Reply /factory answer <guidance> to return to Product Architect.");
+     this.store.post(w.issue_number,correctionLimitMarkdown());
      this.store.transition(w, "WAITING_HUMAN");
     } else if (decision) { w.context.consultation = { from: w.state as DeliveryStage }; this.store.transition(w, "SPEC"); }
     else if (w.state !== "DEVELOPMENT") this.routeDelivery(w, "DEVELOPMENT");
@@ -360,7 +360,7 @@ export class Orchestrator {
    w.context.decisions = [...(w.context.decisions ?? []), ...result.decisions];
    w.context.consultation = undefined;
    this.store.event("decision.tactical", { decisions: result.decisions, from, to, specVersion: w.context.version }, w.id);
-   this.store.post(w.issue_number, `Product Architect resolved a tactical question under SPEC v${w.context.version}:\n${decisionsMarkdown(result.decisions)}\nNext: ${to}. No specification change.`);
+   this.store.post(w.issue_number,tacticalResolutionMarkdown(w.context.version,result.decisions,to));
    this.routeDelivery(w, to);
   })();
  }
