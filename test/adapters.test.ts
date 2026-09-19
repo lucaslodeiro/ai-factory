@@ -28,9 +28,10 @@ if(codex) {
  if(!args.includes('--output-schema')||args.includes('--full-auto')) process.exit(9);
  fs.writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(result));
  console.log(JSON.stringify({type:'progress'}));
+ console.error('tokens used\\n1,234');
 } else {
  if(!args.includes('--json-schema')||args.includes('--dangerously-skip-permissions'))process.exit(9);
- console.log(JSON.stringify({is_error:false,structured_output:result}));
+ console.log(JSON.stringify({is_error:false,structured_output:result,usage:{input_tokens:100,output_tokens:20,cache_read_input_tokens:5}}));
 }
 `,{mode:0o755});
  config.codexCommand=script;config.claudeCommand=script;
@@ -41,5 +42,9 @@ if(codex) {
  assert.equal((await new CodexAdapter(m).run({workItemId:'w',role:'developer',cwd:root,instructions:'prompt from orchestrator auto',selection:{...selectModel('developer'),model:'auto'}})).outcome,'pass');
  assert.equal((await new ClaudeAdapter(m).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'prompt from orchestrator auto',selection:{...selectModel('product-architect'),model:'auto'}})).outcome,'spec');
  await assert.rejects(new ClaudeAdapter(m).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'unused',selection:selectModel('developer')}), /mismatch/);
- assert.equal((s.db.prepare('SELECT COUNT(*) AS n FROM executions WHERE status=?').get('succeeded') as any).n,5);assert.equal(JSON.parse((s.db.prepare("SELECT payload FROM events WHERE type='execution.started' ORDER BY id DESC LIMIT 1").get() as any).payload).selection.model,'auto');s.db.close();
+ assert.equal((s.db.prepare('SELECT COUNT(*) AS n FROM executions WHERE status=?').get('succeeded') as any).n,5);
+ assert.deepEqual(s.db.prepare("SELECT role,workflow_state,total_tokens FROM executions ORDER BY rowid LIMIT 2").all(),[
+  {role:"product-architect",workflow_state:"SPEC",total_tokens:125},{role:"developer",workflow_state:"DEVELOPMENT",total_tokens:1234},
+ ]);
+ assert.equal(JSON.parse((s.db.prepare("SELECT payload FROM events WHERE type='execution.started' ORDER BY id DESC LIMIT 1").get() as any).payload).selection.model,'auto');s.db.close();
 });

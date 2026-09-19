@@ -67,10 +67,10 @@ echo "$*" >> "$PWD/update-actions.log"
     .run("owner-demo-7",7,"owner/demo","FAILED","2026-01-01T00:00:00.000Z","2026-01-02T00:00:00.000Z",JSON.stringify({title:"Repair login",url:"https://github.com/owner/demo/issues/7",version:1,cursor:0,feedback:[],cycles:0,reports:{}}));
   store.event("state.changed",{from:"QA",to:"FAILED"},"owner-demo-7");
   store.event("agent.result",{role:"qa",result:{outcome:"pass",summary:"All acceptance criteria passed",coverage:Array(20).fill({status:"passed"})}},"owner-demo-7");
-  store.db.prepare("INSERT INTO executions(id,work_item_id,role,status,started_at,finished_at,exit_code) VALUES(?,?,?,?,?,?,?)")
-    .run("run-12345678","owner-demo-7","qa","succeeded","2026-01-02T00:00:00.000Z","2026-01-02T00:01:05.000Z",0);
+  store.db.prepare("INSERT INTO executions(id,work_item_id,role,workflow_state,status,started_at,finished_at,exit_code,input_tokens,output_tokens,cached_tokens,total_tokens) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")
+    .run("run-12345678","owner-demo-7","qa","QA","succeeded","2026-01-02T00:00:00.000Z","2026-01-02T00:01:05.000Z",0,1000,250,500,1750);
   store.event("execution.started",{role:"qa",selection:{provider:"claude",model:"sonnet",profile:"balanced"}},"owner-demo-7","run-12345678");
-  store.event("execution.finished",{status:"succeeded",code:0},"owner-demo-7","run-12345678");
+  store.event("execution.finished",{status:"succeeded",code:0,usage:{inputTokens:1000,outputTokens:250,cachedTokens:500,totalTokens:1750}},"owner-demo-7","run-12345678");
   const server = await startDashboard(store,"127.0.0.1",0,settingsRoot);
   const port = (server.address() as AddressInfo).port;
   const originalFetch = globalThis.fetch;
@@ -90,6 +90,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(html,/factory-update/);
     assert.match(html,/daemon-logs-panel/);
     assert.match(html,/Copy visible logs/);
+    assert.match(html,/Time and tokens by issue/);
     assert.match(html,/Configuration/);
     assert.match(html,/settings-navigation/);
     assert.match(html,/ACTION REQUIRED/);
@@ -106,11 +107,14 @@ echo "$*" >> "$PWD/update-actions.log"
     const snapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
     assert.equal(snapshot.daemon.running,false);
     assert.equal(snapshot.items[0].title,"Repair login");
-    assert.deepEqual({issue:snapshot.executions[0].issue,title:snapshot.executions[0].title,role:snapshot.executions[0].role,status:snapshot.executions[0].status,provider:snapshot.executions[0].provider,model:snapshot.executions[0].model,durationMs:snapshot.executions[0].durationMs},
-      {issue:7,title:"Repair login",role:"qa",status:"succeeded",provider:"claude",model:"sonnet",durationMs:65000});
-    const resultEvent=snapshot.events.find((event:any)=>event.type==="agent.result"),stateEvent=snapshot.events.find((event:any)=>event.type==="state.changed");
+    assert.deepEqual({issue:snapshot.executions[0].issue,title:snapshot.executions[0].title,role:snapshot.executions[0].role,status:snapshot.executions[0].status,provider:snapshot.executions[0].provider,model:snapshot.executions[0].model,durationMs:snapshot.executions[0].durationMs,totalTokens:snapshot.executions[0].totalTokens},
+      {issue:7,title:"Repair login",role:"qa",status:"succeeded",provider:"claude",model:"sonnet",durationMs:65000,totalTokens:1750});
+    assert.deepEqual({issue:snapshot.usage[0].issue,runs:snapshot.usage[0].runs,durationMs:snapshot.usage[0].durationMs,totalTokens:snapshot.usage[0].totalTokens,stage:snapshot.usage[0].stages[0].state},
+      {issue:7,runs:1,durationMs:65000,totalTokens:1750,stage:"QA"});
+    const resultEvent=snapshot.events.find((event:any)=>event.type==="agent.result"),stateEvent=snapshot.events.find((event:any)=>event.type==="state.changed"),executionEvent=snapshot.events.find((event:any)=>event.type==="execution.finished");
     assert.equal(resultEvent.title,"QA: Passed"); assert.match(resultEvent.details,/All acceptance criteria passed/); assert.match(resultEvent.details,/20\/20 passed/); assert.equal(resultEvent.severity,"success");
     assert.equal(stateEvent.title,"Workflow moved to Failed"); assert.equal(stateEvent.details,"Previous stage: QA."); assert.equal(stateEvent.severity,"error");
+    assert.match(executionEvent.details,/Tokens reported: 1,750/);
     assert.equal(resultEvent.issueTitle,"Repair login"); assert.equal(resultEvent.issueUrl,"https://github.com/owner/demo/issues/7");
     const controller = new AbortController();
     const stream = await fetch(`http://127.0.0.1:${port}/api/stream`,{signal:controller.signal});

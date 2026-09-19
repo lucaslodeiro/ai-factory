@@ -69,7 +69,7 @@ export async function startDaemon(store = new Store()) {
    let level:LogLevel="info",fields:Record<string,string|number|boolean|null|undefined>={workItemId:row.work_item_id,runId:row.run_id};
    if (row.type === "state.changed") fields={...fields,from:String(data.from),to:String(data.to)};
    else if (row.type === "execution.started") { const selected=(data.selection ?? {}) as Record<string,unknown>; fields={...fields,role:String(data.role),provider:selected.provider ? String(selected.provider) : undefined,model:selected.model ? String(selected.model) : undefined}; }
-   else if (row.type === "execution.finished") { const status=String(data.status); level=status === "succeeded" ? "info" : "warn"; fields={...fields,status,exitCode:typeof data.code === "number" ? data.code : null}; }
+   else if (row.type === "execution.finished") { const status=String(data.status),usage=(data.usage ?? {}) as Record<string,unknown>; level=status === "succeeded" ? "info" : "warn"; fields={...fields,status,exitCode:typeof data.code === "number" ? data.code : null,totalTokens:typeof usage.totalTokens === "number" ? usage.totalTokens : undefined}; }
    else if (row.type === "agent.result") { const result=(data.result ?? {}) as Record<string,unknown>; fields={...fields,role:String(data.role),outcome:result.outcome ? String(result.outcome) : undefined}; }
    else if (row.type === "control.applied") fields={...fields,controlId:Number(data.id),kind:String(data.kind),target:data.target ? String(data.target) : undefined};
    else if (row.type === "control.failed") { level="warn"; fields={...fields,controlId:Number(data.id),kind:String(data.kind),error:String(data.error)}; }

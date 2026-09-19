@@ -20,7 +20,9 @@ test("concurrent CLI processes migrate a new SQLite database exactly once", { ti
   fs.writeFileSync(gate, "go"); await Promise.all(completed);
   const s = new Store(filename);
   assert.equal((s.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='opened'").get() as any).n, 4);
-  assert.equal((s.db.prepare("PRAGMA table_info(executions)").all() as any[]).filter(c => c.name === "recovery_pending").length, 1); s.db.close();
+  const executionColumns=(s.db.prepare("PRAGMA table_info(executions)").all() as any[]).map(column=>column.name);
+  for(const column of ["recovery_pending","workflow_state","input_tokens","output_tokens","cached_tokens","total_tokens"]) assert.ok(executionColumns.includes(column));
+  s.db.close();
  } finally {
   for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
   await Promise.allSettled(completed); fs.rmSync(root, { recursive: true, force: true });

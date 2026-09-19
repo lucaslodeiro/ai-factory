@@ -92,6 +92,20 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .entry-facts { display:flex; flex-wrap:wrap; gap:.35rem .8rem; margin:.65rem 0; color:var(--muted); font-size:.7rem }
 .entry-facts span { position:relative }
 .entry-facts span+span::before { content:"·"; position:absolute; left:-.5rem }
+.usage-list { display:grid; gap:1rem }
+.usage-card { padding:1rem; background:color-mix(in srgb,var(--surface) 72%,transparent); border:1px solid var(--line); border-radius:12px }
+.usage-head { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:1rem }
+.usage-head>div:first-child { display:grid; gap:.35rem }
+.usage-head a { color:var(--text); font-weight:750; text-decoration:none }
+.usage-head small,.usage-table-wrap small { color:var(--muted); font-size:.65rem }
+.usage-head dl { display:flex; gap:.55rem; margin:0 }
+.usage-head dl div { min-width:6rem; padding:.55rem .7rem; text-align:center; background:var(--panel); border:1px solid var(--line); border-radius:9px }
+.usage-head dt { color:var(--muted); font-size:.58rem; font-weight:700; letter-spacing:.07em; text-transform:uppercase }
+.usage-head dd { margin:.18rem 0 0; font-size:.9rem; font-weight:800 }
+.usage-table-wrap { overflow-x:auto }
+.usage-table-wrap table { width:100%; border-collapse:collapse; font-size:.72rem }
+.usage-table-wrap th,.usage-table-wrap td { padding:.55rem .65rem; text-align:left; border-top:1px solid var(--line); white-space:nowrap }
+.usage-table-wrap th { color:var(--muted); font-size:.6rem; letter-spacing:.07em; text-transform:uppercase }
 .event-entry { position:relative; border-left:3px solid var(--blue) }
 .event-entry.severity-success { border-left-color:var(--accent) }
 .event-entry.severity-warning { border-left-color:var(--warn) }
@@ -197,6 +211,9 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
   .setup-guide { grid-template-columns:1fr; align-items:start }
   .slack-status dl { width:100% }
   .issue-toolbar { align-items:stretch; flex-direction:column }
+  .usage-head { flex-direction:column }
+  .usage-head dl { width:100%; flex-wrap:wrap }
+  .usage-head dl div { flex:1 }
 }
 @media(max-width:480px) {
   .metrics { grid-template-columns:1fr }

@@ -7,6 +7,17 @@ import { Store } from "./storage.js";
 import { config, agentEnvironment } from "./config.js";
 import { failureMarkdown } from "./failure-report.js";
 import type { AgentRole, ModelSelection } from "./types.js";
+import { extractTokenUsage } from "./token-usage.js";
+const workflowState: Record<AgentRole,string> = {"product-architect":"SPEC",developer:"DEVELOPMENT",qa:"QA",reviewer:"REVIEW"};
+function readOutput(file:string,maxBytes:number,fromEnd=false) {
+  try {
+    const stat=fs.statSync(file);
+    if (!fromEnd && stat.size>maxBytes) return {text:"",tooLarge:true};
+    const bytes=Math.min(stat.size,maxBytes),buffer=Buffer.alloc(bytes),handle=fs.openSync(file,"r");
+    try { if(bytes) fs.readSync(handle,buffer,0,bytes,fromEnd ? stat.size-bytes : 0); } finally { fs.closeSync(handle); }
+    return {text:buffer.toString("utf8"),tooLarge:stat.size>maxBytes};
+  } catch { return {text:"",tooLarge:false}; }
+}
 export class ExecutionManager {
   private running = new Map<string, { child: ChildProcess; cancel: () => void }>();
   constructor(private store: Store) {}
@@ -16,8 +27,8 @@ export class ExecutionManager {
     fs.mkdirSync(logDir, { recursive: true });
     const out = fs.openSync(path.join(logDir, "stdout.log"), "w", 0o600);
     const err = fs.openSync(path.join(logDir, "stderr.log"), "w", 0o600);
-    this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,status,started_at) VALUES(?,?,?,?,?)")
-      .run(id, workItemId, role, "running", new Date().toISOString());
+    this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,workflow_state,status,started_at) VALUES(?,?,?,?,?,?)")
+      .run(id, workItemId, role, workflowState[role], "running", new Date().toISOString());
     this.store.event("execution.started", { role, command, cwd, logDir, selection }, workItemId, id);
     return new Promise((resolve, reject) => {
       let cancelled = false, timedOut = false, force: NodeJS.Timeout | undefined;
@@ -43,14 +54,16 @@ export class ExecutionManager {
         } catch {}
         const providerExitCode = completion?.code ?? code;
         const status = timedOut ? "timed_out" : cancelled ? "cancelled" : code === 0 && !spawnError && completion?.status === "succeeded" ? "succeeded" : "failed";
-        this.store.db.prepare("UPDATE executions SET status=?,finished_at=?,exit_code=? WHERE id=?")
-          .run(status, new Date().toISOString(), providerExitCode, id);
-        this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code }, workItemId, id);
+        const stdoutFile=path.join(logDir,"stdout.log"),stderrFile=path.join(logDir,"stderr.log");
+        const stdout=readOutput(stdoutFile,10_000_000),stderr=readOutput(stderrFile,512*1024,true);
+        const usage=extractTokenUsage(selection?.provider,stdout.text,stderr.text);
+        this.store.db.prepare("UPDATE executions SET status=?,finished_at=?,exit_code=?,input_tokens=?,output_tokens=?,cached_tokens=?,total_tokens=? WHERE id=?")
+          .run(status, new Date().toISOString(), providerExitCode, usage?.inputTokens ?? null,usage?.outputTokens ?? null,usage?.cachedTokens ?? null,usage?.totalTokens ?? null,id);
+        this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage }, workItemId, id);
         if (status !== "succeeded") return reject(new Error(`Execution ${id} ${status}${spawnError ? ': ' + spawnError.message : ''}`));
-        const file = path.join(logDir, "stdout.log");
         try {
-          if (fs.statSync(file).size > 10_000_000) return reject(new Error("Agent output exceeds 10 MB"));
-          resolve({ id, stdout: fs.readFileSync(file, "utf8") });
+          if (stdout.tooLarge) return reject(new Error("Agent output exceeds 10 MB"));
+          resolve({ id, stdout:stdout.text });
         } catch (error) { reject(error); }
       });
     });

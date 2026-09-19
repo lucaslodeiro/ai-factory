@@ -63,7 +63,7 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
       const selection=value.selection;
       return { title:`${role} execution started`,details:selection ? `${selection.provider} · ${selection.model} · ${selection.profile} profile` : "The agent process is running.",severity:"info",category:"Agent" };
     }
-    if (type === "execution.finished") return { title:`${role} execution ${value.status ?? "finished"}`,details:value.code === null || value.code === undefined ? "The process finished without an exit code." : `Process exit code: ${value.code}.`,severity:value.status === "succeeded" ? "success" : value.status === "cancelled" ? "warning" : "error",category:"Agent" };
+    if (type === "execution.finished") { const result=value.code === null || value.code === undefined ? "The process finished without an exit code." : `Process exit code: ${value.code}.`;const usage=value.usage?.totalTokens === null || value.usage?.totalTokens === undefined ? " Token usage was not reported." : ` Tokens reported: ${Number(value.usage.totalTokens).toLocaleString("en-US")}.`;return { title:`${role} execution ${value.status ?? "finished"}`,details:result+usage,severity:value.status === "succeeded" ? "success" : value.status === "cancelled" ? "warning" : "error",category:"Agent" };}
     if (type === "execution.interrupted" || type === "stage.interrupted") return { title:`${role} execution interrupted`,details:value.reason ?? "The daemon stopped before this stage was recorded as complete.",severity:"error",category:"Agent" };
     if (type === "agent.result") {
       const result=value.result ?? {},coverage=Array.isArray(result.coverage) ? result.coverage : [];
@@ -113,7 +113,7 @@ function snapshot(store: Store) {
     id: item.id, issue: item.issue_number, repo: item.repo, state: item.state, title: item.context.title,
     url: item.context.url, pr: item.context.pr ?? null, updatedAt: (store.db.prepare("SELECT updated_at FROM work_items WHERE id=?").get(item.id) as any).updated_at,
   }));
-  const executionRows=store.db.prepare("SELECT id,work_item_id,role,status,pid,started_at,finished_at,exit_code FROM executions ORDER BY started_at DESC LIMIT 30").all() as any[];
+  const executionRows=store.db.prepare("SELECT id,work_item_id,role,workflow_state,status,pid,started_at,finished_at,exit_code,input_tokens,output_tokens,cached_tokens,total_tokens FROM executions ORDER BY started_at DESC LIMIT 30").all() as any[];
   const runMetadata=new Map((store.db.prepare("SELECT e.run_id,e.payload FROM events e JOIN executions x ON x.id=e.run_id WHERE e.type='execution.started' ORDER BY e.id DESC LIMIT 30").all() as Array<{run_id:string;payload:string}>).map(row=>{
     try { return [row.run_id,JSON.parse(row.payload)] as const; } catch { return [row.run_id,{}] as const; }
   }));
@@ -121,9 +121,23 @@ function snapshot(store: Store) {
   const executions = executionRows.map(run=>{
     const item=itemById.get(run.work_item_id),selection=runMetadata.get(run.id)?.selection;
     const end=run.finished_at ? new Date(run.finished_at).getTime() : Date.now(),start=new Date(run.started_at).getTime();
-    return { id:run.id,workItemId:run.work_item_id,role:run.role,status:run.status,pid:run.pid,startedAt:run.started_at,finishedAt:run.finished_at,exitCode:run.exit_code,durationMs:Number.isFinite(start) ? Math.max(0,end-start) : null,
+    return { id:run.id,workItemId:run.work_item_id,role:run.role,workflowState:run.workflow_state,status:run.status,pid:run.pid,startedAt:run.started_at,finishedAt:run.finished_at,exitCode:run.exit_code,durationMs:Number.isFinite(start) ? Math.max(0,end-start) : null,
+      inputTokens:run.input_tokens,outputTokens:run.output_tokens,cachedTokens:run.cached_tokens,totalTokens:run.total_tokens,
       issue:item?.issue_number ?? null,title:item?.context.title ?? "Unknown issue",url:item?.context.url ?? null,provider:selection?.provider ?? null,model:selection?.model ?? null,profile:selection?.profile ?? null };
   });
+  const usageRows=store.db.prepare("SELECT work_item_id,role,workflow_state,status,started_at,finished_at,input_tokens,output_tokens,cached_tokens,total_tokens FROM executions ORDER BY started_at").all() as any[];
+  const usageMap=new Map<string,{workItemId:string;runs:number;durationMs:number;inputTokens:number;outputTokens:number;cachedTokens:number;totalTokens:number;unreportedTokenRuns:number;stages:Map<string,any>}>();
+  const add=(target:any,run:any,durationMs:number)=>{target.runs++;target.durationMs+=durationMs;for(const [source,key] of [["input_tokens","inputTokens"],["output_tokens","outputTokens"],["cached_tokens","cachedTokens"],["total_tokens","totalTokens"]] as const) target[key]+=run[source] ?? 0;if(run.total_tokens === null || run.total_tokens === undefined) target.unreportedTokenRuns++;};
+  for (const run of usageRows) {
+    const start=new Date(run.started_at).getTime(),end=run.finished_at ? new Date(run.finished_at).getTime() : Date.now(),elapsed=Number.isFinite(start) ? Math.max(0,end-start) : 0;
+    let item=usageMap.get(run.work_item_id);
+    if(!item){item={workItemId:run.work_item_id,runs:0,durationMs:0,inputTokens:0,outputTokens:0,cachedTokens:0,totalTokens:0,unreportedTokenRuns:0,stages:new Map()};usageMap.set(run.work_item_id,item);}
+    add(item,run,elapsed);
+    const state=run.workflow_state ?? ({"product-architect":"SPEC",developer:"DEVELOPMENT",qa:"QA",reviewer:"REVIEW"} as Record<string,string>)[run.role] ?? "UNKNOWN",key=`${state}:${run.role}`;
+    let stage=item.stages.get(key);if(!stage){stage={state,role:run.role,runs:0,durationMs:0,inputTokens:0,outputTokens:0,cachedTokens:0,totalTokens:0,unreportedTokenRuns:0};item.stages.set(key,stage);}add(stage,run,elapsed);
+  }
+  const normalize=(value:any)=>({...value,totalTokens:value.unreportedTokenRuns===value.runs ? null : value.totalTokens});
+  const usage=[...usageMap.values()].map(total=>{const item=itemById.get(total.workItemId);return {...normalize(total),stages:[...total.stages.values()].map(normalize),issue:item?.issue_number ?? null,title:item?.context.title ?? "Unknown issue",url:item?.context.url ?? null};}).sort((a,b)=>(b.issue ?? 0)-(a.issue ?? 0));
   const events = (store.db.prepare("SELECT id,ts,work_item_id,run_id,type,payload FROM events ORDER BY id DESC LIMIT 60").all() as any[])
     .map(event => { const item=itemById.get(event.work_item_id),presentation=eventPresentation(event.type,event.payload,runRoles.get(event.run_id)); const description=String(presentation.details ?? ""); return {
       id:event.id,ts:event.ts,workItemId:event.work_item_id,runId:event.run_id,type:event.type,...presentation,details:description.length>500 ? `${description.slice(0,497)}…` : description,
@@ -144,7 +158,7 @@ function snapshot(store: Store) {
       }
     }
   }
-  return { generatedAt:new Date().toISOString(), repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), issueRefresh, items, executions, events };
+  return { generatedAt:new Date().toISOString(), repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), issueRefresh, items, executions, usage, events };
 }
 async function readBody(req: http.IncomingMessage) {
   let body = "";
