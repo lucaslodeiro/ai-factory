@@ -41,7 +41,7 @@ if(a[0]==='--version'){console.log('fake-1');process.exit(0)}
 if(a[0]==='login'){process.exit(0)}
 if(a[0]==='auth'){console.log(JSON.stringify({loggedIn:true}));process.exit(0)}
 const input=fs.readFileSync(0,'utf8');const codex=a[0]==='exec';
-const architect=input.includes('# Product / Architect Contract'),developer=input.includes('# Developer Contract'),qa=input.includes('# QA Contract');
+const architect=input.includes('# Product Architect Contract'),developer=input.includes('# Developer Contract'),qa=input.includes('# QA Contract');
 let result=architect?${JSON.stringify(result("spec"))}:${JSON.stringify(result("pass"))};
 if(developer){
   const marker=${JSON.stringify(path.join(root, 'first-developer'))};

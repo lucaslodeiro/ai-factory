@@ -64,6 +64,7 @@ export class ExecutionManager {
         const w = this.store.get(r.work_item_id);
         if (w && ["SPEC", "DEVELOPMENT", "QA", "REVIEW"].includes(w.state)) {
           w.context.resume = w.context.pendingStage?.stage ?? w.state;
+          w.context.lastFailure = "An agent execution was interrupted because the daemon restarted.";
           this.store.transition(w, "FAILED");
         }
         this.store.event("execution.interrupted", { reason: "Daemon restarted; supervisor disconnect terminates its worker group. Retry waits until group exit." }, r.work_item_id, r.id);
@@ -72,6 +73,7 @@ export class ExecutionManager {
       for (const w of this.store.items()) {
         if (w.context.pendingStage && ["SPEC", "DEVELOPMENT", "QA", "REVIEW"].includes(w.state)) {
           w.context.resume = w.context.pendingStage.stage;
+          w.context.lastFailure = "The daemon restarted before the workflow could record the completed agent stage.";
           this.store.transition(w, "FAILED");
           this.store.event("stage.interrupted", w.context.pendingStage, w.id);
         }

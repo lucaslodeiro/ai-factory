@@ -39,7 +39,7 @@ On 2026-09-18, the real pipeline reached **READY_TO_MERGE** and created demo PR 
 - Target at execution time: private `lucaslodeiro/ai-factory-demo`, issue #1, PR #2.
 - Work item: `e3d45eaf-fad3-48c0-8e99-fccc121cecd7`.
 - Claude authenticated successfully; doctor passed for both providers, Git/GitHub, target repository and SQLite.
-- Product/Architect (Sonnet) published SPEC v1 with ten acceptance criteria and low complexity/low risk. The human `lucaslodeiro` approved the exact version in comment `5732900319`.
+- Product Architect (Sonnet) published SPEC v1 with ten acceptance criteria and low complexity/low risk. The human `lucaslodeiro` approved the exact version in comment `5732900319`.
 - Developer (Luna) implemented the pure Unicode text-analysis function, stdin/stdout CLI, README, ESM package and nine tests without dependencies.
 - QA (Terra), in a fresh execution, ran all nine tests successfully with Node 26.4.0 and additional independent function/CLI, exit-status, output and dependency checks.
 - Reviewer (Sonnet), in a fresh read-only execution, independently inspected code, tests and all review dimensions. It explicitly attributed runtime evidence to QA, reported no blocking findings and returned PASS.

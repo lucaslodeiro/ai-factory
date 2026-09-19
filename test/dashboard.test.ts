@@ -154,6 +154,8 @@ echo "$*" >> "$PWD/update-actions.log"
     const slackTest = await fetch(`http://127.0.0.1:${port}/api/slack/test`,{method:"POST"});
     assert.equal(slackTest.status,200);
     assert.match(slackPayload.text,/Slack test notification from the dashboard/);
+    assert.equal(slackPayload.blocks[0].type,"header");
+    assert.equal(slackPayload.blocks[1].text.type,"mrkdwn");
     const credentials = await fetch(`http://127.0.0.1:${port}/api/credentials`).then(response => response.json()) as any;
     assert.deepEqual(credentials.credentials.map(({id,status}: any) => ({id,status})),[
       {id:"github",status:"disconnected"},{id:"claude",status:"connected"},{id:"codex",status:"connected"}

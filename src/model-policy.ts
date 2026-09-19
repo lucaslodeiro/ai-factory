@@ -8,7 +8,7 @@ export function selectModel(role: AgentRole, assessment?: TaskAssessment, cycles
  else if (assessment?.complexity === "high" || assessment?.risk === "high") { profile = "strong"; reason = "Approved assessment has high complexity or risk"; }
  else if (!assessment && role !== "product-architect") { profile = "strong"; reason = "Missing legacy assessment; use conservative workflow safeguards"; }
  else if (assessment?.complexity === "low" && assessment.risk === "low" && role === "developer") { profile = "fast"; reason = "Approved low-complexity, low-risk implementation"; }
- else if (role === "product-architect" && !assessment) reason = "Initial Product/Architect task assessment";
+ else if (role === "product-architect" && !assessment) reason = "Initial Product Architect task assessment";
  // QA and Reviewer never use the fast profile, even for a simple implementation.
  const model = routing.model;
  if (!model?.trim()) throw new Error(`Missing ${provider} model for ${role}`);

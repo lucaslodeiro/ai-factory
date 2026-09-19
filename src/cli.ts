@@ -39,7 +39,7 @@ p.command("notifications").action(() => {
  const s = new Store(); console.table(s.db.prepare("SELECT id,sent,attempts,next_at,last_error FROM notifications ORDER BY id DESC LIMIT 50").all()); s.db.close();
 });
 p.command("slack-test").description("Send one explicit test notification to the configured Slack webhook").action(async () => {
- await new SlackAdapter().notify("AI Factory: Slack test notification. Workflow decisions remain in GitHub."); console.log("Slack test delivered.");
+ await new SlackAdapter().notify("🧪 AI Factory connection test\n\nSlack test notification from the CLI was delivered successfully. No action is required. Workflow decisions remain in GitHub."); console.log("Slack test delivered.");
 });
 p.command("start").action(async () => { const s = new Store(); try { await startDaemon(s); } finally { s.db.close(); } });
 p.command("dashboard").description("Start the local administration dashboard").action(async () => {

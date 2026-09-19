@@ -260,7 +260,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if (req.method === "POST" && url.pathname === "/api/slack/test") {
         const webhook = readDashboardSetting(settingsRoot,"SLACK_WEBHOOK_URL");
         if (!webhook) return json(res,409,{error:"Configure and save a Slack webhook first"});
-        await new SlackAdapter(webhook).notify("AI Factory: Slack test notification from the dashboard. Workflow decisions remain in GitHub.");
+        await new SlackAdapter(webhook).notify("🧪 AI Factory connection test\n\nSlack test notification from the dashboard was delivered successfully. No action is required. Workflow decisions remain in GitHub.");
         return json(res,200,{...slackStatus(settingsRoot,store),message:"Slack test notification delivered."});
       }
       if (req.method === "POST" && url.pathname === "/api/update") {

@@ -20,4 +20,4 @@ READY_FOR_HUMAN_MERGE | CHANGES_REQUIRED | DECISION_REQUIRED
 ## Findings
 
 ## Required Routing
-Developer | QA | Product/Architect | Human | None
+Developer | QA | Product Architect | Human | None

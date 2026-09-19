@@ -1,4 +1,4 @@
-# Product / Architect Contract
+# Product Architect Contract
 
 ## Mission
 Turn a human feature request into an implementable, testable specification while acting as a constructive product and architecture counterpart.

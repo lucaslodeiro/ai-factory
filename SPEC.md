@@ -11,11 +11,11 @@ Run a software factory on the user's Mac that turns a GitHub Issue into a tested
 | ID | Decision |
 |---|---|
 | D01 | Orchestration and agent processes always execute locally. GitHub is the collaboration UI, not the execution engine. Initial platform: macOS, without Docker. |
-| D02 | Four independent roles: Product/Architect, Developer, QA and Reviewer. Each invocation starts a fresh context. The operator configures Codex or Claude independently for every role, then selects automatic provider model choice or explicit fast/balanced/strong model IDs; defaults remain Claude, Codex, Codex and Claude respectively. |
+| D02 | Four independent roles: Product Architect, Developer, QA and Reviewer. Each invocation starts a fresh context. The operator configures Codex or Claude independently for every role, then selects automatic provider model choice or explicit fast/balanced/strong model IDs; defaults remain Claude, Codex, Codex and Claude respectively. |
 | D03 | GitHub Issues accept requests and human feedback; comments and labels mirror progress. SQLite is authoritative for workflow state and audit history. |
 | D04 | Initial specs and material revisions need explicit human approval. Approved specs are immutable versioned contracts with verifiable acceptance criteria. |
-| D05 | Product/Architect may challenge a human decision and propose alternatives, but cannot silently override it. Major product, architecture, scope, risk or conflicting decisions go to the human. |
-| D06 | Tactical questions consistent with approved constraints are resolved and documented by Product/Architect, without another human approval. Developer consults this role first. |
+| D05 | Product Architect may challenge a human decision and propose alternatives, but cannot silently override it. Major product, architecture, scope, risk or conflicting decisions go to the human. |
+| D06 | Tactical questions consistent with approved constraints are resolved and documented by Product Architect, without another human approval. Developer consults this role first. |
 | D07 | QA derives verification from the approved spec independently. It may create/modify tests and run commands, but must not change production code. |
 | D08 | Reviewer checks specification compliance, quality, security, performance, product/UI/copy consistency, tests and dependencies. |
 | D09 | Internet is allowed for documentation and dependencies. Extra environment secrets require an explicit allowlist. Local provider authentication remains available. |
@@ -26,7 +26,7 @@ Run a software factory on the user's Mac that turns a GitHub Issue into a tested
 ## Actors and artifacts
 
 - Human: submits work, answers questions, approves an exact spec version, resolves major choices and merges.
-- Product/Architect: reads the request and repository; proposes requirements, alternatives and architecture; produces specs or tactical decision records.
+- Product Architect: reads the request and repository; proposes requirements, alternatives and architecture; produces specs or tactical decision records.
 - Developer: implements the approved contract in the assigned worktree; declares changes, tests, coverage and dependency rationale.
 - QA: independently verifies each approved criterion; reports evidence and classified findings; only test edits are permitted.
 - Reviewer: independently reviews the delivered implementation/diff and all required review dimensions.
@@ -42,11 +42,11 @@ Given an open issue with `factory:queued` in the configured repository, polling 
 
 ### F02 — Fresh role contexts
 
-Each role invocation receives its common contract, provider-specific instructions, applicable template and current approved artifacts. QA/Reviewer do not inherit Developer conversation or conclusions. Documented Product/Architect decisions are shared, since they are part of the authoritative work contract. Reviewer receives the implementation diff and attributed QA test commands/results and criterion evidence, without QA summary conclusions. It independently inspects code and test quality, and never claims QA executions as its own.
+Each role invocation receives its common contract, provider-specific instructions, applicable template and current approved artifacts. QA/Reviewer do not inherit Developer conversation or conclusions. Documented Product Architect decisions are shared, since they are part of the authoritative work contract. Reviewer receives the implementation diff and attributed QA test commands/results and criterion evidence, without QA summary conclusions. It independently inspects code and test quality, and never claims QA executions as its own.
 
 ### F03 — Clarification and human authority
 
-Only configured GitHub human logins can issue `/factory answer <text>` and `/factory approve vN`. Bot comments, quoted commands, wrong versions and commands preceding the newly generated spec are not approval. Human feedback returns to Product/Architect. Changes to old comments are not treated as new commands; post a new comment.
+Only configured GitHub human logins can issue `/factory answer <text>` and `/factory approve vN`. Bot comments, quoted commands, wrong versions and commands preceding the newly generated spec are not approval. Human feedback returns to Product Architect. Changes to old comments are not treated as new commands; post a new comment.
 
 ### F04 — Versioned specification gate
 
@@ -54,7 +54,7 @@ A proposal contains nonempty markdown and unique structured criterion IDs also a
 
 ### F05 — Tactical consultation
 
-Given an approved spec and a question raised from Developer, QA or Reviewer, Product/Architect can return a `resolved` result with only tactical decisions, rationale, no human conflicts and a permitted return role. The spec, criterion set, version and original approval remain unchanged. No new approval notice is generated. Decisions are recorded and supplied to later roles.
+Given an approved spec and a question raised from Developer, QA or Reviewer, Product Architect can return a `resolved` result with only tactical decisions, rationale, no human conflicts and a permitted return role. The spec, criterion set, version and original approval remain unchanged. No new approval notice is generated. Decisions are recorded and supplied to later roles.
 
 The return route cannot skip a gate: a Developer consultation returns to Developer; QA can return to Developer or QA; Reviewer can return to Developer, QA or Reviewer. Returning upstream invalidates affected downstream reports. An initial spec cannot be self-approved through this route. A revised spec or unresolved major question must return to the human gate.
 
@@ -73,7 +73,7 @@ Reviewer PASS requires evidence for every approved criterion and each review dim
 ### F09 — Finding routing
 
 - `auto-fix`: return to Developer, preserving the approved contract, then rerun downstream verification.
-- `decision-required`: consult Product/Architect; tactical resolution follows F05, otherwise the human gate applies.
+- `decision-required`: consult Product Architect; tactical resolution follows F05, otherwise the human gate applies.
 - `defer`: record the finding in the full report; it does not block a PASS when all acceptance criteria pass.
 
 Correction cycles are bounded by configuration. Reaching the limit requires human guidance instead of an infinite retry loop.
@@ -92,7 +92,7 @@ A transactional singleton lock prevents simultaneous daemons for a data director
 
 ### F12 — Notifications and external outages
 
-Every persisted state transition queues a Slack message atomically with state. Human-action messages include the issue link, responsible role/action, spec version or question summary, and the exact response command. Slack HTTP failures are retained with exponential retry backoff up to five minutes. They do not block workflow execution or GitHub delivery. Disabled Slack retains pending notifications for later configuration.
+Every persisted state transition queues a Slack message atomically with state. Messages use Slack Block Kit with a clear heading, project, issue, readable status and a direct GitHub link. Human-action messages identify the required action, spec version, relevant question, assessment or report summary, and the exact response command. Failure messages preserve the actionable cause and retry command. Slack HTTP failures are retained with exponential retry backoff up to five minutes. They do not block workflow execution or GitHub delivery. Disabled Slack retains pending notifications for later configuration.
 
 GitHub comments use their own durable idempotent outbox. Slack webhooks have no transactional acknowledgement with SQLite: delivery is at least once, so a crash after Slack accepts but before local acknowledgement can duplicate a message. No real Slack channel is required for local tests.
 
@@ -106,7 +106,7 @@ Provide reproducible Node 22+ installation, explicit repo/data directories, prov
 
 ### F15 — Task-aware model selection
 
-Use the direct-v1 policy in `docs/MODEL_POLICY.md`: Product/Architect reports complexity, risk and rationale with each new spec; the human approves that assessment with the exact spec version. Each role has a configured Codex/Claude provider and one direct model, or `auto` to omit the model override and let the provider use its recommended/default model. The deterministic orchestrator uses the approved assessment and correction context for workflow safeguards, without translating them into another model. A high-complexity or high-risk draft receives a fresh Architect review before a version is published for approval; questions and retries preserve that requirement. Every provider call records its configured selection and internal workflow tier. No silent provider or model fallback.
+Use the direct-v1 policy in `docs/MODEL_POLICY.md`: Product Architect reports complexity, risk and rationale with each new spec; the human approves that assessment with the exact spec version. Each role has a configured Codex/Claude provider and one direct model, or `auto` to omit the model override and let the provider use its recommended/default model. The deterministic orchestrator uses the approved assessment and correction context for workflow safeguards, without translating them into another model. A high-complexity or high-risk draft receives a fresh Architect review before a version is published for approval; questions and retries preserve that requirement. Every provider call records its configured selection and internal workflow tier. No silent provider or model fallback.
 
 ## Requirements traceability
 

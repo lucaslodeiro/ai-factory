@@ -3,7 +3,7 @@ export const statePresentation: Record<WorkState, { title: string; color: string
  MERGED: { title: "Merged — completed", color: "8250df", description: "GitHub confirmed the pull request was merged" },
  PR_CLOSED: { title: "PR closed without merge", color: "d73a4a", description: "Changes were not integrated; reopen the PR to resume tracking" },
  NEW: { title: "Queued", color: "d4c5f9", description: "Waiting for initial assessment" },
- SPEC: { title: "Designing the specification", color: "5319e7", description: "Product/Architect is preparing the work" },
+ SPEC: { title: "Designing the specification", color: "5319e7", description: "Product Architect is preparing the work" },
  WAITING_HUMAN: { title: "Waiting for your response", color: "fbca04", description: "Human approval, clarification or guidance required" },
  DEVELOPMENT: { title: "Implementing", color: "1d76db", description: "Developer is implementing the approved specification" },
  QA: { title: "Testing independently", color: "0e8a16", description: "QA is verifying the acceptance criteria" },
@@ -13,7 +13,7 @@ export const statePresentation: Record<WorkState, { title: string; color: string
  PAUSED: { title: "Paused", color: "bfbfbf", description: "Execution is paused; explicit retry required" },
  CANCELLED: { title: "Cancelled", color: "e4e669", description: "Execution was cancelled" },
 };
-const roles: Record<AgentRole, string> = { "product-architect": "Product / Architect", developer: "Developer", qa: "QA", reviewer: "Reviewer" };
+const roles: Record<AgentRole, string> = { "product-architect": "Product Architect", developer: "Developer", qa: "QA", reviewer: "Reviewer" };
 const clip = (s: string, n = 700) => s.length > n ? s.slice(0, n) + "…" : s;
 const cell = (s: string) => clip(s, 350).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("|", "&#124;").replaceAll("\n", "<br>");
 function table(headers: string[], rows: string[][]) {
@@ -43,7 +43,7 @@ export function questionsMarkdown(questions: string[]) {
   return `### ${index + 1}. ${title}\n\n${body}`;
  });
  const answerTemplate = questions.map((_, index) => `${index + 1}. <answer ${index + 1}>`).join("\n");
- return `## Product / Architect — input needed\n\nThe factory needs your decisions before it can produce the specification. Please answer each question below.\n\n${sections.join("\n\n")}\n\n## How to continue\n\nPost a **new comment** on this issue using this format:\n\n\`\`\`text\n/factory answer\n${answerTemplate}\n\`\`\`\n\nYou can replace the placeholders with detailed, multi-line answers. The command may also be the final line after your answer. Editing a comment the factory already read will not reactivate the workflow.`;
+ return `## Product Architect — input needed\n\nThe factory needs your decisions before it can produce the specification. Please answer each question below.\n\n${sections.join("\n\n")}\n\n## How to continue\n\nPost a **new comment** on this issue using this format:\n\n\`\`\`text\n/factory answer\n${answerTemplate}\n\`\`\`\n\nYou can replace the placeholders with detailed, multi-line answers. The command may also be the final line after your answer. Editing a comment the factory already read will not reactivate the workflow.`;
 }
 export function specMarkdown(version: number, r: AgentResult) {
  const a = r.taskAssessment!;

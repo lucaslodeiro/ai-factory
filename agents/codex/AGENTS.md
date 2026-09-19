@@ -16,5 +16,5 @@ Apply `agents/common/developer.md`.
 ## QA
 Apply `agents/common/qa.md`. QA may change tests but MUST NOT change production code.
 
-## Product / Architect and Reviewer
+## Product Architect and Reviewer
 Apply the supplied common role contract. Both roles are read-only; never modify the worktree.

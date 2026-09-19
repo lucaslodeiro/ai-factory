@@ -2,7 +2,7 @@
 
 Each agent role has exactly two routing settings: a provider and a model. The model can be a concrete provider model ID or `auto`. A concrete ID is passed to the provider CLI for every invocation of that role. With `auto`, the factory omits the model override and lets the provider choose its recommended default.
 
-The factory does not translate task complexity into `fast`, `balanced`, or `strong` model names. Product/Architect still assesses complexity and risk because those values control workflow safeguards and make the human approval explicit; they never replace the model selected for the role.
+The factory does not translate task complexity into `fast`, `balanced`, or `strong` model names. Product Architect still assesses complexity and risk because those values control workflow safeguards and make the human approval explicit; they never replace the model selected for the role.
 
 ## Workflow assessment rules
 
@@ -15,9 +15,9 @@ The factory does not translate task complexity into `fast`, `balanced`, or `stro
 | Developer on low complexity AND low risk | fast |
 | All other cases, including initial Architect, QA and Reviewer | balanced |
 
-These internal tiers describe workflow treatment only. For example, a high-complexity or high-risk draft receives a fresh Architect review before publication for approval. The review uses the same provider and model configured for Product/Architect. The tier is retained in audit events so the reason for additional review remains visible.
+These internal tiers describe workflow treatment only. For example, a high-complexity or high-risk draft receives a fresh Architect review before publication for approval. The review uses the same provider and model configured for Product Architect. The tier is retained in audit events so the reason for additional review remains visible.
 
-Complexity considers scope, algorithms, architecture and concurrency. Risk considers authentication/authorization, secrets, payments, destructive migrations and security boundaries. Unknown scope should prompt clarification or a conservative assessment. Product/Architect supplies the semantic assessment; the deterministic orchestrator applies the workflow rules.
+Complexity considers scope, algorithms, architecture and concurrency. Risk considers authentication/authorization, secrets, payments, destructive migrations and security boundaries. Unknown scope should prompt clarification or a conservative assessment. Product Architect supplies the semantic assessment; the deterministic orchestrator applies the workflow rules.
 
 The assessment and rationale are published with SPEC vN and stored in its immutable snapshot. Approving the spec approves the assessment. Use `/factory answer ...` to request a correction before approval. Tactical resolutions and delivery results cannot replace it; a new assessment requires a new spec version and approval.
 
@@ -25,7 +25,7 @@ The assessment and rationale are published with SPEC vN and stored in its immuta
 
 | Role | Default provider | Default model |
 |---|---|---|
-| Product / Architect | Claude | sonnet |
+| Product Architect | Claude | sonnet |
 | Developer | Codex | gpt-5.6-terra |
 | QA | Codex | gpt-5.6-terra |
 | Reviewer | Claude | sonnet |
@@ -36,7 +36,7 @@ When an older installation is loaded, an old `auto` mode migrates to `auto`; oth
 
 The Codex choices follow the [official model catalog](https://developers.openai.com/es-419/docs/models). OpenAI documents that Codex uses a recommended model when none is specified. Claude's [official CLI reference](https://code.claude.com/docs/en/cli-usage) documents `--model` as an override. Availability depends on the account and provider. A rejected model fails the run; the factory never silently changes provider or model. Changing role settings requires restarting the daemon and affects future attempts.
 
-Both providers receive the same canonical role contract. Product/Architect and Reviewer remain read-only; Developer can edit the worktree; QA remains restricted to test files by the orchestrator's mutation checks.
+Both providers receive the same canonical role contract. Product Architect and Reviewer remain read-only; Developer can edit the worktree; QA remains restricted to test files by the orchestrator's mutation checks.
 
 ## Inspecting and auditing
 

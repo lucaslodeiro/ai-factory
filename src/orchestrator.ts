@@ -39,6 +39,7 @@ export class Orchestrator {
     const current = this.store.get(w.id)!;
     if (!["PAUSED", "CANCELLED"].includes(current.state)) {
      current.context.resume = current.state;
+     current.context.lastFailure = String(e);
      this.store.db.transaction(() => {
       this.store.transition(current, "FAILED"); this.store.post(w.issue_number, `Execution failed: ${String(e)}. Inspect logs, then use factory retry ${w.id}.`);
      })();
@@ -130,7 +131,7 @@ export class Orchestrator {
      w.context.approvedVersion = undefined; w.context.approval = undefined; w.context.consultation = undefined;
      this.store.save(w);
      this.store.event("spec.review_required", { assessment: result.taskAssessment, previousSelection: selection }, w.id);
-     this.store.post(w.issue_number, "Product/Architect detected high complexity or risk. The draft will receive an additional architectural review before a specification is published for approval.");
+     this.store.post(w.issue_number, "Product Architect detected high complexity or risk. The draft will receive an additional architectural review before a specification is published for approval.");
     })(); return;
    }
    // Ignore commands posted before this new specification exists.
@@ -160,7 +161,7 @@ export class Orchestrator {
     this.store.post(w.issue_number, reportMarkdown(role, w.context.version, result));
     if (w.context.cycles >= config.maxCycles) {
      w.context.waiting = "loop";
-     this.store.post(w.issue_number, "Automatic correction limit reached. Reply /factory answer <guidance> to return to Product/Architect.");
+     this.store.post(w.issue_number, "Automatic correction limit reached. Reply /factory answer <guidance> to return to Product Architect.");
      this.store.transition(w, "WAITING_HUMAN");
     } else if (decision) { w.context.consultation = { from: w.state as DeliveryStage }; this.store.transition(w, "SPEC"); }
     else if (w.state !== "DEVELOPMENT") this.routeDelivery(w, "DEVELOPMENT");
@@ -195,7 +196,7 @@ export class Orchestrator {
    w.context.decisions = [...(w.context.decisions ?? []), ...result.decisions];
    w.context.consultation = undefined;
    this.store.event("decision.tactical", { decisions: result.decisions, from, to, specVersion: w.context.version }, w.id);
-   this.store.post(w.issue_number, `Product/Architect resolved a tactical question under SPEC v${w.context.version}:\n${decisionsMarkdown(result.decisions)}\nNext: ${to}. No specification change.`);
+   this.store.post(w.issue_number, `Product Architect resolved a tactical question under SPEC v${w.context.version}:\n${decisionsMarkdown(result.decisions)}\nNext: ${to}. No specification change.`);
    this.routeDelivery(w, to);
   })();
  }

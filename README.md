@@ -6,7 +6,7 @@ Locally executed multi-agent software factory orchestrated from a developer Mac.
 
 A GitHub Issue becomes a work item. The local orchestrator coordinates four independent roles:
 
-1. **Product / Architect**: clarifies the request, challenges assumptions, proposes alternatives, and produces the specification. Default provider: Claude.
+1. **Product Architect**: clarifies the request, challenges assumptions, proposes alternatives, and produces the specification. Default provider: Claude.
 2. **Developer**: implements the approved specification in an isolated Git worktree. Default provider: Codex.
 3. **QA**: independently derives tests from the specification, may create/modify test code, and reports findings without modifying production code. Default provider: Codex.
 4. **Reviewer**: reviews specification compliance, code quality, security, performance, and product/UI/copy consistency. Default provider: Claude.
@@ -23,7 +23,7 @@ The human remains the authority for major product/architecture decisions and any
 - Agent providers are adapters and can be replaced.
 - Approved specs are versioned contracts.
 - Every execution and state transition is observable and cancellable.
-- Slack is notification-only; decisions happen in GitHub.
+- Slack sends structured workflow updates with direct links and clear actions; decisions happen in GitHub.
 - Agents may use the Internet. Secrets are exposed only when explicitly configured.
 
 The consolidated requirements and traceability matrix are in [SPEC.md](SPEC.md).
@@ -78,7 +78,7 @@ This repository uses two long-lived branches: `develop` for ongoing work and `ma
 
 See [installation and operations](INSTALL.md), [GitHub setup](docs/GITHUB_SETUP.md), and [validation evidence and operational boundaries](docs/VALIDATION.md).
 
-Product/Architect records a complexity/risk assessment and the deterministic orchestrator uses it for workflow safeguards such as additional architectural review. Configuration → Agent roles chooses Codex or Claude and one direct model for Product/Architect, Developer, QA and Reviewer. Each model can also be **Auto**, which delegates model choice to its provider. See [model selection policy](docs/MODEL_POLICY.md).
+Product Architect records a complexity/risk assessment and the deterministic orchestrator uses it for workflow safeguards such as additional architectural review. Configuration → Agent roles chooses Codex or Claude and one direct model for Product Architect, Developer, QA and Reviewer. Each model can also be **Auto**, which delegates model choice to its provider. See [model selection policy](docs/MODEL_POLICY.md).
 
 GitHub issues show the workflow through colored state labels and an updatable progress comment. Reports use readable Markdown; full JSON evidence stays in the local audit. The issue remains open until the delivered PR is merged.
 

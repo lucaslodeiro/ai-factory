@@ -124,7 +124,7 @@ test("architect resolves a developer consultation without a new spec or approval
  assert.equal(f.item().context.decisions?.[0].kind, "tactical");
  for (let i=0;i<3;i++) await f.o.tick();
  assert.equal(f.item().state, "READY_TO_MERGE"); assert.match(f.calls[3].instructions, /existing parser helper/);
- assert.equal(f.notifications.filter(n => n.includes("WAITING_HUMAN")).length, 1); f.store.db.close();
+ assert.equal(f.notifications.filter(n => n.includes("Action required · Review SPEC v1")).length, 1); f.store.db.close();
 });
 test("QA consultation can return to QA without inheriting developer reasoning", async () => {
  const f = setup({ qa: [result("decision")], "product-architect": [result("spec"), tactical("qa")] });
@@ -253,7 +253,7 @@ test("merged PR reconciles once, records merge evidence and never starts another
  await f.o.tick(); await f.o.tick();
  assert.equal(f.item().state,"MERGED"); assert.equal(f.calls.length,calls);
  assert.deepEqual(f.item().context.merge,{at:"2026-09-18T18:00:00Z",commit:"abc123"});
- assert.equal(f.notifications.filter(n=>n.includes(": MERGED")).length,1);
+ assert.equal(f.notifications.filter(n=>n.includes("Delivery merged")).length,1);
  assert.equal([...f.gh.posted.values()].filter(body=>body.includes("## Delivery merged")).length,1);
  assert.throws(()=>retry(f.store,f.item().id),/Only failed/); f.store.db.close();
 });

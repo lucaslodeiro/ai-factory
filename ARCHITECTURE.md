@@ -6,7 +6,7 @@
 GitHub Issue
     |
     v
-Product / Architect (configured provider; Claude by default)
+Product Architect (configured provider; Claude by default)
     |  <---- clarification / human feedback loop
     v
 WAITING_SPEC_APPROVAL
@@ -19,7 +19,7 @@ Developer (configured provider; Codex by default)
 QA (configured provider; independent context; Codex by default)
     |
     +-- auto-fix ----------> Developer
-    +-- decision-required -> Product / Architect -> human only when major
+    +-- decision-required -> Product Architect -> human only when major
     +-- defer -------------> record issue/finding and continue
     |
     v
@@ -56,20 +56,20 @@ Structured event logs contain timestamps, work-item ID, run ID, role, transition
 
 ## Human authority
 
-Product/Architect may make tactical decisions autonomously and document them. It must escalate decisions that materially change product behavior, architecture, scope, risk, or contradict an explicit human decision. It may challenge human proposals and present alternatives, but never silently override an explicit human decision.
+Product Architect may make tactical decisions autonomously and document them. It must escalate decisions that materially change product behavior, architecture, scope, risk, or contradict an explicit human decision. It may challenge human proposals and present alternatives, but never silently override an explicit human decision.
 
-Developer does not escalate directly to the human. Ambiguities go to Product/Architect first.
+Developer does not escalate directly to the human. Ambiguities go to Product Architect first.
 
 ## Finding policy
 
 - `auto-fix`: safe correction consistent with approved decisions; automatically return to Developer.
-- `decision-required`: Product/Architect evaluates; escalate to human only under the human-authority rules.
+- `decision-required`: Product Architect evaluates; escalate to human only under the human-authority rules.
 - `defer`: record explicitly and continue when it does not block acceptance.
 - Repeated loops automatically escalate rather than retry forever.
 
 ## Implemented tactical and recovery paths
 
-A decision-required result enters Product/Architect with the approved spec and the originating role. `resolved` records a tactical decision and returns to an allowed delivery stage without revising the spec or approval. Major questions/revisions enter WAITING_HUMAN. No route may skip unfinished QA or review.
+A decision-required result enters Product Architect with the approved spec and the originating role. `resolved` records a tactical decision and returns to an allowed delivery stage without revising the spec or approval. Major questions/revisions enter WAITING_HUMAN. No route may skip unfinished QA or review.
 
 Each agent process now runs under a per-run supervisor that detects daemon IPC disconnection and terminates its process group. A persisted stage checkpoint prevents a process exit being mistaken for a completed workflow transaction after a crash. Retry waits for interrupted groups to exit and preserves partial work for revalidation.
 

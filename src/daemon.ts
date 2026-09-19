@@ -36,6 +36,7 @@ export function retry(store: Store, id: string) {
  if (!["FAILED", "CANCELLED", "PAUSED"].includes(w.state)) throw new Error("Only failed, cancelled or paused items can retry");
  assertRetrySafe(store, id);
  const to = w.context.resume ?? "SPEC";
+ delete w.context.lastFailure;
  store.transition(w, to); store.event("retry.requested", { to }, id);
 }
 export async function startDaemon(store = new Store()) {

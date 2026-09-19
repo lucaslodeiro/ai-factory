@@ -20,7 +20,7 @@ test("architect questions render as readable instructions without visible line e
   "Competition scope: Should tournaments be configured manually, or derived dynamically?\\nPlease choose one.",
   "Is there a required hosting target?\\"
  ]);
- assert.match(markdown,/## Product \/ Architect — input needed/);
+ assert.match(markdown,/## Product Architect — input needed/);
  assert.match(markdown,/### 1\. Data source\n\nDo we already have an approved provider\?/);
  assert.match(markdown,/### 2\. Competition scope/);
  assert.match(markdown,/Should tournaments be configured manually, or derived dynamically\?\nPlease choose one\./);
