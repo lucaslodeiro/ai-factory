@@ -13,7 +13,7 @@ import { SlackAdapter } from "./adapters/slack.js";
 import { publicNaming, roleShortName, stateName } from "./names.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
-const types: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8" };
+const types: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
 
 function alive(pid: number) {
   try { process.kill(pid, 0); return true; } catch { return false; }
@@ -57,7 +57,7 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
     if (type === "state.changed") return { title:`Workflow moved to ${stateLabel(value.to)}`,details:`Previous stage: ${stateLabel(value.from)}.`,severity:value.to === "FAILED" ? "error" : ["WAITING_HUMAN","PAUSED","CANCELLED"].includes(value.to) ? "warning" : ["READY_TO_MERGE","MERGED"].includes(value.to) ? "success" : "info",category:"Workflow" };
     if (type === "execution.started") {
       const selection=value.selection;
-      return { title:`${role} execution started`,details:selection ? `${selection.provider} · ${selection.model} · ${selection.profile} profile` : "The agent process is running.",severity:"info",category:"Agent" };
+      return { title:`${role} execution started`,details:selection ? `${selection.model} · ${selection.profile} profile` : "The agent process is running.",severity:"info",category:"Agent",brand:selection?.provider };
     }
     if (type === "execution.finished") { const result=value.code === null || value.code === undefined ? "The process finished without an exit code." : `Process exit code: ${value.code}.`;const usage=value.usage?.totalTokens === null || value.usage?.totalTokens === undefined ? " Token usage was not reported." : ` Tokens reported: ${Number(value.usage.totalTokens).toLocaleString("en-US")}.`;return { title:`${role} execution ${value.status ?? "finished"}`,details:result+usage,severity:value.status === "succeeded" ? "success" : value.status === "cancelled" ? "warning" : "error",category:"Agent" };}
     if (type === "execution.interrupted" || type === "stage.interrupted") return { title:`${role} execution interrupted`,details:value.reason ?? "The daemon stopped before this stage was recorded as complete.",severity:"error",category:"Agent" };
@@ -68,7 +68,7 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
       const outcome=({pass:"Passed",spec:"Specification ready",resolved:"Resolved",changes:"Changes requested",questions:"Input required",decision:"Decision required"} as Record<string,string>)[result.outcome] ?? "Completed";
       return { title:`${role}: ${outcome}`,details:`${result.summary ?? "Agent result recorded."}${evidence}`,severity:["pass","spec","resolved"].includes(result.outcome) ? "success" : ["changes","questions","decision"].includes(result.outcome) ? "warning" : "info",category:"Result" };
     }
-    if (type === "model.selected") return { title:`Model selected for ${role}`,details:`${value.selection?.provider ?? "Provider"} · ${value.selection?.model ?? "automatic model"}${value.selection?.reason ? ` — ${value.selection.reason}` : ""}`,severity:"info",category:"Routing" };
+    if (type === "model.selected") return { title:`Model selected for ${role}`,details:`${value.selection?.model ?? "Automatic model"}${value.selection?.reason ? ` — ${value.selection.reason}` : ""}`,severity:"info",category:"Routing",brand:value.selection?.provider };
     if (type === "spec.approved") return { title:`SPEC v${value.version} approved`,details:`Approved by ${value.login ?? "an authorized approver"} in GitHub.`,severity:"success",category:"Approval" };
     if (type === "spec.review_required") return { title:"Architecture review required",details:`The task was assessed as ${value.assessment?.complexity ?? "unknown"} complexity and ${value.assessment?.risk ?? "unknown"} risk.`,severity:"warning",category:"Specification" };
     if (type === "decision.tactical") return { title:"Architect resolved a delivery question",details:`The workflow will continue at ${stateLabel(value.to)} under SPEC v${value.specVersion}.`,severity:"success",category:"Decision" };
@@ -90,7 +90,7 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
     if (type === "github.comments_observed") return { title:"New GitHub comment observed",details:`${value.count ?? 1} human comment${(value.count ?? 1) === 1 ? " was" : "s were"} read while the workflow was ${stateLabel(value.state)}. No command was applicable in that stage.`,severity:"info",category:"GitHub" };
     if (type === "github.cursor_repaired") return { title:"GitHub comment position repaired",details:"Older comments will not be processed again.",severity:"warning",category:"Recovery" };
     if (["github.poll_failed","github.start_poll_failed","github.delivery_failed","github.labels_failed","github.comments_failed","github.pr_poll_failed"].includes(type)) return { title:"GitHub synchronization failed",details:value.error ?? "The operation will be retried.",severity:"error",category:"GitHub" };
-    if (type === "slack.delivery_failed") return { title:"Slack notification delayed",details:"Delivery failed and was scheduled for another attempt.",severity:"warning",category:"Notification" };
+    if (type === "slack.delivery_failed") return { title:"Slack notification delayed",details:"Delivery failed and was scheduled for another attempt.",severity:"warning",category:"Notification",brand:"slack" };
     if (type === "control.failed") return { title:`${value.kind === "refresh-list" ? "Issue list refresh" : value.kind === "refresh" ? "Issue refresh" : value.kind ?? "Control"} failed`,details:value.error ?? "Unknown error",severity:"error",category:"Control" };
     if (type === "control.applied") {
       if (value.kind === "refresh-list") return { title:"Issue list refresh completed",details:value.result ? `${value.result.found ?? 0} found · ${value.result.added ?? 0} added · ${value.result.updated ?? 0} updated` : "GitHub issues are synchronized.",severity:"success",category:"Control" };
@@ -460,7 +460,12 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         return json(res,202,{...runUpdate(settingsRoot),check});
       }
       if (req.method !== "GET") return json(res,405,{error:"Method not allowed"});
-      const files: Record<string,string> = { "/":"index.html", "/index.html":"index.html", "/app.js":"app.js", "/styles.css":"styles.css" };
+      const files: Record<string,string> = {
+        "/":"index.html", "/index.html":"index.html", "/app.js":"app.js", "/styles.css":"styles.css",
+        "/assets/brands/github.svg":"assets/brands/github.svg", "/assets/brands/claude.svg":"assets/brands/claude.svg",
+        "/assets/brands/openai.svg":"assets/brands/openai.svg", "/assets/brands/git.svg":"assets/brands/git.svg",
+        "/assets/brands/slack.svg":"assets/brands/slack.svg",
+      };
       return files[url.pathname] ? asset(res,files[url.pathname]) : json(res,404,{error:"Not found"});
     } catch (error) { return json(res,400,{error:error instanceof Error ? error.message : String(error)}); }
   });

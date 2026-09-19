@@ -35,7 +35,7 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   GITHUB_DEFAULT_BRANCH:{label:"Default branch",description:"Base branch for worktrees and pull requests.",group:"project",required:true,restart:"daemon"},
   FACTORY_APPROVERS:{label:"Authorized approvers",description:"Comma-separated GitHub logins allowed to answer and approve.",group:"access",required:true,restart:"daemon"},
   SLACK_WEBHOOK_URL:{label:"Slack webhook",description:"Optional HTTPS Incoming Webhook URL. Leave it blank to preserve the configured secret.",group:"notifications",secret:true,restart:"daemon"},
-  CODEX_COMMAND:{label:"Codex CLI",description:"Absolute path or command used to start Codex.",group:"tools",required:true,restart:"all"},
+  CODEX_COMMAND:{label:"CLI",description:"Absolute path or command used to start the OpenAI coding agent.",group:"tools",required:true,restart:"all"},
   CLAUDE_COMMAND:{label:"Claude CLI",description:"Absolute path or command used to start Claude.",group:"tools",required:true,restart:"all"},
   GIT_COMMAND:{label:"Git executable",description:"Absolute path or command used for Git operations.",group:"tools",required:true,restart:"all"},
   AGENT_SECRET_ALLOWLIST:{label:"Agent environment allowlist",description:"Extra environment variable names forwarded to worker processes.",group:"access",restart:"daemon"},

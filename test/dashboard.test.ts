@@ -98,9 +98,15 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.doesNotMatch(html,/Dismiss guide/);
     assert.doesNotMatch(html,/Stop daemon/);
     const client = await fetch(`http://127.0.0.1:${port}/app.js`).then(response => response.text());
-    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/); assert.match(client,/loadDaemonLogs/); assert.match(client,/execCommand\('copy'\)/); assert.match(client,/expandedUsageItems/); assert.match(client,/data-usage-item/); assert.doesNotMatch(client,/refreshIssue/);
+    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/); assert.match(client,/loadDaemonLogs/); assert.match(client,/execCommand\('copy'\)/); assert.match(client,/expandedUsageItems/); assert.match(client,/data-usage-item/); assert.match(client,/data-provider-choice/); assert.match(client,/codex:'openai'/); assert.doesNotMatch(client,/refreshIssue/);
     const styles = await fetch(`http://127.0.0.1:${port}/styles.css`).then(response => response.text());
-    assert.match(styles,/@media\(max-width:650px\)/); assert.match(styles,/content:attr\(data-label\)/); assert.match(styles,/\.usage-card\[open\]/);
+    assert.match(styles,/@media\(max-width:650px\)/); assert.match(styles,/content:attr\(data-label\)/); assert.match(styles,/\.usage-card\[open\]/); assert.match(styles,/\.provider-choice\[aria-pressed="true"\]/);
+    for (const asset of ["github","git","openai","claude","slack"]) {
+      const response = await fetch(`http://127.0.0.1:${port}/assets/brands/${asset}.svg`);
+      assert.equal(response.status,200);
+      assert.match(response.headers.get("content-type") ?? "",/image\/svg\+xml/);
+      assert.match(await response.text(),/<svg/);
+    }
     const daemonLogs = await fetch(`http://127.0.0.1:${port}/api/logs/daemon?lines=50`).then(response => response.json()) as any;
     assert.equal(daemonLogs.lines,50); assert.equal(daemonLogs.logs.length,2);
     assert.equal(daemonLogs.logs[0].path,".factory/service-logs/daemon.log");
