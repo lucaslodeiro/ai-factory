@@ -4,7 +4,7 @@ import { Store } from "../src/storage.js";
 import { Orchestrator } from "../src/orchestrator.js";
 import { config, agentEnvironment } from "../src/config.js";
 import { parseResult } from "../src/results.js";
-import { retry } from "../src/daemon.js";
+import { retry } from "../src/retry.js";
 import type { AgentResult, AgentRole, WorkState } from "../src/types.js";
 import type { Comment, GitHubPort, Issue, RepositoryComment } from "../src/adapters/github.js";
 import type { AgentRunRequest } from "../src/adapters/agent.js";

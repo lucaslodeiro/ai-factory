@@ -4,15 +4,19 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { config } from "./config.js";
 import { Store } from "./storage.js";
-import { Orchestrator } from "./orchestrator.js";
 import { ExecutionManager } from "./execution-manager.js";
 import { CodexAdapter } from "./adapters/codex.js";
 import { ClaudeAdapter } from "./adapters/claude.js";
-import { retry } from "./retry.js";
-import { pausedMarkdown, cancelledMarkdown } from "./presentation.js";
 import { daemonLog, type LogLevel } from "./logger.js";
 import { roleShortName } from "./names.js";
-export { retry } from "./retry.js";
+import { GitHubAdapter } from "./adapters/github.js";
+import { SlackAdapter } from "./adapters/slack.js";
+import { Workspaces } from "./worktrees.js";
+import { WorkflowRunner } from "./workflow-runner.js";
+import { WorkflowOrchestrator } from "./workflow-orchestrator.js";
+import { WorkflowCommands } from "./workflow-commands.js";
+import { WorkflowMaintenance } from "./workflow-maintenance.js";
+import { WorkflowScheduler } from "./workflow-scheduler.js";
 export function acquireLock(store: Store) {
  fs.mkdirSync(config.dataDir, { recursive: true });
  const file = path.join(config.dataDir, "daemon.lock"), token = randomUUID();
@@ -43,23 +47,21 @@ export async function startDaemon(store = new Store()) {
  const release = acquireLock(store), executions = new ExecutionManager(store);
  const codex = new CodexAdapter(executions), claude = new ClaudeAdapter(executions);
  const adapters = { codex,claude };
- const o = new Orchestrator(store, {
+ const agents = {
   "product-architect":adapters[config.roles["product-architect"].provider],
   developer:adapters[config.roles.developer.provider],
   qa:adapters[config.roles.qa.provider],
   reviewer:adapters[config.roles.reviewer.provider],
- });
- let stopping = false,stopReason="unknown";
+ };
+ const github=new GitHubAdapter(),runner=new WorkflowRunner(store,agents,new Workspaces(),github),o=new WorkflowOrchestrator(store,github,runner,new SlackAdapter());
+ const commands=new WorkflowCommands(store),maintenance=new WorkflowMaintenance(store,executions),scheduler=new WorkflowScheduler(store);
+ let stopping = false,stopReason="unknown",stopPromise:Promise<unknown>|undefined;
  const stop = (reason="control") => {
   if (stopping) return;
   stopping = true;
   stopReason=reason;
-  daemonLog("info","daemon.stop_requested",{reason,activeItems:store.items().filter(w=>["SPEC","DEVELOPMENT","QA","REVIEW"].includes(w.state)).length});
-  for (const w of store.items()) if (["SPEC", "DEVELOPMENT", "QA", "REVIEW"].includes(w.state)) {
-   const active=Boolean(store.db.prepare("SELECT id FROM executions WHERE work_item_id=? AND status='running'").get(w.id));
-   w.context.resume = w.state; store.transition(w, "PAUSED"); store.post(w.issue_number,pausedMarkdown(w,"The daemon received a stop request",active));
-  }
-  executions.cancelAll();
+  daemonLog("info","daemon.stop_requested",{reason,activeItems:maintenance.affected().length});
+  stopPromise=maintenance.pauseForSignal(reason).catch(error=>daemonLog("error","maintenance_signal_failed",{reason,error:String(error)}));
  };
  let auditCursor=(store.db.prepare("SELECT COALESCE(MAX(id),0) AS id FROM events").get() as {id:number}).id;
  const audit = () => {
@@ -68,7 +70,7 @@ export async function startDaemon(store = new Store()) {
    auditCursor=row.id;
    let data: Record<string,unknown>={}; try { data=JSON.parse(row.payload); } catch {}
    let level:LogLevel="info",fields:Record<string,string|number|boolean|null|undefined>={workItemId:row.work_item_id,runId:row.run_id};
-   if (row.type === "state.changed") fields={...fields,from:String(data.from),to:String(data.to)};
+   if (row.type === "workflow.transition") {const from=(data.from??{}) as Record<string,unknown>,to=(data.to??{}) as Record<string,unknown>;fields={...fields,from:`${from.stage}/${from.status}`,to:`${to.stage}/${to.status}`,revision:typeof to.revision==="number"?to.revision:undefined};}
    else if (row.type === "execution.started") { const selected=(data.selection ?? {}) as Record<string,unknown>; fields={...fields,role:roleShortName(String(data.role)),provider:selected.provider ? String(selected.provider) : undefined,model:selected.model ? String(selected.model) : undefined}; }
    else if (row.type === "execution.finished") { const status=String(data.status),usage=(data.usage ?? {}) as Record<string,unknown>; level=status === "succeeded" ? "info" : "warn"; fields={...fields,status,exitCode:typeof data.code === "number" ? data.code : null,totalTokens:typeof usage.totalTokens === "number" ? usage.totalTokens : undefined}; }
    else if (row.type === "agent.result") { const result=(data.result ?? {}) as Record<string,unknown>; fields={...fields,role:roleShortName(String(data.role)),outcome:result.outcome ? String(result.outcome) : undefined}; }
@@ -86,15 +88,14 @@ export async function startDaemon(store = new Store()) {
    try {
     let result: unknown;
     if (r.kind === "stop") stop();
-    else if (r.kind === "retry") retry(store, r.target);
+    else if (r.kind === "retry") {const specVersion=(store.db.prepare("SELECT COALESCE(MAX(version),0) version FROM specs WHERE work_item_id=?").get(r.target) as {version:number}).version;result=commands.apply({kind:"retry",guidance:""},{workItemId:r.target,login:"dashboard",commentId:r.id,specVersion});}
     else if (r.kind === "start-issue") result = o.startIssue(r.target);
     else if (r.kind === "refresh-list") result = o.refreshIssueList();
     else if (r.kind === "cancel") {
      const run = store.db.prepare("SELECT id,work_item_id FROM executions WHERE (id=? OR work_item_id=?) AND status='running'").get(r.target, r.target) as { id: string; work_item_id: string } | undefined;
-     const w = store.get(run?.work_item_id ?? r.target);
-     if (!w) throw new Error("Unknown work item or run");
-     if (w.state !== "CANCELLED") { w.context.resume = w.state; store.transition(w, "CANCELLED"); store.post(w.issue_number,cancelledMarkdown(w,Boolean(run))); }
-     if (run) executions.cancel(run.id);
+     const workItemId=run?.work_item_id??r.target,row=store.db.prepare("SELECT id FROM work_items WHERE id=?").get(workItemId);
+     if(!row)throw new Error("Unknown work item or run");const specVersion=(store.db.prepare("SELECT COALESCE(MAX(version),0) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number}).version;
+     result=commands.apply({kind:"cancel"},{workItemId,login:"dashboard",commentId:r.id,specVersion});if(run)executions.cancel(run.id);
     } else throw new Error(`Unknown control: ${r.kind}`);
     store.event("control.applied",{id:r.id,kind:r.kind,target:r.target,result});
    } catch (e) { store.event("control.failed",{id:r.id,kind:r.kind,target:r.target,error:String(e)}); }
@@ -106,15 +107,17 @@ export async function startDaemon(store = new Store()) {
  process.on("SIGINT",sigint); process.on("SIGTERM",sigterm);
  let timer: NodeJS.Timeout | undefined;
  try {
-  const recovered=executions.recover(); store.repairCommentCursors(); audit(); controls(); timer = setInterval(controls, 200);
-  daemonLog("info","daemon.ready",{items:store.items().length,recoveredExecutions:recovered});
+  const abandoned=store.db.prepare("SELECT id,work_item_id FROM executions WHERE status='running'").all() as Array<{id:string;work_item_id:string}>;
+  for(const run of abandoned){store.db.prepare("UPDATE executions SET status='interrupted',recovery_pending=1,finished_at=?,interruption_reason='unexpected-shutdown' WHERE id=?").run(new Date().toISOString(),run.id);scheduler.fail(run.work_item_id,run.id,new Error("Agent execution was interrupted by an unexpected daemon shutdown"),"recovery");}
+  audit(); controls(); timer = setInterval(controls, 200);
+  daemonLog("info","daemon.ready",{items:(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL").get() as {count:number}).count,recoveredExecutions:abandoned.length});
   while (!stopping) {
    try { await o.tick(); audit(); } catch (e) { daemonLog("error","daemon.tick_failed",{error:String(e)}); }
    const until = Date.now() + config.pollMs;
    while (!stopping && Date.now() < until) await new Promise(r => setTimeout(r, 100));
   }
  } finally {
-  if (timer) clearInterval(timer); process.off("SIGINT",sigint); process.off("SIGTERM",sigterm);
+  if (timer) clearInterval(timer); process.off("SIGINT",sigint); process.off("SIGTERM",sigterm);if(stopPromise)await stopPromise;
   try { await o.flush(); audit(); } catch (e) { daemonLog("error","daemon.final_sync_failed",{error:String(e)}); }
   release();
   daemonLog("info","daemon.stopped",{reason:stopReason});

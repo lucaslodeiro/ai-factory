@@ -24,9 +24,9 @@ test("full daemon and CLI integration with local Git remote and deterministic pr
 const fs=require('node:fs');const file=${JSON.stringify(stateFile)};const a=process.argv.slice(2);const s=JSON.parse(fs.readFileSync(file));
 const save=()=>fs.writeFileSync(file,JSON.stringify(s));const out=x=>console.log(JSON.stringify(x));
 if(a[0]==='auth'){process.exit(0)}
-if(a[0]==='api'){if(a.includes('--method')){const id=Number(a[1].split('/').pop());s.comments.find(c=>c.id===id).body=JSON.parse(fs.readFileSync(0,'utf8')).body;save();out({});}else if(a[1]==='repos/owner/demo/issues/1'){out({number:1,title:'Add greet',body:'Add greet function and tests',html_url:'https://example.test/issues/1',state:'open'});}else out([s.comments])}
+if(a[0]==='api'){if(a.includes('--method')){const id=Number(a[1].split('/').pop());s.comments.find(c=>c.id===id).body=JSON.parse(fs.readFileSync(0,'utf8')).body;save();out({});}else if(a[1]==='repos/owner/demo/issues/1'){out({number:1,title:'Add greet',body:'Add greet function and tests',html_url:'https://github.com/owner/demo/issues/1',state:'open'});}else out([s.comments])}
 else if(a[0]==='label'){}
-else if(a[0]==='issue'&&a[1]==='list'){out([{number:1,title:'Add greet',body:'Add greet function and tests',url:'https://example.test/issues/1'}])}
+else if(a[0]==='issue'&&a[1]==='list'){out([{number:1,title:'Add greet',body:'Add greet function and tests',url:'https://github.com/owner/demo/issues/1'}])}
 else if(a[0]==='issue'&&a[1]==='view'){out({labels:[{name:s.label}]})}
 else if(a[0]==='issue'&&a[1]==='edit'){s.label=a[a.indexOf('--add-label')+1];save()}
 else if(a[0]==='issue'&&a[1]==='comment'){s.comments.push({id:s.comments.length+1,body:a[a.indexOf('--body')+1],user:{login:'factory',type:'Bot'}});save()}
@@ -78,7 +78,7 @@ if(codex){
   store = new Store(path.join(data, "factory.db"));
   const command = (name: string, id?: string) => spawnSync(process.execPath, ["--import", "tsx", cli, name, ...(id ? [id] : [])], { env, encoding: "utf8" });
   assert.equal(command("start-issue", "1").status,0);
-  await waitFor(() => store!.items()[0]?.state === "WAITING_HUMAN" && JSON.parse(fs.readFileSync(stateFile, "utf8")).comments.some((c: any) => c.body.includes("SPEC v1")));
+  await waitFor(() => (store!.db.prepare("SELECT stage,status FROM work_items LIMIT 1").get() as any)?.status === "WAITING" && JSON.parse(fs.readFileSync(stateFile, "utf8")).comments.some((c: any) => c.body.includes("SPEC v1")));
   const state = JSON.parse(fs.readFileSync(stateFile, "utf8")); state.comments.push({ id: state.comments.length + 1, body: "/factory approve v1", user: { login: "owner", type: "User" } }); fs.writeFileSync(stateFile, JSON.stringify(state));
   await waitFor(() => fs.existsSync(path.join(root, "first-developer")));
   const workId = store.items()[0].id;
@@ -86,9 +86,9 @@ if(codex){
   assert.equal(command("sync").status, 1, "Standalone sync must not race the active daemon");
   assert.equal((store.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='running'").get() as any).n, 1);
   assert.equal(command("cancel", workId).status, 0);
-  await waitFor(() => store!.items()[0]?.state === "CANCELLED" && (store!.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='running'").get() as any).n === 0);
+  await waitFor(() => (store!.db.prepare("SELECT status FROM work_items LIMIT 1").get() as any)?.status === "CANCELLED" && (store!.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='running'").get() as any).n === 0);
   assert.equal(command("retry", workId).status, 0);
-  await waitFor(() => store!.items()[0]?.state === "READY_TO_MERGE");
+  await waitFor(() => {const row=store!.db.prepare("SELECT stage,status FROM work_items LIMIT 1").get() as any;return row?.stage==="DELIVERY"&&row?.status==="WAITING";});
   const w = store.items()[0]; assert.equal(w.context.pr, "https://example.test/pull/1");
   assert.equal(git(origin, ["show", `${w.branch}:src/greet.mjs`]), 'export const greet = name => "Hello " + name;');
   assert.equal((store.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='succeeded'").get() as any).n, 4);
@@ -98,7 +98,7 @@ if(codex){
   assert.equal(fs.existsSync(path.join(data, "daemon.lock")), false);
   const daemonLog=fs.readFileSync(path.join(root,"daemon.log"),"utf8");
   assert.match(daemonLog,/INFO\s+daemon\.starting/); assert.match(daemonLog,/INFO\s+daemon\.ready/);
-  assert.match(daemonLog,/INFO\s+execution_started[\s\S]*role="Builder"/); assert.match(daemonLog,/INFO\s+state_changed/);
+  assert.match(daemonLog,/INFO\s+execution_started[\s\S]*role="Builder"/); assert.match(daemonLog,/INFO\s+workflow_transition/);
   assert.match(daemonLog,/INFO\s+daemon\.stopped/); assert.doesNotMatch(daemonLog,/Add greet function and tests/);
  } finally {
   if (child.exitCode === null && child.pid) { try { process.kill(-child.pid, "SIGKILL"); } catch {} await exited; }

@@ -26,7 +26,7 @@ function readOutput(file:string,maxBytes:number,fromEnd=false) {
   } catch { return {text:"",tooLarge:false}; }
 }
 export class ExecutionManager {
-  private running = new Map<string, { child: ChildProcess; cancel: () => void }>();
+  private running = new Map<string, { child: ChildProcess; cancel: () => void; interrupt: (reason:string) => void }>();
   constructor(private store: Store) {}
   async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs, selection?: ModelSelection, promptMetadata:PromptManifestInput = {}, executionId?:string): Promise<{id: string; stdout: string}> {
     const id = executionId??randomUUID();
@@ -49,13 +49,14 @@ export class ExecutionManager {
       .run(id, workItemId, role, workflowState[role], "running", new Date().toISOString(),promptBytes,promptSha256);
     this.store.event("execution.started", { role, command, cwd, logDir, selection }, workItemId, id);
     return new Promise((resolve, reject) => {
-      let cancelled = false, timedOut = false, force: NodeJS.Timeout | undefined;
+      let cancelled = false, interrupted = false, interruptionReason:string|undefined, timedOut = false;
       const child = spawn(process.execPath, [fileURLToPath(new URL("./worker-supervisor.mjs", import.meta.url)), id, logDir], { cwd, env: agentEnvironment(), detached: true, stdio: ["pipe", out, err, "ipc"] });
       fs.closeSync(out); fs.closeSync(err);
       this.store.db.prepare("UPDATE executions SET pid=? WHERE id=?").run(child.pid ?? null, id);
-      const signal = (s: NodeJS.Signals) => { if (child.pid) { try { process.kill(-child.pid, s); } catch {} } };
-      const cancel = () => { if (cancelled) return; cancelled = true; signal("SIGTERM"); force = setTimeout(() => signal("SIGKILL"), 1000); };
-      this.running.set(id, { child, cancel });
+      const send = (message:{type:"cancel"}|{type:"interrupt";reason:string}) => { if(child.connected) try{child.send(message);}catch{} };
+      const cancel = () => { if (cancelled || interrupted) return; cancelled = true; send({type:"cancel"}); };
+      const interrupt = (reason:string) => { if(cancelled||interrupted)return;interrupted=true;interruptionReason=reason;send({type:"interrupt",reason}); };
+      this.running.set(id, { child, cancel, interrupt });
       const timeout = setTimeout(() => { timedOut = true; cancel(); }, timeoutMs);
       child.stdin?.on("error", () => {});
       child.stdin?.end(JSON.stringify({ command, args, cwd, input }));
@@ -63,21 +64,21 @@ export class ExecutionManager {
       child.on("error", e => { spawnError = e; });
       child.on("close", code => {
         // Clean any remaining descendants even after a normal provider exit.
-        signal("SIGKILL");
-        clearTimeout(timeout); if (force) clearTimeout(force); this.running.delete(id);
-        let completion: { runId: string; status: string; code: number | null } | undefined;
+        clearTimeout(timeout); this.running.delete(id);
+        let completion: { runId: string; status: string; code: number | null; reason?:string } | undefined;
         try {
           const saved = JSON.parse(fs.readFileSync(path.join(logDir, "completion.json"), "utf8"));
           if (saved.runId === id && (saved.code === null || Number.isInteger(saved.code))) completion = saved;
         } catch {}
         const providerExitCode = completion?.code ?? code;
-        const status = timedOut ? "timed_out" : cancelled ? "cancelled" : code === 0 && !spawnError && completion?.status === "succeeded" ? "succeeded" : "failed";
+        interruptionReason=completion?.reason??interruptionReason;
+        const status = timedOut ? "timed_out" : interrupted||completion?.status==="interrupted" ? "interrupted" : cancelled||completion?.status==="cancelled" ? "cancelled" : code === 0 && !spawnError && completion?.status === "succeeded" ? "succeeded" : "failed";
         const stdoutFile=path.join(logDir,"stdout.log"),stderrFile=path.join(logDir,"stderr.log");
         const stdout=readOutput(stdoutFile,10_000_000),stderr=readOutput(stderrFile,512*1024,true);
         const usage=extractTokenUsage(selection?.provider,stdout.text,stderr.text);
-        this.store.db.prepare("UPDATE executions SET status=?,finished_at=?,exit_code=?,input_tokens=?,output_tokens=?,cached_tokens=?,total_tokens=? WHERE id=?")
-          .run(status, new Date().toISOString(), providerExitCode, usage?.inputTokens ?? null,usage?.outputTokens ?? null,usage?.cachedTokens ?? null,usage?.totalTokens ?? null,id);
-        this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage }, workItemId, id);
+        this.store.db.prepare("UPDATE executions SET status=?,finished_at=?,exit_code=?,input_tokens=?,output_tokens=?,cached_tokens=?,total_tokens=?,interruption_reason=? WHERE id=?")
+          .run(status, new Date().toISOString(), providerExitCode, usage?.inputTokens ?? null,usage?.outputTokens ?? null,usage?.cachedTokens ?? null,usage?.totalTokens ?? null,interruptionReason??null,id);
+        this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage,interruptionReason }, workItemId, id);
         if (status !== "succeeded") return reject(new Error(`Execution ${id} ${status}${spawnError ? ': ' + spawnError.message : ''}`));
         try {
           if (stdout.tooLarge) return reject(new Error("Agent output exceeds 10 MB"));
@@ -87,6 +88,8 @@ export class ExecutionManager {
     });
   }
   cancel(id: string) { const entry = this.running.get(id); if (!entry) return false; entry.cancel(); return true; }
+  interrupt(id:string,reason="planned-maintenance"){const entry=this.running.get(id);if(!entry)return false;entry.interrupt(reason);return true;}
+  isRunning(id:string){return this.running.has(id);}
   cancelAll() { for (const e of this.running.values()) e.cancel(); }
   recover() {
     const rows = this.store.db.prepare("SELECT id,work_item_id FROM executions WHERE status='running'").all() as { id: string; work_item_id: string }[];

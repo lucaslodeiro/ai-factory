@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { Store } from "../src/storage.js";
 import { ExecutionManager, assertRetrySafe } from "../src/execution-manager.js";
-import { retry } from "../src/daemon.js";
+import { retry } from "../src/retry.js";
 function workItem(s: Store, state = "DEVELOPMENT", pending = true) {
  s.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,created_at,updated_at,context) VALUES('w',1,'a/b',?,'now','now',?)")
   .run(state, JSON.stringify({ title: "Demo", version: 1, feedback: [], cycles: 0, reports: {}, pendingStage: pending ? { stage: "DEVELOPMENT", beforeHead: "abc", startedAt: "now" } : undefined }));
