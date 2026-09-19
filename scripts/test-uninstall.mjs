@@ -26,5 +26,6 @@ try {
   assert.equal(fs.existsSync(path.join(agents,"com.ai-factory.daemon.plist")),false); assert.equal(fs.existsSync(path.join(agents,"com.ai-factory.dashboard.plist")),false);
   assert.equal(fs.readFileSync(path.join(target,"keep"),"utf8"),"target"); assert.equal(fs.readFileSync(path.join(home,".local-tool"),"utf8"),"keep");
   assert.match(result.stdout,/AI Factory was uninstalled/);
+  assert.match(result.stdout,/parent shell may still reference the removed directory/);
   console.log("PASS: uninstall removes factory services, installation and data while preserving targets and shared tools");
 } finally { fs.rmSync(sandbox,{recursive:true,force:true}); }

@@ -47,15 +47,19 @@ Git comes from Apple's Command Line Tools. If they are absent, the script runs `
 
 ## Uninstall and clean reinstall
 
-From the installed factory directory, run:
+Run the uninstaller while the parent shell remains outside the directory that
+will be removed:
 
 ```sh
-cd "$HOME/ai-factory"
-npm run uninstall
 cd "$HOME"
+npm --prefix "$HOME/ai-factory" run uninstall
 ```
 
 The uninstaller prints the exact installation, runtime-data and LaunchAgent paths, then requires typing `uninstall`. For an automated disposable-machine test, use `npm run uninstall -- --yes`.
+
+If an older uninstall left a terminal pointing at the removed checkout, run
+`cd "$HOME"` before using that terminal again. Both installers now recover
+automatically from that stale working directory, but other commands cannot.
 
 The service launcher exposes the same operation in its help and can be used as an alias: `npm run service -- uninstall` or `npm run service -- uninstall --yes`. Run `npm run service -- --help` to see every launcher action.
 

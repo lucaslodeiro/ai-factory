@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+# An uninstall can remove the directory inherited by the caller's shell. Tools
+# used below call getcwd(), so recover before invoking any of them.
+if ! builtin pwd -P >/dev/null 2>&1; then
+  cd "$HOME"
+fi
+
 repo=https://github.com/lucaslodeiro/ai-factory.git
 branch=main
 dest="$HOME/ai-factory"
@@ -20,7 +27,17 @@ while (($#)); do
 done
 [[ -z $dashboard_host || $dashboard_host == 127.0.0.1 || $dashboard_host == localhost || $dashboard_host == ::1 ]] || { echo 'Dashboard host must be 127.0.0.1, localhost or ::1.' >&2; exit 1; }
 [[ -z $dashboard_port || ( $dashboard_port =~ ^[0-9]+$ && $dashboard_port -ge 1 && $dashboard_port -le 65535 ) ]] || { echo 'Dashboard port must be from 1 to 65535.' >&2; exit 1; }
-[[ ! -e "$dest" ]] || { echo "Destination already exists; use scripts/update.sh: $dest" >&2; exit 1; }
+if [[ -e "$dest" ]]; then
+  if [[ -d "$dest/.git" && -f "$dest/package.json" ]]; then
+    echo "AI Factory is already installed at $dest" >&2
+    echo "Update it with: cd \"$dest\" && bash scripts/update.sh --restart-services" >&2
+    echo "For a clean reinstall: cd \"$HOME\" && npm --prefix \"$dest\" run uninstall" >&2
+  else
+    echo "An incomplete or unrelated destination already exists: $dest" >&2
+    echo "Inspect or move that directory, then run the installer again." >&2
+  fi
+  exit 1
+fi
 export PATH="$HOME/.local/bin:$PATH"
 node_ok() { command -v node >/dev/null && node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)'; }
 if ! "$skip_tools"; then

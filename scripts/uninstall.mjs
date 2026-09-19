@@ -55,6 +55,8 @@ if (process.platform === "darwin" && process.env.AI_FACTORY_UNINSTALL_SKIP_LAUNC
 }
 for (const plist of plists) fs.rmSync(plist,{force:true});
 if (externalData) fs.rmSync(dataDir,{recursive:true,force:true});
-if (process.cwd() === root || process.cwd().startsWith(`${root}${path.sep}`)) process.chdir(home);
+const callerWasInsideInstallation = process.cwd() === root || process.cwd().startsWith(`${root}${path.sep}`);
+if (callerWasInsideInstallation) process.chdir(home);
 fs.rmSync(root,{recursive:true,force:true});
 console.log("AI Factory was uninstalled. Target repositories, shared tools and provider credentials were preserved.");
+if (callerWasInsideInstallation) console.log(`Your parent shell may still reference the removed directory. Run: cd ${home}`);

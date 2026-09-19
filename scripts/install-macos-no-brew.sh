@@ -1,8 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# An uninstall can remove the directory inherited by the caller's shell. Tools
+# used below call getcwd(), so recover before invoking any of them.
+if ! builtin pwd -P >/dev/null 2>&1; then
+  cd "$HOME"
+fi
+
 if [[ $(uname -s) != Darwin ]]; then
   echo "This installer supports macOS only." >&2
+  exit 1
+fi
+
+# Fail before downloading toolchains when this is already installed. The
+# standard installer repeats this guard to cover direct invocations.
+factory_destination="$HOME/ai-factory"
+expect_destination=false
+for argument in "$@"; do
+  if "$expect_destination"; then
+    factory_destination=$argument
+    expect_destination=false
+  elif [[ $argument == --dir ]]; then
+    expect_destination=true
+  fi
+done
+if "$expect_destination"; then
+  echo "Missing value for --dir" >&2
+  exit 1
+fi
+if [[ -e "$factory_destination" ]]; then
+  if [[ -d "$factory_destination/.git" && -f "$factory_destination/package.json" ]]; then
+    echo "AI Factory is already installed at $factory_destination" >&2
+    echo "Update it with: cd \"$factory_destination\" && bash scripts/update.sh --restart-services" >&2
+    echo "For a clean reinstall: cd \"$HOME\" && npm --prefix \"$factory_destination\" run uninstall" >&2
+  else
+    echo "An incomplete or unrelated destination already exists: $factory_destination" >&2
+    echo "Inspect or move that directory, then run the installer again." >&2
+  fi
   exit 1
 fi
 
