@@ -5,6 +5,7 @@ function positive(name: string, fallback: number) {
   if (!Number.isSafeInteger(n) || n < 1) throw new Error(`${name} must be a positive integer`);
   return n;
 }
+function nonnegative(name:string,fallback:number){const n=Number(process.env[name]??fallback);if(!Number.isSafeInteger(n)||n<0)throw new Error(`${name} must be a nonnegative integer`);return n;}
 function model(name: string, fallback: string) {
   const value = (process.env[name] ?? fallback).trim();
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(value)) throw new Error(`${name} must be a nonempty model identifier`);
@@ -57,6 +58,7 @@ export const config = {
   timeoutMs: positive("FACTORY_EXECUTION_TIMEOUT_MS", 1800000),
   maxCycles: positive("FACTORY_MAX_FIX_CYCLES", 3),
   contextBudget:{defaultBytes:positive("FACTORY_CONTEXT_BUDGET_BYTES",200000),overrides:contextBudgetOverrides()},
+  artifactRetentionDays:nonnegative("FACTORY_ARTIFACT_RETENTION_DAYS",30),
   dashboardHost: dashboardHost(),
   dashboardPort: dashboardPort(),
   repo: process.env.GITHUB_REPOSITORY ?? "",

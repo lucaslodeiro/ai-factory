@@ -40,6 +40,7 @@ export function acquireLock(store: Store) {
   }).immediate();
  };
 }
+export function recoverAbandonedExecutions(store:Store){const scheduler=new WorkflowScheduler(store),abandoned=store.db.prepare("SELECT id,work_item_id FROM executions WHERE status='running'").all() as Array<{id:string;work_item_id:string}>;for(const run of abandoned){store.db.prepare("UPDATE executions SET status='interrupted',recovery_pending=1,finished_at=?,interruption_reason='unexpected-shutdown' WHERE id=?").run(new Date().toISOString(),run.id);scheduler.fail(run.work_item_id,run.id,new Error("Agent execution was interrupted by an unexpected daemon shutdown"),"recovery");store.event("execution.interrupted",{reason:"unexpected-shutdown"},run.work_item_id,run.id);}return abandoned.length;}
 export async function startDaemon(store = new Store()) {
  if (!config.repo || !config.approvers.length) throw new Error("Configure GITHUB_REPOSITORY and FACTORY_APPROVERS first");
  if (!doctor()) throw new Error("Preflight failed; fix doctor checks before starting");
@@ -54,7 +55,7 @@ export async function startDaemon(store = new Store()) {
   reviewer:adapters[config.roles.reviewer.provider],
  };
  const github=new GitHubAdapter(),runner=new WorkflowRunner(store,agents,new Workspaces(),github),o=new WorkflowOrchestrator(store,github,runner,new SlackAdapter());
- const commands=new WorkflowCommands(store),maintenance=new WorkflowMaintenance(store,executions),scheduler=new WorkflowScheduler(store);
+ const commands=new WorkflowCommands(store),maintenance=new WorkflowMaintenance(store,executions);
  let stopping = false,stopReason="unknown",stopPromise:Promise<unknown>|undefined;
  const stop = (reason="control") => {
   if (stopping) return;
@@ -113,10 +114,9 @@ export async function startDaemon(store = new Store()) {
  process.on("SIGINT",sigint); process.on("SIGTERM",sigterm);
  let timer: NodeJS.Timeout | undefined;
  try {
-  const abandoned=store.db.prepare("SELECT id,work_item_id FROM executions WHERE status='running'").all() as Array<{id:string;work_item_id:string}>;
-  for(const run of abandoned){store.db.prepare("UPDATE executions SET status='interrupted',recovery_pending=1,finished_at=?,interruption_reason='unexpected-shutdown' WHERE id=?").run(new Date().toISOString(),run.id);scheduler.fail(run.work_item_id,run.id,new Error("Agent execution was interrupted by an unexpected daemon shutdown"),"recovery");}
+  const recovered=recoverAbandonedExecutions(store);
   audit(); await controls(); timer = setInterval(()=>void controls(), 200);
-  daemonLog("info","daemon.ready",{items:(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL").get() as {count:number}).count,recoveredExecutions:abandoned.length});
+  daemonLog("info","daemon.ready",{items:(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL").get() as {count:number}).count,recoveredExecutions:recovered});
   while (!stopping) {
    try { await o.tick(); audit(); } catch (e) { daemonLog("error","daemon.tick_failed",{error:String(e)}); }
    const until = Date.now() + config.pollMs;

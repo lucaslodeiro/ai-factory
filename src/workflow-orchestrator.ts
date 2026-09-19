@@ -8,6 +8,7 @@ import { WorkflowRunner } from "./workflow-runner.js";
 import { WorkflowProjections } from "./workflow-projection.js";
 import { WorkflowRecords } from "./workflow-records.js";
 import { deliverNotifications,type NotificationPort } from "./notifications.js";
+import {pruneExecutionArtifacts} from "./artifact-retention.js";
 
 type GitHub=GitHubPort&WorkflowGitHubPort;
 type ItemRow={id:string;issue_number:number;repo:string;stage:string;status:string;revision:number;archived_at:string|null;context:string};
@@ -21,6 +22,7 @@ export class WorkflowOrchestrator {
   await this.flush();
   for(const item of this.rows())if(!item.archived_at&&item.status==="QUEUED")await this.runner.run(item.id);
   await this.flush();
+  const last=this.store.metadata<number>("artifact-retention:last")??0;if(Date.now()-last>3_600_000){pruneExecutionArtifacts(this.store);this.store.setMetadata("artifact-retention:last",Date.now());}
  }
  startIssue(reference:string,requestedBy="Dashboard or CLI",origin?:{source:"comment";commentId:number;login:string}){
   const number=this.issueNumber(reference),existing=this.rows().find(item=>item.repo===config.repo&&item.issue_number===number);

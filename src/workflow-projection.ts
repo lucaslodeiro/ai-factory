@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Store } from "./storage.js";
 import { WorkflowFailures } from "./workflow-failures.js";
 import { WorkflowRecords, type V3Stage, type WorkflowRecord } from "./workflow-records.js";
+import {workflowNotificationText} from "./notifications.js";
 
 export type V3Status="QUEUED"|"RUNNING"|"WAITING"|"FAILED"|"PAUSED"|"CANCELLED"|"COMPLETED";
 export interface WorkflowProjection {
@@ -61,13 +62,14 @@ export class WorkflowProjections {
    const to:WorkflowProjection={...from,stage:input.stage,status:input.status,attempt:from.attempt+(input.attemptDelta??0),revision:from.revision+1,
     presentationRevision:from.presentationRevision+1,activeRunId,activeRequestId:activeRequest?.id,activeFailureId:activeFailure?.id,
     correctionCycles:input.correctionCycles??from.correctionCycles};
-   const updated=this.store.db.prepare(`UPDATE work_items SET stage=?,status=?,attempt=?,revision=?,presentation_revision=?,active_run_id=?,active_request_id=?,active_failure_id=?,correction_cycles=? WHERE id=? AND revision=?`)
-    .run(to.stage,to.status,to.attempt,to.revision,to.presentationRevision,to.activeRunId??null,to.activeRequestId??null,to.activeFailureId??null,to.correctionCycles,input.workItemId,from.revision);
+   const updated=this.store.db.prepare(`UPDATE work_items SET stage=?,status=?,attempt=?,revision=?,presentation_revision=?,active_run_id=?,active_request_id=?,active_failure_id=?,correction_cycles=?,updated_at=? WHERE id=? AND revision=?`)
+    .run(to.stage,to.status,to.attempt,to.revision,to.presentationRevision,to.activeRunId??null,to.activeRequestId??null,to.activeFailureId??null,to.correctionCycles,new Date().toISOString(),input.workItemId,from.revision);
    if (updated.changes !== 1) throw new Error("Workflow projection changed concurrently");
    const eventId=randomUUID();
    const specVersion=(this.store.db.prepare("SELECT MAX(version) AS version FROM specs WHERE work_item_id=?").get(input.workItemId) as {version:number|null}).version??0;
    this.store.event("workflow.transition",{schemaVersion:1,eventId,type:"workflow.transition",workItemId:input.workItemId,occurredAt:new Date().toISOString(),actor:input.actor,source:input.source,
     from,to,reason:input.reason,recordIds:input.recordIds??[],activeRequestId:to.activeRequestId,activeFailureId:to.activeFailureId,specVersion},input.workItemId,input.source.executionId);
+   this.store.db.prepare("INSERT INTO notifications(body,work_item_id) VALUES(?,?)").run(workflowNotificationText(this.store,input.workItemId,to,input.reason),input.workItemId);
    return to;
   });
   return run.immediate();

@@ -30,6 +30,7 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   FACTORY_EXECUTION_TIMEOUT_MS:{label:"Agent execution timeout",description:"Maximum duration of one agent process.",group:"runtime",type:"number",unit:"milliseconds",restart:"daemon"},
   FACTORY_MAX_FIX_CYCLES:{label:"Automatic correction cycles",description:"Maximum Builder and Tester correction loops before human input.",group:"runtime",type:"number",unit:"cycles",restart:"daemon"},
   FACTORY_CONTEXT_BUDGET_BYTES:{label:"Default context budget",description:"Maximum prompt bytes before optional context is omitted.",group:"runtime",type:"number",unit:"bytes",restart:"daemon"},
+  FACTORY_ARTIFACT_RETENTION_DAYS:{label:"Artifact retention",description:"Days to retain exact prompt and execution output after completion or cancellation. Use 0 to disable pruning.",group:"runtime",type:"number",unit:"days",restart:"daemon"},
   FACTORY_CONTEXT_BUDGET_OVERRIDES:{label:"Context budget overrides",description:'Optional JSON object keyed by role or "provider/model". Provider/model wins over role.',group:"runtime",restart:"daemon"},
   FACTORY_DASHBOARD_HOST:{label:"Listen address",description:"Loopback address used by the administration UI.",group:"dashboard",type:"select",options:["127.0.0.1","localhost","::1"].map(value => ({value,label:value})),required:true,restart:"dashboard"},
   FACTORY_DASHBOARD_PORT:{label:"HTTP port",description:"Local port for the administration UI.",group:"dashboard",type:"number",unit:"port",required:true,restart:"dashboard"},
@@ -61,6 +62,7 @@ function validate(key: string, value: string) {
   if (/_MS$/.test(key) || ["FACTORY_MAX_FIX_CYCLES","FACTORY_CONTEXT_BUDGET_BYTES"].includes(key)) {
     if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1) throw new Error(`${key}: enter a positive integer`);
   }
+  if(key==="FACTORY_ARTIFACT_RETENTION_DAYS"&&!/^\d+$/.test(value))throw new Error(`${key} must be a nonnegative integer`);
   if (key === "FACTORY_CONTEXT_BUDGET_OVERRIDES") {
     let parsed:unknown;try{parsed=JSON.parse(value);}catch{throw new Error(`${key}: enter a JSON object`);}
     if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error(`${key}: enter a JSON object`);
