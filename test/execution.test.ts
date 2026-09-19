@@ -11,7 +11,13 @@ config.dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-execution-"));
 test.after(() => fs.rmSync(config.dataDir, { recursive: true, force: true }));
 test("captures output, spawn errors, nonzero exit and timeout", async () => {
  const s = new Store(":memory:"), m = new ExecutionManager(s);
- assert.equal((await m.run("w", "developer", process.execPath, ["-e", "console.log('done')"], os.tmpdir())).stdout.trim(), "done");
+ const succeeded=await m.run("w", "developer", process.execPath, ["-e", "console.log('done')"], os.tmpdir(),"exact prompt");
+ assert.equal(succeeded.stdout.trim(), "done");
+ const runDir=path.join(config.dataDir,"runs",succeeded.id),manifest=JSON.parse(fs.readFileSync(path.join(runDir,"prompt.json"),"utf8"));
+ assert.equal(fs.readFileSync(path.join(runDir,"prompt.md"),"utf8"),"exact prompt");
+ assert.equal(manifest.promptBytes,12); assert.equal(manifest.sectionBytes.legacyPrompt,12); assert.deepEqual(manifest.includedRecordIds,[]);
+ assert.equal(manifest.promptSha256,(s.db.prepare("SELECT prompt_sha256 FROM executions WHERE id=?").get(succeeded.id) as any).prompt_sha256);
+ assert.equal(fs.statSync(path.join(runDir,"prompt.md")).mode&0o777,0o600); assert.equal(fs.statSync(path.join(runDir,"prompt.json")).mode&0o777,0o600);
  await assert.rejects(m.run("w", "qa", "/nonexistent-factory-command", [], os.tmpdir()), /failed/);
  await assert.rejects(m.run("w", "qa", process.execPath, ["-e", "process.exit(4)"], os.tmpdir()), /failed/);
  assert.equal((s.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE exit_code=4").get() as any).n, 1);

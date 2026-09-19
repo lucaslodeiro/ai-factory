@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { Store } from "./storage.js";
@@ -9,6 +9,13 @@ import { failureMarkdown } from "./failure-report.js";
 import type { AgentRole, ModelSelection } from "./types.js";
 import { extractTokenUsage } from "./token-usage.js";
 const workflowState: Record<AgentRole,string> = {"product-architect":"SPEC",developer:"DEVELOPMENT",qa:"QA",reviewer:"REVIEW"};
+export interface PromptManifestInput {
+  includedRecordIds?:string[];
+  activeRequestId?:string;
+  sectionBytes?:Record<string,number>;
+  budgetBytes?:number|null;
+  budgetSource?:string;
+}
 function readOutput(file:string,maxBytes:number,fromEnd=false) {
   try {
     const stat=fs.statSync(file);
@@ -21,14 +28,21 @@ function readOutput(file:string,maxBytes:number,fromEnd=false) {
 export class ExecutionManager {
   private running = new Map<string, { child: ChildProcess; cancel: () => void }>();
   constructor(private store: Store) {}
-  async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs, selection?: ModelSelection): Promise<{id: string; stdout: string}> {
+  async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs, selection?: ModelSelection, promptMetadata:PromptManifestInput = {}): Promise<{id: string; stdout: string}> {
     const id = randomUUID();
     const logDir = path.join(config.dataDir, "runs", id);
     fs.mkdirSync(logDir, { recursive: true });
+    const promptBytes=Buffer.byteLength(input),promptSha256=createHash("sha256").update(input).digest("hex"),item=this.store.get(workItemId);
+    const promptManifest={executionId:id,role,provider:selection?.provider??null,model:selection?.model??null,specVersion:item?.context.version??null,
+      includedRecordIds:promptMetadata.includedRecordIds??[],activeRequestId:promptMetadata.activeRequestId??null,
+      sectionBytes:promptMetadata.sectionBytes??{legacyPrompt:promptBytes},budgetBytes:promptMetadata.budgetBytes??null,budgetSource:promptMetadata.budgetSource??"legacy-unbounded",
+      promptBytes,promptSha256};
+    fs.writeFileSync(path.join(logDir,"prompt.md"),input,{mode:0o600});
+    fs.writeFileSync(path.join(logDir,"prompt.json"),JSON.stringify(promptManifest,null,2)+"\n",{mode:0o600});
     const out = fs.openSync(path.join(logDir, "stdout.log"), "w", 0o600);
     const err = fs.openSync(path.join(logDir, "stderr.log"), "w", 0o600);
-    this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,workflow_state,status,started_at) VALUES(?,?,?,?,?,?)")
-      .run(id, workItemId, role, workflowState[role], "running", new Date().toISOString());
+    this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,workflow_state,status,started_at,prompt_bytes,prompt_sha256) VALUES(?,?,?,?,?,?,?,?)")
+      .run(id, workItemId, role, workflowState[role], "running", new Date().toISOString(),promptBytes,promptSha256);
     this.store.event("execution.started", { role, command, cwd, logDir, selection }, workItemId, id);
     return new Promise((resolve, reject) => {
       let cancelled = false, timedOut = false, force: NodeJS.Timeout | undefined;

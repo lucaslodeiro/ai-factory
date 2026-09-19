@@ -1,0 +1,82 @@
+import { randomUUID } from "node:crypto";
+import type { AgentRole, DeliveryStage } from "./types.js";
+import type { Store } from "./storage.js";
+
+export type RecordKind = "instruction" | "decision" | "finding" | "request";
+export type RecordScope = "spec" | "issue";
+export type RecordStatus = "active" | "open" | "resolved" | "accepted-defer" | "superseded" | "revoked" | "cancelled";
+export type RequestType = "clarification" | "spec-approval" | "tactical-decision" | "correction-limit" | "merge";
+export type V3Stage = "DESIGN" | "BUILD" | "TEST" | "REVIEW" | "DELIVERY";
+
+export type WorkflowRecordPayload =
+ | { kind:"instruction"; text:string; supersedes?:string[] }
+ | { kind:"decision"; category:"human"|"tactical"; decision:string; rationale:string; supersedes:string[] }
+ | { kind:"finding"; classification:"auto-fix"|"decision-required"|"defer"; originRole:AgentRole; criterionId?:string; evidence:string }
+ | { kind:"request"; type:RequestType; owner:"human"|"architect"; originatingStage:V3Stage; allowedReturnStages:V3Stage[]; openedAfterCommentId:number; questions?:string[]; findingIds?:string[]; prClosed?:boolean };
+
+export interface WorkflowRecord<T extends WorkflowRecordPayload = WorkflowRecordPayload> {
+ id:string; workItemId:string; sequence:number; kind:T["kind"]; specVersion:number; scope:RecordScope; status:RecordStatus;
+ appliesTo:AgentRole[]; payload:T; sourceType:"github-comment"|"agent-result"|"orchestrator"; sourceId:string; actor:string;
+ parentId?:string; supersededBy?:string; resolvedBy?:string; createdAt:string; updatedAt:string;
+}
+
+export interface CreateWorkflowRecord<T extends WorkflowRecordPayload> {
+ workItemId:string; specVersion:number; scope:RecordScope; status?:RecordStatus; appliesTo?:AgentRole[]; payload:T;
+ sourceType:WorkflowRecord["sourceType"]; sourceId:string; actor:string; parentId?:string;
+}
+
+type Row = { id:string;work_item_id:string;sequence:number;kind:RecordKind;spec_version:number;scope:RecordScope;status:RecordStatus;applies_to:string;payload:string;source_type:WorkflowRecord["sourceType"];source_id:string;actor:string;parent_id:string|null;superseded_by:string|null;resolved_by:string|null;created_at:string;updated_at:string };
+
+function parse(row:Row):WorkflowRecord {
+ return {id:row.id,workItemId:row.work_item_id,sequence:row.sequence,kind:row.kind,specVersion:row.spec_version,scope:row.scope,status:row.status,
+  appliesTo:JSON.parse(row.applies_to),payload:JSON.parse(row.payload),sourceType:row.source_type,sourceId:row.source_id,actor:row.actor,
+  parentId:row.parent_id ?? undefined,supersededBy:row.superseded_by ?? undefined,resolvedBy:row.resolved_by ?? undefined,createdAt:row.created_at,updatedAt:row.updated_at};
+}
+
+export class WorkflowRecords {
+ constructor(private store:Store) {}
+ create<T extends WorkflowRecordPayload>(input:CreateWorkflowRecord<T>):WorkflowRecord<T> {
+  const run=this.store.db.transaction(()=>{
+   if (input.payload.kind === "request") {
+    if (input.parentId) {
+     const parent=this.get(input.parentId);
+     if (!parent || parent.workItemId !== input.workItemId || parent.kind !== "request" || parent.status !== "open") throw new Error("Request parent must be an open request on the same work item");
+     const sibling=this.store.db.prepare("SELECT id FROM records WHERE parent_id=? AND kind='request' AND status='open'").get(input.parentId);
+     if (sibling) throw new Error("An open request may have only one open child");
+    } else if (this.store.db.prepare("SELECT id FROM records WHERE work_item_id=? AND kind='request' AND status='open'").get(input.workItemId)) {
+     throw new Error("A new open request must extend the existing request chain");
+    }
+   }
+   const sequence=((this.store.db.prepare("SELECT COALESCE(MAX(sequence),0)+1 AS value FROM records WHERE work_item_id=?").get(input.workItemId) as {value:number}).value);
+   const id=randomUUID(),now=new Date().toISOString(),status=input.status ?? (input.payload.kind === "request" || input.payload.kind === "finding" ? "open" : "active");
+   this.store.db.prepare(`INSERT INTO records(id,work_item_id,sequence,kind,spec_version,scope,status,applies_to,payload,source_type,source_id,actor,parent_id,created_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,input.workItemId,sequence,input.payload.kind,input.specVersion,input.scope,status,JSON.stringify(input.appliesTo ?? []),JSON.stringify(input.payload),input.sourceType,input.sourceId,input.actor,input.parentId ?? null,now,now);
+   return this.get(id)! as WorkflowRecord<T>;
+  });
+  return run.immediate();
+ }
+ get(id:string) {
+  const row=this.store.db.prepare("SELECT * FROM records WHERE id=?").get(id) as Row|undefined;
+  return row ? parse(row) : undefined;
+ }
+ active(workItemId:string,specVersion:number,role:AgentRole) {
+  const rows=this.store.db.prepare(`SELECT * FROM records WHERE work_item_id=?
+   AND status IN ('active','open') AND (scope='issue' OR spec_version=?) ORDER BY sequence`).all(workItemId,specVersion) as Row[];
+  return rows.map(parse).filter(record=>record.kind !== "instruction" || !record.appliesTo.length || record.appliesTo.includes(role));
+ }
+ openRequests(workItemId:string) {
+  return (this.store.db.prepare("SELECT * FROM records WHERE work_item_id=? AND kind='request' AND status='open' ORDER BY sequence").all(workItemId) as Row[]).map(parse);
+ }
+ activeRequest(workItemId:string) {
+  const open=this.openRequests(workItemId),parents=new Set(open.map(record=>record.parentId).filter(Boolean));
+  const leaves=open.filter(record=>!parents.has(record.id));
+  if (leaves.length > 1) throw new Error("Open requests do not form one causal chain");
+  return leaves[0];
+ }
+ resolveRequest(id:string,resolvedBy?:string) {
+  const record=this.get(id);
+  if (!record || record.kind !== "request" || record.status !== "open") throw new Error("Only an open request can be resolved");
+  this.store.db.prepare("UPDATE records SET status='resolved',resolved_by=?,updated_at=? WHERE id=?").run(resolvedBy ?? null,new Date().toISOString(),id);
+  return this.activeRequest(record.workItemId);
+ }
+}
