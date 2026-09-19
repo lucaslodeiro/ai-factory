@@ -33,6 +33,7 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .metrics strong { font-size:2rem }
 .panel { padding:1.25rem; overflow:hidden }
 .panel-title { display:flex; align-items:end; justify-content:space-between; gap:1rem; margin-bottom:1rem }
+.panel-description { margin-top:.35rem; color:var(--muted); font-size:.75rem; line-height:1.4 }
 .live-meta { display:flex; align-items:center; gap:.75rem }
 .live-badge { display:inline-flex; align-items:center; gap:.4rem; color:var(--warn); font:700 .68rem ui-monospace,SFMono-Regular,monospace; text-transform:uppercase }
 .live-badge::before { content:""; width:.45rem; height:.45rem; border-radius:50%; background:currentColor }
@@ -49,7 +50,7 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .state-waiting-human,.state-paused { color:var(--warn) }
 .state-development,.state-qa,.state-review,.state-spec { color:var(--blue) }
 .state-ready-to-merge,.state-merged,.state-succeeded { color:var(--accent) }
-.state-failed,.state-pr-closed,.state-cancelled { color:var(--danger) }
+.state-failed,.state-pr-closed,.state-cancelled,.state-timed-out,.state-interrupted { color:var(--danger) }
 .actions { display:flex; gap:.4rem }
 .service-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem }
 .service-help { margin:-.35rem 0 1rem; max-width:58rem; font-size:.82rem; line-height:1.45 }
@@ -76,6 +77,24 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .entry:last-child { border:0 }
 .entry-head { display:flex; justify-content:space-between; gap:1rem; font-size:.82rem }
 .entry p { color:var(--muted); font-size:.78rem; line-height:1.45; overflow-wrap:anywhere }
+.execution-entry,.event-entry { padding:.85rem; margin-bottom:.55rem; background:color-mix(in srgb,var(--surface) 72%,transparent); border:1px solid var(--line); border-radius:10px }
+.execution-entry:last-child,.event-entry:last-child { border:1px solid var(--line) }
+.execution-entry .entry-head>div,.event-entry .entry-head>div { display:grid; gap:.28rem; min-width:0 }
+.execution-entry a,.event-context a { color:var(--text); font-weight:750; text-decoration:none; overflow-wrap:anywhere }
+.execution-entry a:hover,.event-context a:hover { color:var(--accent) }
+.execution-entry small,.event-entry small { color:var(--muted); font-size:.65rem; font-weight:750; letter-spacing:.07em; text-transform:uppercase }
+.execution-entry code { width:max-content; color:var(--muted); font-size:.62rem }
+.entry-facts { display:flex; flex-wrap:wrap; gap:.35rem .8rem; margin:.65rem 0; color:var(--muted); font-size:.7rem }
+.entry-facts span { position:relative }
+.entry-facts span+span::before { content:"·"; position:absolute; left:-.5rem }
+.event-entry { position:relative; border-left:3px solid var(--blue) }
+.event-entry.severity-success { border-left-color:var(--accent) }
+.event-entry.severity-warning { border-left-color:var(--warn) }
+.event-entry.severity-error { border-left-color:var(--danger) }
+.event-entry .entry-head strong { font-size:.82rem; line-height:1.35 }
+.event-entry time { flex:none; color:var(--muted); font-size:.68rem }
+.event-entry p { margin-top:.6rem; color:var(--text) }
+.event-context { margin-top:.6rem; color:var(--muted); font-size:.68rem }
 .empty { padding:2rem; color:var(--muted); text-align:center }
 .refresh-result.failed { color:var(--danger) }
 .settings-panel summary { display:flex; align-items:end; justify-content:space-between; cursor:pointer; list-style:none }

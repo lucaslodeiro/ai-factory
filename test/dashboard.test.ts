@@ -66,7 +66,11 @@ echo "$*" >> "$PWD/update-actions.log"
   store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,created_at,updated_at,context) VALUES(?,?,?,?,?,?,?)")
     .run("owner-demo-7",7,"owner/demo","FAILED","2026-01-01T00:00:00.000Z","2026-01-02T00:00:00.000Z",JSON.stringify({title:"Repair login",url:"https://github.com/owner/demo/issues/7",version:1,cursor:0,feedback:[],cycles:0,reports:{}}));
   store.event("state.changed",{from:"QA",to:"FAILED"},"owner-demo-7");
-  store.event("agent.result",{role:"qa",result:{outcome:"pass",summary:"All acceptance criteria passed",coverage:Array(20).fill({})}},"owner-demo-7");
+  store.event("agent.result",{role:"qa",result:{outcome:"pass",summary:"All acceptance criteria passed",coverage:Array(20).fill({status:"passed"})}},"owner-demo-7");
+  store.db.prepare("INSERT INTO executions(id,work_item_id,role,status,started_at,finished_at,exit_code) VALUES(?,?,?,?,?,?,?)")
+    .run("run-12345678","owner-demo-7","qa","succeeded","2026-01-02T00:00:00.000Z","2026-01-02T00:01:05.000Z",0);
+  store.event("execution.started",{role:"qa",selection:{provider:"claude",model:"sonnet",profile:"balanced"}},"owner-demo-7","run-12345678");
+  store.event("execution.finished",{status:"succeeded",code:0},"owner-demo-7","run-12345678");
   const server = await startDashboard(store,"127.0.0.1",0,settingsRoot);
   const port = (server.address() as AddressInfo).port;
   const originalFetch = globalThis.fetch;
@@ -101,9 +105,12 @@ echo "$*" >> "$PWD/update-actions.log"
     const snapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
     assert.equal(snapshot.daemon.running,false);
     assert.equal(snapshot.items[0].title,"Repair login");
-    assert.match(snapshot.events[0].details,/outcome: pass · All acceptance criteria passed/);
-    assert.ok(snapshot.events[0].details.length < 421);
-    assert.match(snapshot.events[1].details,/from: QA/);
+    assert.deepEqual({issue:snapshot.executions[0].issue,title:snapshot.executions[0].title,role:snapshot.executions[0].role,status:snapshot.executions[0].status,provider:snapshot.executions[0].provider,model:snapshot.executions[0].model,durationMs:snapshot.executions[0].durationMs},
+      {issue:7,title:"Repair login",role:"qa",status:"succeeded",provider:"claude",model:"sonnet",durationMs:65000});
+    const resultEvent=snapshot.events.find((event:any)=>event.type==="agent.result"),stateEvent=snapshot.events.find((event:any)=>event.type==="state.changed");
+    assert.equal(resultEvent.title,"QA: Passed"); assert.match(resultEvent.details,/All acceptance criteria passed/); assert.match(resultEvent.details,/20\/20 passed/); assert.equal(resultEvent.severity,"success");
+    assert.equal(stateEvent.title,"Workflow moved to Failed"); assert.equal(stateEvent.details,"Previous stage: QA."); assert.equal(stateEvent.severity,"error");
+    assert.equal(resultEvent.issueTitle,"Repair login"); assert.equal(resultEvent.issueUrl,"https://github.com/owner/demo/issues/7");
     const controller = new AbortController();
     const stream = await fetch(`http://127.0.0.1:${port}/api/stream`,{signal:controller.signal});
     assert.match(stream.headers.get("content-type") ?? "",/text\/event-stream/);
@@ -136,10 +143,12 @@ echo "$*" >> "$PWD/update-actions.log"
     store.event("control.applied",{id:refreshControl.id,kind:"refresh-list",target:"",result:{found:2,added:1,updated:1}});
     refreshSnapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
     assert.deepEqual(refreshSnapshot.issueRefresh,{status:"completed",message:"Found 2 factory issues; added 1, updated 1."});
-    assert.equal(refreshSnapshot.events[0].details,"Issue list refreshed: 2 found, 1 added, 1 updated.");
+    assert.equal(refreshSnapshot.events[0].title,"Issue list refresh completed");
+    assert.equal(refreshSnapshot.events[0].details,"2 found · 1 added · 1 updated");
     store.event("github.issue_refreshed",{previousCursor:99,cursor:99,latestCommentId:50,state:"FAILED"},"owner-demo-7");
     refreshSnapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
-    assert.equal(refreshSnapshot.events[0].details,"GitHub issue refreshed; no newer comment was found and workflow remains failed.");
+    assert.equal(refreshSnapshot.events[0].title,"Issue refreshed from GitHub");
+    assert.equal(refreshSnapshot.events[0].details,"No newer comment was found; workflow is Failed.");
     fs.mkdirSync(path.join(settingsRoot,".factory"),{recursive:true});
     fs.writeFileSync(path.join(settingsRoot,".factory","update-state.json"),JSON.stringify({status:"updating",phase:"stale",pid:process.pid,startedAt:"2026-01-01T00:00:00.000Z"}));
     const staleUpdate = await fetch(`http://127.0.0.1:${port}/api/services`).then(response => response.json()) as any;
