@@ -47,14 +47,14 @@ test("failed status explains the cause, identifies the execution and keeps one s
  const s=setup();
  try {
   s.store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,finished_at,exit_code) VALUES('run-1','work-1','qa','TEST','failed','now','now',2)").run();
-  new WorkflowFailures(s.store).open({workItemId:"work-1",executionId:"run-1",class:"execution",message:`Bearer ghp_abcdefghijklmnopqrstuvwxyz123456 failed at ${os.homedir()}/private/project`,stage:"TEST",attempt:3});
+  new WorkflowFailures(s.store).open({workItemId:"work-1",executionId:"run-1",class:"execution",message:`Bearer ghp_fake failed at ${os.homedir()}/private/project`,stage:"TEST",attempt:3});
   s.projections.initialize("work-1","TEST","FAILED");
   const body=workflowStatusMarkdown(s.store,"work-1");
   assert.match(body,/### Failure details/);
   assert.match(body,/Failure class:\*\* execution/);
   assert.match(body,/Execution:\*\* `run-1`/);
   assert.match(body,/Agent subprocess failed|workflow rejected/i);
-  assert.doesNotMatch(body,/ghp_abcdefghijklmnopqrstuvwxyz123456/);
+  assert.doesNotMatch(body,/ghp_fake/);
   assert.match(body,/~\/private\/project/);
   assert.equal(body.match(/^## Next action$/gm)?.length,1);
   assert.match(body,/\/factory retry/);
@@ -90,14 +90,14 @@ test("publisher writes only changed presentation revisions and retries after del
  try {
   s.projections.initialize("work-1","BUILD","QUEUED");
   const calls:Array<{issue:number;labels:string[];body:string}>=[];
-  const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(issue,labels,body){calls.push({issue,labels:labels.map(label=>label.name),body});}});
+  const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(issue,labels,body){calls.push({issue,labels:labels.map(label=>label.name),body});},publishWorkflowComment(){}});
   assert.equal(publisher.publishChanged(),1);assert.equal(publisher.publishChanged(),0);assert.equal(calls.length,1);
   assert.match(calls[0].body,/workflow-rev:0 · presentation-rev:0/);
   s.projections.present({workItemId:"work-1",expectedRevision:0,actor:{type:"orchestrator",id:"observer"},source:{},reason:{code:"evidence",summary:"Evidence changed"}});
   assert.equal(publisher.publishChanged(),1);assert.equal(calls.length,2);assert.match(calls[1].body,/presentation-rev:1/);
 
   s.projections.transition({workItemId:"work-1",expectedRevision:0,stage:"BUILD",status:"RUNNING",activeRunId:"run",actor:{type:"orchestrator",id:"scheduler"},source:{executionId:"run"},reason:{code:"start",summary:"Builder started"}});
-  const failing=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){throw new Error("GitHub unavailable");}});
+  const failing=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){throw new Error("GitHub unavailable");},publishWorkflowComment(){throw new Error("GitHub unavailable");}});
   assert.throws(()=>failing.publishChanged(),/GitHub unavailable/);
   assert.equal(s.projections.get("work-1").publishedPresentationRevision,1);
   assert.equal(publisher.publishChanged(),1);assert.match(calls.at(-1)!.body,/event:[0-9a-f-]{36}/);

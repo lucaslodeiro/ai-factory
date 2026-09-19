@@ -9,7 +9,7 @@ export interface GitHubPort {
  listManaged(): Issue[]; issue(n: number): Issue; comments(n: number): Comment[]; repositoryComments?(since: string): RepositoryComment[];
  ensurePR(branch: string, title: string, body: string): string;
 }
-export interface WorkflowGitHubPort { syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,body:string):void; }
+export interface WorkflowGitHubPort { syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,body:string):void; publishWorkflowComment(n:number,key:string,body:string):void; }
 function gh(args: string[], input?: unknown) {
  const r = spawnSync("gh", args, { input: input === undefined ? undefined : JSON.stringify(input), encoding: "utf8", timeout: 60000, maxBuffer: 10_000_000 });
  if (r.status !== 0) throw new Error(r.stderr || r.error?.message || "gh failed"); return r.stdout.trim();
@@ -39,6 +39,11 @@ export class GitHubAdapter implements GitHubPort {
   const existing=this.comments(n).find(comment=>comment.body.includes(marker));
   if(!existing)this.invoke(["issue","comment",String(n),"--repo",config.repo,"--body",body]);
   else if(existing.body!==body)this.invoke(["api",`repos/${config.repo}/issues/comments/${existing.id}`,"--method","PATCH","--input","-"],{body});
+ }
+ publishWorkflowComment(n:number,key:string,content:string) {
+  const marker=`<!-- ai-factory:workflow-comment:${config.repo}:${n}:${key} -->`;
+  if(this.comments(n).some(comment=>comment.body.includes(marker)))return;
+  this.invoke(["issue","comment",String(n),"--repo",config.repo,"--body",`${content}\n\n${marker}`]);
  }
  issue(n: number): Issue {
   const value=JSON.parse(this.invoke(["api",`repos/${config.repo}/issues/${n}`]));

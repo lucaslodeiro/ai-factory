@@ -33,7 +33,7 @@ export class WorkflowResults {
   if(result.outcome==="spec") {
    const next=specVersion+1;
    const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:"DESIGN",status:"WAITING",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"spec-proposed",summary:`SPEC v${next} proposed`},recordIds:ids,correctionCycles:0},()=>{
-    this.resultEvent(input);
+    this.resultEvent(input,next);
     if(specVersion)this.records.supersedeSpec(input.workItemId,specVersion);
     this.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment) VALUES(?,?,?,?,?)").run(input.workItemId,next,result.spec,JSON.stringify(result.acceptanceCriteria),JSON.stringify(result.taskAssessment));
     ids.push(this.records.create({workItemId:input.workItemId,specVersion:next,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
@@ -76,6 +76,6 @@ export class WorkflowResults {
  private specVersion(workItemId:string){return (this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;}
  private cursor(workItemId:string){const row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string};return (JSON.parse(row.context||"{}") as {cursor?:number}).cursor??0;}
  private updateContext(workItemId:string,values:Record<string,unknown>){const row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string};this.store.db.prepare("UPDATE work_items SET context=? WHERE id=?").run(JSON.stringify({...JSON.parse(row.context||"{}"),...values}),workItemId);}
- private resultEvent(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult}){this.store.event("agent.result",{role:input.role,result:input.result,specVersion:this.specVersion(input.workItemId)},input.workItemId,input.executionId);}
+ private resultEvent(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult},specVersion=this.specVersion(input.workItemId)){this.store.event("agent.result",{role:input.role,result:input.result,specVersion},input.workItemId,input.executionId);}
  private returnStages(stage:V3Stage):V3Stage[]{return stage==="BUILD"?["BUILD"]:stage==="TEST"?["BUILD","TEST"]:stage==="REVIEW"?["BUILD","TEST","REVIEW"]:[stage];}
 }

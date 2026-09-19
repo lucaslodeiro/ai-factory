@@ -2,7 +2,7 @@
 
 ## Automated checks
 
-`npm run build` and `npm test` pass on macOS with Node 26.4.0. The current suite has 95 passing tests, zero failures and zero skips. Shell syntax validation passes for every `scripts/*.sh`; the isolated configuration, dashboard-address, maintenance/update, no-Homebrew installer and uninstall scenarios also pass. `shellcheck` was not installed on the validation host.
+`npm run build` and `npm test` pass on macOS with Node 26.4.0. The current suite has 96 passing tests, zero failures and zero skips. Shell syntax validation passes for every `scripts/*.sh`; the isolated configuration, dashboard-address, maintenance/update, no-Homebrew installer and uninstall scenarios also pass. `shellcheck` was not installed on the validation host.
 
 A Node 22/Linux GitHub Actions template is provided in `docs/ci.example.yml`. It is not activated: the current GitHub OAuth credential lacks the workflow scope, and GitHub rejected a push containing `.github/workflows/ci.yml`. Copy the template there using a credential permitted to manage workflows when ready.
 
@@ -85,3 +85,16 @@ The demo issue’s four generated spec/report comments were reformatted as Markd
 ## Live merge reconciliation
 
 After the user merged demo PR #2, `factory sync` confirmed GitHub MERGED at `2026-09-18T16:55:38Z`, commit `81ee5d2094efa4795994b107925abbe915c93671`. SQLite now records MERGED; the issue is CLOSED with `factory:merged`, and its progress comment says completed. No agents were invoked and no merge was performed by the factory. The factory implementation PR #1 remains open.
+
+## Completed V4 clean-install acceptance — 2026-09-19
+
+A new private repository was created and exercised with the clean schema V4 runtime and real GitHub, Claude and Codex credentials: [issue #1](https://github.com/lucaslodeiro/ai-factory-v4-acceptance/issues/1) and [PR #2](https://github.com/lucaslodeiro/ai-factory-v4-acceptance/pull/2). Slack had no webhook configured in this checkout, so real channel delivery was unavailable; durable retry and real HTTP transport remain covered by the automated local-server tests.
+
+- Doctor passed for GitHub, Claude, Codex, Git, the target checkout, SQLite and workflow invariants.
+- The issue started through a standalone `/factory start` comment. Claude Architect's first placeholder result was rejected as invalid; a human-guided `/factory retry` produced SPEC v1, which was approved through `/factory approve v1`.
+- Build was deliberately interrupted with SIGINT. The execution was recorded as interrupted, the workflow moved to Build/Paused and the worktree and guidance were preserved. The live run exposed a stale signal-maintenance barrier; the runtime now completes signal maintenance and reconciles barriers left by an older daemon before scheduling.
+- Builder and Tester ran with Codex; Reviewer ran read-only with Claude. Specs and all three delivery reports were published as rich, idempotent GitHub comments, each with a clear next action.
+- The generated application passed 6/6 independent Node tests. The factory published PR #2 with `Closes #1`; squash merge `86201f9084099ffd5b71055d23451bdfd76fc017` closed the issue and the daemon recorded Delivery/Completed.
+- The final workflow revision is 18. Its audit includes the rejected result, human retry guidance, approved spec, planned interruption, recovery, four successful role results, PR URL, merge time/commit and per-execution token totals where reported by each provider.
+
+The live run also verified that the V4 runtime can publish results generated before a daemon restart without duplicating comments, and that a manually stopped daemon does not leave a scheduler barrier on its next start.

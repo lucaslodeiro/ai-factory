@@ -16,7 +16,7 @@ import {WorkflowOrchestrator} from "./workflow-orchestrator.js";
 import {WorkflowRecords} from "./workflow-records.js";
 import type {TaskAssessment} from "./types.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
-const p = new Command().name("factory").description("Local AI Software Factory").version("0.1.0");
+const p = new Command().name("factory").description("Local AI Software Factory").version("0.2.0");
 p.command("models").argument("[id]").description("Show model policy or preview role selections for a work item").action(id => {
  console.log(`Model policy: ${modelPolicyVersion}`);
  if (!id) { console.table(Object.entries(config.roles).map(([role, routing]) => ({ stage:roleStageName(role),agent:roleShortName(role),provider:routing.provider,model:routing.model }))); return; }

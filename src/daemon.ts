@@ -56,6 +56,7 @@ export async function startDaemon(store = new Store()) {
  };
  const github=new GitHubAdapter(),runner=new WorkflowRunner(store,agents,new Workspaces(),github),o=new WorkflowOrchestrator(store,github,runner,new SlackAdapter());
  const commands=new WorkflowCommands(store),maintenance=new WorkflowMaintenance(store,executions);
+ const recoveredSignalMaintenance=maintenance.reconcileSignalsAfterRestart();
  let stopping = false,stopRequested=false,stopReason="unknown",stopPromise:Promise<unknown>|undefined;
  const stop = async (reason="control") => {
   if (stopping||stopRequested) return;
@@ -117,7 +118,7 @@ export async function startDaemon(store = new Store()) {
  try {
   const recovered=recoverAbandonedExecutions(store);
   audit(); await controls(); timer = setInterval(()=>void controls(), 200);
-  daemonLog("info","daemon.ready",{items:(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL").get() as {count:number}).count,recoveredExecutions:recovered});
+  daemonLog("info","daemon.ready",{items:(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL").get() as {count:number}).count,recoveredExecutions:recovered,recoveredSignalMaintenance});
   while (!stopping) {
    try { await o.tick(); audit(); } catch (e) { daemonLog("error","daemon.tick_failed",{error:String(e)}); }
    const until = Date.now() + config.pollMs;

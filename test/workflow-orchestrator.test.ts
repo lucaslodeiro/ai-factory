@@ -12,11 +12,12 @@ import type { Comment,Issue,PullRequestState,RepositoryComment } from "../src/ad
 
 class Workspace implements WorkspacePort {ensure(){return "/tmp/v3-work";}assertBranch(){}head(){return "head";}diff(){return "";}check(){}commit(){}publish(){}changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/v3-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){}}
 class GitHub {
- commentsByIssue=new Map<number,Comment[]>();statusBodies:string[]=[];labels:string[][]=[];lastPrBody="";state:"OPEN"|"CLOSED"="OPEN";pr:PullRequestState={state:"OPEN",mergedAt:null,mergeCommit:null};
+ commentsByIssue=new Map<number,Comment[]>();statusBodies:string[]=[];resultBodies:string[]=[];labels:string[][]=[];lastPrBody="";state:"OPEN"|"CLOSED"="OPEN";pr:PullRequestState={state:"OPEN",mergedAt:null,mergeCommit:null};
  issue(n:number):Issue{return {number:n,title:"Ship V3",body:"Complete the workflow",url:`https://github.com/owner/demo/issues/${n}`,state:this.state};}
  comments(n:number){return this.commentsByIssue.get(n)??[];}repositoryComments(_since:string):RepositoryComment[]{return [];}
  listManaged(){return [];}commentOnce(){}syncState(){}ensurePR(_branch:string,_title:string,body:string){this.lastPrBody=body;return "https://github.com/owner/demo/pull/1";}pullRequestState(){return this.pr;}
  syncWorkflow(_issue:number,labels:Array<{name:string}>,body:string){this.labels.push(labels.map(label=>label.name));this.statusBodies.push(body);}
+ publishWorkflowComment(_issue:number,_key:string,body:string){this.resultBodies.push(body);}
  reply(id:number,body:string){const rows=this.commentsByIssue.get(1)??[];rows.push({id,body,user:{login:"owner",type:"User"}});this.commentsByIssue.set(1,rows);}
 }
 
@@ -28,7 +29,7 @@ test("V3 orchestrator completes Design, Build, Test, Review and merge with one a
  const orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
  try {
   const started=orchestrator.startIssue("1","Dashboard");assert.equal(started.created,true);
-  await orchestrator.tick();let projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"DESIGN",status:"WAITING"});
+  await orchestrator.tick();let projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"DESIGN",status:"WAITING"});assert.match(github.resultBodies.at(-1)!,/^# Specification v1/m);assert.match(github.resultBodies.at(-1)!,/## Next action/);
   assert.equal(github.statusBodies.at(-1)?.match(/^## Next action$/gm)?.length,1);assert.match(github.statusBodies.at(-1)!,/\/factory approve v1/);
   github.reply(1,"/factory approve v1");await orchestrator.tick();projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"TEST",status:"QUEUED"});
   await orchestrator.tick();assert.equal(new WorkflowProjections(store).get(started.id).stage,"REVIEW");
