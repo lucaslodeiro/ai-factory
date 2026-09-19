@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { Store } from "../src/storage.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
+import { WorkflowFailures } from "../src/workflow-failures.js";
 
 function setup() {
  const store=new Store(":memory:");
@@ -54,4 +55,33 @@ test("resume status preserves human gates and queues Architect-owned work", () =
   architect.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"request",type:"tactical-decision",owner:"architect",originatingStage:"TEST",allowedReturnStages:["BUILD","TEST"],openedAfterCommentId:1},sourceType:"agent-result",sourceId:"run",actor:"tester"});
   assert.equal(architect.projections.resumeStatus("work-1"),"QUEUED");
  } finally { architect.store.db.close(); }
+});
+
+test("failure creation and retry resolution are derived inside their transitions",()=>{
+ const {store,projections}=setup();
+ const failures=new WorkflowFailures(store);
+ try {
+  projections.initialize("work-1","TEST","QUEUED");
+  let failureId="";
+  const failed=projections.transition({workItemId:"work-1",expectedRevision:0,stage:"TEST",status:"FAILED",actor:{type:"orchestrator",id:"runner"},source:{executionId:"run-1"},reason:{code:"execution-failed",summary:"Tester command failed"}},()=>{
+   failureId=failures.open({workItemId:"work-1",executionId:undefined,class:"execution",message:"Tester command failed",stage:"TEST",attempt:1}).id;
+  });
+  assert.equal(failed.activeFailureId,failureId);
+  const retried=projections.transition({workItemId:"work-1",expectedRevision:1,stage:"TEST",status:"QUEUED",attemptDelta:1,actor:{type:"human",id:"owner"},source:{commentId:20},reason:{code:"retry",summary:"Retry requested"},recordIds:[]},()=>{failures.resolve(failureId,"comment:20");});
+  assert.equal(retried.activeFailureId,undefined);
+  assert.equal(retried.attempt,1);
+  assert.equal(failures.active("work-1"),undefined);
+ } finally { store.db.close(); }
+});
+
+test("request creation is reflected in the same waiting transition",()=>{
+ const {store,records,projections}=setup();
+ try {
+  projections.initialize("work-1","DESIGN","QUEUED");
+  projections.transition({workItemId:"work-1",expectedRevision:0,stage:"DESIGN",status:"RUNNING",activeRunId:"run-1",actor:{type:"orchestrator",id:"scheduler"},source:{executionId:"run-1"},reason:{code:"execution-started",summary:"Architect started"}});
+  const waiting=projections.transition({workItemId:"work-1",expectedRevision:1,stage:"DESIGN",status:"WAITING",actor:{type:"agent",id:"architect"},source:{executionId:"run-1"},reason:{code:"questions",summary:"Architect needs input"}},()=>{
+   records.create({workItemId:"work-1",specVersion:0,scope:"spec",payload:{kind:"request",type:"clarification",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:4},sourceType:"agent-result",sourceId:"run-1",actor:"architect"});
+  });
+  assert.equal(waiting.activeRequestId,records.activeRequest("work-1")?.id);
+ } finally { store.db.close(); }
 });

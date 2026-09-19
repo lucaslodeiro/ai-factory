@@ -49,22 +49,23 @@ export class WorkflowProjections {
   return run.immediate();
  }
  resumeStatus(workItemId:string):V3Status { return requestOwner(this.records.activeRequest(workItemId)) === "human" ? "WAITING" : "QUEUED"; }
- transition(input:TransitionInput,effects?:()=>void) {
+ transition(input:TransitionInput,mutations?:()=>void) {
   const run=this.store.db.transaction(()=>{
    const from=this.get(input.workItemId);
    if (from.revision !== input.expectedRevision) throw new Error(`Workflow revision changed: expected ${input.expectedRevision}, found ${from.revision}`);
+   mutations?.();
    const activeRequest=this.records.activeRequest(input.workItemId),activeFailure=this.failures.active(input.workItemId);
    const activeRunId=input.status === "RUNNING" ? input.activeRunId : undefined;
    this.validate(input.status,activeRequest,activeFailure,activeRunId);
    const to:WorkflowProjection={...from,stage:input.stage,status:input.status,attempt:from.attempt+(input.attemptDelta??0),revision:from.revision+1,
     presentationRevision:from.presentationRevision+1,activeRunId,activeRequestId:activeRequest?.id,activeFailureId:activeFailure?.id,
     correctionCycles:input.correctionCycles??from.correctionCycles};
-   this.store.db.prepare(`UPDATE work_items SET stage=?,status=?,attempt=?,revision=?,presentation_revision=?,active_run_id=?,active_request_id=?,active_failure_id=?,correction_cycles=? WHERE id=? AND revision=?`)
+   const updated=this.store.db.prepare(`UPDATE work_items SET stage=?,status=?,attempt=?,revision=?,presentation_revision=?,active_run_id=?,active_request_id=?,active_failure_id=?,correction_cycles=? WHERE id=? AND revision=?`)
     .run(to.stage,to.status,to.attempt,to.revision,to.presentationRevision,to.activeRunId??null,to.activeRequestId??null,to.activeFailureId??null,to.correctionCycles,input.workItemId,from.revision);
+   if (updated.changes !== 1) throw new Error("Workflow projection changed concurrently");
    const eventId=randomUUID();
    this.store.event("workflow.transition",{schemaVersion:1,eventId,type:"workflow.transition",workItemId:input.workItemId,occurredAt:new Date().toISOString(),actor:input.actor,source:input.source,
     from,to,reason:input.reason,recordIds:input.recordIds??[],activeRequestId:to.activeRequestId,activeFailureId:to.activeFailureId},input.workItemId,input.source.executionId);
-   effects?.();
    return to;
   });
   return run.immediate();
