@@ -14,6 +14,7 @@ import { SlackAdapter } from "./adapters/slack.js";
 import { publicNaming, roleShortName, stateName } from "./names.js";
 import {WorkflowMaintenance,type MaintenanceOperation} from "./workflow-maintenance.js";
 import type {ExecutionManager} from "./execution-manager.js";
+import {RepositoryMaintenance} from "./repository-maintenance.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
 const types: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
@@ -497,6 +498,8 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         const [, , ,id,action]=url.pathname.split("/");store.request(action==="confirm"?"maintenance-confirm":"maintenance-resume",id);return json(res,202,{ok:true,id,status:"queued"});
       }
       if (req.method === "GET" && url.pathname === "/api/logs/daemon") return json(res,200,daemonLogs(settingsRoot,url.searchParams.get("lines")));
+      if(req.method==="GET"&&url.pathname==="/api/repository")return json(res,200,new RepositoryMaintenance(store).check());
+      if(req.method==="POST"&&url.pathname==="/api/repository") {const body=await readBody(req) as {action?:string;workItemId?:string;confirmPath?:string;repeatPath?:string;maintenanceId?:string},repository=new RepositoryMaintenance(store);if(body.action==="check")return json(res,200,repository.check());if(body.action==="sync")return json(res,200,repository.sync("dashboard"));if(body.action==="publish"&&body.workItemId)return json(res,200,repository.publish(body.workItemId,"dashboard"));if(body.action==="clear"){requireMaintenance(store,body.maintenanceId,["user-pause"]);if(body.maintenanceId)maintenanceCoordinator(store).markStarted(body.maintenanceId);const result=repository.clear(body.confirmPath??"",body.repeatPath??"","dashboard");if(body.maintenanceId)maintenanceCoordinator(store).complete(body.maintenanceId);return json(res,200,result);}if(body.action==="restore")return json(res,200,repository.restore("dashboard"));return json(res,400,{error:"Unknown or incomplete repository action"});}
       if (req.method === "POST" && url.pathname === "/api/update/check") return json(res,200,checkUpdate(settingsRoot));
       if (req.method === "GET" && url.pathname === "/healthz") return json(res,200,{ok:true});
       if (req.method === "PUT" && url.pathname === "/api/settings") {

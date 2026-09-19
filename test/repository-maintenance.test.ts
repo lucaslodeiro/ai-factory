@@ -1,0 +1,21 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {config} from "../src/config.js";
+import {Store} from "../src/storage.js";
+import {RepositoryMaintenance} from "../src/repository-maintenance.js";
+import {git} from "../src/worktrees.js";
+
+test("repository maintenance checks, syncs, publishes, clears and restores within fixed boundaries",()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"factory-repo-")),origin=path.join(root,"origin.git"),seed=path.join(root,"seed"),checkout=path.join(root,"checkout"),data=path.join(root,"data"),old={repo:config.repo,repoDir:config.repoDir,dataDir:config.dataDir,branch:config.defaultBranch,git:config.gitCommand};
+ fs.mkdirSync(origin);fs.mkdirSync(seed);git(origin,["init","--bare"]);git(seed,["init"]);git(seed,["config","user.name","Test"]);git(seed,["config","user.email","test@example.test"]);fs.writeFileSync(path.join(seed,"README.md"),"base\n");git(seed,["add","."]);git(seed,["commit","-m","base"]);git(seed,["branch","-M","main"]);git(seed,["remote","add","origin",origin]);git(seed,["push","-u","origin","main"]);
+ const wrapper=path.join(root,"git-wrapper");fs.writeFileSync(wrapper,`#!/bin/sh\nexec ${JSON.stringify(old.git)} -c ${JSON.stringify(`url.file://${path.join(root,"origin")}.insteadOf=https://github.com/owner/demo`)} "$@"\n`,{mode:0o755});config.gitCommand=wrapper;git(root,["clone","--branch","main","https://github.com/owner/demo.git",checkout]);git(checkout,["remote","set-url","origin","https://github.com/owner/demo.git"]);git(checkout,["config","user.name","Factory"]);git(checkout,["config","user.email","factory@example.test"]);config.repo="owner/demo";config.repoDir=checkout;config.dataDir=data;config.defaultBranch="main";const store=new Store(":memory:"),maintenance=new RepositoryMaintenance(store);
+ try{const beforeRefs=git(checkout,["show-ref"]),beforeFile=fs.readFileSync(path.join(checkout,"README.md"),"utf8"),checked=maintenance.check();assert.equal(checked.originMatches,true,JSON.stringify(checked));assert.equal(checked.recommendation,"Repository is synchronized");assert.equal(git(checkout,["show-ref"]),beforeRefs);assert.equal(fs.readFileSync(path.join(checkout,"README.md"),"utf8"),beforeFile);
+  fs.writeFileSync(path.join(checkout,"dirty.txt"),"dirty");assert.throws(()=>maintenance.sync(),/dirty|untracked/);fs.rmSync(path.join(checkout,"dirty.txt"));fs.writeFileSync(path.join(seed,"remote.txt"),"remote\n");git(seed,["add","."]);git(seed,["commit","-m","remote"]);git(seed,["push"]);assert.equal(maintenance.sync().head,git(seed,["rev-parse","HEAD"]));
+  const worktree=path.join(data,"worktrees","w");fs.mkdirSync(path.dirname(worktree),{recursive:true});git(checkout,["worktree","add","-b","factory/issue-1-test",worktree]);fs.writeFileSync(path.join(worktree,"feature.txt"),"feature\n");store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,branch,created_at,updated_at,context,stage,status) VALUES('w',1,'owner/demo','SPEC','factory/issue-1-test','now','now',?,'BUILD','QUEUED')").run(JSON.stringify({cwd:worktree,title:"Feature"}));const published=maintenance.publish("w");assert.equal(published.branch,"factory/issue-1-test");assert.match(git(origin,["show","factory/issue-1-test:feature.txt"]),/feature/);
+  assert.throws(()=>maintenance.clear(checkout,path.join(root,"wrong")),/exact configured path/);const cleared=maintenance.clear(checkout,checkout);assert.equal(cleared.empty,true);assert.deepEqual(fs.readdirSync(checkout),[]);assert.equal((store.db.prepare("SELECT status FROM work_items WHERE id='w'").get() as any).status,"PAUSED");assert.equal((JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id='w'").get() as any).context) as any).cwd,undefined);
+  const restored=maintenance.restore();assert.equal(restored.originMatches,true);assert.equal(restored.branch,"main");assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type LIKE 'repository.operation.%'").get() as any).count,4);
+ }finally{store.db.close();config.repo=old.repo;config.repoDir=old.repoDir;config.dataDir=old.dataDir;config.defaultBranch=old.branch;config.gitCommand=old.git;fs.rmSync(root,{recursive:true,force:true});}
+});

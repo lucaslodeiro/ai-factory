@@ -64,6 +64,7 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .state-development,.state-qa,.state-review,.state-spec,.state-queued,.state-running { color:var(--blue) }
 .state-ready-to-merge,.state-merged,.state-completed,.state-succeeded { color:var(--accent) }
 .state-failed,.state-pr-closed,.state-cancelled,.state-timed-out { color:var(--danger) }
+.repository-maintenance{margin-top:24px;padding:22px;border:1px solid var(--line);border-radius:16px;background:var(--panel);display:grid;gap:16px}.repository-maintenance h4{margin:3px 0 6px}.repository-maintenance p{margin:0;color:var(--muted)}.repository-maintenance pre{margin:0;max-height:260px;overflow:auto;padding:14px;border-radius:12px;background:var(--surface);white-space:pre-wrap;word-break:break-word}.repository-actions,.repository-publish{display:flex;gap:10px;flex-wrap:wrap}.repository-publish input{min-width:260px;flex:1}
 .actions { display:flex; gap:.4rem }
 .service-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem }
 .service-help { margin:-.35rem 0 1rem; max-width:58rem; font-size:.82rem; line-height:1.45 }
