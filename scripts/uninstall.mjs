@@ -49,6 +49,11 @@ if (!confirmed) {
 
 if (process.platform === "darwin" && process.env.AI_FACTORY_UNINSTALL_SKIP_LAUNCHCTL !== "1") {
   const domain = `gui/${process.getuid()}`;
+  const jobs = spawnSync("launchctl",["list"],{encoding:"utf8"});
+  for (const line of (jobs.stdout ?? "").split("\n")) {
+    const label = line.trim().split(/\s+/).at(-1) ?? "";
+    if (label.startsWith("com.ai-factory.update.")) spawnSync("launchctl",["remove",label],{encoding:"utf8"});
+  }
   for (const service of ["daemon","dashboard"]) {
     // bootout returns non-zero when a service is already unloaded, which is safe here.
     spawnSync("launchctl",["bootout",`${domain}/com.ai-factory.${service}`],{encoding:"utf8"});

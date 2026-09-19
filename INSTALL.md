@@ -60,7 +60,7 @@ configuration and factory commands work from any directory. If that directory
 is not yet on the current shell's `PATH`, use
 `npm --prefix "$HOME/ai-factory" run uninstall` instead.
 
-The uninstaller prints the exact installation, runtime-data and LaunchAgent paths, then requires typing `uninstall`. For an automated disposable-machine test, use `ai-factory uninstall --yes`.
+The uninstaller prints the exact installation, runtime-data and LaunchAgent paths, then requires typing `uninstall`. It cancels any transient factory update before stopping the two services and removing files. For an automated disposable-machine test, use `ai-factory uninstall --yes`.
 
 If an older uninstall left a terminal pointing at the removed checkout, run
 `cd "$HOME"` before using that terminal again. Both installers now recover
