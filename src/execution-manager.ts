@@ -28,12 +28,12 @@ function readOutput(file:string,maxBytes:number,fromEnd=false) {
 export class ExecutionManager {
   private running = new Map<string, { child: ChildProcess; cancel: () => void }>();
   constructor(private store: Store) {}
-  async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs, selection?: ModelSelection, promptMetadata:PromptManifestInput = {}): Promise<{id: string; stdout: string}> {
-    const id = randomUUID();
+  async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs, selection?: ModelSelection, promptMetadata:PromptManifestInput = {}, executionId?:string): Promise<{id: string; stdout: string}> {
+    const id = executionId??randomUUID();
     const logDir = path.join(config.dataDir, "runs", id);
     fs.mkdirSync(logDir, { recursive: true });
-    const promptBytes=Buffer.byteLength(input),promptSha256=createHash("sha256").update(input).digest("hex"),item=this.store.get(workItemId);
-    const promptManifest={executionId:id,role,provider:selection?.provider??null,model:selection?.model??null,specVersion:item?.context.version??null,
+    const promptBytes=Buffer.byteLength(input),promptSha256=createHash("sha256").update(input).digest("hex"),specVersion=(this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}|undefined)?.version??0;
+    const promptManifest={executionId:id,role,provider:selection?.provider??null,model:selection?.model??null,specVersion,
       includedRecordIds:promptMetadata.includedRecordIds??[],activeRequestId:promptMetadata.activeRequestId??null,
       sectionBytes:promptMetadata.sectionBytes??{legacyPrompt:promptBytes},budgetBytes:promptMetadata.budgetBytes??null,budgetSource:promptMetadata.budgetSource??"legacy-unbounded",
       promptBytes,promptSha256};
@@ -41,7 +41,11 @@ export class ExecutionManager {
     fs.writeFileSync(path.join(logDir,"prompt.json"),JSON.stringify(promptManifest,null,2)+"\n",{mode:0o600});
     const out = fs.openSync(path.join(logDir, "stdout.log"), "w", 0o600);
     const err = fs.openSync(path.join(logDir, "stderr.log"), "w", 0o600);
-    this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,workflow_state,status,started_at,prompt_bytes,prompt_sha256) VALUES(?,?,?,?,?,?,?,?)")
+    if(executionId){
+      const existing=this.store.db.prepare("SELECT work_item_id,role,status FROM executions WHERE id=?").get(id) as {work_item_id:string;role:string;status:string}|undefined;
+      if(!existing||existing.work_item_id!==workItemId||existing.role!==role||existing.status!=="running")throw new Error("Precreated execution does not match the active workflow run");
+      this.store.db.prepare("UPDATE executions SET prompt_bytes=?,prompt_sha256=? WHERE id=?").run(promptBytes,promptSha256,id);
+    } else this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,workflow_state,status,started_at,prompt_bytes,prompt_sha256) VALUES(?,?,?,?,?,?,?,?)")
       .run(id, workItemId, role, workflowState[role], "running", new Date().toISOString(),promptBytes,promptSha256);
     this.store.event("execution.started", { role, command, cwd, logDir, selection }, workItemId, id);
     return new Promise((resolve, reject) => {

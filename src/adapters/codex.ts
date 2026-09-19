@@ -14,7 +14,7 @@ export class CodexAdapter implements AgentAdapter {
   fs.writeFileSync(schema, JSON.stringify(resultSchemaFor(r.role, r.allowedNextRoles)));
   const modelArgs = r.selection.model === "auto" ? [] : ["--model", r.selection.model];
   await this.executions.run(r.workItemId, r.role, config.codexCommand,
-   ["exec", ...modelArgs, "--ephemeral", "--sandbox", "workspace-write", "--config", "sandbox_workspace_write.network_access=true", "--output-schema", schema, "--output-last-message", output, "-"], r.cwd, r.instructions, config.timeoutMs, r.selection);
+   ["exec", ...modelArgs, "--ephemeral", "--sandbox", "workspace-write", "--config", "sandbox_workspace_write.network_access=true", "--output-schema", schema, "--output-last-message", output, "-"], r.cwd, r.instructions, config.timeoutMs, r.selection,r.promptMetadata,r.executionId);
   return parseResult(JSON.parse(fs.readFileSync(output, "utf8")), r.role, r.allowedNextRoles, r.consultationFrom);
  }
 }

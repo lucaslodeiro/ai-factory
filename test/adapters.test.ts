@@ -41,10 +41,13 @@ if(codex) {
  assert.equal((await new ClaudeAdapter(m).run({workItemId:'w',role:'developer',cwd:root,instructions:'prompt from orchestrator',selection:{...selectModel('developer'),provider:'claude',model:'test-claude'}})).outcome,'pass');
  assert.equal((await new CodexAdapter(m).run({workItemId:'w',role:'developer',cwd:root,instructions:'prompt from orchestrator auto',selection:{...selectModel('developer'),model:'auto'}})).outcome,'pass');
  assert.equal((await new ClaudeAdapter(m).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'prompt from orchestrator auto',selection:{...selectModel('product-architect'),model:'auto'}})).outcome,'spec');
+ s.db.prepare("INSERT INTO executions(id,work_item_id,role,workflow_state,status,started_at) VALUES('precreated','w2','product-architect','DESIGN','running','now')").run();
+ assert.equal((await new ClaudeAdapter(m).run({workItemId:'w2',role:'product-architect',cwd:root,instructions:'prompt from orchestrator',selection:{...selectModel('product-architect'),model:'test-claude'},executionId:'precreated'})).outcome,'spec');
  await assert.rejects(new ClaudeAdapter(m).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'unused',selection:selectModel('developer')}), /mismatch/);
- assert.equal((s.db.prepare('SELECT COUNT(*) AS n FROM executions WHERE status=?').get('succeeded') as any).n,5);
+ assert.equal((s.db.prepare('SELECT COUNT(*) AS n FROM executions WHERE status=?').get('succeeded') as any).n,6);
+ assert.equal((s.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE id='precreated'").get() as any).n,1);
  assert.deepEqual(s.db.prepare("SELECT role,workflow_state,total_tokens FROM executions ORDER BY rowid LIMIT 2").all(),[
   {role:"product-architect",workflow_state:"SPEC",total_tokens:125},{role:"developer",workflow_state:"DEVELOPMENT",total_tokens:1234},
  ]);
- assert.equal(JSON.parse((s.db.prepare("SELECT payload FROM events WHERE type='execution.started' ORDER BY id DESC LIMIT 1").get() as any).payload).selection.model,'auto');s.db.close();
+ assert.equal((s.db.prepare("SELECT payload FROM events WHERE type='execution.started'").all() as Array<{payload:string}>).map(row=>JSON.parse(row.payload).selection.model).includes("auto"),true);s.db.close();
 });
