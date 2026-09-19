@@ -19,6 +19,7 @@ function run(command,args,cwd=temp,ok=true){const r=spawnSync(command,args,{cwd,
 try {
 run(process.execPath,[path.join(source,'scripts/test-dashboard-config.mjs')]);
 run(process.execPath,[path.join(source,'scripts/test-uninstall.mjs')]);
+assert.match(run('bash',[path.join(source,'scripts/update.sh'),'--help']).stdout,/--start-services/);
 run('git',['init','--bare',remote]);run('git',['clone',remote,seed]);
 run('git',['config','user.email','test@example.com'],seed);run('git',['config','user.name','Test'],seed);
 fs.mkdirSync(path.join(seed,'scripts'));
@@ -67,7 +68,7 @@ env.AI_FACTORY_SKIP_SERVICES='0';
 fs.writeFileSync(path.join(dest,'scripts','services.sh'),`#!/bin/sh
 if [ "$1 $2" = "status dashboard" ]; then echo 'dashboard: loaded'; elif [ "$1" = status ]; then echo "$2: stopped"; else echo "$1 $2" >> '${path.join(temp,'service-recovery.log')}'; fi
 `,{mode:0o755});
-run('bash',['scripts/update.sh','--restart-services'],dest,false);
+run('bash',['scripts/update.sh','--start-services'],dest,false);
 const recovery=fs.readFileSync(path.join(temp,'service-recovery.log'),'utf8');
 assert.match(recovery,/stop all/);assert.match(recovery,/install dashboard/);assert.match(recovery,/start dashboard/);
 assert.equal(JSON.parse(fs.readFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,'utf8')).status,'failed');

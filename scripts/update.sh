@@ -2,22 +2,26 @@
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 restart_services=false
+start_services=false
 if [[ ${1:-} == --help ]]; then
-  echo 'Usage: bash scripts/update.sh [--restart-services]'
+  echo 'Usage: bash scripts/update.sh [--restart-services|--start-services]'
   echo '  Configuration is preserved and remains editable in the dashboard.'
   echo '  --defaults is accepted as a deprecated no-op.'
   echo '  --restart-services  stop loaded services, update, then restore them'
+  echo '  --start-services    recovery mode: stop services, update, then start both'
   exit 0
 fi
 while (($#)); do
   case $1 in
     --defaults) ;;
     --restart-services) restart_services=true;;
+    --start-services) start_services=true;;
     *) echo 'Unexpected arguments; see --help.' >&2; exit 1;;
   esac
   shift
 done
 (($# == 0)) || { echo 'Unexpected arguments; see --help.' >&2; exit 1; }
+! "$restart_services" || ! "$start_services" || { echo 'Choose either --restart-services or --start-services.' >&2; exit 1; }
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 node -e 'if(Number(process.versions.node.split(".")[0]) < 22) { console.error("Node 22+ is required"); process.exit(1); }'
 
@@ -44,12 +48,17 @@ finish_update() {
 trap finish_update EXIT
 write_update_state updating "Stopping services…"
 
-if "$restart_services" && [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
-  for service in daemon dashboard; do
-    if bash scripts/services.sh status "$service" 2>/dev/null | grep -q "^$service: loaded"; then
-      if [[ $service == daemon ]]; then restore_daemon=true; else restore_dashboard=true; fi
-    fi
-  done
+if ( "$restart_services" || "$start_services" ) && [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
+  if "$start_services"; then
+    restore_daemon=true
+    restore_dashboard=true
+  else
+    for service in daemon dashboard; do
+      if bash scripts/services.sh status "$service" 2>/dev/null | grep -q "^$service: loaded"; then
+        if [[ $service == daemon ]]; then restore_daemon=true; else restore_dashboard=true; fi
+      fi
+    done
+  fi
   bash scripts/services.sh stop all
   services_stopped=true
 fi
@@ -61,7 +70,7 @@ if [[ ! -f .env ]]; then umask 077; cp .env.example .env; fi
 if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
   write_update_state updating "Installing and restarting services…"
   AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install all
-  if "$restart_services"; then
+  if "$restart_services" || "$start_services"; then
     if "$restore_daemon"; then AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start daemon; fi
     if "$restore_dashboard"; then AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start dashboard; fi
   fi

@@ -74,6 +74,14 @@ npm run service -- restart all
 
 The updater requires the existing built runtime and dependencies. It adds `~/.local/bin` to `PATH`, uses the current branch on `origin`, refuses local changes/local-only commits and holds the daemon lock throughout the update. It backs up SQLite and `.env` under `FACTORY_DATA_DIR/update-backup-*`, applies a fast-forward, installs locked dependencies, builds and tests, and preserves configuration without prompting. It never opens a terminal wizard, authenticates accounts or provisions a repository. A failed build/test leaves the daemon stopped and prints the backup and previous revision for diagnosis; there is no destructive automatic rollback. Backups contain private data: keep them local.
 
+`--restart-services` preserves the service state it observes when the command starts. If a previous interrupted update already unloaded both services, use the explicit recovery mode so both are started after a successful update:
+
+```sh
+cd "$HOME/ai-factory"
+AI_FACTORY_UPDATE_STATE_FILE="$PWD/.factory/update-state.json" \
+  bash scripts/update.sh --start-services
+```
+
 ## Configuration lifecycle
 
 Installation opens `http://127.0.0.1:4173/?setup=1` by default, or the effective custom/fallback address selected during installation. The dashboard reads installation defaults plus any saved `.env` and groups them by purpose. **Save and apply** validates the complete candidate configuration before changing `.env`, temporarily stops affected running services, writes atomically with owner-only permissions, and restores those services. Stopped services remain stopped. Updates preserve `.env` without asking questions.
