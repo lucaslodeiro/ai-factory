@@ -1,18 +1,18 @@
-# Final review prompt — Context and Workflow Specification V3.3
+# Final review prompt — Context and Workflow Specification V3.4
 
-Review the attached **AI Factory — Context and Workflow Evolution Specification V3.3** as the final architecture gate before implementation.
+Review the attached **AI Factory — Context and Workflow Evolution Specification V3.4** as an implementation-consistency check.
 
 ## Context
 
 AI Factory is a local deterministic orchestrator that turns a GitHub issue into an approved specification, implementation, independent test, delivery review and pull request. Architect, Builder, Tester and Reviewer run through Claude or Codex. SQLite owns workflow state; GitHub is the collaboration projection; Slack is notification-only.
 
-The specification describes both the current implementation and a proposed evolution. It is not implemented yet. The current implementation was rechecked at repository commit `0dc441e`. Inspect the repository source when a statement can be verified; do not assume the specification accurately describes the code.
+The specification describes the current implementation and an evolution already in progress. Inspect the repository source when a statement can be verified; do not assume the specification accurately describes the code.
 
 This is a final review, not an invitation to redesign the product or expand scope. Prefer the smallest correction that closes a concrete contradiction, unsafe state, missing invariant or unimplementable requirement.
 
 ## Review objectives
 
-Determine whether V3.3 is internally consistent, implementable and safe enough to approve. In particular, verify:
+Determine whether V3.4 remains internally consistent, implementable and safe. In particular, verify:
 
 1. **Context records**
    - identity, provenance, scope, lifecycle and deterministic sequence;
@@ -36,13 +36,13 @@ Determine whether V3.3 is internally consistent, implementable and safe enough t
    - distinction between workflow `revision`, `presentationRevision` and the published value;
    - inbound polling versus write-on-change behavior;
    - one authoritative CTA and milestone-comment rules;
-   - label and marker recovery compatibility.
+   - label and marker consistency for newly created V3 work items.
 
-5. **Migration**
-   - unambiguous legacy-field mapping;
-   - safe handling of discarded `feedback` and ambiguous routes;
-   - atomic target creation, rollback and no replay of completed work;
-   - foreign-key enforcement and schema cutover.
+5. **Clean cutover**
+   - fresh databases are marked version 3 only after schema creation succeeds;
+   - older or unversioned databases are rejected before mutation;
+   - the error gives the supported uninstall or empty-data-directory recovery path;
+   - no importer, dual-read or legacy fallback remains.
 
 6. **Reviewer artifacts**
    - `.factory-context/` exclusion, collision and symlink protections;
@@ -61,7 +61,7 @@ Determine whether V3.3 is internally consistent, implementable and safe enough t
 8. **Acceptance tests**
    - whether every important invariant and failure path has an executable test;
    - whether any test contradicts the normative text;
-   - whether the proposed tests are sufficient to implement in phases without hidden migration risk.
+   - whether the proposed tests are sufficient to implement in phases without hidden cutover risk.
 
 9. **Issue visibility and repository recovery**
    - closed issues cannot execute, publish or remain visible, and reopening cannot replay commands;
@@ -99,7 +99,7 @@ Clarity, naming or implementation guidance that can be decided during delivery w
 
 ### Contradiction audit
 
-Explicitly state whether you found contradictions among schema, transition table, invariants, migration and acceptance tests. List each one or write `None`.
+Explicitly state whether you found contradictions among schema, transition table, invariants, clean cutover and acceptance tests. List each one or write `None`.
 
 ### Proposed patch list
 
@@ -116,10 +116,10 @@ State whether work can begin after applying the proposed patch list. If yes, sug
 
 ## Review rules
 
-- Distinguish current behavior from proposed V3.3 behavior.
+- Distinguish current behavior from proposed V3.4 behavior.
 - Verify code-referenced claims against the repository.
-- Do not infer requirements from older V1–V3.2 documents when V3.3 is explicit.
+- Do not infer requirements from superseded documents when V3.4 is explicit.
 - Do not propose distributed services, multi-repository support, event sourcing, AI summaries or other scope outside the specification.
-- Treat race conditions, silent loss of human guidance, incorrect resume routes, unsafe filesystem behavior and non-atomic migration as blocking.
+- Treat race conditions, silent loss of human guidance, incorrect resume routes, unsafe filesystem behavior and mutation of unsupported databases as blocking.
 - Treat wording and naming preferences as non-blocking unless they create operational ambiguity.
 - If the specification is ready, say so directly rather than inventing changes.

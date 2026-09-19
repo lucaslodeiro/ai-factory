@@ -6,6 +6,7 @@ import { config } from "./config.js";
 import { notificationText } from "./notifications.js";
 import { assertTransition } from "./state-machine.js";
 import type { WorkItem, WorkState } from "./types.js";
+export const schemaVersion=3;
 export class Store {
   db: Database.Database;
   constructor(filename = path.join(config.dataDir, "factory.db")) {
@@ -14,8 +15,14 @@ export class Store {
     this.db.pragma("busy_timeout = 5000");
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
-    // CLI and daemon can open a fresh database together: serialize all migrations.
-    this.db.transaction(() => {
+    // CLI and daemon can open a fresh database together: serialize schema creation.
+    try { this.db.transaction(() => {
+    const tables=(this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as Array<{name:string}>).map(row=>row.name);
+    const metadataExists=tables.includes("metadata");
+    const stored=metadataExists ? this.db.prepare("SELECT value FROM metadata WHERE key='schema_version'").get() as {value:string}|undefined : undefined;
+    let version:unknown;
+    try { version=stored ? JSON.parse(stored.value) : undefined; } catch { version=undefined; }
+    if (tables.length && version !== schemaVersion) throw new Error("Unsupported AI Factory database schema. V3 requires a fresh data directory. Stop services and run the supported uninstaller, or select an empty FACTORY_DATA_DIR. Existing data was not changed.");
     this.db.exec(`CREATE TABLE IF NOT EXISTS work_items(id TEXT PRIMARY KEY,issue_number INTEGER NOT NULL,repo TEXT NOT NULL,state TEXT NOT NULL,branch TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS executions(id TEXT PRIMARY KEY,work_item_id TEXT NOT NULL,role TEXT NOT NULL,status TEXT NOT NULL,pid INTEGER,started_at TEXT NOT NULL,finished_at TEXT,exit_code INTEGER);
       CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT,ts TEXT NOT NULL,work_item_id TEXT,run_id TEXT,type TEXT NOT NULL,payload TEXT NOT NULL);
@@ -83,7 +90,9 @@ export class Store {
       const existing = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
       if (!existing.some(c => c.name === column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
     }
-    }).immediate();
+    if (!stored) this.db.prepare("INSERT INTO metadata(key,value) VALUES('schema_version',?)").run(JSON.stringify(schemaVersion));
+    }).immediate(); }
+    catch (error) { this.db.close();throw error; }
   }
   items(): WorkItem[] { return (this.db.prepare("SELECT * FROM work_items ORDER BY created_at").all() as any[]).map(r => ({ ...r, context: JSON.parse(r.context) })); }
   get(id: string) { return this.items().find(w => w.id === id); }

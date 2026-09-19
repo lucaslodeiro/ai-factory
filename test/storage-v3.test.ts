@@ -1,16 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Store } from "../src/storage.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import Database from "better-sqlite3";
+import { Store, schemaVersion } from "../src/storage.js";
 
 function insertItem(store: Store,id="work-1") {
  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,created_at,updated_at,context) VALUES(?,?,?,?,?,?,?)")
   .run(id,1,"owner/demo","SPEC","now","now",JSON.stringify({title:"Demo",body:"",url:"",version:0,cursor:0,feedback:[],cycles:0,reports:{}}));
 }
 
-test("v3 foundation enables foreign keys and creates projection storage additively", () => {
+test("a fresh V3 database enables foreign keys and creates projection storage", () => {
  const store=new Store(":memory:");
  try {
   assert.equal(store.db.pragma("foreign_keys",{simple:true}),1);
+  assert.equal(store.metadata<number>("schema_version"),schemaVersion);
   for (const table of ["records","failures","maintenance_operations","maintenance_items"]) {
    assert.ok(store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table));
   }
@@ -44,4 +49,18 @@ test("v3 failures permit only one unresolved failure per work item", () => {
   insert.run("failure-2","work-1","recovery","second","BUILD",2,"later",null);
   assert.equal((store.db.prepare("SELECT COUNT(*) AS count FROM failures").get() as {count:number}).count,2);
  } finally { store.db.close(); }
+});
+
+test("an unversioned existing database is rejected without mutation",()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"factory-unsupported-")),file=path.join(root,"factory.db");
+ const unsupported=new Database(file);
+ unsupported.exec("CREATE TABLE work_items(id TEXT PRIMARY KEY, payload TEXT); INSERT INTO work_items VALUES('old','preserve me')");
+ unsupported.close();
+ assert.throws(()=>new Store(file),/V3 requires a fresh data directory/);
+ const inspected=new Database(file,{readonly:true});
+ try {
+  assert.deepEqual(inspected.prepare("SELECT * FROM work_items").all(),[{id:"old",payload:"preserve me"}]);
+  assert.equal(inspected.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='metadata'").get(),undefined);
+  assert.equal(inspected.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='records'").get(),undefined);
+ } finally {inspected.close();fs.rmSync(root,{recursive:true,force:true});}
 });

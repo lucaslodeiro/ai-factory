@@ -1,10 +1,10 @@
-# AI Factory — Context and Workflow Evolution Specification (v3.3)
+# AI Factory — Context and Workflow Evolution Specification (v3.4)
 
-**Status:** Approved for implementation — supersedes v1, v2, v3, v3.1 and v3.2 (2026-09-19)
+**Status:** Approved for implementation — supersedes v1 through v3.3 (2026-09-19)
 **Date:** 2026-09-19
 **Audience:** Product and architecture reviewers, AI agents, future implementers
 **Scope:** Agent context management, workflow state, audit events, GitHub issue projection
-**Implementation status:** Describes the current system (rechecked against `src/` at commit `0dc441e`) and the reviewed candidate evolution. Not implemented or approved.
+**Implementation status:** In progress. The V3 storage, record lifecycle, projection, prompt provenance, bounded context and diagnostics are implemented; runtime cutover remains pending.
 
 ## 0. What changed in v3
 
@@ -21,7 +21,7 @@ V1 diagnosed the right problems but proposed more machinery than the current fac
 | Events | Keep an authoritative projection and append one transactional transition event for every accepted projection change. Runtime does not replay events. |
 | GitHub | Publish only changed revisions. Maintain one authoritative status comment and immutable milestone comments only when a human acts, must act, or the contract changes. |
 | Diff delivery | Place reviewer artifacts inside an ignored, owner-only worktree context directory so both providers can access them without external-path permissions; permissions are hygiene rather than a sandbox boundary. |
-| Migration | Support either a bounded one-shot importer for in-flight work or a fresh data directory with explicit GitHub recovery. Imported worktrees remain at their existing paths and constrain rollback. |
+| Cutover | V3 requires a new data directory. There is no importer, dual-read path or legacy rollback. |
 | Summaries | No AI-generated memory summaries. Structured active records make relevance deterministic. |
 
 The central principle remains: context is selected by lifecycle and applicability. Information disappears from a prompt because it was resolved or superseded, never merely because it became old.
@@ -37,7 +37,7 @@ Six corrections from the v3 review, each verified against the code:
 | 3 | `.factory-context/` mechanism specified: `info/exclude` of the clone, deleted after Reviewer, stat over the same range as the diff, permissions as hygiene (§6.5). | The factory cannot edit the target repository's `.gitignore`; `worktrees.check` relies on `--exclude-standard`; Codex runs every role with `workspace-write`. |
 | 4 | Remote-dashboard sentence replaced (§6.6). | `FACTORY_DASHBOARD_HOST` only accepts loopback (`src/config.ts:19-20`); the sentence described an unsupported mode. |
 | 5 | `activeRequestId` is stored and must equal its derivation from the request chain (§7.1, test 23). | v3 both stored and derived it without saying which is authoritative. |
-| 6 | Importer bounded to unambiguous fields, no inference; fresh data directory remains supported; rollback defined as the untouched source directory (§10, decision 11, test 22). | v3's importer would have reimplemented the `retry.ts` heuristics the runtime removes (§7.4). |
+| 6 | Replaced by v3.4: the project deliberately requires a fresh V3 data directory and provides no importer (§10). | The operator can uninstall and restart; compatibility code would add risk without product value. |
 
 ### 0.2 What changed in v3.2
 
@@ -48,7 +48,7 @@ V3.2 resolves the remaining review findings and defines coordinated maintenance 
 | 1 | Requests identify their `owner` (`human` or `architect`); the active request is causal, while `WAITING` is reserved for a human-owned request (§5.2, §7.1). | A tactical-decision request queues Architect and is not a human CTA. V3.1 used `activeRequestId` for both meanings. |
 | 2 | The projection stores `activeFailureId`; failures have an explicit lifecycle (§7.1, §7.5). | “The current failure row” was ambiguous after multiple attempts. |
 | 3 | Records receive a monotonic per-item sequence (§5.1, §5.6). | Timestamps can tie and therefore cannot define deterministic instruction precedence alone. |
-| 4 | Migration pauses active items when unclassified legacy feedback would be discarded (§10). | Continuing automatically after losing possible human constraints violates the context guarantee. |
+| 4 | Superseded by v3.4: no legacy data is imported. | A clean start removes ambiguous mapping entirely. |
 | 5 | GitHub publication uses a presentation revision distinct from workflow revision (§8.1). | Evidence and observed comments may change the status comment without changing stage or status. |
 | 6 | `.factory-context/` rejects tracked, pre-existing or symlinked paths before writing (§6.5). | `info/exclude` protects only untracked content and must not hide or overwrite repository-owned files. |
 | 7 | Planned maintenance performs preflight, explicit confirmation, a daemon-side execution barrier, safe pause and manual batch resume (§7.6). | Update, restart, stop and configuration apply must not interrupt work without informed consent. |
@@ -64,7 +64,7 @@ V3.3 applies the final implementation-readiness review without changing the arch
 | 2 | `QUEUED → RUNNING` is an explicit transactional transition and the maintenance barrier lives in it (§7.2, §7.6). | A scheduler that already read a queued item could otherwise spawn it after maintenance confirmation. |
 | 3 | Retry and resume derive `resumeStatus`: human-owned active request → `WAITING`, otherwise `QUEUED` (§7.1). | Requeuing an item with an open human request would hide its CTA and run an agent incorrectly. |
 | 4 | Operator signals outside an explicit operation create durable implicit maintenance; only death without the stop handler is unexpected (§7.6). | Direct service stop and Ctrl-C need deterministic pause and resume semantics. |
-| 5 | Migration documents shared worktree paths and limits rollback after an imported item executes (§10). | Copying the database does not copy or isolate linked Git worktrees. |
+| 5 | Superseded by v3.4: no legacy database or worktree is imported. | Clean installation is the only cutover path. |
 | 6 | `.factory-context/OWNER` distinguishes a stale factory artifact from repository-owned content (§6.5). | A daemon crash must not leave Reviewer permanently blocked, while foreign paths remain protected. |
 | 7 | Imported requests use `context.cursor` as `openedAfterCommentId`, and nested tactical clarification preserves its parent (§10). | Using zero can replay an old command; using the latest remote id can lose a maintenance-window answer. |
 | 8 | Record sequence assignment, presentation-only transactions, configuration revalidation order and retained execution artifacts are explicit (§5.1, §8.1, §7.6, §11). | These details remove remaining implementation ambiguity. |
@@ -111,7 +111,7 @@ All workflow memory is one `Context` JSON on `work_items` (`src/types.ts:26-35`)
 | F5 | `cycles` increments on `decision` outcomes as well as `changes`; a legitimate decision request consumes a correction cycle. | `src/orchestrator.ts:341` |
 | F6 | A new SPEC version replaces `decisions` wholesale and resets `reports`; human answers survive only as feedback strings. | `src/orchestrator.ts:329-331` |
 | F7 | Routes missing from v1's transition table: architectural draft review (`architectDraft`, `spec.review_required`), correction-limit resolution through `/factory answer` (resets `cycles`, keeps the consultation), recovery from GitHub (`recoverManagedIssue` → `PAUSED`, `resume: "SPEC"`), and silent discard of a result when the state changed during execution. | `src/orchestrator.ts:291,300-306,187-201`; `processHumanComment` |
-| F8 | GitHub is a fallback source of truth: `recoverManagedIssue` rebuilds a work item from labels and comments and restarts at Architect. That is the bar the current system already sets for "migration does not replay work". | `src/orchestrator.ts:187-201` |
+| F8 | GitHub can recover a missing managed issue from labels and comments, but V3 clean start does not adopt legacy factory items automatically. New work starts explicitly. | `src/orchestrator.ts:187-201` |
 | F9 | `NEW` is a dead state: `ingest` inserts directly in `SPEC`. | `src/orchestrator.ts:203-213` |
 | F10 | Claude restricts tools per role (Architect/Reviewer read-only); Codex uses `--sandbox workspace-write` for every role and the mutation boundary is enforced after the fact by `worktrees.check`. | `src/adapters/claude.ts:9-11`, `src/adapters/codex.ts:17`, `src/worktrees.ts:53` |
 | F11 | `flush()` calls `syncState` for every work item on every tick; `syncState` does `issue view` + a full comment listing + possible label edits and a PATCH. There is no "publish only if changed" guard. | `src/orchestrator.ts:268-272`, `src/adapters/github.ts` |
@@ -180,7 +180,7 @@ Implementation is released in three independently useful slices:
 2. **Safe service maintenance:** transactional start barrier, interrupt versus cancel, confirmation, pause and resume. Acceptance tests 26–31.
 3. **Repository recovery:** the five fixed repository actions in §7.7. Acceptance test 33.
 
-No slice adds abstraction for a hypothetical provider, workflow or repository operation. Slice 1 must ship and stabilize before slices 2 and 3. The one-shot importer is isolated from runtime and removed after the upgrade release.
+No slice adds abstraction for a hypothetical provider, workflow or repository operation. Slice 1 must ship and stabilize before slices 2 and 3. Cutover accepts only a fresh V3 database.
 
 ## 5. Records: the unit of memory
 
@@ -210,7 +210,7 @@ CREATE INDEX records_active ON records(work_item_id, kind, status, spec_version)
 CREATE UNIQUE INDEX records_sequence ON records(work_item_id, sequence);
 ```
 
-One table, one insert path, one query path. TypeScript types it as a discriminated union on `kind`. Every insert assigns `MAX(sequence) + 1` for that work item inside the same transaction; the importer assigns sequence in stable legacy order: feedback index, then decisions, then findings. `Store` enables `PRAGMA foreign_keys = ON` at open; without it SQLite does not enforce the `REFERENCES` clauses above, and the guarantee would be documentation only.
+One table, one insert path, one query path. TypeScript types it as a discriminated union on `kind`. Every insert assigns `MAX(sequence) + 1` for that work item inside the same transaction. `Store` enables `PRAGMA foreign_keys = ON` at open; without it SQLite does not enforce the `REFERENCES` clauses above, and the guarantee would be documentation only.
 
 ### 5.2 Payload per kind
 
@@ -523,7 +523,7 @@ Two dimensions: exactly one stage label (`factory:design|build|test|review|deliv
 
 ### 8.5 Comment markers
 
-Markers keep the current `Work item: <id>` form (recovery depends on it, F8) and add `workflow-rev:<revision>`, `presentation-rev:<presentationRevision>` and `event:<eventId>`. `recoverManagedIssue`'s regex must accept legacy and new markers.
+Markers use `Work item: <id>` (recovery depends on it, F8) and add `workflow-rev:<revision>`, `presentation-rev:<presentationRevision>` and `event:<eventId>`. V3 recovery reads this single marker format.
 
 ## 9. Invariants
 
@@ -551,33 +551,15 @@ Markers keep the current `Work item: <id>` form (recovery depends on it, F8) and
 
 ## 10. Cutover
 
-No dual-write and no legacy readers in runtime code. The importer is a bounded, one-shot, pure transformation that copies **unambiguous** fields and never infers a route.
+No dual-write, importer or compatibility reader is implemented.
 
-1. Add `metadata.schema_version = 3`. A v3.3 daemon refuses to operate on an older database and prints both supported paths: `factory migrate --from <v1-data-dir> --to <new-data-dir>` or a fresh data directory.
-2. **Fresh directory** (always supported): stop the v1 daemon, start v3 with a new data directory, run `factory refresh`. Tracked issues are recovered from GitHub into `DESIGN/PAUSED` exactly as today (`recoverManagedIssue`), and the operator retries. Cheapest when few items are in flight.
-3. **Importer** (recommended when items are mid-delivery): stop the daemon; `factory migrate` reads a snapshot of the v1 database, writes a new directory, validates the invariants of §9, and marks it `schema_version = 3` only after every row succeeds. It never mutates the source and emits a machine-readable report. `context.cwd` is copied as-is and linked worktrees are not moved. The command prints that source and target databases therefore share those worktree paths. Field mapping:
+1. A newly created database is initialized atomically with `metadata.schema_version = 3` only after the complete V3 schema exists.
+2. The daemon and mutating CLI commands refuse a database without schema version 3. The error tells the operator to stop services and either run the supported uninstaller or select an empty `FACTORY_DATA_DIR`.
+3. Installation into an empty data directory starts with no work items, records, requests, failures, executions or retained worktrees. The operator starts desired open issues again with `/factory start` or the dashboard.
+4. An existing target application checkout may be reused; factory runtime state may not. Uninstall continues to preserve provider credentials and the target application repository.
+5. There is no rollback or reverse conversion. The previous data directory may be copied aside for manual audit, but V3 never reads it.
 
-| Legacy field | v3.3 target | Rule |
-| --- | --- | --- |
-| `issue_number`, `repo`, `branch`, `context.cwd`, `context.title/body/url` | `work_items` | copied |
-| `state` / `context.pendingStage.stage` | `stage`, `status` | fixed table per `WorkState` (test 22); `pendingStage.stage` wins over `state` for `FAILED`/`PAUSED`/`CANCELLED` |
-| `context.spec`, `version`, `criteria`, `taskAssessment`, `specs` rows | `specs` | copied |
-| `context.approvedVersion`, `approval` | approval on projection | copied only when `approvedVersion === version` |
-| `context.cursor` | `cursor` | copied |
-| `context.cycles` | `correction_cycles` | copied |
-| `context.waiting` | open `request` | `questions` → `clarification`; `approval` → `spec-approval`; `loop` → `correction-limit`; `openedAfterCommentId = context.cursor` |
-| `context.consultation.from` with `approvedVersion === version` | open `request` `tactical-decision` with `originatingStage` | copied with `openedAfterCommentId = context.cursor`; when `waiting` also creates a clarification, that clarification's `parent_id` points to this tactical request; absent while a delivery report shows `decision` → status `PAUSED` with a `recovery` failure naming the missing route |
-| `context.retryGuidance` | one `instruction`, `scope: spec` | copied |
-| `context.decisions` | `decision` records, `category: tactical`, `scope: spec` | copied |
-| latest `context.reports.<role>` with `changes` | open `auto-fix` findings | copied from the report's findings; no other report content |
-| `context.feedback` strings, other `reports`, `resume`, `lastFailure` | — | **not imported**; the report lists them per item. A nonterminal item with discarded feedback is imported `PAUSED` with a `recovery` failure and a human-owned clarification request to classify any still-active constraints. Terminal items need no gate. |
-| `context.pr`, `merge` | projection | copied |
-
-4. Any item the mapping cannot classify is imported at its known stage with status `PAUSED`, a `recovery` failure and a clarification request describing the missing fact. Nothing is reset to Design and nothing runs automatically.
-5. Start v3.3 against the migrated directory, run `factory doctor`, then `factory refresh`. Publication uses the imported cursor and marker ids, so old commands are not replayed and comments are not duplicated. `factory doctor` reports imported items that have executed since migration.
-6. **Rollback** restores the source database, but imported items share their original worktree paths. It is supported only before the first v3.3 execution on an imported item; after that, worktree commits and database history may diverge. `factory migrate` prints this limit and `factory doctor` names every imported item that has since executed. There is no reverse importer.
-
-The importer contains none of the inference in `retry.ts` (approval recovered from events, consultation recovered from reports) — those heuristics are deleted with §7.4, not moved. It is covered by fixture databases for every `WorkState` × `waiting` combination and removed in the release after the one that ships it.
+This clean cutover is an explicit product decision: the operator can uninstall and start again, so compatibility machinery would add implementation and operational risk without preserving required behavior.
 
 ## 11. Resolved decisions
 
@@ -593,7 +575,7 @@ The importer contains none of the inference in `retry.ts` (approval recovered fr
 | 8 | Context uses a global byte budget with exact role and provider/model overrides. Protected context never truncates. |
 | 9 | Decisions are superseded through explicit ids. Agent-originated decisions can never supersede a human decision. |
 | 10 | Multiple requests may remain open through one non-branching parent chain. The deepest open request is causally active; only a human-owned active request creates a human CTA. |
-| 11 | Upgrading may use the bounded importer or a fresh data directory. The importer copies unambiguous fields, never infers a route and keeps `context.cwd` unchanged; rollback to the source database is supported only until the first v3.3 execution uses an imported worktree. |
+| 11 | V3 uses a fresh database only. There is no importer, compatibility reader or rollback path; uninstall preserves the target repository and provider credentials. |
 | 12 | Records, events, failures and specs are retained. By default, 30 days after `COMPLETED` or `CANCELLED`, exact prompt/completion content, diffs, stdout, stderr and `completion.json` are deleted; `prompt.json`, prompt byte count, SHA-256, inclusion ids and execution metadata remain. Operators may increase or disable this retention period. |
 | 13 | Disruptive maintenance requires affected-work preflight and explicit confirmation, pauses runnable work behind a daemon-side barrier, and leaves it paused for manual individual or batch resume. |
 | 14 | Execution `cancelled` means explicit cancellation. Planned service maintenance records `interrupted/planned-maintenance` and leaves the workflow `PAUSED`. |
@@ -622,14 +604,14 @@ Style: `node:test` with the existing GitHub, workspace and agent fakes in `test/
 13. **Publish on change only.** Two consecutive ticks without presentation changes make zero GitHub writes and zero per-item `syncState` calls; inbound polling may still read. One transition produces one label sync and one status-comment update, and `publishedPresentationRevision` equals `presentationRevision` after success. A presentation-only evidence change updates the comment without incrementing workflow `revision`.
 14. **Single CTA.** The status comment body contains exactly one "Next action" heading and reflects stage, status, version, attempt and open request. A human-owned request contains a command CTA; an Architect-owned request states that Architect is next and asks no human action.
 15. **Delivery failure isolation.** A GitHub outage during `flush` leaves the outbox row unsent and the projection unchanged; the next tick delivers once (delivery key) with no duplicate comment.
-16. **Cutover guard.** A v3.3 daemon refuses an older schema and names both upgrade paths; an importer failure on any row leaves the target unmarked and the source database untouched; recovery regex matches old and new markers. The importer warns that worktrees are shared by path. Rollback succeeds before any imported execution; after one executes, `doctor` reports that rollback is no longer supported for that item.
+16. **Cutover guard.** A V3 daemon refuses a database without schema version 3 and tells the operator to uninstall or select an empty data directory. A fresh database receives the version only after schema creation succeeds. No legacy rows are read or changed.
 17. **Discarded result.** A result arriving after `/factory cancel` leaves projection and records untouched and appends `execution.discarded`.
 18. **Prefix stability.** For two roles on the same provider, common rules, common result envelope and provider rules form a byte-identical prefix; role-specific schemas remain different.
 
 19. **Nested request selection.** With an Architect-owned tactical request and human-owned child clarification both open, only clarification is `activeRequestId` and status is `WAITING`; resolving it restores the tactical request, status becomes `QUEUED`, and its originating stage survives. A sibling request is rejected transactionally.
 20. **Protected artifact placement.** Reviewer diff is inside `.factory-context`, readable by both provider adapters, absent from `git ls-files --others --exclude-standard` and from the commit after `git add --all` because `info/exclude` names it, created owner-only with an OWNER marker, and removed after the Reviewer execution whether it succeeds or fails. A stale, untracked, non-symlink factory directory with a valid marker is safely recreated after a crash; tracked, foreign, missing-marker and symlinked fixtures fail before any deletion. The inline stat and file cover the same commit range.
 21. **No accidental supersession.** Instructions with different text or role sets remain active until an explicit replacement, revocation or SPEC-version supersession occurs; the prompt lists them by monotonic sequence with ids; equal timestamps still produce deterministic precedence; with four active instructions the status comment shows the pruning hint.
-22. **Migration preservation.** Every `WorkState` × `waiting` fixture maps to the stage, status and open request given by the §10 table, with approved SPEC, cursor, branch/worktree, retry guidance and tactical decisions preserved; imported requests use `openedAfterCommentId = context.cursor`, and simultaneous `waiting` plus `consultation.from` creates a clarification child of the tactical request. A fixture with a delivery `decision` report and no `consultation.from` becomes `PAUSED` with a `recovery` failure. The importer reads no `events` rows and does not convert `feedback` strings; any active item containing them is paused with a human recovery request instead of running automatically.
+22. **Clean start.** A fresh database has schema version 3 and no runtime rows. Opening a fixture database without version 3 fails before schema or data changes. Reinstalling preserves the configured target repository and provider credentials but creates no work item until an open issue is explicitly started.
 23. **Active request consistency.** After every transition, stored `activeRequestId` equals the deepest open request derived inside the transaction. Callers cannot provide or override it; `doctor` detects manually introduced drift.
 24. **Foreign keys enforced.** Inserting a record with an unknown `work_item_id`, `parent_id`, `superseded_by` or `resolved_by` fails at the database.
 25. **Active failure consistency.** A second unresolved failure for one item is rejected; `FAILED` always points to it; Retry resolves it and atomically clears `activeFailureId`.

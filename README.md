@@ -90,6 +90,8 @@ Product Architect records a complexity/risk assessment and the deterministic orc
 
 Configuration → Runtime also sets the byte budget for agent context. Optional JSON overrides can target an exact role or `provider/model`; the most specific matching value is recorded with each persisted prompt. Protected specification, decision and instruction context is never silently clipped.
 
+The V3 workflow starts from a fresh factory data directory. It intentionally provides no importer or compatibility reader for earlier workflow databases. Reinstalling preserves the target application repository and the locally stored GitHub, Claude and Codex credentials.
+
 GitHub issues show the workflow through colored state labels and an updatable progress comment. Reports use readable Markdown; full JSON evidence stays in the local audit. The issue remains open until the delivered PR is merged.
 
 Merged PRs reconcile to `MERGED`; closed unmerged PRs to `PR_CLOSED`. Run `npm run factory -- sync` when the daemon is stopped to refresh delivery state without running agents.

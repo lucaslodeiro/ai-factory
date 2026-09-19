@@ -279,7 +279,7 @@ GitHub comments use a durable, idempotent delivery queue. If reading human repli
 
 ## Current boundaries
 
-One foreground daemon per target/data directory, sequential work-item execution, no automatic merge, and no remote execution service. Claude and Codex accounts must be authenticated locally. Old bootstrap items without issue context are rejected explicitly; use a fresh data directory for the first run. Unit/integration tests simulate provider reasoning and GitHub; a live provider demo is a separate acceptance check.
+One foreground daemon per target/data directory, sequential work-item execution, no automatic merge, and no remote execution service. Claude and Codex accounts must be authenticated locally. V3 requires a fresh factory data directory and does not import or read databases created by earlier workflow versions. Use the supported uninstaller and reinstall, or select an empty `FACTORY_DATA_DIR`; the target application repository and provider credentials are preserved. Unit/integration tests simulate provider reasoning and GitHub; a live provider demo is a separate acceptance check.
 
 ## Slack configuration and diagnosis
 
@@ -289,7 +289,7 @@ The terminal alternative is to set `SLACK_WEBHOOK_URL` only in your local `.env`
 
 ## Structured reports and upgrades
 
-All provider results now require coverage, test evidence, changed files, dependency rationale, decisions and review checks. See `templates/EXECUTION_RESULT.md`. Schemas migrate transactionally when opening SQLite, including concurrent CLI/daemon startup. Previously approved specs without structured acceptance criteria are not silently grandfathered into PASS: regenerate and approve a new spec. Existing raw agent outputs remain in the audit history.
+All provider results require coverage, test evidence, changed files, dependency rationale, decisions and review checks. See `templates/EXECUTION_RESULT.md`. A fresh schema is initialized transactionally, including concurrent CLI/daemon startup, and receives schema version 3 only after creation succeeds. An unversioned or older database is rejected before mutation.
 
 Delivery roles cannot alter the approved specification. The provider schema requests inert values for `spec`, `acceptanceCriteria`, `taskAssessment` and `nextRole`; the orchestrator also forces those fields to inert values before validating Implementation Engineer, Verification Engineer and Delivery Reviewer reports because provider structured-output implementations may not enforce every enum or zero-length-array constraint. Coverage, test evidence, findings and all other delivery requirements remain strictly validated.
 

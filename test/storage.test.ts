@@ -6,8 +6,8 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { Store } from "../src/storage.js";
-test("concurrent CLI processes migrate a new SQLite database exactly once", { timeout: 15000 }, async () => {
- const root = fs.mkdtempSync(path.join(os.tmpdir(), "factory-migration-"));
+test("concurrent CLI processes initialize a new V3 SQLite database exactly once", { timeout: 15000 }, async () => {
+ const root = fs.mkdtempSync(path.join(os.tmpdir(), "factory-schema-"));
  const gate = path.join(root, "start"), filename = path.join(root, "factory.db");
  const source = pathToFileURL(path.resolve("src/storage.ts")).href;
  const code = `import fs from 'node:fs';import {Store} from ${JSON.stringify(source)};while(!fs.existsSync(${JSON.stringify(gate)}))await new Promise(r=>setTimeout(r,10));const s=new Store(${JSON.stringify(filename)});s.event('opened',{});s.db.close();`;

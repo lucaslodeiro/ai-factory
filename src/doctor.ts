@@ -27,7 +27,10 @@ export function doctor() {
    const problems=workflowProjectionProblems(s);check("Workflow projection invariants",problems.length===0);
    for (const problem of problems) console.log(`  - ${problem}`);
   } finally { s.db.close(); }
- } catch { check("SQLite writable", false);check("Workflow projection invariants",false); }
+ } catch (error) {
+  check("SQLite writable", false);check("Workflow projection invariants",false);
+  console.log(`  - ${error instanceof Error ? error.message : String(error)}`);
+ }
  console.log(`Slack: ${config.slackWebhook ? "configured" : "optional, disabled"}`);
  return ok;
 }
