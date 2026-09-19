@@ -44,7 +44,7 @@ test("supervisor kills TERM-resistant workers after daemon SIGKILL and preserves
  const ownerExited = new Promise<void>(resolve => owner.on("exit", () => resolve()));
  let s: Store | undefined; let group: number | undefined;
  const wait = async (condition: () => boolean) => { const end = Date.now() + 7000; while (!condition()) { if (Date.now() > end) throw new Error("Timed out waiting for supervisor: " + fs.readFileSync(path.join(root, "owner.log"), "utf8")); await new Promise(r => setTimeout(r, 30)); } };
- const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch (e) { if ((e as NodeJS.ErrnoException).code === "ESRCH") return false; throw e; } };
+ const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch (e) { if ((e as NodeJS.ErrnoException).code === "ESRCH") return false;if((e as NodeJS.ErrnoException).code==="EPERM")return true;throw e; } };
  try {
   await wait(() => fs.existsSync(marker)); s = new Store(filename); workItem(s);
   const run = s.db.prepare("SELECT id,pid FROM executions").get() as { id: string; pid: number }; group = run.pid;

@@ -18,8 +18,7 @@ export class WorkflowScheduler {
    const spec=this.store.db.prepare("SELECT approved_by FROM specs WHERE work_item_id=? ORDER BY version DESC LIMIT 1").get(workItemId) as {approved_by:string|null}|undefined;
    if(!spec?.approved_by)throw new Error("Cannot schedule delivery without an approved current specification");
   }
-  const blocked=this.store.db.prepare(`SELECT 1 FROM maintenance_items mi JOIN maintenance_operations mo ON mo.id=mi.maintenance_id
-   WHERE mi.work_item_id=? AND mi.resumed_at IS NULL AND mo.status IN ('confirmed','pausing','ready','running')`).get(workItemId);
+  const blocked=this.store.db.prepare(`SELECT 1 FROM maintenance_operations WHERE status IN ('confirmed','pausing','ready','running') LIMIT 1`).get();
   if(blocked)throw new Error("Confirmed maintenance prevents new agent execution");
   const id=randomUUID(),startedAt=new Date().toISOString();
   const projection=this.projections.transition({workItemId,expectedRevision:current.revision,stage:current.stage,status:"RUNNING",activeRunId:id,actor:{type:"orchestrator",id:"scheduler"},source:{executionId:id},reason:{code:"execution-started",summary:`${role} execution started`}},()=>{

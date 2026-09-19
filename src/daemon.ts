@@ -56,13 +56,14 @@ export async function startDaemon(store = new Store()) {
  };
  const github=new GitHubAdapter(),runner=new WorkflowRunner(store,agents,new Workspaces(),github),o=new WorkflowOrchestrator(store,github,runner,new SlackAdapter());
  const commands=new WorkflowCommands(store),maintenance=new WorkflowMaintenance(store,executions);
- let stopping = false,stopReason="unknown",stopPromise:Promise<unknown>|undefined;
- const stop = (reason="control") => {
-  if (stopping) return;
-  stopping = true;
+ let stopping = false,stopRequested=false,stopReason="unknown",stopPromise:Promise<unknown>|undefined;
+ const stop = async (reason="control") => {
+  if (stopping||stopRequested) return;
+  stopRequested=true;
   stopReason=reason;
   daemonLog("info","daemon.stop_requested",{reason,activeItems:maintenance.affected().length});
-  stopPromise=maintenance.pauseForSignal(reason).catch(error=>daemonLog("error","maintenance_signal_failed",{reason,error:String(error)}));
+  stopPromise=maintenance.pauseForSignal(reason).then(()=>{stopping=true;}).catch(error=>{stopRequested=false;daemonLog("error","maintenance_signal_failed",{reason,error:String(error)});throw error;});
+  return stopPromise;
  };
  let auditCursor=(store.db.prepare("SELECT COALESCE(MAX(id),0) AS id FROM events").get() as {id:number}).id;
  const audit = () => {
@@ -91,7 +92,7 @@ export async function startDaemon(store = new Store()) {
   for (const r of rows) {
    try {
     let result: unknown;
-    if (r.kind === "stop") stop();
+    if (r.kind === "stop") result=await stop();
     else if (r.kind === "retry") {const specVersion=(store.db.prepare("SELECT COALESCE(MAX(version),0) version FROM specs WHERE work_item_id=?").get(r.target) as {version:number}).version;result=commands.apply({kind:"retry",guidance:""},{workItemId:r.target,login:"dashboard",commentId:r.id,specVersion});}
     else if (r.kind === "start-issue") result = o.startIssue(r.target);
     else if (r.kind === "refresh-list") result = o.refreshIssueList();
@@ -110,7 +111,7 @@ export async function startDaemon(store = new Store()) {
   audit();
   } finally {controlsBusy=false;}
  };
- const sigint=()=>stop("SIGINT"),sigterm=()=>stop("SIGTERM");
+ const sigint=()=>void stop("SIGINT").catch(()=>{}),sigterm=()=>void stop("SIGTERM").catch(()=>{});
  process.on("SIGINT",sigint); process.on("SIGTERM",sigterm);
  let timer: NodeJS.Timeout | undefined;
  try {

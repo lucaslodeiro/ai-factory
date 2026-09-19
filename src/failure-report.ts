@@ -5,11 +5,12 @@ import { config } from "./config.js";
 import type { Store } from "./storage.js";
 import type { AgentRole, WorkItem, WorkState } from "./types.js";
 import { roleShortName, stateName } from "./names.js";
+import type { WorkflowFailure } from "./workflow-failures.js";
 
 const stageRoles: Partial<Record<WorkState,AgentRole>> = { SPEC:"product-architect",DEVELOPMENT:"developer",QA:"qa",REVIEW:"reviewer" };
 const stageLabel = (state: WorkState) => stateName(state);
 
-function sanitize(value: unknown, limit = 4000) {
+export function sanitizeFailureEvidence(value: unknown, limit = 4000) {
   let text=String(value ?? "")
     .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g,"")
     .replace(/\x1B[@-_]/g,"")
@@ -31,19 +32,39 @@ function sanitize(value: unknown, limit = 4000) {
   return text.length>limit ? `…${text.slice(-(limit-1))}` : text;
 }
 
-function tail(file: string, maxLines = 30) {
+export function failureLogTail(file: string, maxLines = 30) {
   try {
     const stat=fs.statSync(file),bytes=Math.min(stat.size,64*1024),buffer=Buffer.alloc(bytes),handle=fs.openSync(file,"r");
     try { if (bytes) fs.readSync(handle,buffer,0,bytes,stat.size-bytes); } finally { fs.closeSync(handle); }
     let text=buffer.toString("utf8");
     if (stat.size>bytes) { const newline=text.indexOf("\n"); text=newline>=0 ? text.slice(newline+1) : ""; }
     const lines=text.split(/\r?\n/); while (lines.at(-1)==="") lines.pop();
-    return sanitize(lines.slice(-maxLines).join("\n"));
+    return sanitizeFailureEvidence(lines.slice(-maxLines).join("\n"));
   } catch { return ""; }
 }
 
-function diagnosis(reason: string, stderr: string, run?: {status:string;exit_code:number|null}) {
+export function failureDiagnosis(reason: string, stderr: string, run?: {status:string;exit_code:number|null}) {
   const evidence=`${reason}\n${stderr}`;
+  if (/^\[invalid-context\]/i.test(reason)) return [
+    "**Summary:** The required specification, decisions, instructions and request chain do not fit within the configured context budget.",
+    "**Evidence:** Context assembly stopped before invoking a provider rather than silently dropping protected information.",
+    "**Recommended action:** Remove or replace obsolete guidance, or increase the matching context budget in Configuration → Runtime, then retry.",
+  ].join("\n\n");
+  if (/^\[invalid-result\]/i.test(reason)) return [
+    "**Summary:** The agent returned output that did not satisfy the workflow contract for this role or stage.",
+    "**Evidence:** The provider completed, but schema, acceptance-coverage or stage-transition validation rejected its result.",
+    "**Recommended action:** Review the exact validation message and retry with clarifying guidance if the intended behavior is ambiguous.",
+  ].join("\n\n");
+  if (/^\[recovery\]/i.test(reason)) return [
+    "**Summary:** The daemon stopped before it could record a safe completion for this execution.",
+    "**Evidence:** Startup recovery found an execution that was still marked running and preserved its stage and worktree.",
+    "**Recommended action:** Inspect the preserved changes and daemon logs, then retry the saved stage.",
+  ].join("\n\n");
+  if (/^\[(?:integration|configuration)\]/i.test(reason)) return [
+    "**Summary:** A required factory setting or external integration prevented the stage from running safely.",
+    "**Evidence:** The orchestrator stopped at its configuration or integration boundary before advancing the workflow.",
+    "**Recommended action:** Run Doctor, repair the named credential or setting, and retry after validation passes.",
+  ].join("\n\n");
   if (/Tactical resolution selected nextRole=/i.test(reason)) return [
     "**Summary:** Architect selected a return role that would skip an unfinished delivery gate.",
     `**Evidence:** ${reason.replace(/^Error:\s*/,"")}`,
@@ -127,9 +148,9 @@ export function failureMarkdown(store: Store, w: WorkItem, error: unknown) {
   const selectionRow=run ? store.db.prepare("SELECT payload FROM events WHERE run_id=? AND type='execution.started' ORDER BY id DESC LIMIT 1").get(run.id) as {payload:string} | undefined : undefined;
   let selection: {selection?:{provider?:string;model?:string}} = {};
   try { selection=JSON.parse(selectionRow?.payload ?? "{}"); } catch {}
-  const stderr=run && path.basename(run.id)===run.id ? tail(path.join(config.dataDir,"runs",run.id,"stderr.log")) : "";
-  const reason=sanitize(error,1600) || "The workflow stopped without an error message.";
-  const analysis=diagnosis(reason,stderr,run);
+  const stderr=run && path.basename(run.id)===run.id ? failureLogTail(path.join(config.dataDir,"runs",run.id,"stderr.log")) : "";
+  const reason=sanitizeFailureEvidence(error,1600) || "The workflow stopped without an error message.";
+  const analysis=failureDiagnosis(reason,stderr,run);
   const facts=[`**Stage:** ${stageLabel(stage)}`];
   if (run) {
     facts.push(`**Agent:** ${roleShortName(run.role)}`);
@@ -141,4 +162,15 @@ export function failureMarkdown(store: Store, w: WorkItem, error: unknown) {
     ? `\n\n<details>\n<summary>Last ${Math.min(30,stderr.split("\n").length)} stderr lines</summary>\n\n\`\`\`text\n${stderr}\n\`\`\`\n\n</details>`
     : `\n\n_No stderr output was available. Use **Daemon logs** in the dashboard for additional context._`;
   return `## Execution failed\n\n${facts.join("  \n")}\n\n### What happened\n\n${reason}\n\n### Troubleshooting\n\n#### Diagnosis\n\n${analysis}${troubleshooting}\n\n### Next actions\n\nCorrect the reported cause, then choose one retry option.\n\n**From this GitHub issue**\n\n\`\`\`text\n/factory retry\n\`\`\`\n\nYou may add guidance for the next agent above or below the command.\n\n**From the dashboard**\n\n> Open this issue and select **Retry**.\n\n**From the factory terminal**\n\n\`\`\`bash\nnpm run factory -- retry ${w.id}\n\`\`\``;
+}
+
+export function workflowFailureEvidence(store:Store,failure:WorkflowFailure) {
+  const run=failure.executionId ? store.db.prepare("SELECT id,role,status,exit_code FROM executions WHERE id=? AND work_item_id=?").get(failure.executionId,failure.workItemId) as {id:string;role:AgentRole;status:string;exit_code:number|null}|undefined : undefined;
+  const stderr=run && path.basename(run.id)===run.id ? failureLogTail(path.join(config.dataDir,"runs",run.id,"stderr.log"),25) : "";
+  const reason=sanitizeFailureEvidence(failure.message,1600)||"The workflow stopped without an error message.";
+  const analysis=failureDiagnosis(`[${failure.class}] ${reason}`,stderr,run);
+  const facts=[`- **Failure class:** ${failure.class}`,`- **Stage:** ${failure.stage}`,`- **Attempt:** ${failure.attempt}`];
+  if(run)facts.push(`- **Agent:** ${roleShortName(run.role)}`,`- **Execution:** \`${run.id}\``,`- **Process result:** ${run.status}${run.exit_code===null?"":` · exit ${run.exit_code}`}`);
+  const output=stderr?`\n\n<details><summary>Last ${Math.min(25,stderr.split("\n").length)} stderr lines</summary>\n\n\`\`\`text\n${stderr}\n\`\`\`\n\n</details>`:`\n\n_No stderr output was available. Use **Daemon logs** in the dashboard for additional context._`;
+  return `### Failure details\n\n${facts.join("\n")}\n\n#### What happened\n\n${reason}\n\n#### Diagnosis\n\n${analysis}${output}`;
 }

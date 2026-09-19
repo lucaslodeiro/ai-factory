@@ -1,10 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import os from "node:os";
 import { Store } from "../src/storage.js";
 import { WorkflowGitHubPublisher } from "../src/workflow-github.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
 import { workflowLabels,workflowStatusMarkdown } from "../src/workflow-status.js";
+import { WorkflowFailures } from "../src/workflow-failures.js";
+
+const stagesForTest={DESIGN:"Design",BUILD:"Build",TEST:"Test",REVIEW:"Review",DELIVERY:"Delivery"} as const;
+const statusesForTest={QUEUED:"Queued",RUNNING:"Running",WAITING:"Waiting for you",FAILED:"Failed",PAUSED:"Paused",CANCELLED:"Cancelled",COMPLETED:"Completed"} as const;
 
 function setup() {
  const store=new Store(":memory:");
@@ -36,6 +41,48 @@ test("Architect-owned requests never render a human command",()=>{
   const body=workflowStatusMarkdown(s.store,"work-1");
   assert.match(body,/Architect is next/);assert.doesNotMatch(body,/\/factory answer|\/factory retry/);
  } finally {s.store.db.close();}
+});
+
+test("failed status explains the cause, identifies the execution and keeps one safe CTA",()=>{
+ const s=setup();
+ try {
+  s.store.db.prepare("INSERT INTO executions(id,work_item_id,role,workflow_state,status,started_at,finished_at,exit_code) VALUES('run-1','work-1','qa','TEST','failed','now','now',2)").run();
+  new WorkflowFailures(s.store).open({workItemId:"work-1",executionId:"run-1",class:"execution",message:`Bearer ghp_abcdefghijklmnopqrstuvwxyz123456 failed at ${os.homedir()}/private/project`,stage:"TEST",attempt:3});
+  s.projections.initialize("work-1","TEST","FAILED");
+  const body=workflowStatusMarkdown(s.store,"work-1");
+  assert.match(body,/### Failure details/);
+  assert.match(body,/Failure class:\*\* execution/);
+  assert.match(body,/Execution:\*\* `run-1`/);
+  assert.match(body,/Agent subprocess failed|workflow rejected/i);
+  assert.doesNotMatch(body,/ghp_abcdefghijklmnopqrstuvwxyz123456/);
+  assert.match(body,/~\/private\/project/);
+  assert.equal(body.match(/^## Next action$/gm)?.length,1);
+  assert.match(body,/\/factory retry/);
+ } finally {s.store.db.close();}
+});
+
+test("every public workflow status has readable state, labels and one authoritative CTA",()=>{
+ const cases=[
+  {stage:"DESIGN",status:"QUEUED",actor:"Architect",labels:["factory:design"],action:/next agent is queued/i},
+  {stage:"DESIGN",status:"RUNNING",actor:"Architect",labels:["factory:design"],action:/current agent is running/i},
+  {stage:"BUILD",status:"PAUSED",actor:"None",labels:["factory:build","factory:paused"],action:/\/factory retry/},
+  {stage:"TEST",status:"CANCELLED",actor:"None",labels:["factory:test","factory:cancelled"],action:/\/factory retry/},
+  {stage:"DELIVERY",status:"COMPLETED",actor:"None",labels:["factory:done"],action:/Delivery is complete/},
+ ] as const;
+ for(const entry of cases){
+  const s=setup();
+  try {
+   s.projections.initialize("work-1",entry.stage,entry.status==="RUNNING"?"QUEUED":entry.status);
+   if(entry.status==="RUNNING")s.projections.transition({workItemId:"work-1",expectedRevision:0,stage:entry.stage,status:"RUNNING",activeRunId:"run-public",actor:{type:"orchestrator",id:"test"},source:{executionId:"run-public"},reason:{code:"start",summary:"Agent started"}});
+   const body=workflowStatusMarkdown(s.store,"work-1");
+   assert.match(body,new RegExp(`Stage \\| ${stagesForTest[entry.stage]}`));
+   assert.match(body,new RegExp(`Status \\| ${statusesForTest[entry.status]}`));
+   assert.match(body,new RegExp(`Current actor \\| ${entry.actor}`));
+   assert.match(body,entry.action);
+   assert.equal(body.match(/^## Next action$/gm)?.length,1);
+   assert.deepEqual(workflowLabels(s.store,"work-1").map(label=>label.name),entry.labels);
+  } finally {s.store.db.close();}
+ }
 });
 
 test("publisher writes only changed presentation revisions and retries after delivery failure",()=>{

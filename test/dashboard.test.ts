@@ -11,7 +11,7 @@ import { config } from "../src/config.js";
 test("dashboard serves readable state and queues daemon controls", async () => {
   const store = new Store(":memory:");
   const settingsRoot = fs.mkdtempSync(path.join(os.tmpdir(),"factory-dashboard-settings-"));
-  const previousGit = config.gitCommand;
+  const previousGit = config.gitCommand,previousDataDir=config.dataDir;
   const previousCodex = config.codexCommand, previousClaude = config.claudeCommand, previousGh = process.env.GH_COMMAND;
   const fakeGit = path.join(settingsRoot,"git");
   fs.writeFileSync(fakeGit,`#!/usr/bin/env bash
@@ -83,6 +83,7 @@ echo "$*" >> "$PWD/update-actions.log"
   store.event("agent.result",{role:"qa",result:{outcome:"pass",summary:"All acceptance criteria passed",coverage:Array(20).fill({status:"passed"})}},"owner-demo-7");
   store.db.prepare("INSERT INTO executions(id,work_item_id,role,workflow_state,status,started_at,finished_at,exit_code,input_tokens,output_tokens,cached_tokens,total_tokens) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")
     .run("run-12345678","owner-demo-7","qa","QA","succeeded","2026-01-02T00:00:00.000Z","2026-01-02T00:01:05.000Z",0,1000,250,500,1750);
+  config.dataDir=path.join(settingsRoot,"runtime");fs.mkdirSync(path.join(config.dataDir,"runs","run-12345678"),{recursive:true});fs.writeFileSync(path.join(config.dataDir,"runs","run-12345678","prompt.md"),"sensitive prompt",{mode:0o600});
   store.event("execution.started",{role:"qa",selection:{provider:"claude",model:"sonnet",profile:"balanced"}},"owner-demo-7","run-12345678");
   store.event("execution.finished",{status:"succeeded",code:0,usage:{inputTokens:1000,outputTokens:250,cachedTokens:500,totalTokens:1750}},"owner-demo-7","run-12345678");
   const server = await startDashboard(store,"127.0.0.1",0,settingsRoot);
@@ -114,7 +115,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.doesNotMatch(html,/Dismiss guide/);
     assert.doesNotMatch(html,/Stop daemon/);
     const client = await fetch(`http://127.0.0.1:${port}/app.js`).then(response => response.text());
-    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/); assert.match(client,/loadDaemonLogs/); assert.match(client,/execCommand\('copy'\)/); assert.match(client,/expandedUsageItems/); assert.match(client,/data-usage-item/); assert.match(client,/data-provider-choice/); assert.match(client,/codex:'openai'/); assert.doesNotMatch(client,/refreshIssue/);
+    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/); assert.match(client,/loadDaemonLogs/); assert.match(client,/execCommand\('copy'\)/); assert.match(client,/expandedUsageItems/); assert.match(client,/data-usage-item/); assert.match(client,/data-provider-choice/); assert.match(client,/codex:'openai'/);assert.match(client,/repositoryCard/);assert.match(client,/revealPrompt/); assert.doesNotMatch(client,/refreshIssue/);
     const styles = await fetch(`http://127.0.0.1:${port}/styles.css`).then(response => response.text());
     assert.match(styles,/@media\(max-width:650px\)/); assert.match(styles,/content:attr\(data-label\)/); assert.match(styles,/\.usage-card\[open\]/); assert.match(styles,/\.provider-choice\[aria-pressed="true"\]/);
     for (const asset of ["github","git","openai","claude","slack"]) {
@@ -142,6 +143,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(resultEvent.title,"Tester: Passed"); assert.match(resultEvent.details,/All acceptance criteria passed/); assert.match(resultEvent.details,/20\/20 passed/); assert.equal(resultEvent.severity,"success");
     assert.equal(stateEvent.title,"Workflow moved to Failed"); assert.equal(stateEvent.details,"Previous stage: Test."); assert.equal(stateEvent.severity,"error");
     assert.match(executionEvent.details,/Tokens reported: 1,750/);
+    const promptDenied=await fetch(`http://127.0.0.1:${port}/api/executions/run-12345678/prompt`,{method:"POST",headers:{"content-type":"application/json"},body:"{}"});assert.equal(promptDenied.status,400);const prompt=await fetch(`http://127.0.0.1:${port}/api/executions/run-12345678/prompt`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({acknowledgeSensitive:true})}).then(response=>response.json()) as any;assert.equal(prompt.prompt,"sensitive prompt");assert.match(prompt.warning,/Sensitive/);
     assert.equal(resultEvent.issueTitle,"Repair login"); assert.equal(resultEvent.issueUrl,"https://github.com/owner/demo/issues/7");
     const controller = new AbortController();
     const stream = await fetch(`http://127.0.0.1:${port}/api/stream`,{signal:controller.signal});
@@ -323,7 +325,7 @@ echo "$*" >> "$PWD/update-actions.log"
     globalThis.fetch=originalFetch;
     await new Promise<void>(resolve => server.close(() => resolve()));
     store.db.close();
-    config.gitCommand=previousGit;
+    config.gitCommand=previousGit;config.dataDir=previousDataDir;
     config.codexCommand=previousCodex; config.claudeCommand=previousClaude;
     if (previousGh === undefined) delete process.env.GH_COMMAND; else process.env.GH_COMMAND=previousGh;
     fs.rmSync(settingsRoot,{recursive:true,force:true});

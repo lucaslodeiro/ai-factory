@@ -12,10 +12,10 @@ function setup() {
  return store;
 }
 
-test("workflow doctor accepts legacy rows and consistent initialized projections",()=>{
+test("workflow doctor rejects uninitialized rows and accepts consistent V3 projections",()=>{
  const store=setup();
  try {
-  assert.deepEqual(workflowProjectionProblems(store),[]);
+  assert.match(workflowProjectionProblems(store)[0],/stage and status/);
   new WorkflowProjections(store).initialize("work-1","DESIGN","QUEUED");
   assert.deepEqual(workflowProjectionProblems(store),[]);
  } finally {store.db.close();}

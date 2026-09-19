@@ -8,7 +8,7 @@ export function workflowProjectionProblems(store:Store) {
   const records=new WorkflowRecords(store),failures=new WorkflowFailures(store),problems:string[]=[];
   const foreignKeys=store.db.prepare("PRAGMA foreign_key_check").all() as Array<{table:string;rowid:number}>;
   for (const violation of foreignKeys) problems.push(`foreign key violation in ${violation.table} row ${violation.rowid}`);
-  const rows=store.db.prepare("SELECT id,stage,status,active_run_id,active_request_id,active_failure_id FROM work_items WHERE stage IS NOT NULL OR status IS NOT NULL").all() as Row[];
+  const rows=store.db.prepare("SELECT id,stage,status,active_run_id,active_request_id,active_failure_id FROM work_items").all() as Row[];
   for (const row of rows) {
     const label=`work item ${row.id}`;
     if (!row.stage || !row.status) { problems.push(`${label}: stage and status must be initialized together`);continue; }
