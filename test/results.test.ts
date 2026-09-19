@@ -11,6 +11,8 @@ test("reports require evidence fields, tests, dependency rationale and review di
  assert.throws(() => parseResult(result("pass", { reviewChecks: [] }), "reviewer"), /all review dimensions/);
  const review = result("pass"); review.reviewChecks[0].status = "failed";
  assert.throws(() => parseResult(review, "reviewer"), /all review dimensions/);
+ assert.throws(() => parseResult(result("changes", { findings:[{classification:"defer",evidence:"Not checked now"}] }), "developer"), /auto-fix finding/);
+ assert.throws(() => parseResult(result("changes", { findings:[{classification:"decision-required",evidence:"Human choice needed"}] }), "developer"), /auto-fix finding/);
 });
 test("spec/coverage IDs are unique and correspond to the immutable approved criteria", () => {
  const spec = result("spec"); spec.acceptanceCriteria.push(spec.acceptanceCriteria[0]);

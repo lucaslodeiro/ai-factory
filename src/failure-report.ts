@@ -54,7 +54,7 @@ function diagnosis(reason: string, stderr: string, run?: {status:string;exit_cod
     "**Evidence:** The agent process succeeded, but its structured result combined `resolved` with questions, a major/conflicting decision, or a decision-required finding.",
     "**Recommended action:** Retry with clear guidance: resolve within the approved SPEC when the decision is already known, or ask one explicit question when human input is still required.",
   ].join("\n\n");
-  if (/Changes require actionable findings/i.test(reason)) {
+  if (/Changes require (?:actionable findings|an auto-fix finding)/i.test(reason)) {
     const browserBlocked=/(?:playwright|chromium|chrome-headless-shell)/i.test(stderr) && /(?:permission denied|MachPortRendezvous|bootstrap_check_in|SIGTRAP)/i.test(stderr);
     if (browserBlocked) return [
         "**Summary:** The agent process completed, but the orchestrator rejected its report because it requested changes without providing an actionable finding. During validation, Playwright/Chromium also failed before the browser could start.",
@@ -63,8 +63,8 @@ function diagnosis(reason: string, stderr: string, run?: {status:string;exit_cod
       ].join("\n\n");
     return [
       "**Summary:** The agent process completed, but its structured report requested changes without an actionable finding, so the orchestrator could not determine a safe next step.",
-      "**Evidence:** The provider exited successfully, then result validation raised `Changes require actionable findings`.",
-      "**Recommended action:** Retry with guidance that tells the agent to either complete the work and return PASS evidence, or report a concrete auto-fix/decision-required finding.",
+      `**Evidence:** The provider exited successfully, then result validation raised \`${reason.replace(/^Error:\s*/,"")}\`.`,
+      "**Recommended action:** Retry with guidance that tells the agent to complete the work and return PASS evidence, report a concrete auto-fix as changes, or report a blocked human choice as a decision-required finding with outcome decision.",
     ].join("\n\n");
   }
   if (/(?:playwright|chromium|chrome-headless-shell)/i.test(evidence) && /(?:permission denied|MachPortRendezvous|bootstrap_check_in|SIGTRAP)/i.test(evidence)) return [

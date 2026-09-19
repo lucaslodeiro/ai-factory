@@ -26,3 +26,12 @@ test("legacy saved retry guidance is promoted without a data migration", () => {
  const legacy:WorkItem=structuredClone(item); delete legacy.context.retryGuidance;
  assert.match(prompt(legacy,"qa","claude"),/Do not use Chromium for validation\./);
 });
+
+test("delivery outcome instructions distinguish fixes, decisions and deferred observations", () => {
+ const output=prompt(item,"developer","codex");
+ assert.match(output,/Return changes only with at least one auto-fix finding/);
+ assert.match(output,/Return decision only with at least one decision-required finding/);
+ assert.match(output,/defer finding is non-blocking and cannot be the sole reason for changes/);
+ assert.match(output,/Never return changes merely to report progress/);
+ assert.match(output,/If human guidance prevents one validation method, use a permitted equivalent/);
+});

@@ -74,7 +74,7 @@ export function parseResult(raw: unknown, role: AgentRole): AgentResult {
   if (r.outcome === "resolved") {
     if (!r.nextRole || !r.decisions.length || r.decisions.some(d => d.kind !== "tactical" || d.conflictsWithHuman) || r.questions.length || r.findings.some(f => f.classification === "decision-required")) throw new Error("Tactical resolution cannot require a human decision");
   } else if (r.nextRole !== null) throw new Error("Only a tactical resolution may select nextRole");
-  if (r.outcome === "changes" && !r.findings.some(f => f.classification !== "defer")) throw new Error("Changes require actionable findings");
+  if (r.outcome === "changes" && !r.findings.some(f => f.classification === "auto-fix")) throw new Error("Changes require an auto-fix finding");
   if (r.outcome === "decision" && !r.findings.some(f => f.classification === "decision-required")) throw new Error("Decision requires an explicit finding");
   if (r.outcome === "pass") {
     if (r.findings.some(f => f.classification !== "defer") || r.questions.length || r.decisions.some(d => d.kind === "major" || d.conflictsWithHuman)) throw new Error("PASS contradicts a blocking finding or decision");
