@@ -59,6 +59,10 @@ fi
   fs.writeFileSync(path.join(settingsRoot,"scripts","update.sh"),`#!/usr/bin/env bash
 echo "$*" >> "$PWD/update-actions.log"
 `);
+  const serviceLogs=path.join(settingsRoot,".factory","service-logs");
+  fs.mkdirSync(serviceLogs,{recursive:true});
+  fs.writeFileSync(path.join(serviceLogs,"daemon.log"),Array.from({length:80},(_,index)=>`output-line-${index}`).join("\n")+"\n");
+  fs.writeFileSync(path.join(serviceLogs,"daemon.error.log"),"provider temporarily unavailable\nretry scheduled\n");
   store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,created_at,updated_at,context) VALUES(?,?,?,?,?,?,?)")
     .run("owner-demo-7",7,"owner/demo","FAILED","2026-01-01T00:00:00.000Z","2026-01-02T00:00:00.000Z",JSON.stringify({title:"Repair login",url:"https://github.com/owner/demo/issues/7",version:1,cursor:0,feedback:[],cycles:0,reports:{}}));
   store.event("state.changed",{from:"QA",to:"FAILED"},"owner-demo-7");
@@ -80,6 +84,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(html,/theme-toggle/);
     assert.match(html,/live-status/);
     assert.match(html,/factory-update/);
+    assert.match(html,/daemon-logs-panel/);
     assert.match(html,/Configuration/);
     assert.match(html,/settings-navigation/);
     assert.match(html,/ACTION REQUIRED/);
@@ -87,7 +92,12 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.doesNotMatch(html,/Dismiss guide/);
     assert.doesNotMatch(html,/Stop daemon/);
     const client = await fetch(`http://127.0.0.1:${port}/app.js`).then(response => response.text());
-    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/);
+    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/); assert.match(client,/loadDaemonLogs/);
+    const daemonLogs = await fetch(`http://127.0.0.1:${port}/api/logs/daemon?lines=50`).then(response => response.json()) as any;
+    assert.equal(daemonLogs.lines,50); assert.equal(daemonLogs.logs.length,2);
+    assert.equal(daemonLogs.logs[0].path,".factory/service-logs/daemon.log");
+    assert.doesNotMatch(daemonLogs.logs[0].content,/output-line-29(?:\n|$)/); assert.match(daemonLogs.logs[0].content,/output-line-30/); assert.match(daemonLogs.logs[0].content,/output-line-79/);
+    assert.equal(daemonLogs.logs[0].truncated,true); assert.match(daemonLogs.logs[1].content,/retry scheduled/);
     const snapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
     assert.equal(snapshot.daemon.running,false);
     assert.equal(snapshot.items[0].title,"Repair login");

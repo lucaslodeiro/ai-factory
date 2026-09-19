@@ -108,6 +108,38 @@ function asset(res: http.ServerResponse, name: string) {
     res.end(content);
   } catch { res.writeHead(404).end("Not found"); }
 }
+type LogSource = "output" | "errors";
+function tailLog(file: string, lines: number) {
+  if (!fs.existsSync(file)) return { exists:false,content:"",updatedAt:null,truncated:false };
+  const stat = fs.statSync(file);
+  const maxBytes = 512 * 1024;
+  const offset = Math.max(0,stat.size-maxBytes);
+  const length = stat.size-offset;
+  const handle = fs.openSync(file,"r");
+  try {
+    const buffer=Buffer.alloc(length);
+    if (length) fs.readSync(handle,buffer,0,length,offset);
+    let content=buffer.toString("utf8");
+    if (offset>0) content=content.slice(Math.max(0,content.indexOf("\n")+1));
+    const allLines=content.split(/\r?\n/);
+    if (allLines.at(-1)==="") allLines.pop();
+    const selected=allLines.slice(-lines);
+    return { exists:true,content:selected.join("\n"),updatedAt:stat.mtime.toISOString(),truncated:offset>0||allLines.length>lines };
+  } finally { fs.closeSync(handle); }
+}
+function daemonLogs(root: string, requestedLines: string | null) {
+  const parsed=Number.parseInt(requestedLines ?? "200",10);
+  const lines=Number.isFinite(parsed) ? Math.min(1000,Math.max(50,parsed)) : 200;
+  const directory=path.join(root,".factory","service-logs");
+  const files: Array<{source:LogSource;filename:string}> = [
+    {source:"output",filename:"daemon.log"},
+    {source:"errors",filename:"daemon.error.log"},
+  ];
+  return {
+    generatedAt:new Date().toISOString(),lines,
+    logs:files.map(({source,filename})=>({source,path:`.factory/service-logs/${filename}`,...tailLog(path.join(directory,filename),lines)})),
+  };
+}
 function serviceStatus(root: string, service: "daemon" | "dashboard") {
   const result = spawnSync("bash",[path.join(root,"scripts/services.sh"),"status",service],{cwd:root,encoding:"utf8",timeout:10000});
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
@@ -316,6 +348,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if (req.method === "GET" && url.pathname === "/api/credentials") return json(res,200,credentialStatuses(settingsRoot));
       if (req.method === "GET" && url.pathname === "/api/slack") return json(res,200,slackStatus(settingsRoot,store));
       if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,{services:[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")],update:updateState(settingsRoot),version:runtimeVersion});
+      if (req.method === "GET" && url.pathname === "/api/logs/daemon") return json(res,200,daemonLogs(settingsRoot,url.searchParams.get("lines")));
       if (req.method === "POST" && url.pathname === "/api/update/check") return json(res,200,checkUpdate(settingsRoot));
       if (req.method === "GET" && url.pathname === "/healthz") return json(res,200,{ok:true});
       if (req.method === "PUT" && url.pathname === "/api/settings") {

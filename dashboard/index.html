@@ -20,6 +20,15 @@
       <article><span>Failed</span><strong id="failed-count">—</strong></article>
     </section>
     <section class="panel"><div class="panel-title"><div><p class="eyebrow">SERVICES</p><h2>Runtime controls</h2><p id="factory-version" class="version">Version…</p></div><div class="update-controls"><span id="update-status" class="muted">Checking updates…</span><button id="factory-update" class="primary" disabled>Check for updates</button></div></div><p class="service-help muted">Factory updates are global: both services stop, the current branch is downloaded and validated, then previously running services are restored.</p><div id="services" class="service-grid"><p class="empty">Loading services…</p></div></section>
+    <details id="daemon-logs-panel" class="panel logs-panel">
+      <summary><div><p class="eyebrow">OBSERVABILITY</p><h2>Daemon logs</h2></div><span id="daemon-logs-summary" class="muted">Open to inspect recent output</span></summary>
+      <div class="log-toolbar">
+        <div class="log-tabs" role="tablist" aria-label="Daemon log source"><button type="button" role="tab" data-log-source="all" aria-selected="true">All output</button><button type="button" role="tab" data-log-source="output" aria-selected="false">Standard output</button><button type="button" role="tab" data-log-source="errors" aria-selected="false">Errors</button></div>
+        <div class="log-actions"><label>Lines <select id="daemon-log-lines"><option value="100">100</option><option value="200" selected>200</option><option value="500">500</option><option value="1000">1,000</option></select></label><button id="copy-daemon-logs" type="button">Copy</button><button id="refresh-daemon-logs" type="button">Refresh</button></div>
+      </div>
+      <div class="log-meta"><span id="daemon-log-status" class="live-badge">Paused</span><span id="daemon-log-paths" class="muted">.factory/service-logs/daemon.log · daemon.error.log</span></div>
+      <pre id="daemon-log-content" class="log-view" tabindex="0"><code>Open this section to load daemon logs.</code></pre>
+    </details>
     <details class="panel settings-panel">
       <summary><div><p class="eyebrow">ADMINISTRATION</p><h2>Configuration</h2></div><span id="settings-summary" class="muted">Environment and runtime settings</span></summary>
       <div id="setup-guide" class="setup-guide" role="status" hidden><div><p class="eyebrow">ACTION REQUIRED</p><h3>Complete the required setup</h3><p>AI Factory needs the following before it can process project issues:</p></div><ul id="setup-requirements"></ul></div>

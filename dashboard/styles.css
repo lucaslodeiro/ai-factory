@@ -59,6 +59,17 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .service-card { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem; background:var(--surface); border:1px solid var(--line); border-radius:10px }
 .service-card>div:first-child { display:grid; gap:.65rem }
 .service-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:.4rem }
+.logs-panel summary { display:flex; align-items:end; justify-content:space-between; cursor:pointer; list-style:none }
+.logs-panel summary::-webkit-details-marker { display:none }
+.logs-panel[open] summary { padding-bottom:1rem; border-bottom:1px solid var(--line) }
+.log-toolbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin:1rem 0 .75rem }
+.log-tabs,.log-actions { display:flex; align-items:center; flex-wrap:wrap; gap:.4rem }
+.log-tabs button[aria-selected="true"] { color:var(--accent); border-color:var(--accent); background:color-mix(in srgb,var(--accent) 9%,var(--surface)) }
+.log-actions label { display:flex; align-items:center; gap:.45rem; color:var(--muted); font-size:.72rem; font-weight:700 }
+.log-actions select { min-height:2.15rem; padding:.4rem 1.8rem .4rem .6rem; color:var(--text); background:var(--input); border:1px solid var(--input-line); border-radius:8px }
+.log-meta { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:.65rem; font-size:.72rem }
+.log-view { min-height:16rem; max-height:34rem; margin:0; padding:1rem; overflow:auto; color:#d9e4dc; background:#080b0e; border:1px solid var(--line); border-radius:10px; font:500 .75rem/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; white-space:pre-wrap; overflow-wrap:anywhere; tab-size:2 }
+html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .columns { display:grid; grid-template-columns:1fr 1fr; gap:1.5rem }
 .timeline { display:grid; max-height:32rem; overflow:auto }
 .entry { display:grid; gap:.25rem; padding:.8rem 0; border-bottom:1px solid var(--line) }
@@ -169,5 +180,6 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
   .settings-navigation { grid-template-columns:1fr }
   .service-card { align-items:flex-start; flex-direction:column }
   .update-controls { align-items:flex-start; flex-direction:column }
+  .log-toolbar,.log-meta { align-items:flex-start; flex-direction:column }
 }
 @media(prefers-reduced-motion:reduce) { .live-badge.connected::before { animation:none } }
