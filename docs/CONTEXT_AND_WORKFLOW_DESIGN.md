@@ -1,10 +1,10 @@
-# AI Factory — Context and Workflow Evolution Specification (v3)
+# AI Factory — Context and Workflow Evolution Specification (v3.3)
 
-**Status:** Draft for design review — supersedes v1 and v2 (2026-09-19)
+**Status:** Approved for implementation — supersedes v1, v2, v3, v3.1 and v3.2 (2026-09-19)
 **Date:** 2026-09-19
 **Audience:** Product and architecture reviewers, AI agents, future implementers
 **Scope:** Agent context management, workflow state, audit events, GitHub issue projection
-**Implementation status:** Describes the current system (verified against `src/` at commit `5c8baaf`) and the reviewed candidate evolution. Not implemented or approved.
+**Implementation status:** Describes the current system (rechecked against `src/` at commit `0dc441e`) and the reviewed candidate evolution. Not implemented or approved.
 
 ## 0. What changed in v3
 
@@ -13,18 +13,61 @@ V1 diagnosed the right problems but proposed more machinery than the current fac
 | Area | V3 decision |
 | --- | --- |
 | Durable memory | One typed `records` table. Instructions, decisions, findings and requests have identity, provenance, scope and lifecycle. |
-| Requests | More than one request may be open. A request may block or temporarily interrupt another through `parent_id`; exactly one is the active human CTA. |
+| Requests | More than one request may be open. A request may block or temporarily interrupt another through `parent_id`; exactly one is causally active, and its owner determines whether Architect or a human acts next. |
 | Instruction replacement | Instructions accumulate until revoked, explicitly superseded or invalidated by a new SPEC. A later unrelated instruction never silently replaces an earlier one. |
 | Prompt evidence | Persist the exact prompt and a deterministic inclusion manifest. Protect both as local execution artifacts. |
 | Context budgets | Configure one default byte budget with optional overrides by role and exact provider/model, consistent with direct model selection. |
 | Workflow | Store stage and status independently. The active request or failure record explains the condition. |
 | Events | Keep an authoritative projection and append one transactional transition event for every accepted projection change. Runtime does not replay events. |
 | GitHub | Publish only changed revisions. Maintain one authoritative status comment and immutable milestone comments only when a human acts, must act, or the contract changes. |
-| Diff delivery | Place reviewer artifacts inside an ignored, read-only worktree context directory so both providers can access them without external-path permissions. |
-| Migration | A mandatory one-shot importer preserves active stage, status, SPEC, approval, comment cursor, worktree and pending human action. A fresh recovery path is reserved for items that cannot be imported safely. |
+| Diff delivery | Place reviewer artifacts inside an ignored, owner-only worktree context directory so both providers can access them without external-path permissions; permissions are hygiene rather than a sandbox boundary. |
+| Migration | Support either a bounded one-shot importer for in-flight work or a fresh data directory with explicit GitHub recovery. Imported worktrees remain at their existing paths and constrain rollback. |
 | Summaries | No AI-generated memory summaries. Structured active records make relevance deterministic. |
 
 The central principle remains: context is selected by lifecycle and applicability. Information disappears from a prompt because it was resolved or superseded, never merely because it became old.
+
+### 0.1 What changed in v3.1
+
+Six corrections from the v3 review, each verified against the code:
+
+| # | Change | Reason |
+| --- | --- | --- |
+| 1 | `topic` column removed; `PRAGMA foreign_keys = ON` required for the `REFERENCES` clauses (§5.1). | Nothing used `topic`; SQLite ignores foreign keys unless the pragma is set (`src/storage.ts` sets only `busy_timeout` and `journal_mode`). |
+| 2 | Conflict rule for accumulated instructions and an operator warning in the status comment (§5.6). | Accumulation replaced "lost instruction" with "contradictory instructions"; the contract must say which wins. |
+| 3 | `.factory-context/` mechanism specified: `info/exclude` of the clone, deleted after Reviewer, stat over the same range as the diff, permissions as hygiene (§6.5). | The factory cannot edit the target repository's `.gitignore`; `worktrees.check` relies on `--exclude-standard`; Codex runs every role with `workspace-write`. |
+| 4 | Remote-dashboard sentence replaced (§6.6). | `FACTORY_DASHBOARD_HOST` only accepts loopback (`src/config.ts:19-20`); the sentence described an unsupported mode. |
+| 5 | `activeRequestId` is stored and must equal its derivation from the request chain (§7.1, test 23). | v3 both stored and derived it without saying which is authoritative. |
+| 6 | Importer bounded to unambiguous fields, no inference; fresh data directory remains supported; rollback defined as the untouched source directory (§10, decision 11, test 22). | v3's importer would have reimplemented the `retry.ts` heuristics the runtime removes (§7.4). |
+
+### 0.2 What changed in v3.2
+
+V3.2 resolves the remaining review findings and defines coordinated maintenance before an operation interrupts agent work:
+
+| # | Change | Reason |
+| --- | --- | --- |
+| 1 | Requests identify their `owner` (`human` or `architect`); the active request is causal, while `WAITING` is reserved for a human-owned request (§5.2, §7.1). | A tactical-decision request queues Architect and is not a human CTA. V3.1 used `activeRequestId` for both meanings. |
+| 2 | The projection stores `activeFailureId`; failures have an explicit lifecycle (§7.1, §7.5). | “The current failure row” was ambiguous after multiple attempts. |
+| 3 | Records receive a monotonic per-item sequence (§5.1, §5.6). | Timestamps can tie and therefore cannot define deterministic instruction precedence alone. |
+| 4 | Migration pauses active items when unclassified legacy feedback would be discarded (§10). | Continuing automatically after losing possible human constraints violates the context guarantee. |
+| 5 | GitHub publication uses a presentation revision distinct from workflow revision (§8.1). | Evidence and observed comments may change the status comment without changing stage or status. |
+| 6 | `.factory-context/` rejects tracked, pre-existing or symlinked paths before writing (§6.5). | `info/exclude` protects only untracked content and must not hide or overwrite repository-owned files. |
+| 7 | Planned maintenance performs preflight, explicit confirmation, a daemon-side execution barrier, safe pause and manual batch resume (§7.6). | Update, restart, stop and configuration apply must not interrupt work without informed consent. |
+| 8 | Execution `cancelled` is reserved for an explicit work cancellation; maintenance produces `interrupted` with reason `planned-maintenance` (§7.6). | The current dashboard can show an execution as Cancelled while its issue is Paused, which is technically consistent but misleading. |
+
+### 0.3 What changed in v3.3
+
+V3.3 applies the final implementation-readiness review without changing the architecture:
+
+| # | Change | Reason |
+| --- | --- | --- |
+| 1 | Planned interruption uses a distinct `ExecutionManager.interrupt(id, reason)` IPC path; explicit cancellation retains forced escalation (§7.6). | The existing `cancel()` path always produces `cancelled` and force-kills, contradicting maintenance invariants. |
+| 2 | `QUEUED → RUNNING` is an explicit transactional transition and the maintenance barrier lives in it (§7.2, §7.6). | A scheduler that already read a queued item could otherwise spawn it after maintenance confirmation. |
+| 3 | Retry and resume derive `resumeStatus`: human-owned active request → `WAITING`, otherwise `QUEUED` (§7.1). | Requeuing an item with an open human request would hide its CTA and run an agent incorrectly. |
+| 4 | Operator signals outside an explicit operation create durable implicit maintenance; only death without the stop handler is unexpected (§7.6). | Direct service stop and Ctrl-C need deterministic pause and resume semantics. |
+| 5 | Migration documents shared worktree paths and limits rollback after an imported item executes (§10). | Copying the database does not copy or isolate linked Git worktrees. |
+| 6 | `.factory-context/OWNER` distinguishes a stale factory artifact from repository-owned content (§6.5). | A daemon crash must not leave Reviewer permanently blocked, while foreign paths remain protected. |
+| 7 | Imported requests use `context.cursor` as `openedAfterCommentId`, and nested tactical clarification preserves its parent (§10). | Using zero can replay an old command; using the latest remote id can lose a maintenance-window answer. |
+| 8 | Record sequence assignment, presentation-only transactions, configuration revalidation order and retained execution artifacts are explicit (§5.1, §8.1, §7.6, §11). | These details remove remaining implementation ambiguity. |
 
 ## 1. System purpose
 
@@ -116,7 +159,7 @@ v1 ids are kept; new ones are added.
 - Stage survives failure, pause and retry without inference.
 - Requests (clarification, approval, tactical decision, correction limit, merge) are durable rows, not context fields.
 - One transition event per accepted change, in the same transaction as the projection.
-- GitHub shows current stage, condition and one valid CTA; publication happens only when the projection revision changed.
+- GitHub shows current stage, condition and one valid CTA; publication happens only when its presentation revision changed.
 - Cutover is a single, guarded operation.
 
 ### Non-goals
@@ -127,6 +170,18 @@ v1 ids are kept; new ones are added.
 - Dual-write or compatibility readers for the legacy `Context` shape.
 - Auto-merge, multi-repository, AI-driven routing, sending prompts or logs to GitHub.
 
+### Complexity boundary and delivery slices
+
+The design remains product-specific. It does not introduce a generic workflow engine, event replay, a plugin framework, arbitrary request graphs or a general Git/GitHub client. Each durable concept answers an observed failure: records prevent lost context, stage/status removes retry inference, presentation revision prevents redundant GitHub writes, and maintenance tables make disruptive operations resumable.
+
+Implementation is released in three independently useful slices:
+
+1. **Core workflow and context:** schema foundation, records, deterministic prompt assembly, stage/status projection, request/failure lifecycle, closed-issue visibility and GitHub projection. Acceptance tests 1–25 and 32.
+2. **Safe service maintenance:** transactional start barrier, interrupt versus cancel, confirmation, pause and resume. Acceptance tests 26–31.
+3. **Repository recovery:** the five fixed repository actions in §7.7. Acceptance test 33.
+
+No slice adds abstraction for a hypothetical provider, workflow or repository operation. Slice 1 must ship and stabilize before slices 2 and 3. The one-shot importer is isolated from runtime and removed after the upgrade release.
+
 ## 5. Records: the unit of memory
 
 ### 5.1 Table
@@ -135,11 +190,11 @@ v1 ids are kept; new ones are added.
 CREATE TABLE records(
   id            TEXT PRIMARY KEY,          -- uuid
   work_item_id  TEXT NOT NULL REFERENCES work_items(id),
+  sequence      INTEGER NOT NULL,          -- monotonic within one work item
   kind          TEXT NOT NULL,             -- 'instruction' | 'decision' | 'finding' | 'request'
   spec_version  INTEGER NOT NULL,          -- version in force when created (0 before first SPEC)
   scope         TEXT NOT NULL,             -- 'spec' | 'issue'
   status        TEXT NOT NULL,             -- see 5.3
-  topic         TEXT,                      -- stable semantic topic for instructions/decisions
   applies_to    TEXT NOT NULL DEFAULT '[]',-- JSON array of AgentRole; [] = all roles
   payload       TEXT NOT NULL,             -- JSON, per kind (5.2)
   source_type   TEXT NOT NULL,             -- 'github-comment' | 'agent-result' | 'orchestrator'
@@ -152,9 +207,10 @@ CREATE TABLE records(
   updated_at    TEXT NOT NULL
 );
 CREATE INDEX records_active ON records(work_item_id, kind, status, spec_version);
+CREATE UNIQUE INDEX records_sequence ON records(work_item_id, sequence);
 ```
 
-One table, one insert path, one query path. TypeScript types it as a discriminated union on `kind`.
+One table, one insert path, one query path. TypeScript types it as a discriminated union on `kind`. Every insert assigns `MAX(sequence) + 1` for that work item inside the same transaction; the importer assigns sequence in stable legacy order: feedback index, then decisions, then findings. `Store` enables `PRAGMA foreign_keys = ON` at open; without it SQLite does not enforce the `REFERENCES` clauses above, and the guarantee would be documentation only.
 
 ### 5.2 Payload per kind
 
@@ -166,7 +222,7 @@ type RecordPayload =
   | { kind: "finding"; classification: "auto-fix" | "decision-required" | "defer";
       originRole: AgentRole; criterionId?: string; evidence: string }
   | { kind: "request"; type: "clarification" | "spec-approval" | "tactical-decision"
-        | "correction-limit" | "merge"; originatingStage: Stage;
+        | "correction-limit" | "merge"; owner: "human" | "architect"; originatingStage: Stage;
       allowedReturnStages: Stage[]; openedAfterCommentId: number;
       questions?: string[]; findingIds?: string[]; prClosed?: boolean };
 ```
@@ -175,22 +231,31 @@ type RecordPayload =
 
 | Kind | Statuses | Transition owner and trigger |
 | --- | --- | --- |
-| instruction | `active` → `superseded` \| `revoked` | Orchestrator: only explicit `supersedes` ids or `/factory replace <id> <text>` supersede an instruction; a new SPEC version supersedes `scope: spec`; `/factory revoke <id>` revokes. Author and overlapping roles alone never imply replacement. |
+| instruction | `active` → `superseded` \| `revoked` | Orchestrator: only explicit `supersedes` ids or `/factory replace <id> <text>` supersede an instruction; a new SPEC version supersedes `scope: spec`; `/factory revoke <id>` revokes. Author and overlapping roles alone never imply replacement; conflicts between active instructions are resolved by the rule in §5.6. |
 | decision | `active` → `superseded` | Orchestrator, from `supersedes` in an Architect result (tactical) or a new SPEC version (`scope: spec`). Human decisions are never superseded by an agent (`category: human` may only be superseded by a record whose `source_type` is `github-comment`). |
 | finding | `open` → `resolved` \| `accepted-defer` \| `superseded` | Orchestrator: when the next role returns `pass` for the same version, open `auto-fix` findings of the previous role → `resolved` with `resolved_by`; `defer` → `accepted-defer` on `pass`; new SPEC version → `superseded`. `decision-required` → `resolved` when the request it opened is resolved. |
-| request | `open` → `resolved` \| `cancelled` \| `superseded` | Orchestrator: resolved by the matching command or Architect result; cancelled by `/factory cancel`; superseded only when the new request explicitly replaces it. A nested clarification points to the interrupted request through `parent_id`; resolving it restores the parent as the active CTA. |
+| request | `open` → `resolved` \| `cancelled` \| `superseded` | Orchestrator: a human-owned request is resolved by the matching command; an Architect-owned request by the corresponding Architect result. `/factory cancel` cancels; explicit replacement supersedes. A nested clarification points to the interrupted request through `parent_id`; resolving it restores the parent as the active causal request. |
 
-Comment edits never change a record; a new comment creates a new record. Open requests for a work item form one chain, never a branching tree: a request may have at most one open child, and the orchestrator rejects a transition that would create a sibling. Exactly one request is selected as the active human request. Other open requests remain durable but blocked by their child. The active request is the deepest open record in the chain; resolving it exposes its nearest open ancestor, if one exists.
+Comment edits never change a record; a new comment creates a new record. Open requests for a work item form one chain, never a branching tree: a request may have at most one open child, and the orchestrator rejects a transition that would create a sibling. Exactly one request is selected as the active causal request. Other open requests remain durable but blocked by their child. The active request is the deepest open record in the chain; resolving it exposes its nearest open ancestor, if one exists. `owner: human` means the workflow waits and publishes a human CTA. `owner: architect` means Architect is queued or running; it is never described as waiting for the human.
 
 ### 5.4 Scope
 
 Two values only. `spec` dies with the next SPEC version; `issue` survives until explicitly superseded or revoked. v1's `attempt` and `stage` scopes are removed: a hint like "rerun the failing test" carried with `spec` scope is harmless because the role contract already says "when compatible with the approved specification".
 
-Defaults: `/factory answer` → decision `category: human`, `scope: spec`. `/factory retry <text>` → a new instruction, `scope: spec`, `applies_to: []`; it does not replace prior instructions. `/factory note <text>` behaves the same. `--issue` sets `scope: issue`; `--for builder,tester` sets `applies_to`; `--topic <name>` adds a stable classification. Replacement is explicit through `/factory replace <record-id> <text>` and removal through `/factory revoke <record-id>`. The status comment lists short record ids for active human instructions so these commands are usable.
+Defaults: `/factory answer` → decision `category: human`, `scope: spec`. `/factory retry <text>` → a new instruction, `scope: spec`, `applies_to: []`; it does not replace prior instructions. `/factory note <text>` behaves the same. `--issue` sets `scope: issue`; `--for builder,tester` sets `applies_to`. Replacement is explicit through `/factory replace <record-id> <text>` and removal through `/factory revoke <record-id>`. The status comment lists short record ids for active human instructions so these commands are usable, and warns when more than three are active (§5.6).
 
 ### 5.5 Tester and human instructions
 
 An instruction reaches Tester when `applies_to` is empty or names `qa`. The Tester contract keeps its existing rule: if an instruction forbids a verification method, use an equivalent; if none exists for a required criterion, return `decision`. This decouples independence (never send Builder narrative or findings text to Tester) from constraints (always send active human instructions that apply).
+
+### 5.6 Conflicts between active instructions
+
+Instructions accumulate (§5.3), so two active instructions can contradict each other ("use Chromium" / "do not use Chromium"). The design does not detect contradictions; it defines who resolves them:
+
+- The prompt lists active instructions **oldest first** by `sequence`, with their record id and `created_at`. Sequence, rather than timestamp or UUID order, is authoritative when two records are created at the same instant.
+- Every role contract states: when two active instructions conflict, the most recent one applies; the agent names both ids and the choice in `summary`. When the agent cannot determine which applies to the work at hand, it returns `decision` with a `decision-required` finding quoting both ids.
+- The status comment shows the active instructions with their short ids and, when more than three are active, adds "Consider `/factory replace` or `/factory revoke` to keep guidance current." The threshold is a warning, not a limit.
+- The orchestrator never merges, rewrites or ranks instruction text.
 
 ## 6. Prompt assembly
 
@@ -213,7 +278,8 @@ decisions                            = records WHERE kind='decision' AND status=
                                        AND (scope='issue' OR spec_version=current)
 openFindings                         = records WHERE kind='finding' AND status='open' AND spec_version=current
 openRequests                        = records WHERE kind='request' AND status='open'
-activeRequest                        = deepest open request in the parent chain; the only current human CTA
+activeRequest                        = deepest open request in the parent chain; owner determines the next actor
+activeFailure                        = unresolved failure named by projection.activeFailureId
 recovery                             = executions WHERE status='interrupted' AND work_item_id=? (latest)
 ```
 
@@ -226,7 +292,7 @@ recovery                             = executions WHERE status='interrupted' AND
 | Active human decisions | yes | yes | yes | yes |
 | Active tactical decisions | yes | yes | yes | yes |
 | Active instructions (filtered by role) | yes | yes | yes | yes |
-| Open requests | full active request plus parent chain | active request if it originated in Build | active request if it originated in Test | active request if it originated in Review |
+| Open requests | full active request plus parent chain | no | no | no |
 | Open `auto-fix` findings (full text) | if `decision-required` refers to them | yes | no | ids and status only |
 | Open `decision-required` findings | yes | no | no | no |
 | Builder summary (last `agent.result`) | if consultation originated in Build | previous attempt only | **no** | no |
@@ -244,7 +310,15 @@ Sections are **protected** (contracts, approved SPEC and criteria, active decisi
 
 ### 6.5 Diff delivery
 
-Before Reviewer starts, the orchestrator writes the full diff to `<worktree>/.factory-context/reviewer/diff.patch` and includes `git diff --stat` plus that relative path in the prompt. `.factory-context/` is created with owner-only permissions, ignored by Git and explicitly excluded from mutation guards and commits. The Reviewer contract instructs the provider to read the artifact with read-only tools. Because the file is inside the worktree, Claude and Codex do not need access to an external factory-data path. Tester receives the changed-file manifest and stat and inspects the worktree independently.
+Before Reviewer starts, the orchestrator writes the full diff to `<worktree>/.factory-context/reviewer/diff.patch` and includes `git diff --stat` plus that relative path in the prompt. Because the file is inside the worktree, Claude and Codex do not need access to an external factory-data path. Tester receives the changed-file manifest and stat and inspects the worktree independently.
+
+Mechanism, verified against `src/worktrees.ts`:
+
+- **Exclusion.** The factory cannot edit the target repository's `.gitignore`. `worktrees.check` detects untracked files with `git ls-files --others --exclude-standard` and `commit` uses `git add --all`; both honour `$GIT_COMMON_DIR/info/exclude`, which linked worktrees share. `Workspaces.ensure` appends `.factory-context/` to `<repoDir>/.git/info/exclude` once, idempotently. This also affects the operator's own checkout of the same clone; that is harmless and documented in `INSTALL.md`.
+- **Ownership and collision guard.** At creation the factory writes `.factory-context/OWNER` containing the execution id. Before every Reviewer attempt it rejects tracked paths, symlinks and any directory without a valid factory OWNER marker. A pre-existing directory may be removed and recreated only when it is untracked, no path component is a symlink and its OWNER marker identifies a prior factory execution for the same work item. Anything else fails as `invalid-context`; repository-owned content is never deleted, hidden or overwritten. The same ownership checks run immediately before cleanup.
+- **Range.** `Workspaces.diff` uses `origin/<default>...HEAD`, i.e. committed changes only (the orchestrator commits Builder and Tester output before Review). The inline `--stat` uses the same range so the Reviewer sees one set of numbers.
+- **Lifetime.** The directory is created immediately before the Reviewer execution and removed immediately after it finishes, succeeds or fails. Recovery also removes and recreates a verified stale factory-owned directory left by a crash, so no stale diff is visible and a crash cannot permanently block Review.
+- **Permissions.** Files are created owner-only as hygiene, not as a boundary: the provider runs as the same user, and Codex runs every role with `--sandbox workspace-write` (`src/adapters/codex.ts:17`). A Reviewer that modifies `.factory-context/` is not detected by `worktrees.check` (the path is excluded); the deletion after the run is what makes that harmless.
 
 ### 6.6 Prompt persistence
 
@@ -253,7 +327,7 @@ For every execution the orchestrator writes, before spawning the provider:
 - `runs/<id>/prompt.md` — the exact `instructions` string.
 - `runs/<id>/prompt.json` — `{ executionId, role, provider, model, specVersion, includedRecordIds, activeRequestId, sectionBytes: {name: bytes}, budgetBytes, budgetSource }`.
 
-`executions` gains `prompt_bytes INTEGER` and `prompt_sha256 TEXT`. Prompt, completion and diff artifacts are written with owner-only permissions, are never served by a public route, and are retained according to §11. The dashboard exposes prompt content only through an explicit reveal action. A remotely bound dashboard must require authentication before that action is available. Configured secrets are redacted and these artifacts are never published to GitHub or Slack.
+`executions` gains `prompt_bytes INTEGER` and `prompt_sha256 TEXT`. Prompt, completion and diff artifacts are written with owner-only permissions, are never served by a public route, and are retained according to §11. The dashboard exposes prompt content only through an explicit reveal action. The dashboard remains restricted to loopback addresses (`FACTORY_DASHBOARD_HOST`, `src/config.ts:19-20`); relaxing that restriction would require authentication first and is outside this document. Configured secrets are redacted and these artifacts are never published to GitHub or Slack.
 
 ## 7. Workflow projection
 
@@ -263,12 +337,15 @@ For every execution the orchestrator writes, before spawning the provider:
 type Stage  = "DESIGN" | "BUILD" | "TEST" | "REVIEW" | "DELIVERY";
 type Status = "QUEUED" | "RUNNING" | "WAITING" | "FAILED" | "PAUSED" | "CANCELLED" | "COMPLETED";
 interface Projection { stage: Stage; status: Status; attempt: number; revision: number;
-                       activeRunId?: string; activeRequestId?: string; publishedRevision?: number; }
+                       presentationRevision: number; publishedPresentationRevision?: number;
+                       activeRunId?: string; activeRequestId?: string; activeFailureId?: string; }
 ```
 
-- The reason for `WAITING` is `activeRequestId`, derived from the open request parent chain. The reason for `FAILED` is the current `failures` row (§7.5). No third enum is stored.
+- Open request records are authoritative. `activeRequestId` is their denormalized projection: the transition function derives it as the deepest open request in the parent chain and never accepts a caller-provided value. `factory doctor` reports stored drift. `WAITING` requires that active request to have `owner: human`; an Architect-owned active request is `QUEUED` or `RUNNING` and produces no human CTA.
+- `activeFailureId` points to the one unresolved failure that explains `FAILED`. Failure creation, projection update and transition event are transactional. Retry resolves that failure and clears the pointer. No “latest row” inference is allowed.
+- `revision` increments for a workflow transition. `presentationRevision` increments whenever the GitHub status projection changes, including a workflow transition, new evidence or an observed ordinary approver comment. `publishedPresentationRevision` records the last successfully published value (§8.1).
 - `NEW` and `DONE` do not exist. Ingestion starts at `DESIGN/QUEUED`; merge is `DELIVERY/COMPLETED`; PR closed without merge is `DELIVERY/WAITING` with an open `merge` request flagged `prClosed`.
-- Retry: `FAILED|PAUSED|CANCELLED → QUEUED`, same stage, `attempt + 1`. `resume`, `waiting`, `consultation`, `pendingStage`, `retryGuidance`, `feedback`, `reports`, `cycles`, `lastFailure` are removed from `Context`.
+- `resumeStatus` is derived transactionally from the request chain: `WAITING` when the active request is human-owned, otherwise `QUEUED`. Retry, individual resume and batch resume preserve the stage and use `resumeStatus`; `attempt` increments only when the result is `QUEUED`. A paused human gate therefore returns to the same CTA without starting an agent. `resume`, `waiting`, `consultation`, `pendingStage`, `retryGuidance`, `feedback`, `reports`, `cycles`, `lastFailure` are removed from `Context`.
 - `correction_cycles INTEGER` counts only accepted `changes` outcomes. For a configured maximum `N`, the `changes` outcome increments the counter first; when the new value is `N`, the factory opens `correction-limit` instead of scheduling another automatic correction. Decisions do not consume the counter. `/factory answer` resets it, as today.
 
 ### 7.2 Transition table (complete)
@@ -276,10 +353,11 @@ interface Projection { stage: Stage; status: Status; attempt: number; revision: 
 | From | Trigger | To | Records | Human-visible |
 | --- | --- | --- | --- | --- |
 | — | `/factory start` or dashboard | DESIGN/QUEUED | — | Started milestone |
-| DESIGN/RUNNING | Architect `questions` (no open tactical request) | DESIGN/WAITING | request `clarification` opened; prior approval invalid | Questions milestone with `/factory answer` |
-| DESIGN/RUNNING | Architect `questions` during open tactical request | DESIGN/WAITING | child request `clarification` opened with `parent_id` pointing to the tactical request; tactical request stays open but is blocked; approval kept | Questions milestone |
+| any/QUEUED | scheduler selects item; adapter exists; no confirmed maintenance blocks it | same stage/RUNNING | execution row created; `activeRunId` set; revision + 1 | none |
+| DESIGN/RUNNING | Architect `questions` (no open tactical request) | DESIGN/WAITING | human-owned request `clarification` opened; prior approval invalid | Questions milestone with `/factory answer` |
+| DESIGN/RUNNING | Architect `questions` during open tactical request | DESIGN/WAITING | human-owned child request `clarification` opened with `parent_id` pointing to the Architect-owned tactical request; tactical request stays open but is blocked; approval kept | Questions milestone |
 | DESIGN/RUNNING | Architect `spec`, complexity/risk high, profile ≠ strong | DESIGN/QUEUED | draft stored on execution; next selection forced `strong` | Status comment: architectural review |
-| DESIGN/RUNNING | Architect `spec` | DESIGN/WAITING | new `specs` row v+1; `scope: spec` records of v → superseded; request `spec-approval` opened | SPEC milestone with approve/change CTAs |
+| DESIGN/RUNNING | Architect `spec` | DESIGN/WAITING | new `specs` row v+1; `scope: spec` records of v → superseded; human-owned request `spec-approval` opened | SPEC milestone with approve/change CTAs |
 | DESIGN/WAITING | `/factory answer` (comment id > request.openedAfterCommentId) | DESIGN/QUEUED | decision `human` created; clarification resolved; correction_cycles = 0 | Answer acknowledged in status |
 | DESIGN/WAITING | `/factory approve v<N>` exact | BUILD/QUEUED | request resolved; approval recorded | Status update |
 | DESIGN/RUNNING | Architect `resolved` for open tactical request | allowed return stage/QUEUED | tactical decisions created (with `supersedes`); request resolved; `decision-required` findings resolved | Decision milestone |
@@ -287,19 +365,24 @@ interface Projection { stage: Stage; status: Status; attempt: number; revision: 
 | TEST/RUNNING | `pass` | REVIEW/QUEUED | commit; open Builder `auto-fix` → resolved | Status update |
 | TEST/RUNNING | `changes` | BUILD/QUEUED | findings `auto-fix` opened; correction_cycles + 1 | Status update with findings |
 | REVIEW/RUNNING | `changes` | BUILD/QUEUED | findings opened; correction_cycles + 1 | Status update |
-| REVIEW/RUNNING | `pass` | DELIVERY/WAITING | publish branch, ensure PR; request `merge` opened | Ready-to-merge milestone |
-| BUILD/TEST/REVIEW RUNNING | `decision` | DESIGN/QUEUED | findings `decision-required` opened; request `tactical-decision` opened with `originatingStage` | Decision-request milestone |
-| BUILD/TEST/REVIEW RUNNING | `changes` and `correction_cycles + 1 >= max` | same stage/WAITING | request `correction-limit` opened with originatingStage after storing the incremented counter | Correction-limit milestone |
-| any/WAITING (`correction-limit`) | `/factory answer` | DESIGN/QUEUED | decision human created; `correction-limit` → resolved; child `tactical-decision` opened with the same originatingStage and the appropriate parent chain; cycles = 0 | Status |
-| any active/RUNNING | execution error, timeout, invalid result, invalid context | same stage/FAILED | `failures` row with class | Failure milestone with retry CTA |
-| any active | daemon restart during run | same stage/FAILED | failure `recovery`; execution `interrupted` | Failure milestone |
+| REVIEW/RUNNING | `pass` | DELIVERY/WAITING | publish branch, ensure PR; human-owned request `merge` opened | Ready-to-merge milestone |
+| BUILD/TEST/REVIEW RUNNING | `decision` | DESIGN/QUEUED | findings `decision-required` opened; Architect-owned request `tactical-decision` opened with `originatingStage` | Decision-request milestone; no human CTA unless Architect asks a question |
+| BUILD/TEST/REVIEW RUNNING | `changes` and `correction_cycles + 1 >= max` | same stage/WAITING | findings from the result persisted; human-owned request `correction-limit` opened with their ids and originatingStage after storing the incremented counter | Correction-limit milestone |
+| any/WAITING (`correction-limit`) | `/factory answer` | DESIGN/QUEUED | human decision created; `correction-limit` → resolved; Architect-owned child `tactical-decision` opened with the same originatingStage and parent history; cycles = 0 | Status shows Architect as next actor |
+| any active/RUNNING | execution error, timeout, invalid result, invalid context | same stage/FAILED | unresolved `failures` row created and selected as `activeFailureId` | Failure milestone with retry CTA |
+| any active/RUNNING | daemon dies without its stop handler (for example SIGKILL) | same stage/FAILED | failure `recovery`; execution `interrupted/unexpected-shutdown` | Failure milestone |
+| any active/QUEUED or RUNNING | SIGTERM/SIGINT without confirmed maintenance | same stage/PAUSED | implicit `signal` maintenance operation; running execution `interrupted/signal` | Paused by operator signal |
 | any active/RUNNING | state changed by control during run | unchanged | event `execution.discarded` | none |
-| FAILED/PAUSED/CANCELLED | `/factory retry [text]` | same stage/QUEUED, attempt + 1 | instruction created if text | Retry accepted in status |
-| any active | `/factory pause` | same stage/PAUSED | — | Paused milestone |
+| any/QUEUED or RUNNING | confirmed disruptive maintenance | same stage/PAUSED | maintenance item linked; running execution becomes `interrupted/planned-maintenance` | Maintenance pause with Resume CTA |
+| any/PAUSED by maintenance | individual or batch Resume | same stage/`resumeStatus`; attempt + 1 only if QUEUED | maintenance item marked resumed | Resume acknowledged or original human CTA restored |
+| FAILED/PAUSED/CANCELLED | `/factory retry [text]` | same stage/`resumeStatus`; attempt + 1 only if QUEUED | active failure resolved if present; instruction created if text | Retry accepted or original human CTA restored |
+| any active | `/factory pause` | same stage/PAUSED | open requests preserved; implicit `user-pause` maintenance operation | Paused milestone |
 | any | `/factory cancel` | same stage/CANCELLED | open requests → cancelled | Cancelled milestone |
 | DELIVERY/WAITING | PR merged | DELIVERY/COMPLETED | merge request resolved | Merged milestone |
 | DELIVERY/WAITING | PR closed | DELIVERY/WAITING | merge request flagged `prClosed` | PR-closed milestone |
 | DELIVERY/WAITING (prClosed) | PR reopened | DELIVERY/WAITING | flag cleared | Status |
+| any nonterminal | GitHub issue manually closed | same stage/PAUSED and hidden from operational views | open requests and worktree preserved; close cursor recorded | none; no further comments, labels or agents |
+| hidden issue | GitHub issue reopened | same stage/PAUSED | comment cursor advances past comments made while closed | Visible again with explicit Retry CTA |
 | — | recovery from GitHub (no local row) | DESIGN/PAUSED | failure `recovery`; clarification request if questions were pending | Recovered milestone |
 
 Guard on every command: a comment resolves a request only when `comment.id > request.openedAfterCommentId` (preserves F12). Older commands are recorded as `command.stale` and ignored.
@@ -315,6 +398,7 @@ interface WorkflowTransitionV1 {
   reason: { code: string; summary: string };     // e.g. "spec-approval", "changes", "execution-error"
   recordIds: string[];                            // records created or changed in this transition
   activeRequestId?: string;
+  activeFailureId?: string;
   specVersion: number;
 }
 ```
@@ -327,7 +411,7 @@ The two existing repair heuristics (cursor high-water, approval/consultation rec
 
 ### 7.5 Failure classes
 
-Table `failures(id, work_item_id, execution_id, class, message, stage, attempt, created_at)`.
+Table `failures(id, work_item_id, execution_id, class, message, stage, attempt, created_at, resolved_at, resolved_by)`. A partial unique index permits at most one row with `resolved_at IS NULL` per work item. The projection's `activeFailureId` must name that row or be null when none exists.
 
 | Class | Example | Owner | Default action |
 | --- | --- | --- | --- |
@@ -340,11 +424,90 @@ Table `failures(id, work_item_id, execution_id, class, message, stage, attempt, 
 
 Acceptance failures (a criterion proven failed) and human decisions are **not** failures: they are findings and requests.
 
+### 7.6 Planned maintenance
+
+Any operation that can stop the daemon performs a coordinated maintenance handshake before changing services: global update, daemon stop or restart, uninstall, and configuration apply when at least one changed field requires a daemon restart. Starting a service, checking for updates, restarting only the dashboard and dashboard-only configuration changes do not use this handshake.
+
+1. **Validation and preflight.** Inputs are validated before work is paused; an invalid configuration or unavailable update changes nothing. For configuration apply, `.env` validation completes first, then affected-work revalidation occurs immediately before service stop; the existing `.env` rollback remains in force if restart fails. The control plane lists every work item in `QUEUED` or `RUNNING`, including issue, title, stage, current role, elapsed execution time and whether an execution process is active. If the set is empty, the operation proceeds without confirmation.
+2. **Confirmation.** The dashboard displays that list and offers **Cancel** or **Pause tasks and continue**. The CLI asks the equivalent question when interactive; non-interactive commands refuse and name the explicit `--pause-active` flag. Confirmation is bound to an expiring maintenance id and the exact affected-item revision set.
+3. **Revalidation.** The daemon recomputes the set before mutating anything. If an item or revision changed, confirmation expires and the caller must show the new set. This closes the race between preflight and acceptance.
+4. **Barrier and interruption primitive.** The barrier is the transactional `QUEUED → RUNNING` transition itself: it re-reads the projection and maintenance tables and refuses to create an execution while confirmed maintenance is active. The provider is spawned only after that transaction commits. After acceptance, one transaction per affected work item records the maintenance id and moves `QUEUED|RUNNING → PAUSED`, preserving stage, SPEC, request chain, instructions, branch and worktree. A running execution is stopped through a new `ExecutionManager.interrupt(id, reason)`, which sends supervisor IPC `{type:"interrupt", reason}`. The supervisor forwards SIGTERM to the process group and records `{status:"interrupted", reason}` in `completion.json` only after the group exits; it does not arm the cancellation SIGKILL timer. `cancel()` keeps its forced escalation and is reserved for explicit cancellation.
+5. **Ready.** Maintenance is `ready` only when every affected item is `PAUSED`, no execution row is `running` and no affected process group remains alive. The external service operation starts only after this acknowledgement. A timeout aborts the operation, leaves services available and items paused, and reports the blocking issue; a late result is discarded. Forced termination requires a separate explicit cancellation and is outside the normal update path.
+6. **Resume.** Tasks remain paused after services return. The dashboard offers **Resume paused tasks** for that maintenance id plus individual Retry actions. Resume uses `resumeStatus` at the stored stage, increments `attempt` only when the result is `QUEUED`, and does not increment `correction_cycles`.
+
+The confirmation copy states the consequence without calling the work cancelled:
+
+> **3 tasks are currently being processed**
+>
+> This operation will interrupt their agent executions. Stage, context and worktrees will be preserved. The tasks will remain paused until you resume them.
+>
+> **Cancel** · **Pause tasks and continue**
+
+Execution outcome and workflow status deliberately describe different objects, but their language must agree:
+
+| Cause | Execution status | Workflow status | Dashboard wording |
+| --- | --- | --- | --- |
+| Explicit `/factory cancel` or issue Cancel action | `cancelled` | `CANCELLED` | Cancelled by user |
+| Confirmed update/restart/stop/configuration maintenance | `interrupted`, reason `planned-maintenance` | `PAUSED` | Interrupted for maintenance |
+| SIGTERM/SIGINT with no confirmed maintenance | `interrupted`, reason `signal` | `PAUSED` under an implicit `signal` maintenance operation | Stopped by operator signal |
+| Unexpected daemon death found during recovery | `interrupted`, reason `unexpected-shutdown` | `FAILED` with recovery failure | Interrupted unexpectedly |
+| Provider timeout | `timed_out` | `FAILED` | Timed out |
+
+The current implementation explains the observed mismatch: `ExecutionManager.cancelAll()` records the process as `cancelled`, while the daemon stop handler transitions its work item to `PAUSED`. V3.3 adds the separate interrupt path and durable implicit operations for direct signals; `cancelled` is reserved for an explicit user decision to cancel the work.
+
+Maintenance emits `maintenance.requested`, `maintenance.confirmed`, `maintenance.task_paused`, `maintenance.ready`, `maintenance.started`, `maintenance.completed`, `maintenance.failed` and `maintenance.tasks_resumed`. Each event contains the maintenance id, actor, operation and affected work-item ids. A planned interruption is never recorded as a workflow failure.
+
+Maintenance intent survives a dashboard or service restart in two durable tables:
+
+```sql
+CREATE TABLE maintenance_operations(
+  id            TEXT PRIMARY KEY,
+  operation     TEXT NOT NULL, -- update | daemon-stop | daemon-restart | uninstall | configuration-apply | signal | user-pause
+  actor         TEXT NOT NULL,
+  status        TEXT NOT NULL, -- requested | confirmed | pausing | ready | running | completed | failed | cancelled
+  requested_at  TEXT NOT NULL,
+  confirmed_at  TEXT,
+  finished_at   TEXT,
+  error         TEXT
+);
+
+CREATE TABLE maintenance_items(
+  maintenance_id   TEXT NOT NULL REFERENCES maintenance_operations(id),
+  work_item_id     TEXT NOT NULL REFERENCES work_items(id),
+  confirmed_revision INTEGER NOT NULL,
+  paused_at        TEXT,
+  resumed_at       TEXT,
+  PRIMARY KEY(maintenance_id, work_item_id)
+);
+```
+
+`executions` adds nullable `interruption_reason` and `maintenance_id`. A SIGTERM/SIGINT handler with no confirmed operation creates an implicit `signal` operation with actor `os` before pausing work, so batch resume remains available after a direct service stop. `/factory pause` creates `user-pause` with the requesting actor. Batch resume selects only unresolved `maintenance_items` whose work item is still `PAUSED`; it never captures an item that was already paused before confirmation. The dashboard can therefore recover the “Resume paused tasks” action after updating itself.
+
+### 7.7 Repository maintenance and extreme recovery
+
+The dashboard and CLI expose five simple actions for the configured target repository. Factory source updates remain under the global Update action.
+
+| Action | Behavior | Safety boundary |
+| --- | --- | --- |
+| **Check** | Validate the configured path and Git repository; show origin match, current/default/upstream branches, local HEAD, dirty and untracked files, unpushed commits, factory worktrees and inconsistencies. Query the live remote branch hash with `git ls-remote`; compare ahead/behind against the last locally fetched tracking ref and clearly say when a full comparison requires Sync. End with one recommended next action. | Strictly read-only: no fetch, checkout, ref/object update, commit or worktree mutation. |
+| **Sync from remote** | Fetch with prune, then fast-forward the clean local default branch to `origin/<default>`. | Refuses dirty state, divergence and non-fast-forward updates. Never merges, rebases or stashes. |
+| **Publish branch** | For one selected work item, preview its diff, create a factory-authored commit when needed, and push that exact factory branch. | Refuses default/protected/unrelated branches, detached HEAD, invalid worktree context and every force update. Does not create or merge a PR. |
+| **Clear local copy** | Remove every entry inside the configured target-repository directory, including `.git`, and remove only factory-owned worktree directories registered to that clone under the configured factory data directory; keep the configured repository root itself. | Irreversible. Requires no active process, the §7.6 pause barrier, a preview of dirty files and unpushed commits, and a second confirmation that repeats the absolute configured path. It refuses `/`, the user's home, the factory install/data directories, a symlinked root, an empty/unresolved path or any path other than the exact configured repository root. All nonterminal items remain `PAUSED` with `recovery` evidence and no worktree path. |
+| **Restore from remote** | Clone the configured origin into the empty target directory, verify origin and default branch, then leave affected work items paused for explicit retry and worktree recreation. | Available only when the target directory is empty. It never clears a non-empty directory implicitly. |
+
+Before any mutation, the backend constructs a plan from validated repository and work-item ids; browser text is never executed as a shell command. It lists affected paths, refs, commits and work items. `QUEUED` or `RUNNING` work uses the maintenance confirmation and barrier in §7.6. Clear also pauses `WAITING` and stopped nonterminal items because their worktrees become invalid. Every action rechecks origin, HEAD, status and worktrees where applicable and writes `repository.operation.*` events with actor, before/after state and result. Secrets and credential-bearing URLs are redacted.
+
+CLI equivalents are `factory repo check`, `factory repo sync`, `factory repo publish <work-item-id>`, `factory repo clear` and `factory repo restore`. The dashboard places them under **Project → Repository maintenance** and shows **Restore from remote** as the primary action whenever the configured directory is empty.
+
+Explicitly unsupported: arbitrary Git commands, credential editing, interactive merge/rebase, conflict resolution, force push, branch deletion, PR creation/edit/merge, issue administration and remote repository settings. The factory links to the terminal or provider UI when one of those operations is required.
+
 ## 8. GitHub projection
 
 ### 8.1 Publish only on change
 
-`work_items.publishedRevision` records the last projection revision published. `flush()` calls `syncState` only when `revision > publishedRevision`, and sets `publishedRevision` after success. This removes the per-tick `issue view` + comment listing per item (W11) and is a prerequisite for anything below.
+`work_items.publishedPresentationRevision` records the last status presentation successfully published. `flush()` writes labels and the status comment only when `presentationRevision > publishedPresentationRevision`, then advances the published value after success. Workflow transitions increment both `revision` and `presentationRevision`; presentation-only changes increment only the latter. When `observeComments` notices an ordinary approver comment that changes the displayed unprocessed-comment count, advancing its cursor and incrementing `presentationRevision` occur in one small transaction.
+
+This eliminates unchanged per-item writes and full synchronization. It does **not** eliminate inbound GitHub polling: repository-level comment discovery and PR reconciliation still perform the minimum reads required to observe external actions. “No change” means zero GitHub writes and zero per-item `syncState` calls, not zero GitHub API reads for the whole daemon.
 
 ### 8.2 Status comment (mutable, one per issue)
 
@@ -360,7 +523,7 @@ Two dimensions: exactly one stage label (`factory:design|build|test|review|deliv
 
 ### 8.5 Comment markers
 
-Markers keep the current `Work item: <id>` form (recovery depends on it, F8) and add `rev:<revision>` and `event:<eventId>`. `recoverManagedIssue`'s regex must accept both.
+Markers keep the current `Work item: <id>` form (recovery depends on it, F8) and add `workflow-rev:<revision>`, `presentation-rev:<presentationRevision>` and `event:<eventId>`. `recoverManagedIssue`'s regex must accept legacy and new markers.
 
 ## 9. Invariants
 
@@ -375,53 +538,78 @@ Markers keep the current `Work item: <id>` form (recovery depends on it, F8) and
 9. Protected sections are never truncated; an active instruction or decision that applies to the role is always in its prompt.
 10. Every execution initially has `prompt.md` and `prompt.json`; after content retention expires, `prompt.json`, byte count and SHA-256 remain as permanent provenance.
 11. GitHub delivery failure never changes the projection.
-12. Exactly one "Next action" block is current, derived from `activeRequestId`.
+12. Exactly one "Next action" block is current. A human CTA exists only when the active request is human-owned; an Architect-owned request names Architect as the next actor without asking the human to respond.
 13. No projection change without a `workflow.transition` in the same transaction.
 14. A comment resolves only a request opened before it.
 15. Cutover never replays completed work and never duplicates a GitHub comment.
+16. `activeRequestId` equals the deepest open request; `activeFailureId` equals the only unresolved failure. The records and failure rows are authoritative.
+17. No confirmed maintenance operation starts while an affected execution is running or before every affected runnable item is paused.
+18. Planned maintenance never produces execution status `cancelled` or workflow status `FAILED`.
+19. A maintenance timeout aborts the service operation instead of silently escalating to forced termination.
+20. Only open GitHub issues are operational: a manually closed issue is hidden, receives no agent execution, comment, label or notification, and reopening leaves it paused until an explicit retry.
+21. Repository recovery never force-pushes or runs browser-supplied shell text. Clearing local content is the only destructive path: it shows dirty files and unique commits, requires path-bound double confirmation, pauses every affected item and never runs as an implicit part of Restore.
 
 ## 10. Cutover
 
-No long-running dual-write and no legacy readers remain after migration. A mandatory, transactional one-shot importer prevents active work from being reset to Design.
+No dual-write and no legacy readers in runtime code. The importer is a bounded, one-shot, pure transformation that copies **unambiguous** fields and never infers a route.
 
-1. Add `metadata.schema_version = 3`. A v3 daemon refuses to operate on an older database and prints the exact migration command.
-2. Stop the daemon. `factory migrate --from <v1-data-dir>` reads a snapshot and maps every work item to `{ projection, records[], failures[], specs[] }`. It preserves issue identity, stage, status, approved SPEC and version, approval actor, comment cursor, correction count, worktree and branch references, PR/merge data, retry guidance, active consultation route and the latest role evidence.
-3. The importer writes into a new data directory, validates all invariants, and atomically marks it schema v3 only after every row succeeds. It emits a machine-readable migration report and never mutates the source database.
-4. Items whose route cannot be proven are imported at their known stage with status `PAUSED`, a `recovery` failure and a clarification request describing the missing fact. They are not reset to Design and do not run automatically.
-5. Start v3 against the migrated directory, run `factory doctor`, then `factory refresh`. GitHub publication uses the imported comment cursor and marker ids, so completed work and old commands are not replayed and comments are not duplicated.
-6. Recovery from GitHub into `DESIGN/PAUSED` remains an explicit fallback only for an issue absent from both the source database and migration report.
+1. Add `metadata.schema_version = 3`. A v3.3 daemon refuses to operate on an older database and prints both supported paths: `factory migrate --from <v1-data-dir> --to <new-data-dir>` or a fresh data directory.
+2. **Fresh directory** (always supported): stop the v1 daemon, start v3 with a new data directory, run `factory refresh`. Tracked issues are recovered from GitHub into `DESIGN/PAUSED` exactly as today (`recoverManagedIssue`), and the operator retries. Cheapest when few items are in flight.
+3. **Importer** (recommended when items are mid-delivery): stop the daemon; `factory migrate` reads a snapshot of the v1 database, writes a new directory, validates the invariants of §9, and marks it `schema_version = 3` only after every row succeeds. It never mutates the source and emits a machine-readable report. `context.cwd` is copied as-is and linked worktrees are not moved. The command prints that source and target databases therefore share those worktree paths. Field mapping:
 
-The importer is a pure transformation covered by fixture databases from every supported legacy schema. It may be removed only after the following release and after the documented rollback window closes.
+| Legacy field | v3.3 target | Rule |
+| --- | --- | --- |
+| `issue_number`, `repo`, `branch`, `context.cwd`, `context.title/body/url` | `work_items` | copied |
+| `state` / `context.pendingStage.stage` | `stage`, `status` | fixed table per `WorkState` (test 22); `pendingStage.stage` wins over `state` for `FAILED`/`PAUSED`/`CANCELLED` |
+| `context.spec`, `version`, `criteria`, `taskAssessment`, `specs` rows | `specs` | copied |
+| `context.approvedVersion`, `approval` | approval on projection | copied only when `approvedVersion === version` |
+| `context.cursor` | `cursor` | copied |
+| `context.cycles` | `correction_cycles` | copied |
+| `context.waiting` | open `request` | `questions` → `clarification`; `approval` → `spec-approval`; `loop` → `correction-limit`; `openedAfterCommentId = context.cursor` |
+| `context.consultation.from` with `approvedVersion === version` | open `request` `tactical-decision` with `originatingStage` | copied with `openedAfterCommentId = context.cursor`; when `waiting` also creates a clarification, that clarification's `parent_id` points to this tactical request; absent while a delivery report shows `decision` → status `PAUSED` with a `recovery` failure naming the missing route |
+| `context.retryGuidance` | one `instruction`, `scope: spec` | copied |
+| `context.decisions` | `decision` records, `category: tactical`, `scope: spec` | copied |
+| latest `context.reports.<role>` with `changes` | open `auto-fix` findings | copied from the report's findings; no other report content |
+| `context.feedback` strings, other `reports`, `resume`, `lastFailure` | — | **not imported**; the report lists them per item. A nonterminal item with discarded feedback is imported `PAUSED` with a `recovery` failure and a human-owned clarification request to classify any still-active constraints. Terminal items need no gate. |
+| `context.pr`, `merge` | projection | copied |
+
+4. Any item the mapping cannot classify is imported at its known stage with status `PAUSED`, a `recovery` failure and a clarification request describing the missing fact. Nothing is reset to Design and nothing runs automatically.
+5. Start v3.3 against the migrated directory, run `factory doctor`, then `factory refresh`. Publication uses the imported cursor and marker ids, so old commands are not replayed and comments are not duplicated. `factory doctor` reports imported items that have executed since migration.
+6. **Rollback** restores the source database, but imported items share their original worktree paths. It is supported only before the first v3.3 execution on an imported item; after that, worktree commits and database history may diverge. `factory migrate` prints this limit and `factory doctor` names every imported item that has since executed. There is no reverse importer.
+
+The importer contains none of the inference in `retry.ts` (approval recovered from events, consultation recovered from reports) — those heuristics are deleted with §7.4, not moved. It is covered by fixture databases for every `WorkState` × `waiting` combination and removed in the release after the one that ships it.
 
 ## 11. Resolved decisions
 
 | # | Decision |
 | --- | --- |
-| 1 | Retry guidance and notes default to `scope: spec`. Instructions accumulate; replacement and revocation are explicit and address stable record ids. |
+| 1 | Retry guidance and notes default to `scope: spec`. Instructions accumulate; replacement and revocation are explicit and address stable record ids; conflicts resolve to the most recent instruction (§5.6). |
 | 2 | Ordinary comments never enter agent context. `/factory note` is the explicit path; the status comment counts unprocessed approver comments and explains the command. |
 | 3 | Tester receives manifest plus `diff --stat`. Reviewer receives the full diff from the protected in-worktree context directory plus the stat inline. |
-| 4 | GitHub uses one stage label plus an optional condition label, and publishes only on projection revision changes. |
+| 4 | GitHub uses one stage label plus an optional condition label, and publishes only on presentation revision changes. Inbound polling remains independent. |
 | 5 | Immutable milestones are limited to human action, contract changes and terminal delivery events. Intermediate reports live in the authoritative status comment and final PR body. |
 | 6 | Runtime does not replay events. Projection, records, transition event, notification and outbox write occur in one transaction; `doctor --repair` is explicit diagnosis and repair. |
 | 7 | AI summaries are not built. Active structured records are the memory model. |
 | 8 | Context uses a global byte budget with exact role and provider/model overrides. Protected context never truncates. |
 | 9 | Decisions are superseded through explicit ids. Agent-originated decisions can never supersede a human decision. |
-| 10 | Multiple requests may remain open through one non-branching parent chain, but only the deepest open request is the active human CTA. |
-| 11 | Schema migration is mandatory and preserves active stage and worktree; GitHub-only recovery is the fallback, not the normal upgrade path. |
-| 12 | Records, events, failures and specs are retained. By default, 30 days after `COMPLETED` or `CANCELLED`, exact prompt/completion content, diffs, stdout and stderr are deleted; `prompt.json`, prompt byte count, SHA-256, inclusion ids and execution metadata remain. Operators may increase or disable this retention period. |
-
-Still open:
-
-- Whether Codex should receive a read-only sandbox for Architect and Reviewer. Recommended yes; outside this document's scope.
-- Whether prompt content should be visible in the dashboard by default or require an explicit local reveal action. Recommended explicit reveal with a warning that issue content may contain sensitive material.
+| 10 | Multiple requests may remain open through one non-branching parent chain. The deepest open request is causally active; only a human-owned active request creates a human CTA. |
+| 11 | Upgrading may use the bounded importer or a fresh data directory. The importer copies unambiguous fields, never infers a route and keeps `context.cwd` unchanged; rollback to the source database is supported only until the first v3.3 execution uses an imported worktree. |
+| 12 | Records, events, failures and specs are retained. By default, 30 days after `COMPLETED` or `CANCELLED`, exact prompt/completion content, diffs, stdout, stderr and `completion.json` are deleted; `prompt.json`, prompt byte count, SHA-256, inclusion ids and execution metadata remain. Operators may increase or disable this retention period. |
+| 13 | Disruptive maintenance requires affected-work preflight and explicit confirmation, pauses runnable work behind a daemon-side barrier, and leaves it paused for manual individual or batch resume. |
+| 14 | Execution `cancelled` means explicit cancellation. Planned service maintenance records `interrupted/planned-maintenance` and leaves the workflow `PAUSED`. |
+| 15 | Retry and resume use `resumeStatus`: a human-owned active request restores `WAITING`; every other resumable item becomes `QUEUED`, and only that path increments `attempt`. |
+| 16 | A manually closed GitHub issue is archived from operational views and ignored. Reopening restores it as paused and never replays comments posted while it was closed. |
+| 17 | Repository maintenance is intentionally bounded to Check, Sync from remote, Publish branch, Clear local copy and Restore from remote. Clear is explicit and irreversible; Restore requires an empty directory. Merge/rebase, force push, branch deletion, PR/issue administration and remote settings remain external. |
+| 18 | Codex runs Architect and Reviewer with a read-only repository sandbox plus their required network policy; Builder and Tester retain workspace write. Provider result files remain orchestrator-owned outside the agent mutation boundary. |
+| 19 | Exact prompt content is hidden by default. A local explicit reveal action shows a sensitive-content warning; prompt artifacts are never exposed by a remotely reachable unauthenticated dashboard. |
 
 ## 12. Acceptance tests
 
 Style: `node:test` with the existing GitHub, workspace and agent fakes in `test/fixtures.ts`.
 
-1. **Prompt persistence.** Every execution writes `runs/<id>/prompt.md` byte-identical to the supervisor `input`, and `prompt.json` lists included record ids, active request, section bytes and budget source; `executions.prompt_bytes` and SHA-256 match; files have owner-only permissions. Retention deletes content but preserves the manifest and hash.
+1. **Prompt persistence.** Every execution writes `runs/<id>/prompt.md` byte-identical to the `input` field of the JSON envelope sent to the supervisor, and `prompt.json` lists included record ids, active request, section bytes and budget source; `executions.prompt_bytes` and SHA-256 match; files have owner-only permissions. Retention deletes content but preserves the manifest and hash.
 2. **Consultation survives questions.** Tester `decision` → tactical request open; Architect `questions` → child clarification request whose `parent_id` references the tactical request, approval intact; `/factory answer` resolves the child and restores the tactical request as active; Architect `resolved` returns to `TEST/QUEUED`.
-3. **Restart during Build.** Kill during `BUILD/RUNNING` → `BUILD/FAILED` with failure class `recovery`; `/factory retry` → `BUILD/QUEUED`, `attempt + 1`, same worktree path, prompt contains the recovery note.
+3. **Restart during Build.** The daemon dies by SIGKILL without running its stop handler during `BUILD/RUNNING` → `BUILD/FAILED` with failure class `recovery`; `/factory retry` → `BUILD/QUEUED`, `attempt + 1`, same worktree path, prompt says it was interrupted unexpectedly.
 4. **New SPEC version supersedes.** Records with `scope: spec` of v1 become `superseded` and are absent from the v2 Builder prompt; a `scope: issue` instruction remains.
 5. **Protected sections cannot be dropped.** With optional history above the role/model budget, every applicable active instruction remains in the prompt. With protected sections alone above budget, the stage fails with `invalid-context` and no adapter call is made. `auto` uses the role or global budget.
 6. **Instruction supersession.** Two unrelated `/factory retry <text>` comments remain active and both appear in the next applicable prompt. `/factory replace <first-id> <text>` activates the replacement and sets the first record's `superseded_by`.
@@ -431,19 +619,30 @@ Style: `node:test` with the existing GitHub, workspace and agent fakes in `test/
 10. **Cycle accounting.** With `maxCycles = 2`, Tester `decision` leaves `correction_cycles` unchanged; the first `changes` stores 1 and schedules correction; the second stores 2, opens `correction-limit` and leaves the stage `WAITING`.
 11. **Stale command.** An `/factory approve v2` comment with id lower than the `spec-approval` request's `openedAfterCommentId` is ignored and recorded as `command.stale`.
 12. **Transactional transition.** Each projection change writes exactly one `workflow.transition` with `from`, `to`, `actor`, `source`, `reason`, `recordIds`; a forced outbox insert failure rolls back projection, records and event.
-13. **Publish on change only.** Two consecutive ticks without transitions make zero GitHub calls for that item; one transition produces one label sync and one status-comment update, and `publishedRevision` equals `revision`.
-14. **Single CTA.** The status comment body contains exactly one "Next action" heading and reflects stage, status, version, attempt and open request.
+13. **Publish on change only.** Two consecutive ticks without presentation changes make zero GitHub writes and zero per-item `syncState` calls; inbound polling may still read. One transition produces one label sync and one status-comment update, and `publishedPresentationRevision` equals `presentationRevision` after success. A presentation-only evidence change updates the comment without incrementing workflow `revision`.
+14. **Single CTA.** The status comment body contains exactly one "Next action" heading and reflects stage, status, version, attempt and open request. A human-owned request contains a command CTA; an Architect-owned request states that Architect is next and asks no human action.
 15. **Delivery failure isolation.** A GitHub outage during `flush` leaves the outbox row unsent and the projection unchanged; the next tick delivers once (delivery key) with no duplicate comment.
-16. **Cutover guard.** A v3 daemon refuses an older schema; the importer preserves stage, approval, cursor, worktree and pending route in fixture databases, and its failure leaves the source untouched; recovery regex matches old and new markers.
+16. **Cutover guard.** A v3.3 daemon refuses an older schema and names both upgrade paths; an importer failure on any row leaves the target unmarked and the source database untouched; recovery regex matches old and new markers. The importer warns that worktrees are shared by path. Rollback succeeds before any imported execution; after one executes, `doctor` reports that rollback is no longer supported for that item.
 17. **Discarded result.** A result arriving after `/factory cancel` leaves projection and records untouched and appends `execution.discarded`.
 18. **Prefix stability.** For two roles on the same provider, common rules, common result envelope and provider rules form a byte-identical prefix; role-specific schemas remain different.
 
-19. **Nested request selection.** With a tactical request and child clarification both open, only clarification is `activeRequestId`; resolving it restores the tactical request without losing its originating stage. Attempting to open a sibling request is rejected transactionally.
-20. **Protected artifact placement.** Reviewer diff is inside `.factory-context`, readable by both provider adapters, excluded from commits and mutation checks, and created with owner-only permissions.
-21. **No accidental supersession.** Instructions with different text, topics or role sets remain active until an explicit replacement, revocation or SPEC-version supersession occurs.
-22. **Migration preservation.** Every legacy workflow state fixture maps to the same logical stage and condition, with approved SPEC, cursor, branch/worktree and pending human action preserved; ambiguous routes become paused at the known stage.
+19. **Nested request selection.** With an Architect-owned tactical request and human-owned child clarification both open, only clarification is `activeRequestId` and status is `WAITING`; resolving it restores the tactical request, status becomes `QUEUED`, and its originating stage survives. A sibling request is rejected transactionally.
+20. **Protected artifact placement.** Reviewer diff is inside `.factory-context`, readable by both provider adapters, absent from `git ls-files --others --exclude-standard` and from the commit after `git add --all` because `info/exclude` names it, created owner-only with an OWNER marker, and removed after the Reviewer execution whether it succeeds or fails. A stale, untracked, non-symlink factory directory with a valid marker is safely recreated after a crash; tracked, foreign, missing-marker and symlinked fixtures fail before any deletion. The inline stat and file cover the same commit range.
+21. **No accidental supersession.** Instructions with different text or role sets remain active until an explicit replacement, revocation or SPEC-version supersession occurs; the prompt lists them by monotonic sequence with ids; equal timestamps still produce deterministic precedence; with four active instructions the status comment shows the pruning hint.
+22. **Migration preservation.** Every `WorkState` × `waiting` fixture maps to the stage, status and open request given by the §10 table, with approved SPEC, cursor, branch/worktree, retry guidance and tactical decisions preserved; imported requests use `openedAfterCommentId = context.cursor`, and simultaneous `waiting` plus `consultation.from` creates a clarification child of the tactical request. A fixture with a delivery `decision` report and no `consultation.from` becomes `PAUSED` with a `recovery` failure. The importer reads no `events` rows and does not convert `feedback` strings; any active item containing them is paused with a human recovery request instead of running automatically.
+23. **Active request consistency.** After every transition, stored `activeRequestId` equals the deepest open request derived inside the transaction. Callers cannot provide or override it; `doctor` detects manually introduced drift.
+24. **Foreign keys enforced.** Inserting a record with an unknown `work_item_id`, `parent_id`, `superseded_by` or `resolved_by` fails at the database.
+25. **Active failure consistency.** A second unresolved failure for one item is rejected; `FAILED` always points to it; Retry resolves it and atomically clears `activeFailureId`.
+26. **Maintenance confirmation and barrier.** With two runnable items, the first update request returns their exact preflight list and changes nothing. Confirmation with the same revisions pauses both, prevents a queued third execution from starting, waits for active process groups to exit and only then invokes the update command. A changed revision invalidates confirmation. A `QUEUED → RUNNING` transaction that commits after preflight increments revision and invalidates the captured confirmation; after confirmation, that transition refuses to commit.
+27. **Maintenance execution semantics.** Confirmed daemon restart during Builder records execution `interrupted` with reason `planned-maintenance`, leaves the issue `BUILD/PAUSED`, preserves its worktree and never renders Cancelled in Recent executions. Explicit issue Cancel records execution and workflow as `cancelled`/`CANCELLED`.
+28. **Maintenance timeout.** A TERM-resistant execution handled through `interrupt()` that exceeds the maintenance deadline prevents update/restart/stop from starting, leaves services available and the item paused, and reports the blocking issue; it never silently force-stops the daemon.
+29. **Batch resume.** Resume by maintenance id touches only items paused by that maintenance. Each uses `resumeStatus` at its stored stage; waiting, failed and previously paused items are untouched, `attempt` increments only for a QUEUED result, and correction cycles do not change.
+30. **Resume-status derivation.** Pause and retry an item with a human-owned spec-approval request: it returns to `WAITING`, preserves the request and CTA, and does not increment `attempt`. Pause and retry an Architect-owned tactical request: it returns to `QUEUED` and increments `attempt` once.
+31. **Interrupt versus cancel.** `interrupt(id,"planned-maintenance")` sends supervisor IPC, records `interrupted/planned-maintenance` and has no SIGKILL timer; an explicit `cancel(id)` records `cancelled` and retains TERM-to-KILL escalation. A direct SIGTERM creates an implicit `signal` maintenance operation and supports batch resume.
+32. **Closed issue visibility.** Closing an issue manually while queued, waiting or running stops further application of its result, suppresses outbound issue updates and removes it from operational dashboard lists. Comments posted while closed are skipped. Reopening exposes the same item as `PAUSED` with an explicit Retry CTA and does not automatically execute an agent.
+33. **Repository maintenance boundaries.** Check preserves all refs and files. Sync refuses dirty, divergent and non-fast-forward bases. Publish accepts only the selected factory branch and rejects default/protected branches and force updates. Clear refuses unsafe or mismatched roots, displays dirty files and unique commits, requires the exact configured path twice, removes hidden and visible contents, and leaves affected items paused without worktree paths. Restore refuses a non-empty directory, clones and verifies origin/default branch, and never auto-resumes work. Every mutation records before/after state and its actor.
 
 ## 13. Related documents
 
 - `../ARCHITECTURE.md`, `../SPEC.md`, `MODEL_POLICY.md`, `VALIDATION.md`.
-- V1 and V2 are retained in repository history and external review artifacts.
+- V1, V2, V3, V3.1 and V3.2 are retained in repository history and external review artifacts.
