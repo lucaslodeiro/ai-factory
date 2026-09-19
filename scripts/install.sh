@@ -34,7 +34,11 @@ if [[ -e "$dest" ]]; then
     echo "For a clean reinstall: cd \"$HOME\" && npm --prefix \"$dest\" run uninstall" >&2
   else
     echo "An incomplete or unrelated destination already exists: $dest" >&2
-    echo "Inspect or move that directory, then run the installer again." >&2
+    backup_destination="${dest}.incomplete-$(date +%Y%m%d-%H%M%S)"
+    echo "Preserve it and retry with:" >&2
+    echo "  cd \"$HOME\"" >&2
+    echo "  mv \"$dest\" \"$backup_destination\"" >&2
+    echo "  bash /tmp/ai-factory-install-no-brew.sh --dir \"$dest\"" >&2
   fi
   exit 1
 fi

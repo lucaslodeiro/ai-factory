@@ -61,6 +61,18 @@ If an older uninstall left a terminal pointing at the removed checkout, run
 `cd "$HOME"` before using that terminal again. Both installers now recover
 automatically from that stale working directory, but other commands cannot.
 
+If installation reports `An incomplete or unrelated destination already
+exists`, preserve that directory and retry from a clean destination:
+
+```sh
+cd "$HOME"
+mv "$HOME/ai-factory" "$HOME/ai-factory.incomplete-$(date +%Y%m%d-%H%M%S)"
+bash /tmp/ai-factory-install-no-brew.sh --dir "$HOME/ai-factory"
+```
+
+The installer prints these same recovery commands with the resolved paths. It
+does not remove or overwrite an unrecognized directory automatically.
+
 The service launcher exposes the same operation in its help and can be used as an alias: `npm run service -- uninstall` or `npm run service -- uninstall --yes`. Run `npm run service -- --help` to see every launcher action.
 
 It stops and removes both factory LaunchAgents, the engine checkout, `.env` and backups, SQLite, logs and retained worktrees. A configured external data directory is removed only when it contains the factory database marker; unsafe paths are rejected. The target application repository is preserved, as are global GitHub/Codex/Claude credentials and shared Node, Git, `gh`, Codex and Claude installations. This leaves the Mac ready to exercise the installer again without deleting unrelated development data.
