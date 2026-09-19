@@ -9,6 +9,7 @@ import { ExecutionManager } from "./execution-manager.js";
 import { CodexAdapter } from "./adapters/codex.js";
 import { ClaudeAdapter } from "./adapters/claude.js";
 import { retry } from "./retry.js";
+import { pausedMarkdown, cancelledMarkdown } from "./presentation.js";
 export { retry } from "./retry.js";
 export function acquireLock(store: Store) {
  fs.mkdirSync(config.dataDir, { recursive: true });
@@ -49,7 +50,8 @@ export async function startDaemon(store = new Store()) {
  const stop = () => {
   stopping = true;
   for (const w of store.items()) if (["SPEC", "DEVELOPMENT", "QA", "REVIEW"].includes(w.state)) {
-   w.context.resume = w.state; store.transition(w, "PAUSED");
+   const active=Boolean(store.db.prepare("SELECT id FROM executions WHERE work_item_id=? AND status='running'").get(w.id));
+   w.context.resume = w.state; store.transition(w, "PAUSED"); store.post(w.issue_number,pausedMarkdown(w,"The daemon received a stop request",active));
   }
   executions.cancelAll();
  };
@@ -60,12 +62,13 @@ export async function startDaemon(store = new Store()) {
     let result: unknown;
     if (r.kind === "stop") stop();
     else if (r.kind === "retry") retry(store, r.target);
+    else if (r.kind === "start-issue") result = o.startIssue(r.target);
     else if (r.kind === "refresh-list") result = o.refreshIssueList();
     else if (r.kind === "cancel") {
      const run = store.db.prepare("SELECT id,work_item_id FROM executions WHERE (id=? OR work_item_id=?) AND status='running'").get(r.target, r.target) as { id: string; work_item_id: string } | undefined;
      const w = store.get(run?.work_item_id ?? r.target);
      if (!w) throw new Error("Unknown work item or run");
-     if (w.state !== "CANCELLED") { w.context.resume = w.state; store.transition(w, "CANCELLED"); }
+     if (w.state !== "CANCELLED") { w.context.resume = w.state; store.transition(w, "CANCELLED"); store.post(w.issue_number,cancelledMarkdown(w,Boolean(run))); }
      if (run) executions.cancel(run.id);
     } else throw new Error(`Unknown control: ${r.kind}`);
     store.event("control.applied",{id:r.id,kind:r.kind,target:r.target,result});
@@ -84,6 +87,8 @@ export async function startDaemon(store = new Store()) {
    while (!stopping && Date.now() < until) await new Promise(r => setTimeout(r, 100));
   }
  } finally {
-  if (timer) clearInterval(timer); process.off("SIGINT", stop); process.off("SIGTERM", stop); release();
+  if (timer) clearInterval(timer); process.off("SIGINT", stop); process.off("SIGTERM", stop);
+  try { await o.flush(); } catch (e) { console.error(`Final GitHub synchronization failed: ${String(e)}`); }
+  release();
  }
 }

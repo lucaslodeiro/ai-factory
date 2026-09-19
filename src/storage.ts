@@ -22,6 +22,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS specs(work_item_id TEXT NOT NULL,version INTEGER NOT NULL,body TEXT NOT NULL,PRIMARY KEY(work_item_id,version));
       CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,body TEXT NOT NULL,sent INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,next_at INTEGER NOT NULL DEFAULT 0,last_error TEXT);
       CREATE TABLE IF NOT EXISTS controls(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,target TEXT,handled INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
       CREATE UNIQUE INDEX IF NOT EXISTS issue_identity ON work_items(repo,issue_number);`);
     const cols = this.db.prepare("PRAGMA table_info(work_items)").all() as { name: string }[];
     if (!cols.some(c => c.name === "context")) this.db.exec("ALTER TABLE work_items ADD COLUMN context TEXT NOT NULL DEFAULT '{}'");
@@ -67,4 +68,12 @@ export class Store {
     for (let offset = 0; offset < body.length; offset += 25000) this.db.prepare("INSERT INTO outbox(issue_number,body,delivery_key) VALUES(?,?,?)").run(issue, body.slice(offset, offset + 25000),randomUUID());
   }
   request(kind: string, target = "") { this.db.prepare("INSERT INTO controls(kind,target) VALUES(?,?)").run(kind, target); }
+  metadata<T>(key: string): T | undefined {
+    const row=this.db.prepare("SELECT value FROM metadata WHERE key=?").get(key) as {value:string} | undefined;
+    if (!row) return undefined;
+    try { return JSON.parse(row.value) as T; } catch { return undefined; }
+  }
+  setMetadata(key: string,value: unknown) {
+    this.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,JSON.stringify(value));
+  }
 }

@@ -6,7 +6,7 @@ import { config, agentEnvironment } from "../src/config.js";
 import { parseResult } from "../src/results.js";
 import { retry } from "../src/daemon.js";
 import type { AgentResult, AgentRole, WorkState } from "../src/types.js";
-import type { Comment, GitHubPort } from "../src/adapters/github.js";
+import type { Comment, GitHubPort, RepositoryComment } from "../src/adapters/github.js";
 import type { AgentRunRequest } from "../src/adapters/agent.js";
 config.repo = "owner/demo"; config.approvers = ["owner"];
 import { result } from "./fixtures.js";
@@ -14,12 +14,14 @@ class GitHub implements GitHubPort {
  prState: "OPEN" | "CLOSED" | "MERGED" = "OPEN"; failPR = false;
  pullRequestState() { if (this.failPR) throw new Error("offline"); return { state: this.prState, mergedAt: this.prState === "MERGED" ? "2026-09-18T18:00:00Z" : null, mergeCommit: this.prState === "MERGED" ? { oid: "abc123" } : null }; }
  replies: Comment[] = []; posted = new Map<string,string>(); states: WorkState[] = []; prs = 0; fail = false; failComments = false;
+ repoReplies: RepositoryComment[] = [];
  queued = [{ number: 1, title: "Feature", body: "Implement feature", url: "https://example.test/issues/1" }];
  listQueued() { return this.queued; }
  managed: Array<(typeof this.queued)[number] & { labels?: Array<{name:string}> }> | null = null;
  listManaged() { return this.managed ?? this.queued.map(issue => ({...issue,labels:[{name:"factory:queued"}]})); }
- issue(n: number) { return { number:n,title:"Feature refreshed",body:"Updated issue body",url:`https://example.test/issues/${n}` }; }
+ issue(n: number) { return { number:n,title:"Feature refreshed",body:"Updated issue body",url:`https://example.test/issues/${n}`,state:"OPEN" as const }; }
  comments(n: number) { if (this.failComments) throw new Error("GitHub temporarily unavailable"); return n === 1 ? this.replies : []; }
+ repositoryComments() { return this.repoReplies; }
  commentOnce(_n: number, body: string, key: string) { if (this.fail) throw new Error("offline"); this.posted.set(key, body); }
  syncState(_n: number, state: WorkState) { this.states.push(state); }
  ensurePR() { this.prs++; return "https://example.test/pull/1"; }
@@ -46,6 +48,28 @@ test("issue -> version approval -> developer -> independent QA -> reviewer -> PR
  assert.equal(f.item().state, "READY_TO_MERGE"); assert.equal(f.published(), 1); assert.equal(f.gh.prs, 1);
  assert.deepEqual(f.calls.map(c => c.role), ["product-architect", "developer", "qa", "reviewer"]);
  assert.equal(f.store.items().length, 1); await f.o.tick(); assert.equal(f.gh.prs, 1);
+ f.store.db.close();
+});
+test("authorized standalone factory start comment creates an unknown issue exactly once", async () => {
+ const f=setup(); f.gh.queued=[];
+ f.store.setMetadata("github.start-comments:owner/demo",{since:"2026-01-01T00:00:00.000Z",id:0});
+ f.gh.repoReplies=[{id:100,body:"/factory start",issue_url:"https://api.github.com/repos/owner/demo/issues/2",created_at:"2026-09-19T10:00:00Z",updated_at:"2026-09-19T10:00:00Z",user:{login:"owner",type:"User"}}];
+ await f.o.tick();
+ const item=f.item(); assert.equal(item.issue_number,2); assert.equal(item.context.cursor,100); assert.equal(f.calls.length,1);
+ assert.ok([...f.gh.posted.values()].some(body=>body.includes("AI Factory started")&&body.includes("GitHub command from @owner")));
+ await f.o.tick(); assert.equal(f.store.items().length,1); assert.equal(f.calls.length,1);
+ f.store.db.close();
+});
+test("factory start rejects unauthorized and non-standalone repository comments", async () => {
+ const f=setup(); f.gh.queued=[];
+ f.store.setMetadata("github.start-comments:owner/demo",{since:"2026-01-01T00:00:00.000Z",id:0});
+ f.gh.repoReplies=[
+  {id:100,body:"/factory start",issue_url:"https://api.github.com/repos/owner/demo/issues/2",created_at:"2026-09-19T10:00:00Z",updated_at:"2026-09-19T10:00:00Z",user:{login:"stranger",type:"User"}},
+  {id:101,body:"> /factory start",issue_url:"https://api.github.com/repos/owner/demo/issues/3",created_at:"2026-09-19T10:01:00Z",updated_at:"2026-09-19T10:01:00Z",user:{login:"owner",type:"User"}},
+  {id:102,body:"/factory start",issue_url:"https://api.github.com/repos/owner/demo/issues/4",created_at:"2026-09-19T09:00:00Z",updated_at:"2026-09-19T10:02:00Z",user:{login:"owner",type:"User"}},
+ ];
+ await f.o.tick(); assert.equal(f.store.items().length,0);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='start.command_rejected'").get() as any).n,2);
  f.store.db.close();
 });
 test("reject unknown approver, bots, quoted command and stale spec version", async () => {
@@ -148,7 +172,8 @@ test("manual issue-list refresh safely recovers a remotely managed issue missing
  assert.equal(recovered.state,"PAUSED"); assert.equal(recovered.context.resume,"SPEC"); assert.equal(recovered.context.cursor,11);
  assert.deepEqual(recovered.context.feedback,["owner: Use the latest verified source."]);
  assert.match(recovered.context.lastFailure ?? "",/factory:qa/);
- assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM outbox").get() as any).n,0);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM outbox").get() as any).n,1);
+ assert.match((f.store.db.prepare("SELECT body FROM outbox LIMIT 1").get() as any).body,/Workflow state recovered/);
  f.store.db.close();
 });
 test("QA fixes rerun developer and QA; deferred findings permit review", async () => {

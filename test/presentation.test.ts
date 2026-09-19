@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { reportMarkdown, specMarkdown, progressMarkdown, questionsMarkdown } from "../src/presentation.js";
+import { reportMarkdown, specMarkdown, progressMarkdown, questionsMarkdown, startedMarkdown, pausedMarkdown, cancelledMarkdown, recoveredMarkdown, readyToMergeMarkdown, prClosedMarkdown, mergedMarkdown } from "../src/presentation.js";
 import { GitHubAdapter } from "../src/adapters/github.js";
 import { config } from "../src/config.js";
 import { result } from "./fixtures.js";
@@ -37,6 +37,28 @@ test("progress distinguishes workflow stage, approval and human merge", () => {
  assert.match(progressMarkdown(w), /Ready for human merge/);
  assert.match(progressMarkdown(w), /issue stays open/);
  assert.match(progressMarkdown(w), /https:\/\/example.test\/pr\/1/);
+});
+test("actionable lifecycle messages explain preserved work and next steps", () => {
+ const w: WorkItem = { id:"work-1",repo:"owner/demo",issue_number:1,branch:"factory/issue-1",state:"PAUSED",context:{title:"Demo",body:"",url:"https://example.test/issues/1",version:2,cursor:0,feedback:[],cycles:0,resume:"QA",reports:{qa:result("pass"),reviewer:result("pass")},approval:{login:"owner",commentId:7},approvedVersion:2,pr:"https://example.test/pr/1",merge:{at:"2026-09-19T12:00:00Z",commit:"abc123"}} };
+ assert.match(startedMarkdown(w,"owner","comment"),/GitHub command from @owner/);
+ assert.match(pausedMarkdown(w,"Daemon stopped",true),/Interrupted stage \| QA/); assert.match(pausedMarkdown(w,"Daemon stopped",true),/Work preserved \| Yes/);
+ assert.match(cancelledMarkdown(w,false),/Retry resumes at \| QA/);
+ assert.match(recoveredMarkdown(w,"factory:review",42),/Safe resume stage \| Product Architect/);
+ assert.match(readyToMergeMarkdown(w,"def456"),/Published commit \| `def456`/);
+ assert.match(prClosedMarkdown(w),/Delivery status \| Not integrated/);
+ assert.match(mergedMarkdown(w),/Merge commit \| `abc123`/);
+});
+test("GitHub adapter reads repository-wide recent issue comments", () => {
+ const calls:string[][]=[];
+ const comments=[{id:9,body:"/factory start",issue_url:"https://api.github.com/repos/owner/demo/issues/3",created_at:"2026-09-19T10:00:00Z",updated_at:"2026-09-19T10:00:00Z",user:{login:"owner",type:"User"}}];
+ const result=new GitHubAdapter(args=>{calls.push(args);return JSON.stringify([comments]);}).repositoryComments("2026-09-19T09:00:00Z");
+ assert.equal(result[0].id,9); assert.match(calls[0].at(-1)!,/issues\/comments\?per_page=100/); assert.match(calls[0].at(-1)!,/since=2026-09-19T09%3A00%3A00Z/);
+});
+test("GitHub adapter distinguishes open issues from pull requests", () => {
+ const issue=new GitHubAdapter(args=>{assert.deepEqual(args,["api",`repos/${config.repo}/issues/12`]);return JSON.stringify({number:12,title:"Feature",body:null,html_url:"https://github.com/owner/demo/issues/12",state:"open"});}).issue(12);
+ assert.deepEqual(issue,{number:12,title:"Feature",body:"",url:"https://github.com/owner/demo/issues/12",state:"OPEN",pullRequest:false});
+ const pull=new GitHubAdapter(()=>JSON.stringify({number:13,title:"Delivery",body:"",html_url:"https://github.com/owner/demo/pull/13",state:"open",pull_request:{url:"api"}})).issue(13);
+ assert.equal(pull.pullRequest,true);
 });
 test("GitHub status updates one comment, preserves unrelated factory labels, and performs no close", () => {
  const comments: { id: number; body: string }[] = [];

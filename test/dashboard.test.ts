@@ -145,6 +145,9 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.deepEqual(refreshSnapshot.issueRefresh,{status:"completed",message:"Found 2 factory issues; added 1, updated 1."});
     assert.equal(refreshSnapshot.events[0].title,"Issue list refresh completed");
     assert.equal(refreshSnapshot.events[0].details,"2 found · 1 added · 1 updated");
+    const startIssue = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"start-issue",target:"#19"})});
+    assert.equal(startIssue.status,202);
+    assert.deepEqual(store.db.prepare("SELECT kind,target FROM controls WHERE kind='start-issue'").get(),{kind:"start-issue",target:"#19"});
     store.event("github.issue_reconciled",{changedFields:["title"],state:"FAILED"},"owner-demo-7");
     refreshSnapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
     assert.equal(refreshSnapshot.events[0].title,"Issue metadata reconciled");

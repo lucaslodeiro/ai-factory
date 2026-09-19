@@ -34,6 +34,9 @@ for (const name of ["cancel", "retry"] as const) p.command(name).argument("<id>"
 p.command("refresh-list").description("Reconcile GitHub issues and evaluate only each issue's newest comment").action(() => {
  const store = new Store(); store.request("refresh-list"); store.db.close(); console.log("Issue-list refresh queued; processed by factory start.");
 });
+p.command("start-issue").argument("<number-or-url>").description("Start an open GitHub issue in the factory").action(reference => {
+ const store=new Store(); store.request("start-issue",reference); store.db.close(); console.log(`Issue ${reference} queued for factory start.`);
+});
 p.command("stop").action(() => { const s = new Store(); s.request("stop"); s.db.close(); console.log("Stop queued."); });
 p.command("events").argument("[id]").action(id => {
  const s = new Store(); console.table(id ? s.db.prepare("SELECT * FROM events WHERE work_item_id=? ORDER BY id DESC LIMIT 50").all(id) : s.db.prepare("SELECT * FROM events ORDER BY id DESC LIMIT 50").all()); s.db.close();

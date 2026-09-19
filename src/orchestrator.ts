@@ -1,4 +1,4 @@
-import { specMarkdown, reportMarkdown, decisionsMarkdown, progressMarkdown, questionsMarkdown } from "./presentation.js";
+import { specMarkdown, reportMarkdown, decisionsMarkdown, progressMarkdown, questionsMarkdown, startedMarkdown, recoveredMarkdown, readyToMergeMarkdown, prClosedMarkdown, mergedMarkdown } from "./presentation.js";
 import { modelForWork } from "./model-policy.js";
 import { randomUUID } from "node:crypto";
 import { Store } from "./storage.js";
@@ -27,6 +27,8 @@ export class Orchestrator {
   private github: GitHubPort = new GitHubAdapter(), private workspaces: WorkspacePort = new Workspaces(),
   private slack: NotificationPort = new SlackAdapter()) {}
  async tick() {
+  try { this.discoverStartCommands(); }
+  catch (e) { this.store.event("github.start_poll_failed", { error: String(e) }); }
   try { for (const issue of this.github.listQueued()) this.ingest(issue); }
   catch (e) { this.store.event("github.poll_failed", { error: String(e) }); }
   await this.reconcilePullRequests();
@@ -57,6 +59,59 @@ export class Orchestrator {
    }
    await this.flush();
   }
+ }
+ private discoverStartCommands() {
+  if (!this.github.repositoryComments) return;
+  const key=`github.start-comments:${config.repo}`;
+  const now=Date.now();
+  const checkpoint=this.store.metadata<{since:string;id:number}>(key) ?? { since:new Date(now-5*60_000).toISOString(),id:0 };
+  const comments=this.github.repositoryComments(checkpoint.since).slice().sort((a,b)=>a.id-b.id);
+  let high=checkpoint.id;
+  for (const comment of comments) {
+   if (comment.id <= checkpoint.id) continue;
+   if (comment.body.trim() === "/factory start") {
+    const issueNumber=Number(comment.issue_url.split("/").at(-1));
+    if (comment.created_at !== comment.updated_at) {
+     this.store.event("start.command_rejected",{commentId:comment.id,issueNumber,login:comment.user.login,reason:"Edited comments cannot start work"});
+    } else if (comment.user.type !== "User" || !config.approvers.includes(comment.user.login)) {
+     this.store.event("start.command_rejected",{commentId:comment.id,issueNumber,login:comment.user.login,reason:"Only configured human approvers may start work"});
+    } else if (!Number.isSafeInteger(issueNumber) || issueNumber < 1) {
+     this.store.event("start.command_rejected",{commentId:comment.id,issueUrl:comment.issue_url,login:comment.user.login,reason:"Invalid issue reference"});
+    } else {
+     try { this.startIssue(String(issueNumber),comment.user.login,{source:"comment",commentId:comment.id,login:comment.user.login}); }
+     catch (error) {
+      const reason=String(error);
+      if (/is closed|is a pull request/.test(reason)) this.store.event("start.command_rejected",{commentId:comment.id,issueNumber,login:comment.user.login,reason});
+      else throw error;
+     }
+    }
+   }
+   high=Math.max(high,comment.id);
+  }
+  this.store.setMetadata(key,{since:new Date(now-5000).toISOString(),id:high});
+ }
+ startIssue(reference: string,requestedBy="Dashboard or CLI",origin?: {source:"comment";commentId:number;login:string}) {
+  const number=this.issueNumber(reference);
+  const existing=this.store.items().find(w=>w.repo===config.repo&&w.issue_number===number);
+  if (existing) {
+   this.store.event("start.command_ignored",{issueNumber:number,requestedBy,reason:"Issue is already tracked"},existing.id);
+   return {issue:number,id:existing.id,created:false,state:existing.state};
+  }
+  const issue=this.github.issue(number);
+  if (issue.pullRequest) throw new Error(`#${number} is a pull request; start the corresponding issue instead`);
+  if (issue.state === "CLOSED") throw new Error(`Issue #${number} is closed`);
+  this.ingest(issue,{source:origin?.source ?? "control",requestedBy,commentId:origin?.commentId});
+  const created=this.store.items().find(w=>w.repo===config.repo&&w.issue_number===number)!;
+  return {issue:number,id:created.id,created:true,state:created.state};
+ }
+ private issueNumber(reference: string) {
+  const value=reference.trim();
+  const direct=value.match(/^#?(\d+)$/)?.[1];
+  if (direct) return Number(direct);
+  const escaped=config.repo.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+  const url=value.match(new RegExp(`^https://github\\.com/${escaped}/issues/(\\d+)/?(?:[?#].*)?$`,"i"));
+  if (url) return Number(url[1]);
+  throw new Error(`Use an issue number or a URL from https://github.com/${config.repo}/issues/…`);
  }
  private observeComments(w: WorkItem) {
   try {
@@ -103,8 +158,8 @@ export class Orchestrator {
      w.context.resume = undefined;
      this.store.transition(w, next);
      this.store.event("pull_request.reconciled", { url: w.context.pr, ...pr }, w.id);
-     const message = next === "MERGED" ? `## Delivery merged\n\nGitHub confirmed that [the pull request](${w.context.pr}) was merged. Work is complete.`
-      : next === "PR_CLOSED" ? `## Pull request closed without merge\n\n[The pull request](${w.context.pr}) was closed without integrating the changes. This is not completed delivery. Reopen it in GitHub to resume merge tracking.`
+     const message = next === "MERGED" ? mergedMarkdown(w)
+      : next === "PR_CLOSED" ? prClosedMarkdown(w)
       : `## Pull request reopened\n\n[The pull request](${w.context.pr}) is open again and awaits human review/merge.`;
      this.store.post(w.issue_number, message);
     })();
@@ -169,7 +224,7 @@ export class Orchestrator {
   return { found:issues.length,added,updated };
  }
  private recoverManagedIssue(issue: Issue,comments: Comment[]) {
-  const existingId = comments.flatMap(comment => [...comment.body.matchAll(/Work item:\s*([0-9a-f-]{16,})/gi)].map(match => match[1])).at(0);
+  const existingId = comments.flatMap(comment => [...comment.body.matchAll(/Work item(?:\s*:|\s*\|)\s*`?([0-9a-f-]{16,})/gi)].map(match => match[1])).at(0);
   const id = existingId && !this.store.get(existingId) ? existingId : randomUUID();
   const lastAnswer = [...comments].reverse().map(comment => ({ comment,answer:humanAnswer(comment.body) })).find(item => item.answer);
   const remoteLabel = issue.labels?.map(label => label.name).find(name => name.startsWith("factory:") && name !== "factory:queued") ?? "factory:unknown";
@@ -182,18 +237,20 @@ export class Orchestrator {
   this.store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,branch,created_at,updated_at,context) VALUES(?,?,?,?,?,?,?,?)")
    .run(id,issue.number,config.repo,"PAUSED",`factory/issue-${issue.number}-${id.slice(0,8)}`,now,now,JSON.stringify(context));
   this.store.event("work_item.recovered",{ issue,remoteLabel,cursor:comments.at(-1)?.id ?? 0,resume:"SPEC" },id);
-  return this.store.get(id)!;
+  const recovered=this.store.get(id)!;
+  this.store.post(issue.number,recoveredMarkdown(recovered,remoteLabel,comments.at(-1)?.id ?? null));
+  return recovered;
  }
- private ingest(issue: Issue) {
+ private ingest(issue: Issue,start: {source:"comment"|"control"|"label";requestedBy:string;commentId?:number}={source:"label",requestedBy:"factory:queued"}) {
   if (this.store.items().some(w => w.repo === config.repo && w.issue_number === issue.number)) return;
   const id = randomUUID(), now = new Date().toISOString();
-  const context = { title: issue.title, body: issue.body, url: issue.url, version: 0, cursor: 0, feedback: [], cycles: 0, reports: {} };
+  const context = { title: issue.title, body: issue.body, url: issue.url, version: 0, cursor: start.commentId ?? 0, feedback: [], cycles: 0, reports: {} };
   this.store.db.transaction(() => {
    this.store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,branch,created_at,updated_at,context) VALUES(?,?,?,?,?,?,?,?)")
     .run(id, issue.number, config.repo, "SPEC", `factory/issue-${issue.number}-${id.slice(0, 8)}`, now, now, JSON.stringify(context));
-   this.store.event("work_item.created", { issue }, id);
+   this.store.event("work_item.created", { issue:issue.number,source:start.source,requestedBy:start.requestedBy,commentId:start.commentId }, id);
    this.store.notify(this.store.get(id)!);
-   this.store.post(issue.number, `AI Factory started. Work item: ${id}`);
+   this.store.post(issue.number, startedMarkdown(this.store.get(id)!,start.requestedBy,start.source));
   })();
  }
  async flush() {
@@ -283,14 +340,17 @@ export class Orchestrator {
     else this.store.save(w);
    })(); return;
   }
+  let publishedCommit: string | undefined;
   if (role === "reviewer") {
    if (w.context.reports.developer?.outcome !== "pass" || w.context.reports.qa?.outcome !== "pass") throw new Error("Developer and QA must pass before publication");
    this.workspaces.publish(w.context.cwd, w.branch);
    w.context.pr = this.github.ensurePR(w.branch, `#${w.issue_number}: ${w.context.title}`,
     `Closes #${w.issue_number}\n\nApproved SPEC v${w.context.version} by ${w.context.approval?.login}.\n\n${w.context.spec}\n\n## QA\n${w.context.reports.qa.summary.slice(0, 4000)}\n\n## Review\n${result.summary.slice(0, 4000)}\n\nReports, evidence, decisions and deferred findings: ${w.context.url}\n\nHuman merge required.`);
+   publishedCommit=this.workspaces.head(w.context.cwd);
   }
   this.store.db.transaction(() => {
    this.store.post(w.issue_number, reportMarkdown(role, w.context.version, result, w.context.pr));
+   if (role === "reviewer") this.store.post(w.issue_number,readyToMergeMarkdown(w,publishedCommit!));
    this.store.transition(w, role === "developer" ? "QA" : role === "qa" ? "REVIEW" : "READY_TO_MERGE");
   })();
  }

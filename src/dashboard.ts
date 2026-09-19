@@ -77,6 +77,8 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
     if (type === "spec.review_required") return { title:"Architecture review required",details:`The task was assessed as ${value.assessment?.complexity ?? "unknown"} complexity and ${value.assessment?.risk ?? "unknown"} risk.`,severity:"warning",category:"Specification" };
     if (type === "decision.tactical") return { title:"Product Architect resolved a delivery question",details:`The workflow will continue at ${stateLabel(value.to)} under SPEC v${value.specVersion}.`,severity:"success",category:"Decision" };
     if (type === "work_item.created") return { title:`Issue #${value.issue} entered the factory`,details:"Product Architect will prepare the specification.",severity:"info",category:"Issue" };
+    if (type === "start.command_rejected") return { title:"Factory start command rejected",details:`Issue #${value.issueNumber ?? "?"}: ${value.reason ?? "The command was not authorized"}.`,severity:"warning",category:"Issue" };
+    if (type === "start.command_ignored") return { title:"Issue already tracked",details:`Issue #${value.issueNumber ?? "?"} already has a work item; no duplicate was created.`,severity:"info",category:"Issue" };
     if (type === "work_item.recovered") return { title:`Issue #${value.issue} recovered`,details:"Local state was missing. The issue was paused and can restart safely from Product Architect.",severity:"warning",category:"Recovery" };
     if (type === "workflow.error") return { title:"Workflow execution failed",details:value.error ?? "Inspect daemon and agent logs for the cause.",severity:"error",category:"Failure" };
     if (type === "retry.requested") return { title:"Retry accepted",details:`The workflow will resume at ${stateLabel(value.to)}.`,severity:"info",category:"Recovery" };
@@ -91,11 +93,12 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
     if (type === "github.issue_reconciled") return { title:"Issue metadata reconciled",details:value.changedFields?.length ? `Updated ${value.changedFields.join(", ")}; workflow remains ${stateLabel(value.state)}.` : `No metadata changes; workflow remains ${stateLabel(value.state)}.`,severity:"info",category:"GitHub" };
     if (type === "github.comments_observed") return { title:"New GitHub comment observed",details:`${value.count ?? 1} human comment${(value.count ?? 1) === 1 ? " was" : "s were"} read while the workflow was ${stateLabel(value.state)}. No command was applicable in that stage.`,severity:"info",category:"GitHub" };
     if (type === "github.cursor_repaired") return { title:"GitHub comment position repaired",details:"Older comments will not be processed again.",severity:"warning",category:"Recovery" };
-    if (["github.poll_failed","github.delivery_failed","github.labels_failed","github.comments_failed","github.pr_poll_failed"].includes(type)) return { title:"GitHub synchronization failed",details:value.error ?? "The operation will be retried.",severity:"error",category:"GitHub" };
+    if (["github.poll_failed","github.start_poll_failed","github.delivery_failed","github.labels_failed","github.comments_failed","github.pr_poll_failed"].includes(type)) return { title:"GitHub synchronization failed",details:value.error ?? "The operation will be retried.",severity:"error",category:"GitHub" };
     if (type === "slack.delivery_failed") return { title:"Slack notification delayed",details:"Delivery failed and was scheduled for another attempt.",severity:"warning",category:"Notification" };
     if (type === "control.failed") return { title:`${value.kind === "refresh-list" ? "Issue list refresh" : value.kind === "refresh" ? "Issue refresh" : value.kind ?? "Control"} failed`,details:value.error ?? "Unknown error",severity:"error",category:"Control" };
     if (type === "control.applied") {
       if (value.kind === "refresh-list") return { title:"Issue list refresh completed",details:value.result ? `${value.result.found ?? 0} found · ${value.result.added ?? 0} added · ${value.result.updated ?? 0} updated` : "GitHub issues are synchronized.",severity:"success",category:"Control" };
+      if (value.kind === "start-issue") return { title:value.result?.created ? `Issue #${value.result.issue} started` : `Issue #${value.result?.issue ?? "?"} already tracked`,details:value.result?.created ? `Work item ${value.result.id} was created and Product Architect will begin.` : `Existing work item ${value.result?.id ?? "unknown"} remains ${stateLabel(value.result?.state)}.`,severity:"success",category:"Control" };
       if (value.kind === "retry") return { title:"Retry started",details:"The workflow resumed from its saved stage.",severity:"success",category:"Control" };
       if (value.kind === "cancel") return { title:"Cancellation completed",details:"The active workflow was stopped and can be retried later.",severity:"warning",category:"Control" };
       if (value.kind === "stop") return { title:"Daemon stop completed",details:"Active work was paused safely.",severity:"warning",category:"Control" };
@@ -409,11 +412,11 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       }
       if (req.method === "POST" && url.pathname === "/api/control") {
         const body = await readBody(req) as { kind?: string; target?: string };
-        if (!["stop","cancel","retry","refresh-list"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});
-        if (!["stop","refresh-list"].includes(body.kind ?? "") && !body.target) return json(res,400,{error:"A work item or run id is required"});
-        if (body.kind === "refresh-list" && !daemonState(store).running) return json(res,409,{error:"Start the daemon before refreshing GitHub issues."});
+        if (!["stop","cancel","retry","refresh-list","start-issue"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});
+        if (!["stop","refresh-list"].includes(body.kind ?? "") && !body.target) return json(res,400,{error:body.kind === "start-issue" ? "An issue number or URL is required" : "A work item or run id is required"});
+        if (["refresh-list","start-issue"].includes(body.kind ?? "") && !daemonState(store).running) return json(res,409,{error:"Start the daemon before synchronizing GitHub issues."});
         store.request(body.kind!,body.target ?? "");
-        return json(res,202,{ok:true,message:body.kind === "refresh-list" ? "GitHub issue refresh queued." : `${body.kind} queued`});
+        return json(res,202,{ok:true,message:body.kind === "refresh-list" ? "GitHub issue refresh queued." : body.kind === "start-issue" ? "Issue start queued." : `${body.kind} queued`});
       }
       if (req.method === "POST" && url.pathname === "/api/services") {
         const body = await readBody(req) as { service?: string; action?: string };

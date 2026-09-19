@@ -14,6 +14,8 @@ export const statePresentation: Record<WorkState, { title: string; color: string
  CANCELLED: { title: "Cancelled", color: "e4e669", description: "Execution was cancelled" },
 };
 const roles: Record<AgentRole, string> = { "product-architect": "Product Architect", developer: "Developer", qa: "QA", reviewer: "Reviewer" };
+const stages: Partial<Record<WorkState,string>> = { SPEC:"Product Architect",WAITING_HUMAN:"human input",DEVELOPMENT:"Development",QA:"QA",REVIEW:"Review" };
+const stageName = (state?: WorkState) => state ? stages[state] ?? state : "Product Architect";
 const clip = (s: string, n = 700) => s.length > n ? s.slice(0, n) + "…" : s;
 const cell = (s: string) => clip(s, 350).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("|", "&#124;").replaceAll("\n", "<br>");
 function table(headers: string[], rows: string[][]) {
@@ -63,6 +65,31 @@ export function reportMarkdown(role: AgentRole, version: number, r: AgentResult,
  if (pr) sections.push(`### Ready for your review\n\n[Open the pull request](${pr}). Merge remains a human action.`);
  sections.push("Full structured evidence is retained in the local execution audit.");
  return sections.join("\n\n");
+}
+export function startedMarkdown(w: WorkItem,requestedBy: string,source: "comment" | "control" | "label") {
+ const origin=source === "comment" ? `GitHub command from @${requestedBy}` : source === "control" ? requestedBy : "factory:queued compatibility label";
+ return `## AI Factory started\n\n| Detail | Value |\n| --- | --- |\n| Work item | \`${w.id}\` |\n| Starting stage | Product Architect |\n| Requested through | ${origin} |\n| Branch | \`${w.branch}\` |\n\nThe factory is preparing the initial specification. No action is required until Product Architect requests input or publishes a SPEC for approval.`;
+}
+export function pausedMarkdown(w: WorkItem,reason: string,activeExecution: boolean) {
+ const resume=w.context.resume ?? "SPEC";
+ return `## Workflow paused\n\n| Detail | Value |\n| --- | --- |\n| Interrupted stage | ${stageName(resume)} |\n| Reason | ${reason} |\n| Recorded at | ${new Date().toISOString()} |\n| Agent execution | ${activeExecution ? "Stop requested; its process is being terminated safely" : "No active process detected"} |\n| Work preserved | Yes — local state and worktree remain available |\n| Resume stage | ${stageName(resume)} |\n\n### How to continue\n\nWhen the daemon is running, post a new comment containing exactly:\n\n\`\`\`text\n/factory retry\n\`\`\``;
+}
+export function cancelledMarkdown(w: WorkItem,activeExecution: boolean) {
+ const resume=w.context.resume ?? "SPEC";
+ return `## Workflow cancelled\n\n| Detail | Value |\n| --- | --- |\n| Cancelled stage | ${stageName(resume)} |\n| Requested through | Dashboard or CLI control |\n| Recorded at | ${new Date().toISOString()} |\n| Agent execution | ${activeExecution ? "Cancellation requested; its process is being terminated safely" : "No active process detected"} |\n| Work preserved | Yes — local state and worktree remain available |\n| Retry resumes at | ${stageName(resume)} |\n\n### How to continue\n\nPost a new comment containing exactly:\n\n\`\`\`text\n/factory retry\n\`\`\``;
+}
+export function recoveredMarkdown(w: WorkItem,remoteLabel: string,latestCommentId: number | null) {
+ return `## Workflow state recovered\n\nThe local work item was missing, so the factory recovered this issue conservatively instead of guessing which agent work had completed.\n\n| Detail | Value |\n| --- | --- |\n| GitHub state found | \`${remoteLabel}\` |\n| Latest comment synchronized | ${latestCommentId ? `\`${latestCommentId}\`` : "No comments"} |\n| Current state | Paused |\n| Safe resume stage | Product Architect |\n| Previous GitHub discussion | Preserved as context |\n\n### How to continue\n\nReview the recovered context, then post a new comment containing exactly:\n\n\`\`\`text\n/factory retry\n\`\`\``;
+}
+export function readyToMergeMarkdown(w: WorkItem,commit: string) {
+ const qa=clip(w.context.reports.qa?.summary ?? "QA passed.",700),review=clip(w.context.reports.reviewer?.summary ?? "Review passed.",700);
+ return `## Delivery ready for human merge\n\nAll automated delivery gates passed for **SPEC v${w.context.version}**.\n\n| Detail | Value |\n| --- | --- |\n| Pull request | [Open PR](${w.context.pr}) |\n| Branch | \`${w.branch}\` |\n| Published commit | \`${commit}\` |\n| Approved by | @${w.context.approval?.login ?? "unknown"} |\n\n### QA\n\n${qa}\n\n### Review\n\n${review}\n\n### Next action\n\nReview and merge the pull request manually. The factory never performs the merge.`;
+}
+export function prClosedMarkdown(w: WorkItem) {
+ return `## Pull request closed without merge\n\n| Detail | Value |\n| --- | --- |\n| Pull request | [Open PR](${w.context.pr}) |\n| Delivery status | Not integrated |\n| Published branch | \`${w.branch}\` |\n| Work preserved | Yes |\n\n### Next action\n\nReview why the pull request was closed. Reopen it in GitHub if delivery should continue; the factory will return this issue to **Ready to merge** automatically.`;
+}
+export function mergedMarkdown(w: WorkItem) {
+ return `## Delivery merged\n\n| Detail | Value |\n| --- | --- |\n| Pull request | [Open merged PR](${w.context.pr}) |\n| Merge commit | ${w.context.merge?.commit ? `\`${w.context.merge.commit}\`` : "Not reported by GitHub"} |\n| Merged at | ${w.context.merge?.at ?? "Not reported by GitHub"} |\n| SPEC | v${w.context.version} |\n| Delivery status | Complete |\n\nNo further factory action is required. GitHub manages issue closure through the PR's closing reference.`;
 }
 export function progressMarkdown(w: WorkItem) {
  const c = w.context;

@@ -187,7 +187,7 @@ On a Mac where the Tailscale application is installed but its CLI is not in `PAT
 
 ## Projects and concurrency
 
-The engine repository and target application repository are separate. Set `GITHUB_REPOSITORY=owner/application` and `FACTORY_REPO_DIR=/absolute/path/to/application`; issues and PRs belong to that target. Only open issues labeled `factory:queued` are ingested.
+The engine repository and target application repository are separate. Set `GITHUB_REPOSITORY=owner/application` and `FACTORY_REPO_DIR=/absolute/path/to/application`; issues and PRs belong to that target. Start an open issue from the dashboard, with `ai-factory start-issue <number-or-url>`, or with a standalone `/factory start` comment from a configured approver. `factory:queued` remains available as a compatibility trigger.
 
 For two projects, use two factory installations with separate `.env`, target clones and `FACTORY_DATA_DIR` values, and start each in its own terminal. Within one instance, agent stages run sequentially; another issue can advance while one is waiting for human approval. Simultaneous agents within one project and multiple instances targeting the same repository are not supported. Locks protect a data directory on one host, not a repository across hosts.
 
@@ -238,7 +238,13 @@ When an issue is recovered after its previous worktree directory disappeared, Re
 
 ## First end-to-end run
 
-Create the `factory:queued` label in the target repository, then create a feature issue carrying that label. Product Architect runs in a fresh process using its configured provider (Claude by default). Questions are posted on the issue; answer with a standalone command:
+Create an open feature issue, then post this standalone comment as a configured approver:
+
+```text
+/factory start
+```
+
+You can instead enter its number or URL in the dashboard's **Start issue** field or run `ai-factory start-issue <number-or-url>`. The daemon validates the issue and caller, creates the workflow labels itself, and starts Product Architect in a fresh process using its configured provider. The legacy `factory:queued` label is still accepted. Questions are posted on the issue; answer with a standalone command:
 
 ```text
 /factory answer

@@ -2,12 +2,13 @@ import { statePresentation } from "../presentation.js";
 import { spawnSync } from "node:child_process";
 import { config } from "../config.js";
 import type { WorkState } from "../types.js";
-export type Issue = { number: number; title: string; body: string; url: string; labels?: Array<{ name: string }> };
+export type Issue = { number: number; title: string; body: string; url: string; state?: "OPEN" | "CLOSED"; pullRequest?: boolean; labels?: Array<{ name: string }> };
 export type Comment = { id: number; body: string; user: { login: string; type: string }; };
+export type RepositoryComment = Comment & { issue_url: string; created_at: string; updated_at: string };
 export interface PullRequestState { state: "OPEN" | "CLOSED" | "MERGED"; mergedAt: string | null; mergeCommit: { oid: string } | null; }
 export interface GitHubPort {
  pullRequestState(url: string): PullRequestState;
- listQueued(): Issue[]; listManaged(): Issue[]; issue(n: number): Issue; comments(n: number): Comment[];
+ listQueued(): Issue[]; listManaged(): Issue[]; issue(n: number): Issue; comments(n: number): Comment[]; repositoryComments?(since: string): RepositoryComment[];
  commentOnce(n: number, body: string, key: string): void;
  syncState(n: number, state: WorkState, progress?: string): void;
  ensurePR(branch: string, title: string, body: string): string;
@@ -27,10 +28,17 @@ export class GitHubAdapter implements GitHubPort {
   return issues.filter(issue => issue.labels?.some(label => managed.has(label.name)));
  }
  issue(n: number): Issue {
-  return JSON.parse(this.invoke(["issue","view",String(n),"--repo",config.repo,"--json","number,title,body,url"]));
+  const value=JSON.parse(this.invoke(["api",`repos/${config.repo}/issues/${n}`]));
+  const state=String(value.state).toUpperCase();
+  if (state !== "OPEN" && state !== "CLOSED") throw new Error(`Invalid issue state: ${value.state}`);
+  return {number:value.number,title:value.title,body:value.body ?? "",url:value.html_url,state,pullRequest:Boolean(value.pull_request)};
  }
  comments(n: number): Comment[] {
   return JSON.parse(this.invoke(["api", "--paginate", "--slurp", `repos/${config.repo}/issues/${n}/comments?per_page=100`])).flat();
+ }
+ repositoryComments(since: string): RepositoryComment[] {
+  const query=`repos/${config.repo}/issues/comments?per_page=100&sort=created&direction=asc&since=${encodeURIComponent(since)}`;
+  return JSON.parse(this.invoke(["api","--paginate","--slurp",query])).flat();
  }
  commentOnce(n: number, body: string, key: string) {
   const marker = `<!-- ai-factory:${key} -->`;

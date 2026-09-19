@@ -2,13 +2,11 @@
 
 Authenticate `gh` with issue, content and pull-request write access to the target repository. Run `npm run configure` and set `GITHUB_REPOSITORY`, `FACTORY_REPO_DIR`, `GITHUB_DEFAULT_BRANCH` and `FACTORY_APPROVERS`. The wizard uses existing `.env` values as defaults and installation defaults for missing settings. Run it only while the daemon is stopped, then validate with `npm run factory -- doctor`.
 
-```sh
-gh label create factory:queued --repo OWNER/REPO --color 7057ff
-```
+Create an open issue and post `/factory start` as a new standalone comment from a login listed in `FACTORY_APPROVERS`. The daemon reads the repository-wide recent-comment stream, validates the human approver, fetches the issue and creates the work item exactly once. Quoted commands, edited comments, bots and unauthorized users do not start work. The dashboard and `ai-factory start-issue <number-or-url>` provide equivalent explicit entry points.
 
-Create an open issue labelled `factory:queued`. The daemon discovers up to 100 queued issues per poll and deduplicates by repository/issue number. It removes the queue label when mirroring its persisted state. Other `factory:*` labels are managed by the daemon; unrelated labels are preserved.
+`factory:queued` remains supported for compatibility. When present on an open issue, the daemon discovers it during normal polling and removes it when mirroring the persisted state. All workflow labels are created and managed automatically; unrelated labels are preserved.
 
-Use `/factory answer <text>` and `/factory approve vN` as standalone comments from a configured human approver. For an item in FAILED, PAUSED or CANCELLED, post a new standalone `/factory retry` comment to resume its saved stage. The same configured-approver, human-account and one-time cursor checks apply; quoted commands and edits to an already-read comment do not execute. A label is not an approval or retry. Spec versions and command comment IDs are audited in SQLite. Comments are read with pagination. GitHub outage delivery is retried using hidden idempotency markers; SQLite remains authoritative.
+Use `/factory answer <text>` and `/factory approve vN` as standalone comments from a configured human approver. For an item in FAILED, PAUSED or CANCELLED, post a new standalone `/factory retry` comment to resume its saved stage. The same configured-approver, human-account and one-time cursor checks apply; quoted commands and edits to an already-read comment do not execute. A label is not a start, approval or retry command. Spec versions and command comment IDs are audited in SQLite. Comments are read with pagination. GitHub outage delivery is retried using hidden idempotency markers; SQLite remains authoritative.
 
 The daemon reads new comments during normal polling; no manual per-issue refresh is required. **Refresh issue list** is a global reconciliation tool for discovering missing managed issues, updating title/body/URL metadata and moving each issue's saved position to its newest comment. It deliberately skips older unread comments and evaluates only the newest comment when it is valid for the current state (`answer`/`approve` while waiting for a person or `retry` while stopped). It does not replay completed work.
 
