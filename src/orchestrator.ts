@@ -78,7 +78,7 @@ export class Orchestrator {
  }
  private refreshKnownIssue(w: WorkItem,remote: Issue,comments: Comment[]) {
   const latest = comments.at(-1);
-  const previousCursor = w.context.cursor;
+  const previousCursor = this.store.commentCursorHighWater(w.id,w.context.cursor);
   w.context.title = remote.title;
   w.context.body = remote.body;
   w.context.url = remote.url;

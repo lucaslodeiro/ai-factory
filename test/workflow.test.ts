@@ -94,13 +94,17 @@ test("manual GitHub refresh updates issue data and evaluates only the latest com
 });
 test("manual GitHub refresh never rewinds a comment cursor", async () => {
  const f=setup(); await f.o.tick();
- const item=f.item(); item.context.cursor=99; f.store.save(item);
+ const item=f.item(); item.context.cursor=50; f.store.save(item);
+ f.store.event("github.issue_refreshed",{previousCursor:99,cursor:50,latestCommentId:50,state:"WAITING_HUMAN"},item.id);
  f.gh.replies=[{id:50,body:"/factory approve v1",user:{login:"owner",type:"User"}}];
  const refreshed=f.o.refreshIssue(item.id);
  assert.equal(refreshed.context.cursor,99); assert.equal(refreshed.state,"WAITING_HUMAN");
  assert.equal(refreshed.context.approval,undefined);
  const event=JSON.parse((f.store.db.prepare("SELECT payload FROM events WHERE type='github.issue_refreshed' ORDER BY id DESC LIMIT 1").get() as any).payload);
  assert.deepEqual({previousCursor:event.previousCursor,cursor:event.cursor,latestCommentId:event.latestCommentId},{previousCursor:99,cursor:99,latestCommentId:50});
+ const damaged=f.item(); damaged.context.cursor=10; f.store.save(damaged); f.store.repairCommentCursors();
+ assert.equal(f.item().context.cursor,99);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='github.cursor_repaired'").get() as any).n,1);
  f.store.db.close();
 });
 test("manual issue-list refresh adds new queued issues and updates existing metadata without replaying work", async () => {

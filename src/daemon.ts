@@ -83,7 +83,7 @@ export async function startDaemon(store = new Store()) {
  process.on("SIGINT", stop); process.on("SIGTERM", stop);
  let timer: NodeJS.Timeout | undefined;
  try {
-  executions.recover(); controls(); timer = setInterval(controls, 200);
+  executions.recover(); store.repairCommentCursors(); controls(); timer = setInterval(controls, 200);
   console.log("AI Factory running; Ctrl-C or factory stop to pause.");
   while (!stopping) {
    try { await o.tick(); } catch (e) { console.error(e); }

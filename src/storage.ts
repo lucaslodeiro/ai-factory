@@ -37,6 +37,23 @@ export class Store {
     this.db.prepare("UPDATE work_items SET state=?,branch=?,context=?,updated_at=? WHERE id=?")
       .run(w.state, w.branch, JSON.stringify(w.context), new Date().toISOString(), w.id);
   }
+  commentCursorHighWater(workItemId: string, current = 0) {
+    let high = current;
+    const rows = this.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='github.issue_refreshed'").all(workItemId) as Array<{payload:string}>;
+    for (const row of rows) try {
+      const value=JSON.parse(row.payload) as {previousCursor?:number;cursor?:number;latestCommentId?:number};
+      high=Math.max(high,value.previousCursor ?? 0,value.cursor ?? 0,value.latestCommentId ?? 0);
+    } catch {}
+    return high;
+  }
+  repairCommentCursors() {
+    for (const item of this.items()) {
+      const high=this.commentCursorHighWater(item.id,item.context.cursor);
+      if (high <= item.context.cursor) continue;
+      const previousCursor=item.context.cursor; item.context.cursor=high; this.save(item);
+      this.event("github.cursor_repaired",{previousCursor,cursor:high},item.id);
+    }
+  }
   transition(w: WorkItem, to: WorkState) {
     assertTransition(w.state, to);
     this.db.transaction(() => { const from = w.state; w.state = to; this.save(w); this.event("state.changed", { from, to }, w.id); this.notify(w); })();

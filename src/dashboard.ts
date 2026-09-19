@@ -55,6 +55,7 @@ function eventDetails(type: string, payload: string) {
       const state = value.state ? value.state.toLowerCase().replaceAll("_"," ") : "unchanged";
       return advanced ? `GitHub issue refreshed to the newest comment; workflow remains ${state}.` : `GitHub issue refreshed; no newer comment was found and workflow remains ${state}.`;
     }
+    if (type === "github.cursor_repaired") return "Comment position restored from audit history; older comments will not be processed again.";
     if (type === "control.failed") return `${value.kind === "refresh-list" ? "Issue list refresh" : value.kind === "refresh" ? "Issue refresh" : value.kind ?? "Control"} failed: ${value.error ?? "unknown error"}`;
     if (type === "control.applied") {
       if (value.kind === "refresh-list") return value.result ? `Issue list refreshed: ${value.result.found ?? 0} found, ${value.result.added ?? 0} added, ${value.result.updated ?? 0} updated.` : "Issue list refreshed successfully.";
