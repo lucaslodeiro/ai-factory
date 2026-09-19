@@ -73,6 +73,15 @@ assert.equal(fs.readFileSync(path.join(dest,'change.txt'),'utf8'),'upstream');
 assert.equal(fs.readFileSync(path.join(dest,'.env'),'utf8'),originalEnv);
 assert.equal(fs.readFileSync(path.join(dest,'.factory','worktrees','keep'),'utf8'),'worktree');
 assert.ok(fs.readdirSync(path.join(dest,'.factory')).some(f=>f.startsWith('update-backup-')));
+// The dashboard records service intent before its detached updater stops the
+// daemon. A later status check must not overwrite that durable intent.
+env.AI_FACTORY_SKIP_SERVICES='0';
+fs.writeFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,JSON.stringify({status:'updating',restoreDaemon:true,restoreDashboard:true}));
+fs.writeFileSync(env.AI_FACTORY_SERVICE_LOG,'');
+run('bash',['scripts/update.sh','--restart-services'],dest);
+const restored=fs.readFileSync(env.AI_FACTORY_SERVICE_LOG,'utf8');
+assert.match(restored,/stop daemon/);assert.match(restored,/start daemon/);assert.match(restored,/start dashboard/);
+env.AI_FACTORY_SKIP_SERVICES='1';
 fs.writeFileSync(path.join(dest,'dirty'),'dirty');assert.match(run('bash',['scripts/update.sh'],dest,false).stderr,/Local changes/);fs.unlinkSync(path.join(dest,'dirty'));
 const db=new Database(path.join(dest,'.factory','factory.db'));
 db.prepare('INSERT INTO daemon_lock(id,pid,token) VALUES(1,?,?)').run(process.pid,'test');

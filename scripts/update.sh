@@ -28,6 +28,10 @@ node -e 'if(Number(process.versions.node.split(".")[0]) < 22) { console.error("N
 update_complete=false
 restore_daemon=false
 restore_dashboard=false
+restore_intent_known=false
+if [[ -n ${AI_FACTORY_UPDATE_STATE_FILE:-} && -f $AI_FACTORY_UPDATE_STATE_FILE ]]; then
+  IFS=' ' read -r restore_intent_known restore_daemon restore_dashboard < <(node -e 'const fs=require("fs");let s={};try{s=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch{}const known=typeof s.restoreDaemon==="boolean"&&typeof s.restoreDashboard==="boolean";console.log(`${known} ${known&&s.restoreDaemon} ${known&&s.restoreDashboard}`)' "$AI_FACTORY_UPDATE_STATE_FILE")
+fi
 write_update_state() {
   [[ -n ${AI_FACTORY_UPDATE_STATE_FILE:-} ]] || return 0
   node -e 'const fs=require("fs"),path=require("path");const [file,status,phase,pid]=process.argv.slice(1);let old={};try{old=JSON.parse(fs.readFileSync(file,"utf8"))}catch{}const now=new Date().toISOString();const next={...old,status,phase,pid:Number(pid),startedAt:old.startedAt||now,updatedAt:now};if(status!=="updating")next.finishedAt=now;fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file+".tmp",JSON.stringify(next,null,2),{mode:0o600});fs.renameSync(file+".tmp",file);' "$AI_FACTORY_UPDATE_STATE_FILE" "$1" "$2" "$$"
@@ -62,7 +66,7 @@ if ( "$restart_services" || "$start_services" ) && [[ ${AI_FACTORY_SKIP_SERVICES
   if "$start_services"; then
     restore_daemon=true
     restore_dashboard=true
-  else
+  elif ! "$restore_intent_known"; then
     for service in daemon dashboard; do
       if bash scripts/services.sh status "$service" 2>/dev/null | grep -q "^$service: loaded"; then
         if [[ $service == daemon ]]; then restore_daemon=true; else restore_dashboard=true; fi

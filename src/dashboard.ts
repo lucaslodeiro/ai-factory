@@ -199,7 +199,7 @@ function serviceStatus(root: string, service: "daemon" | "dashboard") {
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
   return { service, loaded:result.status === 0 && output.includes(`${service}: loaded`), running:/state = (running|active)/.test(output), detail:output.trim() };
 }
-type UpdateState = { status: "idle" | "updating" | "completed" | "failed"; phase?: string; pid?: number; startedAt?: string; updatedAt?: string; finishedAt?: string };
+type UpdateState = { status: "idle" | "updating" | "completed" | "failed"; phase?: string; pid?: number; startedAt?: string; updatedAt?: string; finishedAt?: string; restoreDaemon?: boolean; restoreDashboard?: boolean };
 type VersionInfo = { number: string; revision: string; branch: string; display: string };
 const updateStateFile = (root: string) => path.join(root,".factory","update-state.json");
 function git(root: string, args: string[], timeout = 10000) {
@@ -269,12 +269,16 @@ function runUpdate(root: string) {
   fs.mkdirSync(logs,{recursive:true});
   const logFile = path.join(logs,"update.log");
   const stateFile = updateStateFile(root);
-  writeUpdateState(root,{status:"updating",phase:"Preparing update…",startedAt:new Date().toISOString()});
-  if (process.platform === "darwin" && serviceStatus(root,"dashboard").loaded) {
+  // Capture service intent while both services still have their original state.
+  // The detached job starts later and must not infer intent after stopping one.
+  const daemonBefore=serviceStatus(root,"daemon"),dashboardBefore=serviceStatus(root,"dashboard");
+  const intent={restoreDaemon:daemonBefore.loaded,restoreDashboard:dashboardBefore.loaded};
+  writeUpdateState(root,{status:"updating",phase:"Preparing update…",startedAt:new Date().toISOString(),...intent});
+  if (process.platform === "darwin" && dashboardBefore.loaded) {
     const label = `com.ai-factory.update.${Date.now()}`;
     const submitted = spawnSync("launchctl",["submit","-l",label,"-o",logFile,"-e",logFile,"--","/bin/bash",path.join(root,"scripts/update-job.sh"),stateFile,path.join(root,"scripts/update.sh"),label],{cwd:root,encoding:"utf8",timeout:10000});
     if (submitted.status !== 0) {
-      writeUpdateState(root,{status:"failed",phase:"Could not start the independent update job.",finishedAt:new Date().toISOString()});
+      writeUpdateState(root,{status:"failed",phase:"Could not start the independent update job.",finishedAt:new Date().toISOString(),...intent});
       throw new Error((submitted.stderr || submitted.stdout || "Could not start the independent update job").trim());
     }
   } else {
@@ -283,7 +287,7 @@ function runUpdate(root: string) {
       cwd:root,detached:true,stdio:["ignore",output,output],env:{...process.env,AI_FACTORY_UPDATE_STATE_FILE:stateFile}
     });
     fs.closeSync(output);
-    writeUpdateState(root,{status:"updating",phase:"Preparing update…",pid:child.pid,startedAt:new Date().toISOString()});
+    writeUpdateState(root,{status:"updating",phase:"Preparing update…",pid:child.pid,startedAt:new Date().toISOString(),...intent});
     child.unref();
   }
   return { accepted:true,message:"Factory update started. Services will stop, update, and reconnect when ready.",update:updateState(root) };

@@ -163,6 +163,8 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(updating.status,202);
     const updateResponse = await updating.json() as any;
     assert.equal(updateResponse.update.status,"updating");
+    assert.equal(updateResponse.update.restoreDaemon,true);
+    assert.equal(updateResponse.update.restoreDashboard,false);
     const duringUpdate = await fetch(`http://127.0.0.1:${port}/api/services`).then(response => response.json()) as any;
     assert.equal(duringUpdate.update.status,"updating");
     for (let attempt=0; attempt<60 && !fs.existsSync(path.join(settingsRoot,"update-actions.log")); attempt++) await new Promise(resolve => setTimeout(resolve,25));
