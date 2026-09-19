@@ -37,6 +37,9 @@ export class WorkflowRecords {
  constructor(private store:Store) {}
  create<T extends WorkflowRecordPayload>(input:CreateWorkflowRecord<T>):WorkflowRecord<T> {
   const run=this.store.db.transaction(()=>{
+   const allowed:Record<RecordKind,RecordStatus[]>={instruction:["active"],decision:["active"],finding:["open"],request:["open"]};
+   const initialStatus=input.status ?? (input.payload.kind === "request" || input.payload.kind === "finding" ? "open" : "active");
+   if (!allowed[input.payload.kind].includes(initialStatus)) throw new Error(`A new ${input.payload.kind} record cannot start as ${initialStatus}`);
    if (input.payload.kind === "request") {
     if (input.parentId) {
      const parent=this.get(input.parentId);
@@ -47,10 +50,19 @@ export class WorkflowRecords {
      throw new Error("A new open request must extend the existing request chain");
     }
    }
+   const supersedes=input.payload.kind === "instruction" || input.payload.kind === "decision" ? input.payload.supersedes??[] : [];
+   const targets=supersedes.map(id=>{
+    const target=this.get(id);
+    if (!target || target.workItemId !== input.workItemId || target.kind !== input.payload.kind || target.status !== "active") throw new Error(`Superseded record ${id} must be an active ${input.payload.kind} on the same work item`);
+    if (target.payload.kind === "decision" && target.payload.category === "human" && input.sourceType !== "github-comment") throw new Error("An agent-originated decision cannot supersede a human decision");
+    return target;
+   });
    const sequence=((this.store.db.prepare("SELECT COALESCE(MAX(sequence),0)+1 AS value FROM records WHERE work_item_id=?").get(input.workItemId) as {value:number}).value);
-   const id=randomUUID(),now=new Date().toISOString(),status=input.status ?? (input.payload.kind === "request" || input.payload.kind === "finding" ? "open" : "active");
+   const id=randomUUID(),now=new Date().toISOString(),status=initialStatus;
    this.store.db.prepare(`INSERT INTO records(id,work_item_id,sequence,kind,spec_version,scope,status,applies_to,payload,source_type,source_id,actor,parent_id,created_at,updated_at)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,input.workItemId,sequence,input.payload.kind,input.specVersion,input.scope,status,JSON.stringify(input.appliesTo ?? []),JSON.stringify(input.payload),input.sourceType,input.sourceId,input.actor,input.parentId ?? null,now,now);
+   const supersede=this.store.db.prepare("UPDATE records SET status='superseded',superseded_by=?,updated_at=? WHERE id=? AND status='active'");
+   for (const target of targets) if (supersede.run(id,now,target.id).changes!==1) throw new Error(`Superseded record ${target.id} changed concurrently`);
    return this.get(id)! as WorkflowRecord<T>;
   });
   return run.immediate();
@@ -84,5 +96,34 @@ export class WorkflowRecords {
   if (!record || record.kind !== "request" || record.status !== "open") throw new Error("Only an open request can be resolved");
   this.store.db.prepare("UPDATE records SET status='resolved',resolved_by=?,updated_at=? WHERE id=?").run(resolvedBy ?? null,new Date().toISOString(),id);
   return this.activeRequest(record.workItemId);
+ }
+ revokeInstruction(id:string) {
+  const record=this.get(id);
+  if (!record || record.payload.kind !== "instruction" || record.status !== "active") throw new Error("Only an active instruction can be revoked");
+  this.store.db.prepare("UPDATE records SET status='revoked',updated_at=? WHERE id=?").run(new Date().toISOString(),id);
+  return this.get(id)!;
+ }
+ cancelRequest(id:string) {
+  const record=this.get(id);
+  if (!record || record.payload.kind !== "request" || record.status !== "open") throw new Error("Only an open request can be cancelled");
+  if (this.openRequests(record.workItemId).some(candidate=>candidate.parentId===id)) throw new Error("Resolve or cancel the active child request first");
+  this.store.db.prepare("UPDATE records SET status='cancelled',updated_at=? WHERE id=?").run(new Date().toISOString(),id);
+  return this.activeRequest(record.workItemId);
+ }
+ supersedeSpec(workItemId:string,specVersion:number) {
+  return this.store.db.prepare("UPDATE records SET status='superseded',updated_at=? WHERE work_item_id=? AND scope='spec' AND spec_version=? AND status IN ('active','open')")
+   .run(new Date().toISOString(),workItemId,specVersion).changes;
+ }
+ settleFindings(ids:string[],status:"resolved"|"accepted-defer",resolvedBy:string) {
+  if (!ids.length) return [];
+  const run=this.store.db.transaction(()=>ids.map(id=>{
+   const record=this.get(id);
+   if (!record || record.payload.kind !== "finding" || record.status !== "open") throw new Error(`Finding ${id} must be open`);
+   if (status === "accepted-defer" && record.payload.classification !== "defer") throw new Error("Only a deferred finding can be accepted-defer");
+   if (status === "resolved" && record.payload.classification === "defer") throw new Error("A deferred finding must be accepted-defer");
+   this.store.db.prepare("UPDATE records SET status=?,resolved_by=?,updated_at=? WHERE id=?").run(status,resolvedBy,new Date().toISOString(),id);
+   return this.get(id)!;
+  }));
+  return run.immediate();
  }
 }

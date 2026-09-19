@@ -45,3 +45,48 @@ test("failure lifecycle exposes exactly one active failure", () => {
   assert.equal(failures.active("work-1")?.id,second.id);
  } finally { store.db.close(); }
 });
+
+test("instruction replacement and revocation are explicit",()=>{
+ const {store,records}=setup();
+ try {
+  const first=records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"instruction",text:"Use Chromium"},sourceType:"github-comment",sourceId:"1",actor:"owner"});
+  const unrelated=records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"instruction",text:"Keep the UI light"},sourceType:"github-comment",sourceId:"2",actor:"owner"});
+  const replacement=records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"instruction",text:"Do not use Chromium",supersedes:[first.id]},sourceType:"github-comment",sourceId:"3",actor:"owner"});
+  assert.deepEqual({status:records.get(first.id)?.status,supersededBy:records.get(first.id)?.supersededBy},{status:"superseded",supersededBy:replacement.id});
+  assert.equal(records.get(unrelated.id)?.status,"active");
+  assert.equal(records.revokeInstruction(unrelated.id).status,"revoked");
+ } finally {store.db.close();}
+});
+
+test("agent decisions cannot supersede human decisions",()=>{
+ const {store,records}=setup();
+ try {
+  const human=records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"decision",category:"human",decision:"No authentication",rationale:"Public MVP",supersedes:[]},sourceType:"github-comment",sourceId:"1",actor:"owner"});
+  assert.throws(()=>records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"decision",category:"tactical",decision:"Add login",rationale:"Convenient",supersedes:[human.id]},sourceType:"agent-result",sourceId:"run-1",actor:"product-architect"}),/cannot supersede a human decision/);
+  assert.equal(records.get(human.id)?.status,"active");
+  const changed=records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"decision",category:"human",decision:"Require login",rationale:"Owner changed scope",supersedes:[human.id]},sourceType:"github-comment",sourceId:"2",actor:"owner"});
+  assert.equal(records.get(human.id)?.supersededBy,changed.id);
+ } finally {store.db.close();}
+});
+
+test("new spec supersedes spec-scoped records but preserves issue scope",()=>{
+ const {store,records}=setup();
+ try {
+  const scoped=records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"instruction",text:"Retry the failing test"},sourceType:"github-comment",sourceId:"1",actor:"owner"});
+  const durable=records.create({workItemId:"work-1",specVersion:1,scope:"issue",payload:{kind:"instruction",text:"Never expose credentials"},sourceType:"github-comment",sourceId:"2",actor:"owner"});
+  assert.equal(records.supersedeSpec("work-1",1),1);
+  assert.equal(records.get(scoped.id)?.status,"superseded");
+  assert.equal(records.get(durable.id)?.status,"active");
+ } finally {store.db.close();}
+});
+
+test("finding settlement records the execution and enforces defer semantics",()=>{
+ const {store,records}=setup();
+ try {
+  store.db.prepare("INSERT INTO executions(id,work_item_id,role,status,started_at) VALUES('run-2','work-1','qa','succeeded','now')").run();
+  const fix=records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"finding",classification:"auto-fix",originRole:"qa",evidence:"Missing coverage"},sourceType:"agent-result",sourceId:"run-1",actor:"qa"});
+  const deferred=records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"finding",classification:"defer",originRole:"developer",evidence:"Optional cleanup"},sourceType:"agent-result",sourceId:"run-1",actor:"developer"});
+  assert.equal(records.settleFindings([fix.id],"resolved","run-2")[0].resolvedBy,"run-2");
+  assert.equal(records.settleFindings([deferred.id],"accepted-defer","run-2")[0].status,"accepted-defer");
+ } finally {store.db.close();}
+});
