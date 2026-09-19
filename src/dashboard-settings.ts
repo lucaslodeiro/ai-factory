@@ -29,6 +29,8 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   FACTORY_POLL_INTERVAL_MS:{label:"GitHub polling interval",description:"How often the daemon checks issues and comments.",group:"runtime",type:"number",unit:"milliseconds",restart:"daemon"},
   FACTORY_EXECUTION_TIMEOUT_MS:{label:"Agent execution timeout",description:"Maximum duration of one agent process.",group:"runtime",type:"number",unit:"milliseconds",restart:"daemon"},
   FACTORY_MAX_FIX_CYCLES:{label:"Automatic correction cycles",description:"Maximum Builder and Tester correction loops before human input.",group:"runtime",type:"number",unit:"cycles",restart:"daemon"},
+  FACTORY_CONTEXT_BUDGET_BYTES:{label:"Default context budget",description:"Maximum prompt bytes before optional context is omitted.",group:"runtime",type:"number",unit:"bytes",restart:"daemon"},
+  FACTORY_CONTEXT_BUDGET_OVERRIDES:{label:"Context budget overrides",description:'Optional JSON object keyed by role or "provider/model". Provider/model wins over role.',group:"runtime",restart:"daemon"},
   FACTORY_DASHBOARD_HOST:{label:"Listen address",description:"Loopback address used by the administration UI.",group:"dashboard",type:"select",options:["127.0.0.1","localhost","::1"].map(value => ({value,label:value})),required:true,restart:"dashboard"},
   FACTORY_DASHBOARD_PORT:{label:"HTTP port",description:"Local port for the administration UI.",group:"dashboard",type:"number",unit:"port",required:true,restart:"dashboard"},
   GITHUB_REPOSITORY:{label:"Repository",description:"GitHub owner/name used for issues and pull requests.",group:"project",required:true,restart:"daemon"},
@@ -56,8 +58,17 @@ function encode(value: string) {
 }
 function validate(key: string, value: string) {
   encode(value);
-  if (/_MS$/.test(key) || key === "FACTORY_MAX_FIX_CYCLES") {
+  if (/_MS$/.test(key) || ["FACTORY_MAX_FIX_CYCLES","FACTORY_CONTEXT_BUDGET_BYTES"].includes(key)) {
     if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1) throw new Error(`${key}: enter a positive integer`);
+  }
+  if (key === "FACTORY_CONTEXT_BUDGET_OVERRIDES") {
+    let parsed:unknown;try{parsed=JSON.parse(value);}catch{throw new Error(`${key}: enter a JSON object`);}
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error(`${key}: enter a JSON object`);
+    const roles=new Set(["product-architect","developer","qa","reviewer"]);
+    for (const [name,budget] of Object.entries(parsed)) {
+      if (!roles.has(name) && !/^(codex|claude)\/[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(name)) throw new Error(`${key}: invalid override key ${name}`);
+      if (!Number.isSafeInteger(budget) || Number(budget)<1) throw new Error(`${key}: ${name} must be a positive integer`);
+    }
   }
   if (key === "FACTORY_DASHBOARD_PORT" && (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 65535)) throw new Error(`${key}: enter a port from 1 to 65535`);
   if (key === "FACTORY_DASHBOARD_HOST" && !["127.0.0.1","localhost","::1"].includes(value)) throw new Error(`${key}: use 127.0.0.1, localhost or ::1`);

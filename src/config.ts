@@ -25,6 +25,19 @@ function dashboardPort() {
   if (value > 65535) throw new Error("FACTORY_DASHBOARD_PORT must be at most 65535");
   return value;
 }
+function contextBudgetOverrides() {
+  const raw=(process.env.FACTORY_CONTEXT_BUDGET_OVERRIDES ?? "{}").trim();
+  let value:unknown;
+  try { value=JSON.parse(raw); } catch { throw new Error("FACTORY_CONTEXT_BUDGET_OVERRIDES must be a JSON object"); }
+  if (!value || Array.isArray(value) || typeof value !== "object") throw new Error("FACTORY_CONTEXT_BUDGET_OVERRIDES must be a JSON object");
+  const roles=new Set(["product-architect","developer","qa","reviewer"]),result:Record<string,number>={};
+  for (const [key,budget] of Object.entries(value)) {
+    if (!roles.has(key) && !/^(codex|claude)\/[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(key)) throw new Error(`Invalid context budget override key: ${key}`);
+    if (!Number.isSafeInteger(budget) || Number(budget)<1) throw new Error(`Context budget override ${key} must be a positive integer`);
+    result[key]=Number(budget);
+  }
+  return result;
+}
 function role(prefix: string, fallback: "codex" | "claude", fallbackModel: string) {
   const selected = provider(`${prefix}_PROVIDER`,fallback);
   const legacy = process.env[`${prefix}_MODEL_MODE`] === "auto" ? "auto"
@@ -43,6 +56,7 @@ export const config = {
   pollMs: positive("FACTORY_POLL_INTERVAL_MS", 15000),
   timeoutMs: positive("FACTORY_EXECUTION_TIMEOUT_MS", 1800000),
   maxCycles: positive("FACTORY_MAX_FIX_CYCLES", 3),
+  contextBudget:{defaultBytes:positive("FACTORY_CONTEXT_BUDGET_BYTES",200000),overrides:contextBudgetOverrides()},
   dashboardHost: dashboardHost(),
   dashboardPort: dashboardPort(),
   repo: process.env.GITHUB_REPOSITORY ?? "",

@@ -87,8 +87,17 @@ export function encode(value) {
 }
 export function validate(key, value) {
   encode(value);
-  if (/_MS$/.test(key) || key === 'FACTORY_MAX_FIX_CYCLES') {
+  if (/_MS$/.test(key) || ['FACTORY_MAX_FIX_CYCLES','FACTORY_CONTEXT_BUDGET_BYTES'].includes(key)) {
     if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1) throw new Error('Enter a positive integer.');
+  }
+  if (key === 'FACTORY_CONTEXT_BUDGET_OVERRIDES') {
+    let parsed; try { parsed=JSON.parse(value); } catch { throw new Error('Enter a JSON object.'); }
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error('Enter a JSON object.');
+    const roles=new Set(['product-architect','developer','qa','reviewer']);
+    for (const [name,budget] of Object.entries(parsed)) {
+      if (!roles.has(name) && !/^(codex|claude)\/[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(name)) throw new Error(`Invalid override key: ${name}.`);
+      if (!Number.isSafeInteger(budget) || Number(budget)<1) throw new Error(`${name} must be a positive integer.`);
+    }
   }
   if (key === 'FACTORY_DASHBOARD_PORT' && (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 65535)) throw new Error('Enter a port from 1 to 65535.');
   if (key === 'FACTORY_DASHBOARD_HOST' && !['127.0.0.1','localhost','::1'].includes(value)) throw new Error('Use a loopback address: 127.0.0.1, localhost or ::1.');

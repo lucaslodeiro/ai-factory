@@ -88,6 +88,8 @@ See [installation and operations](INSTALL.md), [GitHub setup](docs/GITHUB_SETUP.
 
 Product Architect records a complexity/risk assessment and the deterministic orchestrator uses it for workflow safeguards such as additional architectural review. Configuration → Agent roles chooses Codex or Claude and one direct model for Product Architect, Implementation Engineer, Verification Engineer and Delivery Reviewer. Each model can also be **Auto**, which delegates model choice to its provider. See [model selection policy](docs/MODEL_POLICY.md).
 
+Configuration → Runtime also sets the byte budget for agent context. Optional JSON overrides can target an exact role or `provider/model`; the most specific matching value is recorded with each persisted prompt. Protected specification, decision and instruction context is never silently clipped.
+
 GitHub issues show the workflow through colored state labels and an updatable progress comment. Reports use readable Markdown; full JSON evidence stays in the local audit. The issue remains open until the delivered PR is merged.
 
 Merged PRs reconcile to `MERGED`; closed unmerged PRs to `PR_CLOSED`. Run `npm run factory -- sync` when the daemon is stopped to refresh delivery state without running agents.
