@@ -16,6 +16,7 @@ test("crash after process success but before workflow commit requires an explici
  const s = new Store(":memory:"); workItem(s);
  s.db.prepare("INSERT INTO executions(id,work_item_id,role,status,started_at) VALUES('r','w','developer','succeeded','now')").run();
  new ExecutionManager(s).recover(); assert.equal(s.get("w")!.state, "FAILED");
+ assert.match((s.db.prepare("SELECT body FROM outbox ORDER BY id DESC LIMIT 1").get() as any).body,/## Execution failed[\s\S]*daemon restarted[\s\S]*\/factory retry/);
  assert.equal(s.get("w")!.context.resume, "DEVELOPMENT"); retry(s, "w");
  assert.equal(s.get("w")!.state, "DEVELOPMENT"); assert.equal(s.get("w")!.context.pendingStage?.beforeHead, "abc"); s.db.close();
 });

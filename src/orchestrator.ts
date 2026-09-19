@@ -10,6 +10,7 @@ import { Workspaces, type WorkspacePort } from "./worktrees.js";
 import { prompt } from "./prompts.js";
 import { deliverNotifications, type NotificationPort } from "./notifications.js";
 import { retry, retryStageLabel } from "./retry.js";
+import { failureMarkdown } from "./failure-report.js";
 import { parseResult, validateCoverage } from "./results.js";
 import type { WorkItem, WorkState, AgentRole, AgentResult, DeliveryStage } from "./types.js";
 function humanAnswer(body: string) {
@@ -49,7 +50,7 @@ export class Orchestrator {
      current.context.lastFailure = String(e);
      this.store.db.transaction(() => {
       this.store.transition(current, "FAILED");
-      this.store.post(w.issue_number, `## Execution failed\n\n${String(e)}\n\n### How to continue\n\nInspect the execution logs and fix the cause. Then post a new comment containing exactly:\n\n\`\`\`text\n/factory retry\n\`\`\`\n\nYou can also use **Retry** in the dashboard or run \`npm run factory -- retry ${w.id}\`.`);
+      this.store.post(w.issue_number,failureMarkdown(this.store,current,e));
      })();
     }
     this.store.event("workflow.error", { error: String(e) }, w.id);

@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Store } from "./storage.js";
 import { config, agentEnvironment } from "./config.js";
+import { failureMarkdown } from "./failure-report.js";
 import type { AgentRole, ModelSelection } from "./types.js";
 export class ExecutionManager {
   private running = new Map<string, { child: ChildProcess; cancel: () => void }>();
@@ -66,6 +67,7 @@ export class ExecutionManager {
           w.context.resume = w.context.pendingStage?.stage ?? w.state;
           w.context.lastFailure = "An agent execution was interrupted because the daemon restarted.";
           this.store.transition(w, "FAILED");
+          this.store.post(w.issue_number,failureMarkdown(this.store,w,w.context.lastFailure));
         }
         this.store.event("execution.interrupted", { reason: "Daemon restarted; supervisor disconnect terminates its worker group. Retry waits until group exit." }, r.work_item_id, r.id);
       }
@@ -75,6 +77,7 @@ export class ExecutionManager {
           w.context.resume = w.context.pendingStage.stage;
           w.context.lastFailure = "The daemon restarted before the workflow could record the completed agent stage.";
           this.store.transition(w, "FAILED");
+          this.store.post(w.issue_number,failureMarkdown(this.store,w,w.context.lastFailure));
           this.store.event("stage.interrupted", w.context.pendingStage, w.id);
         }
       }

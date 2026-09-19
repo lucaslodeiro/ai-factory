@@ -232,6 +232,8 @@ The daemon validates the author, consumes each comment only once and resumes the
 
 Agent timeouts are configurable. SIGTERM escalates to SIGKILL after one second for a process group that does not exit. After a crash, interrupted executions are recorded as interrupted and the work item becomes FAILED. A stage checkpoint also detects crashes after provider exit but before the workflow state was committed. Each new run has a supervisor connected to the daemon by IPC. If the daemon dies, the supervisor terminates its worker group. Retry checks that any interrupted group is gone before proceeding, without signalling saved PIDs. Old bootstrap runs without a supervisor may still require manual process inspection. Worktrees and logs are retained for diagnosis.
 
+When a workflow enters FAILED, its issue receives a structured troubleshooting comment with the failed stage, matching agent execution, provider/model, process result, sanitized reason and up to 30 recent `stderr` lines. Common credential patterns, configured secret environment values, ANSI control codes and local checkout paths are removed or replaced before publication. The full local logs remain available in the dashboard and under `FACTORY_DATA_DIR`.
+
 When an issue is recovered after its previous worktree directory disappeared, Retry prunes stale Git worktree registrations and reuses the issue's existing local or remote `factory/issue-*` branch. A branch is never recreated over existing work; if Git reports that the branch is actively checked out elsewhere, inspect that checkout before retrying.
 
 ## First end-to-end run

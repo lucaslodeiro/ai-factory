@@ -157,7 +157,10 @@ test("durable GitHub outbox retries; malformed outputs fail closed and retry rou
  f.gh.fail = false; await f.o.flush(); assert.equal(f.gh.posted.size, 2);
  await f.o.flush(); assert.equal(f.gh.posted.size, 2);
  f.gh.reply("/factory approve v1"); await f.o.tick(); await f.o.tick();
- assert.equal(f.item().state, "FAILED"); retry(f.store, f.item().id); assert.equal(f.item().state, "DEVELOPMENT");
+ assert.equal(f.item().state, "FAILED");
+ const failureComment=[...f.gh.posted.values()].find(body=>body.includes("## Execution failed"))!;
+ assert.match(failureComment,/### What happened/); assert.match(failureComment,/### Troubleshooting/); assert.match(failureComment,/\*\*Stage:\*\* Development/); assert.match(failureComment,/\/factory retry/);
+ retry(f.store, f.item().id); assert.equal(f.item().state, "DEVELOPMENT");
  await f.o.tick(); assert.equal(f.item().state, "QA"); f.store.db.close();
 });
 test("authorized standalone issue comment retries the saved stage exactly once", async () => {
