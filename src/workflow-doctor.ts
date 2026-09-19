@@ -17,8 +17,10 @@ export function workflowProjectionProblems(store:Store) {
       if ((request?.id??null)!==row.active_request_id) problems.push(`${label}: activeRequestId does not match the deepest open request`);
       if ((failure?.id??null)!==row.active_failure_id) problems.push(`${label}: activeFailureId does not match the unresolved failure`);
       const owner=request?.payload.kind === "request" ? request.payload.owner : undefined;
-      if ((row.status === "WAITING") !== (owner === "human")) problems.push(`${label}: WAITING must match a human-owned active request`);
-      if ((row.status === "FAILED") !== Boolean(failure)) problems.push(`${label}: FAILED must match an unresolved failure`);
+      if (row.status === "WAITING" && owner !== "human") problems.push(`${label}: WAITING requires a human-owned active request`);
+      if (owner === "human" && !["WAITING","PAUSED"].includes(row.status)) problems.push(`${label}: a human-owned request must be waiting or paused`);
+      if (row.status === "FAILED" && !failure) problems.push(`${label}: FAILED requires an unresolved failure`);
+      if (failure && !["FAILED","PAUSED"].includes(row.status)) problems.push(`${label}: an unresolved failure must be failed or paused`);
       if ((row.status === "RUNNING") !== Boolean(row.active_run_id)) problems.push(`${label}: RUNNING must match an active run id`);
       if (row.active_run_id) {
         const run=store.db.prepare("SELECT status FROM executions WHERE id=? AND work_item_id=?").get(row.active_run_id,row.id) as {status:string}|undefined;

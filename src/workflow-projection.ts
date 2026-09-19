@@ -72,9 +72,11 @@ export class WorkflowProjections {
  }
  private validate(status:V3Status,activeRequest:WorkflowRecord|undefined,activeFailure:ReturnType<WorkflowFailures["active"]>,activeRunId:string|undefined) {
   const owner=requestOwner(activeRequest);
-  if ((status === "WAITING") !== (owner === "human")) throw new Error("WAITING requires exactly one human-owned active request");
+  if (status === "WAITING" && owner !== "human") throw new Error("WAITING requires exactly one human-owned active request");
+  if (owner === "human" && !["WAITING","PAUSED"].includes(status)) throw new Error("A human-owned active request must be waiting or paused");
   if (owner === "architect" && !["QUEUED","RUNNING","PAUSED"].includes(status)) throw new Error("An Architect-owned active request must be queued, running or paused");
-  if ((status === "FAILED") !== Boolean(activeFailure)) throw new Error("FAILED requires exactly one active failure");
+  if (status === "FAILED" && !activeFailure) throw new Error("FAILED requires exactly one active failure");
+  if (activeFailure && !["FAILED","PAUSED"].includes(status)) throw new Error("An active failure must be failed or paused");
   if ((status === "RUNNING") !== Boolean(activeRunId)) throw new Error("RUNNING requires exactly one active run id");
  }
 }

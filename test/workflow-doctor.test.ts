@@ -33,8 +33,8 @@ test("workflow doctor reports pointer, status and execution drift without repair
   const problems=workflowProjectionProblems(store);
   assert.ok(problems.some(problem=>problem.includes("activeRequestId")));
   assert.ok(problems.some(problem=>problem.includes("activeFailureId")));
-  assert.ok(problems.some(problem=>problem.includes("WAITING")));
-  assert.ok(problems.some(problem=>problem.includes("FAILED")));
+  assert.ok(problems.some(problem=>problem.includes("human-owned request")));
+  assert.ok(problems.some(problem=>problem.includes("unresolved failure")));
   assert.ok(problems.some(problem=>problem.includes("activeRunId")));
   assert.deepEqual(store.db.prepare("SELECT * FROM work_items WHERE id='work-1'").get(),before);
  } finally {store.db.close();}

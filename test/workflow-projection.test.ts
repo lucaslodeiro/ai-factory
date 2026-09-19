@@ -28,7 +28,7 @@ test("projection rejects invalid derived state and stale revision", () => {
  const {store,records,projections}=setup();
  try {
   records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"request",type:"clarification",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:1},sourceType:"agent-result",sourceId:"run",actor:"architect"});
-  assert.throws(()=>projections.initialize("work-1","DESIGN","QUEUED"),/WAITING requires/);
+  assert.throws(()=>projections.initialize("work-1","DESIGN","QUEUED"),/human-owned active request/);
   projections.initialize("work-1","DESIGN","WAITING");
   assert.throws(()=>projections.transition({workItemId:"work-1",expectedRevision:2,stage:"DESIGN",status:"WAITING",actor:{type:"orchestrator",id:"test"},source:{},reason:{code:"test",summary:"stale"}}),/revision changed/);
  } finally { store.db.close(); }
@@ -84,4 +84,18 @@ test("request creation is reflected in the same waiting transition",()=>{
   });
   assert.equal(waiting.activeRequestId,records.activeRequest("work-1")?.id);
  } finally { store.db.close(); }
+});
+
+test("paused work preserves its active request and failure causes",()=>{
+ const requestCase=setup();
+ try {
+  requestCase.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:1},sourceType:"agent-result",sourceId:"run",actor:"architect"});
+  assert.equal(requestCase.projections.initialize("work-1","DESIGN","PAUSED").status,"PAUSED");
+ } finally {requestCase.store.db.close();}
+ const failureCase=setup();
+ try {
+  const failures=new WorkflowFailures(failureCase.store);
+  failures.open({workItemId:"work-1",class:"recovery",message:"Migration needs review",stage:"BUILD",attempt:0});
+  assert.equal(failureCase.projections.initialize("work-1","BUILD","PAUSED").status,"PAUSED");
+ } finally {failureCase.store.db.close();}
 });
