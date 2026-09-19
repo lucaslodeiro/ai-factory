@@ -1,4 +1,5 @@
-import type { AgentResult, AgentRole, Criterion } from "./types.js";
+import type { AgentResult, AgentRole, Criterion, DeliveryStage } from "./types.js";
+import { tacticalRouteError, type TacticalNextRole } from "./tactical-routing.js";
 export const reviewDimensions = ["specification", "code-quality", "security", "performance", "product-ui-copy", "test-quality", "dependencies"];
 type Schema = { type?: string | string[]; enum?: unknown[]; properties?: Record<string, Schema>; required?: string[]; additionalProperties?: boolean; items?: Schema; minLength?: number; maxLength?: number; maxItems?: number; };
 const text = (maxLength = 5000): Schema => ({ type: "string", minLength: 1, maxLength });
@@ -20,8 +21,11 @@ export const resultSchema = object({
   reviewChecks: list(object({ dimension: enumeration(...reviewDimensions), status: enumeration("passed", "failed", "not-applicable"), evidence: text() })),
 });
 // Constrain provider generation by role as well as validating it afterwards.
-export function resultSchemaFor(role: AgentRole): Schema {
- if (role === "product-architect") return { ...resultSchema, properties: { ...resultSchema.properties, outcome: enumeration("spec", "questions", "resolved") } };
+export function resultSchemaFor(role: AgentRole, allowedNextRoles?: TacticalNextRole[]): Schema {
+ if (role === "product-architect") return { ...resultSchema, properties: { ...resultSchema.properties,
+  outcome: enumeration("spec", "questions", "resolved"),
+  nextRole: allowedNextRoles ? { type: ["string", "null"], enum: [...allowedNextRoles, null] } : resultSchema.properties!.nextRole,
+ } };
  return { ...resultSchema, properties: { ...resultSchema.properties,
   outcome: enumeration("pass", "changes", "decision"),
   spec: { type: "string", enum: [""] }, acceptanceCriteria: { ...resultSchema.properties!.acceptanceCriteria, maxItems: 0 },
@@ -50,7 +54,7 @@ function validate(value: unknown, schema: Schema, location = "result"): void {
 function unique(ids: string[], label: string) {
   if (new Set(ids).size !== ids.length) throw new Error(`Duplicate ${label}`);
 }
-export function parseResult(raw: unknown, role: AgentRole): AgentResult {
+export function parseResult(raw: unknown, role: AgentRole, allowedNextRoles?: TacticalNextRole[], consultationFrom?: DeliveryStage): AgentResult {
   const serialized = JSON.stringify(raw);
   if (serialized && serialized.length > 80000) throw new Error("Agent result exceeds publication limits");
   // Provider structured-output implementations do not all enforce enum/maxItems
@@ -73,12 +77,20 @@ export function parseResult(raw: unknown, role: AgentRole): AgentResult {
   if (r.outcome === "questions" && !r.questions.length) throw new Error("No clarification questions");
   if (r.outcome === "resolved") {
     if (!r.nextRole || !r.decisions.length || r.decisions.some(d => d.kind !== "tactical" || d.conflictsWithHuman) || r.questions.length || r.findings.some(f => f.classification === "decision-required")) throw new Error("Tactical resolution cannot require a human decision");
+    if (allowedNextRoles && !allowedNextRoles.includes(r.nextRole)) throw new Error(tacticalRouteError(r.nextRole, allowedNextRoles, consultationFrom));
   } else if (r.nextRole !== null) throw new Error("Only a tactical resolution may select nextRole");
   if (r.outcome === "changes" && !r.findings.some(f => f.classification === "auto-fix")) throw new Error("Changes require an auto-fix finding");
   if (r.outcome === "decision" && !r.findings.some(f => f.classification === "decision-required")) throw new Error("Decision requires an explicit finding");
   if (r.outcome === "pass") {
     if (r.findings.some(f => f.classification !== "defer") || r.questions.length || r.decisions.some(d => d.kind === "major" || d.conflictsWithHuman)) throw new Error("PASS contradicts a blocking finding or decision");
-    if ((role === "developer" || role === "qa") && (!r.tests.length || r.tests.some(t => t.exitCode !== 0))) throw new Error("PASS requires successful executed tests with exit codes");
+    if (role === "developer" || role === "qa") {
+      if (!r.tests.length) throw new Error("PASS requires successful executed tests with exit codes");
+      const unsuccessful=r.tests.filter(t=>t.exitCode !== 0);
+      if (unsuccessful.length) {
+        const commands=unsuccessful.slice(0,3).map(t=>`${t.command.slice(0,200)} (exit ${t.exitCode ?? "not executed"})`).join("; ");
+        throw new Error(`PASS requires successful executed tests with exit codes; failing or unexecuted commands: ${commands}`);
+      }
+    }
     if (role === "reviewer" && (r.reviewChecks.length !== reviewDimensions.length || r.reviewChecks.some(c => c.status === "failed"))) throw new Error("Delivery Reviewer PASS requires all review dimensions");
   }
   return r;

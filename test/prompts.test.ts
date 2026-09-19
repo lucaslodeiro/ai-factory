@@ -34,4 +34,17 @@ test("delivery outcome instructions distinguish fixes, decisions and deferred ob
  assert.match(output,/defer finding is non-blocking and cannot be the sole reason for changes/);
  assert.match(output,/Never return changes merely to report progress/);
  assert.match(output,/If human guidance prevents one validation method, use a permitted equivalent/);
+ assert.match(output,/Do not put setup, server lifecycle, process cleanup, diagnostic inspection, or other auxiliary commands in tests/);
+});
+
+test("architect receives an explicit, machine-aligned tactical return route", () => {
+ const consultation=structuredClone(item);
+ consultation.state="SPEC";
+ consultation.context.consultation={from:"DEVELOPMENT"};
+ const output=prompt(consultation,"product-architect","claude");
+ assert.match(output,/TACTICAL RETURN ROUTE — REQUIRED/);
+ assert.match(output,/originated in Build/);
+ assert.match(output,/Allowed nextRole value: developer/);
+ assert.match(output,/"allowedNextRoles": \[\s*"developer"\s*\]/);
+ assert.doesNotMatch(output,/Allowed nextRole values?: qa/);
 });

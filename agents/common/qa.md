@@ -24,4 +24,4 @@ Include severity, reproduction/evidence, impacted acceptance criterion, and reco
 A report conforming to `templates/QA_REPORT.md` (Verification Report).
 
 ## Required evidence
-Use the complete execution-result schema. Report criterion IDs and evidence, executed commands with exit codes, changed files and dependency changes with rationale. Do not return PASS with missing coverage or blocking findings. An empty dependency list means none reported.
+Use the complete execution-result schema. Report criterion IDs and evidence, final verification commands with exit codes, changed files and dependency changes with rationale. The `tests` list contains only commands used as acceptance evidence; put setup, diagnostics and process lifecycle or cleanup commands in the summary or an appropriate finding. Do not return PASS with missing coverage, failed required verification or blocking findings. An empty dependency list means none reported.

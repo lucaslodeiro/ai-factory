@@ -30,6 +30,8 @@ export interface Context {
   feedback: string[]; cycles: number; resume?: WorkState;
   retryGuidance?: { login: string; commentId: number; text: string };
   lastFailure?: string;
+  archivedAt?: string;
+  archivedFromState?: WorkState;
   pendingStage?: { stage: WorkState; beforeHead: string; startedAt: string };
   reports: Partial<Record<AgentRole, AgentResult>>; pr?: string; merge?: { at: string; commit: string | null };
 }

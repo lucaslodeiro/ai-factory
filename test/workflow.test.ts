@@ -15,7 +15,7 @@ class GitHub implements GitHubPort {
  pullRequestState() { if (this.failPR) throw new Error("offline"); return { state: this.prState, mergedAt: this.prState === "MERGED" ? "2026-09-18T18:00:00Z" : null, mergeCommit: this.prState === "MERGED" ? { oid: "abc123" } : null }; }
  replies: Comment[] = []; posted = new Map<string,string>(); states: WorkState[] = []; prs = 0; fail = false; failComments = false;
  repoReplies: RepositoryComment[] = [];
- catalog = [{ number: 1, title: "Feature", body: "Implement feature", url: "https://example.test/issues/1",state:"OPEN" as const }];
+ catalog: Issue[] = [{ number: 1, title: "Feature", body: "Implement feature", url: "https://example.test/issues/1",state:"OPEN" }];
  managed: Issue[] | null = null;
  listManaged() { return this.managed ?? this.catalog.map(issue => ({...issue,labels:[{name:"factory:spec"}]})); }
  issue(n: number) { return this.catalog.find(issue=>issue.number===n) ?? { number:n,title:"Feature refreshed",body:"Updated issue body",url:`https://example.test/issues/${n}`,state:"OPEN" as const }; }
@@ -48,6 +48,23 @@ test("issue -> version approval -> developer -> independent QA -> reviewer -> PR
  assert.equal(f.item().state, "READY_TO_MERGE"); assert.equal(f.published(), 1); assert.equal(f.gh.prs, 1);
  assert.deepEqual(f.calls.map(c => c.role), ["product-architect", "developer", "qa", "reviewer"]);
  assert.equal(f.store.items().length, 1); await f.o.tick(); assert.equal(f.gh.prs, 1);
+ f.store.db.close();
+});
+test("manually closed issues are archived, ignored and require retry after reopening", async () => {
+ const f=setup(); await f.o.tick();
+ assert.equal(f.item().state,"WAITING_HUMAN"); assert.equal(f.calls.length,1);
+ f.gh.catalog[0].state="CLOSED";
+ f.gh.reply("/factory answer this must not run while closed");
+ await f.o.tick();
+ assert.ok(f.item().context.archivedAt); assert.equal(f.item().context.archivedFromState,"WAITING_HUMAN");
+ assert.equal(f.calls.length,1);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM notifications WHERE work_item_id=? AND sent=0").get(f.item().id) as any).n,0);
+ const syncedWhileClosed=f.gh.states.length;
+ await f.o.tick(); assert.equal(f.gh.states.length,syncedWhileClosed); assert.equal(f.calls.length,1);
+ f.gh.catalog[0].state="OPEN"; await f.o.tick();
+ assert.equal(f.item().context.archivedAt,undefined); assert.equal(f.item().state,"PAUSED");
+ assert.equal(f.item().context.resume,"WAITING_HUMAN"); assert.equal(f.item().context.cursor,1);
+ assert.equal(f.calls.length,1);
  f.store.db.close();
 });
 test("authorized standalone factory start comment creates an unknown issue exactly once", async () => {
@@ -304,6 +321,26 @@ test("follow-up questions preserve an approved consultation and its delivery rou
  assert.equal(f.item().state,"DEVELOPMENT");
  assert.equal(f.item().context.version,1);
  assert.deepEqual(f.item().context.approval,approval);
+ f.store.db.close();
+});
+test("human-confirmed Build consultation cannot skip directly to Test or Review", async () => {
+ const f=setup({
+  developer:[result("decision")],
+  "product-architect":[result("spec"),result("questions",{questions:["Does AC-6 look correct?"]}),tactical("reviewer")],
+ });
+ await f.o.tick(); f.gh.reply("/factory approve v1"); await f.o.tick();
+ await f.o.tick(); assert.equal(f.item().state,"SPEC");
+ await f.o.tick(); assert.equal(f.item().state,"WAITING_HUMAN");
+ f.gh.reply("/factory answer se ve todo bien");
+ await f.o.tick(); await f.o.tick();
+ assert.equal(f.item().state,"FAILED");
+ assert.match(f.item().context.lastFailure ?? "",/selected nextRole=reviewer after a Build consultation/);
+ assert.match(f.item().context.lastFailure ?? "",/allowed nextRole value is: developer/);
+ const architectCall=f.calls.at(-1)!;
+ assert.deepEqual(architectCall.allowedNextRoles,["developer"]);
+ assert.equal(architectCall.consultationFrom,"DEVELOPMENT");
+ assert.match(architectCall.instructions,/Allowed nextRole value: developer/);
+ assert.ok([...f.gh.posted.values()].some(body=>body.includes("would skip an unfinished delivery gate")&&body.includes("allowed nextRole value is: developer")));
  f.store.db.close();
 });
 test("retry repairs approval and consultation erased by an older release", async () => {

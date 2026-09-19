@@ -26,7 +26,7 @@ export class Store {
       CREATE UNIQUE INDEX IF NOT EXISTS issue_identity ON work_items(repo,issue_number);`);
     const cols = this.db.prepare("PRAGMA table_info(work_items)").all() as { name: string }[];
     if (!cols.some(c => c.name === "context")) this.db.exec("ALTER TABLE work_items ADD COLUMN context TEXT NOT NULL DEFAULT '{}'");
-    for (const [table, column, type] of [["specs", "assessment", "TEXT"], ["specs", "criteria", "TEXT NOT NULL DEFAULT '[]'"], ["executions", "recovery_pending", "INTEGER NOT NULL DEFAULT 0"], ["executions", "workflow_state", "TEXT"], ["executions", "input_tokens", "INTEGER"], ["executions", "output_tokens", "INTEGER"], ["executions", "cached_tokens", "INTEGER"], ["executions", "total_tokens", "INTEGER"], ["outbox", "delivery_key", "TEXT"]]) {
+    for (const [table, column, type] of [["specs", "assessment", "TEXT"], ["specs", "criteria", "TEXT NOT NULL DEFAULT '[]'"], ["executions", "recovery_pending", "INTEGER NOT NULL DEFAULT 0"], ["executions", "workflow_state", "TEXT"], ["executions", "input_tokens", "INTEGER"], ["executions", "output_tokens", "INTEGER"], ["executions", "cached_tokens", "INTEGER"], ["executions", "total_tokens", "INTEGER"], ["outbox", "delivery_key", "TEXT"], ["notifications", "work_item_id", "TEXT"]]) {
       const existing = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
       if (!existing.some(c => c.name === column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
     }
@@ -63,7 +63,7 @@ export class Store {
     this.db.prepare("INSERT INTO events(ts,work_item_id,run_id,type,payload) VALUES(?,?,?,?,?)")
       .run(new Date().toISOString(), workItemId ?? null, runId ?? null, type, JSON.stringify(payload));
   }
-  notify(w: WorkItem, detail?: string) { this.db.prepare("INSERT INTO notifications(body) VALUES(?)").run(notificationText(w, detail)); }
+  notify(w: WorkItem, detail?: string) { this.db.prepare("INSERT INTO notifications(body,work_item_id) VALUES(?,?)").run(notificationText(w, detail),w.id); }
   post(issue: number, body: string) {
     for (let offset = 0; offset < body.length; offset += 25000) this.db.prepare("INSERT INTO outbox(issue_number,body,delivery_key) VALUES(?,?,?)").run(issue, body.slice(offset, offset + 25000),randomUUID());
   }

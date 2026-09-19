@@ -14,6 +14,7 @@ import { retry, retryStageLabel } from "./retry.js";
 import { failureMarkdown } from "./failure-report.js";
 import { parseResult, validateCoverage } from "./results.js";
 import type { WorkItem, WorkState, AgentRole, AgentResult, DeliveryStage } from "./types.js";
+import { allowedTacticalNextRoles, tacticalRouteError } from "./tactical-routing.js";
 function humanAnswer(body: string) {
  const lines = body.trim().split(/\r?\n/);
  const first = lines[0]?.trim();
@@ -38,10 +39,12 @@ export class Orchestrator {
   try { this.discoverStartCommands(); }
   catch (e) { this.store.event("github.start_poll_failed", { error: String(e) }); }
   await this.reconcilePullRequests();
+  this.reconcileIssueVisibility();
   await this.flush();
   for (const snapshot of this.store.items()) {
    const w = this.store.get(snapshot.id)!;
    if (w.repo !== config.repo) throw new Error("Data directory belongs to a different repository");
+   if (w.context.archivedAt) continue;
    if (["FAILED", "CANCELLED", "PAUSED"].includes(w.state)) {
     this.retryFromComment(w);
     await this.flush();
@@ -204,10 +207,43 @@ export class Orchestrator {
   },w.id);
   return current;
  }
+ private reconcileIssueVisibility() {
+  for (const w of this.store.items()) {
+   if (w.repo !== config.repo) continue;
+   try { this.reconcileIssueState(w,this.github.issue(w.issue_number)); }
+   catch (e) { this.store.event("github.issue_state_failed",{issue:w.issue_number,error:String(e)},w.id); }
+  }
+ }
+ private reconcileIssueState(w: WorkItem, issue: Issue = this.github.issue(w.issue_number)) {
+  if (issue.state === "CLOSED") { this.archiveClosedIssue(w); return false; }
+  if (!w.context.archivedAt) return true;
+  const archivedAt=w.context.archivedAt,from=w.context.archivedFromState ?? w.state;
+  delete w.context.archivedAt; delete w.context.archivedFromState;
+  try { w.context.cursor=Math.max(w.context.cursor,...this.github.comments(w.issue_number).map(comment=>comment.id)); } catch {}
+  if (["SPEC","WAITING_HUMAN","DEVELOPMENT","QA","REVIEW"].includes(w.state)) {
+   w.context.resume=from;
+   w.state="PAUSED";
+  }
+  this.store.save(w);
+  this.store.event("github.issue_reopened",{issue:w.issue_number,archivedAt,resume:w.context.resume ?? null,state:w.state},w.id);
+  return true;
+ }
+ private archiveClosedIssue(w: WorkItem) {
+  if (w.context.archivedAt) return;
+  w.context.archivedAt=new Date().toISOString();
+  w.context.archivedFromState=w.state;
+  this.store.save(w);
+  this.store.db.prepare("UPDATE notifications SET sent=1,last_error=? WHERE work_item_id=? AND sent=0").run("Suppressed because the GitHub issue is closed",w.id);
+  this.store.event("github.issue_closed",{issue:w.issue_number,state:w.state,visibility:"archived"},w.id);
+ }
  refreshIssueList() {
   const managed = this.github.listManaged();
   const byNumber = new Map(managed.map(issue => [issue.number,issue]));
-  for (const local of this.store.items()) if (local.repo === config.repo && !byNumber.has(local.issue_number)) byNumber.set(local.issue_number,this.github.issue(local.issue_number));
+  for (const local of this.store.items()) if (local.repo === config.repo && !byNumber.has(local.issue_number)) {
+   const remote=this.github.issue(local.issue_number);
+   if (remote.state === "OPEN") byNumber.set(local.issue_number,remote);
+   else this.archiveClosedIssue(local);
+  }
   const issues = [...byNumber.values()];
   let added = 0,updated = 0;
   for (const issue of issues) {
@@ -218,6 +254,7 @@ export class Orchestrator {
     this.github.syncState(refreshed.issue_number,refreshed.state,progressMarkdown(refreshed));
     added++; continue;
    }
+   this.reconcileIssueState(existing,issue);
    this.reconcileKnownIssue(existing,issue);
    const refreshed=this.refreshLatestComment(existing);
    this.github.syncState(refreshed.issue_number,refreshed.state,progressMarkdown(refreshed));
@@ -259,6 +296,8 @@ export class Orchestrator {
  async flush() {
   const rows = this.store.db.prepare("SELECT * FROM outbox WHERE sent=0 ORDER BY id").all() as { id: number; issue_number: number; body: string; delivery_key: string | null }[];
   for (const r of rows) {
+   const closed=this.store.items().find(w=>w.repo===config.repo&&w.issue_number===r.issue_number)?.context.archivedAt;
+   if (closed) { this.store.db.prepare("UPDATE outbox SET sent=1 WHERE id=?").run(r.id); this.store.event("github.delivery_skipped_closed",{outboxId:r.id,issue:r.issue_number}); continue; }
    try {
     this.github.commentOnce(r.issue_number,r.body,`${config.repo}:${r.delivery_key ?? r.id}`);
     this.store.db.prepare("UPDATE outbox SET sent=1 WHERE id=?").run(r.id);
@@ -267,6 +306,7 @@ export class Orchestrator {
   }
   await deliverNotifications(this.store, this.slack);
   for (const w of this.store.items()) {
+   if (w.context.archivedAt) continue;
    try { this.github.syncState(w.issue_number, w.state, progressMarkdown(w)); }
    catch (e) { this.store.event("github.labels_failed", { error: String(e) }, w.id); }
   }
@@ -281,13 +321,16 @@ export class Orchestrator {
   this.workspaces.assertBranch(w.context.cwd, w.branch);
   const before = this.workspaces.head(w.context.cwd);
   const selection = modelForWork(w, role);
+  const consultationFrom = role === "product-architect" ? w.context.consultation?.from : undefined;
+  const allowedNextRoles = consultationFrom ? allowedTacticalNextRoles(consultationFrom) : undefined;
   const instructions = prompt(w, role, selection.provider) + (role === "reviewer" ? "\n\nImplementation diff:\n" + this.workspaces.diff(w.context.cwd) : "");
   w.context.pendingStage = { stage: w.state, beforeHead: before, startedAt: new Date().toISOString() };
   this.store.save(w);
   this.store.event("model.selected", { role, specVersion: w.context.version, selection }, w.id);
   const adapter = this.agents[role];
   if (!adapter) throw new Error(`No adapter configured for ${roleShortName(role)}`);
-  const result = parseResult(await adapter.run({ workItemId: w.id, role, cwd: w.context.cwd, instructions, selection }), role);
+  const result = parseResult(await adapter.run({ workItemId: w.id, role, cwd: w.context.cwd, instructions, selection, allowedNextRoles, consultationFrom }), role, allowedNextRoles, consultationFrom);
+  if (!this.reconcileIssueState(this.store.get(w.id)!)) return;
   if (this.store.get(w.id)!.state !== w.state) return;
   if (role !== "product-architect") validateCoverage(result, w.context.criteria ?? []);
   this.workspaces.check(w.context.cwd, role, before, w.branch);
@@ -376,8 +419,8 @@ export class Orchestrator {
   const from = w.context.consultation?.from;
   if (!from || !w.context.approvedVersion || w.context.approvedVersion !== w.context.version) throw new Error("Tactical resolution requires an approved-spec consultation");
   const to = ({ developer: "DEVELOPMENT", qa: "QA", reviewer: "REVIEW" } as const)[result.nextRole!];
-  const allowed = { DEVELOPMENT: ["DEVELOPMENT"], QA: ["DEVELOPMENT", "QA"], REVIEW: ["DEVELOPMENT", "QA", "REVIEW"] };
-  if (!allowed[from].includes(to)) throw new Error("Tactical resolution cannot skip a delivery gate");
+  const allowedRoles = allowedTacticalNextRoles(from);
+  if (!allowedRoles.includes(result.nextRole!)) throw new Error(tacticalRouteError(result.nextRole!, allowedRoles, from));
   this.store.db.transaction(() => {
    w.context.decisions = [...(w.context.decisions ?? []), ...result.decisions];
    w.context.consultation = undefined;

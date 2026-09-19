@@ -6,6 +6,7 @@ test("reports require evidence fields, tests, dependency rationale and review di
  const missing = result("pass") as any; delete missing.dependencies;
  assert.throws(() => parseResult(missing, "developer"), /dependencies: required/);
  for (const exitCode of [1, null]) assert.throws(() => parseResult(result("pass", { tests: [{ command: "npm test", exitCode, evidence: "failed or not run" }] }), "qa"), /successful executed tests/);
+ assert.throws(() => parseResult(result("pass", { tests: [{ command: "kill -TERM 20325", exitCode: 1, evidence: "operation not permitted" }] }), "developer"), /kill -TERM 20325 \(exit 1\)/);
  assert.throws(() => parseResult(result("pass", { tests: [] }), "developer"), /successful executed tests/);
  assert.throws(() => parseResult(result("pass", { dependencies: [{ name: "library", change: "added", rationale: "" }] }), "developer"), /rationale/);
  assert.throws(() => parseResult(result("pass", { reviewChecks: [] }), "reviewer"), /all review dimensions/);
@@ -33,6 +34,19 @@ test("provider schemas prevent delivery roles from respecifying or selecting the
   assert.deepEqual(schema.outcome.enum, ["pass", "changes", "decision"]);
  }
  assert.deepEqual(resultSchemaFor("product-architect").properties!.outcome.enum, ["spec", "questions", "resolved"]);
+});
+
+test("architect consultation schema and validation enforce the exact tactical return route", () => {
+ const schema=resultSchemaFor("product-architect",["developer"]).properties!;
+ assert.deepEqual(schema.nextRole.enum,["developer",null]);
+ const resolved=result("resolved",{
+  nextRole:"reviewer",
+  decisions:[{kind:"tactical",decision:"Human confirmed the UI",rationale:"AC-6 is satisfied",conflictsWithHuman:false}],
+ });
+ assert.throws(
+  () => parseResult(resolved,"product-architect",["developer"],"DEVELOPMENT"),
+  /selected nextRole=reviewer after a Build consultation; allowed nextRole value is: developer/,
+ );
 });
 
 test("delivery reports discard provider attempts to populate architect-owned fields", () => {

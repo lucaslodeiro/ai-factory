@@ -44,6 +44,16 @@ function tail(file: string, maxLines = 30) {
 
 function diagnosis(reason: string, stderr: string, run?: {status:string;exit_code:number|null}) {
   const evidence=`${reason}\n${stderr}`;
+  if (/Tactical resolution selected nextRole=/i.test(reason)) return [
+    "**Summary:** Architect selected a return role that would skip an unfinished delivery gate.",
+    `**Evidence:** ${reason.replace(/^Error:\s*/,"")}`,
+    "**Recommended action:** Retry with guidance to resolve the tactical question and return to one of the allowed roles shown above. The approved SPEC, human answer and preserved worktree can be reused.",
+  ].join("\n\n");
+  if (/PASS requires successful executed tests with exit codes/i.test(reason)) return [
+    "**Summary:** The agent returned PASS, but its `tests` evidence included a failed or unexecuted command.",
+    `**Evidence:** ${reason.replace(/^Error:\s*/,"")}`,
+    "**Recommended action:** Retry after deciding whether that command is required acceptance verification. Required verification must succeed before PASS; setup, diagnostics and server cleanup belong in the summary or a finding rather than the `tests` evidence list.",
+  ].join("\n\n");
   if (/Tactical resolution requires an approved-spec consultation/i.test(reason)) return [
     "**Summary:** Architect returned a tactical resolution, but the saved workflow no longer contained the approved consultation route needed to apply it.",
     "**Evidence:** The agent completed successfully; the orchestrator rejected the result while validating the approved SPEC and delivery return stage.",

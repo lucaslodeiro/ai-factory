@@ -11,10 +11,10 @@ export class CodexAdapter implements AgentAdapter {
   if (r.selection.provider !== "codex") throw new Error("Model selection/provider mismatch");
   const dir = path.join(config.dataDir, "outputs", randomUUID()); fs.mkdirSync(dir, { recursive: true });
   const schema = path.join(dir, "schema.json"), output = path.join(dir, "result.json");
-  fs.writeFileSync(schema, JSON.stringify(resultSchemaFor(r.role)));
+  fs.writeFileSync(schema, JSON.stringify(resultSchemaFor(r.role, r.allowedNextRoles)));
   const modelArgs = r.selection.model === "auto" ? [] : ["--model", r.selection.model];
   await this.executions.run(r.workItemId, r.role, config.codexCommand,
    ["exec", ...modelArgs, "--ephemeral", "--sandbox", "workspace-write", "--config", "sandbox_workspace_write.network_access=true", "--output-schema", schema, "--output-last-message", output, "-"], r.cwd, r.instructions, config.timeoutMs, r.selection);
-  return parseResult(JSON.parse(fs.readFileSync(output, "utf8")), r.role);
+  return parseResult(JSON.parse(fs.readFileSync(output, "utf8")), r.role, r.allowedNextRoles, r.consultationFrom);
  }
 }

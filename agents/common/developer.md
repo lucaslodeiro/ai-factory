@@ -21,4 +21,4 @@ May modify production code and tests, run build/test/tooling commands, use Git i
 Structured execution result including changed areas, acceptance criteria addressed, commands/tests executed, failures, dependencies added, and unresolved concerns.
 
 ## Required evidence
-Use the complete execution-result schema. Report criterion IDs and evidence, executed commands with exit codes, changed files and dependency changes with rationale. Do not return PASS with missing coverage or blocking findings. An empty dependency list means none reported.
+Use the complete execution-result schema. Report criterion IDs and evidence, final verification commands with exit codes, changed files and dependency changes with rationale. The `tests` list contains only commands used as acceptance evidence; put setup, diagnostics and process lifecycle or cleanup commands in the summary or an appropriate finding. Do not return PASS with missing coverage, failed required verification or blocking findings. An empty dependency list means none reported.

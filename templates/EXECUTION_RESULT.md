@@ -9,7 +9,7 @@ The machine-readable source of truth is `resultSchema` in `src/results.ts`, used
 | `summary` | Concise role conclusion and evidence summary. |
 | `spec`, `acceptanceCriteria` | Only for a new specification: markdown plus unique IDs/descriptions. |
 | `coverage` | Each criterion's ID, passed/failed/not-run status and evidence. PASS covers every approved ID. |
-| `tests` | Actual command, numeric exit code (null if not executed) and evidence. Builder/Tester PASS requires successful executed tests. |
+| `tests` | Final verification commands used as acceptance evidence, with numeric exit code and evidence. Builder/Tester PASS requires every listed command to succeed. Setup, diagnostics and process lifecycle commands belong in the summary or findings. |
 | `dependencies` | Name, added/updated/removed and rationale; empty means none reported. |
 | `changedFiles` | Explicit list of changed paths. |
 | `findings` | auto-fix/decision-required/defer classification and concrete evidence. |
@@ -20,4 +20,4 @@ The machine-readable source of truth is `resultSchema` in `src/results.ts`, used
 
 A tactical resolution does not contain a replacement spec or criteria. Major decisions and conflicts cannot use that outcome. All new specs require human approval. The orchestrator stores full reports and rejects contradictions such as PASS with a failing test or a blocking finding. Reported evidence remains an agent assertion to be independently checked by Tester/Reviewer.
 
-Provider schemas are specialized by role: delivery roles cannot return a replacement spec, acceptance criteria, task assessment or nextRole. In `tests`, report final verification for the current files; disclose historical failures and their fixes in `summary`. A read-only Delivery Reviewer may cite explicitly attributed Tester execution evidence while independently inspecting code and test quality; its own `tests` list stays empty if it ran no commands. Missing or insufficient execution evidence must block PASS.
+Provider schemas are specialized by role: delivery roles cannot return a replacement spec, acceptance criteria, task assessment or nextRole. In `tests`, report only final acceptance verification for the current files; disclose historical failures, setup, diagnostics, server lifecycle and cleanup commands in `summary` or an appropriate finding. A failed required verification blocks PASS. A read-only Delivery Reviewer may cite explicitly attributed Tester execution evidence while independently inspecting code and test quality; its own `tests` list stays empty if it ran no commands. Missing or insufficient execution evidence must block PASS.

@@ -72,8 +72,13 @@ export function slackPayload(text: string) {
 }
 export async function deliverNotifications(store: Store, port: NotificationPort, now = Date.now()) {
   if (!port.enabled) return;
-  const rows = store.db.prepare("SELECT * FROM notifications WHERE sent=0 AND next_at<=? ORDER BY id LIMIT 20").all(now) as { id: number; body: string; attempts: number }[];
+  const rows = store.db.prepare("SELECT * FROM notifications WHERE sent=0 AND next_at<=? ORDER BY id LIMIT 20").all(now) as { id: number; body: string; attempts: number; work_item_id: string | null }[];
   for (const row of rows) {
+    if (row.work_item_id && store.get(row.work_item_id)?.context.archivedAt) {
+      store.db.prepare("UPDATE notifications SET sent=1,last_error=? WHERE id=?").run("Suppressed because the GitHub issue is closed",row.id);
+      store.event("slack.delivery_skipped_closed",{notificationId:row.id},row.work_item_id);
+      continue;
+    }
     try {
       await port.notify(row.body);
       store.db.prepare("UPDATE notifications SET sent=1,attempts=attempts+1,last_error=NULL WHERE id=?").run(row.id);

@@ -32,5 +32,10 @@ test("failure report provides useful execution evidence and redacts troubleshoot
     const chromium=failureMarkdown(store,store.get("work-1")!,new Error("Changes require actionable findings"));
     assert.match(chromium,/#### Diagnosis[\s\S]*orchestrator rejected its report[\s\S]*Playwright\/Chromium also failed/i);
     assert.match(chromium,/Do not repeat the same Chromium validation/);
+
+    const contradictoryPass=failureMarkdown(store,store.get("work-1")!,new Error("PASS requires successful executed tests with exit codes; failing or unexecuted commands: kill -TERM 20325 (exit 1)"));
+    assert.match(contradictoryPass,/returned PASS, but its `tests` evidence included a failed or unexecuted command/);
+    assert.match(contradictoryPass,/kill -TERM 20325 \(exit 1\)/);
+    assert.match(contradictoryPass,/server cleanup belong in the summary or a finding/);
   } finally { store.db.close(); config.dataDir=previousDataDir; fs.rmSync(root,{recursive:true,force:true}); }
 });
