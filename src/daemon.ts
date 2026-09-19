@@ -61,14 +61,13 @@ export async function startDaemon(store = new Store()) {
     if (r.kind === "stop") stop();
     else if (r.kind === "retry") retry(store, r.target);
     else if (r.kind === "refresh-list") result = o.refreshIssueList();
-    else if (r.kind === "refresh") result = o.refreshIssue(r.target);
     else if (r.kind === "cancel") {
      const run = store.db.prepare("SELECT id,work_item_id FROM executions WHERE (id=? OR work_item_id=?) AND status='running'").get(r.target, r.target) as { id: string; work_item_id: string } | undefined;
      const w = store.get(run?.work_item_id ?? r.target);
      if (!w) throw new Error("Unknown work item or run");
      if (w.state !== "CANCELLED") { w.context.resume = w.state; store.transition(w, "CANCELLED"); }
      if (run) executions.cancel(run.id);
-    }
+    } else throw new Error(`Unknown control: ${r.kind}`);
     store.event("control.applied",{id:r.id,kind:r.kind,target:r.target,result});
    } catch (e) { store.event("control.failed",{id:r.id,kind:r.kind,target:r.target,error:String(e)}); }
    store.db.prepare("UPDATE controls SET handled=1 WHERE id=?").run(r.id);

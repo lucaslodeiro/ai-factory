@@ -38,6 +38,7 @@ export class Orchestrator {
     await this.flush();
     continue;
    }
+   if (w.state !== "WAITING_HUMAN") this.observeComments(w);
    if (["READY_TO_MERGE", "MERGED", "PR_CLOSED"].includes(w.state)) continue;
    try { await this.advance(w); }
    catch (e) {
@@ -55,6 +56,17 @@ export class Orchestrator {
    }
    await this.flush();
   }
+ }
+ private observeComments(w: WorkItem) {
+  try {
+   const replies=this.github.comments(w.issue_number).slice().sort((a,b)=>a.id-b.id);
+   const cursor=this.store.commentCursorHighWater(w.id,w.context.cursor);
+   const comments=replies.filter(comment=>comment.id>cursor),latest=comments.at(-1);
+   if (!latest) return;
+   w.context.cursor=latest.id; this.store.save(w);
+   const humanComments=comments.filter(comment=>comment.user.type === "User").length;
+   if (humanComments) this.store.event("github.comments_observed",{previousCursor:cursor,cursor:latest.id,state:w.state,count:humanComments},w.id);
+  } catch (e) { this.store.event("github.comments_failed",{error:String(e)},w.id); }
  }
  private retryFromComment(w: WorkItem) {
   let replies: Comment[];
@@ -97,34 +109,15 @@ export class Orchestrator {
    } catch (e) { this.store.event("github.pr_poll_failed", { error: String(e), url: w.context.pr }, w.id); }
   }
  }
- refreshIssue(id: string) {
-  const w = this.store.get(id);
-  if (!w) throw new Error("Unknown work item");
-  const remote = this.github.issue(w.issue_number);
-  const comments = this.github.comments(w.issue_number).slice().sort((a,b) => a.id-b.id);
-  return this.refreshKnownIssue(w,remote,comments);
- }
- private refreshKnownIssue(w: WorkItem,remote: Issue,comments: Comment[]) {
-  const latest = comments.at(-1);
-  const previousCursor = this.store.commentCursorHighWater(w.id,w.context.cursor);
+ private reconcileKnownIssue(w: WorkItem,remote: Issue) {
+  const changedFields=[w.context.title !== remote.title ? "title" : "",w.context.body !== remote.body ? "body" : "",w.context.url !== remote.url ? "url" : ""].filter(Boolean);
   w.context.title = remote.title;
   w.context.body = remote.body;
   w.context.url = remote.url;
-  // Human gates and retryable states evaluate only the newest comment through
-  // their normal command rules. Never move a cursor backwards if a previously
-  // observed comment was deleted or omitted by GitHub.
-  const hasNewLatest = Boolean(latest && latest.id > previousCursor);
-  const acceptsCommand = w.state === "WAITING_HUMAN" || ["FAILED","CANCELLED","PAUSED"].includes(w.state);
-  w.context.cursor = acceptsCommand && hasNewLatest
-   ? Math.max(previousCursor,comments.at(-2)?.id ?? 0)
-   : Math.max(previousCursor,latest?.id ?? 0);
   this.store.save(w);
-  if (w.state === "WAITING_HUMAN" && hasNewLatest) this.human(w);
-  else if (["FAILED","CANCELLED","PAUSED"].includes(w.state) && hasNewLatest) this.retryFromComment(w);
-  const refreshed = this.store.get(w.id)!;
-  this.store.event("github.issue_refreshed",{ previousCursor,cursor:refreshed.context.cursor,latestCommentId:latest?.id ?? null,state:refreshed.state },w.id);
-  this.github.syncState(refreshed.issue_number,refreshed.state,progressMarkdown(refreshed));
-  return refreshed;
+  this.store.event("github.issue_reconciled",{changedFields,state:w.state},w.id);
+  this.github.syncState(w.issue_number,w.state,progressMarkdown(w));
+  return w;
  }
  refreshIssueList() {
   const managed = this.github.listManaged();
@@ -139,11 +132,13 @@ export class Orchestrator {
     if (queued) {
      this.ingest(issue);
      const created = this.store.items().find(w => w.repo === config.repo && w.issue_number === issue.number)!;
-     this.refreshKnownIssue(created,issue,this.github.comments(issue.number).slice().sort((a,b) => a.id-b.id));
+     const latest=this.github.comments(issue.number).slice().sort((a,b)=>a.id-b.id).at(-1);
+     if (latest) { created.context.cursor=latest.id; this.store.save(created); }
+     this.reconcileKnownIssue(created,issue);
     } else this.recoverManagedIssue(issue,this.github.comments(issue.number).slice().sort((a,b) => a.id-b.id));
     added++; continue;
    }
-   this.refreshKnownIssue(existing,issue,this.github.comments(issue.number).slice().sort((a,b) => a.id-b.id));
+   this.reconcileKnownIssue(existing,issue);
    updated++;
   }
   this.store.event("github.issue_list_refreshed",{ found:issues.length,added,updated });

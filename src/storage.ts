@@ -39,10 +39,10 @@ export class Store {
   }
   commentCursorHighWater(workItemId: string, current = 0) {
     let high = current;
-    const rows = this.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='github.issue_refreshed'").all(workItemId) as Array<{payload:string}>;
+    const rows = this.db.prepare("SELECT type,payload FROM events WHERE work_item_id=? AND type IN ('github.issue_refreshed','github.comments_observed','spec.approved','retry.comment_accepted')").all(workItemId) as Array<{type:string;payload:string}>;
     for (const row of rows) try {
-      const value=JSON.parse(row.payload) as {previousCursor?:number;cursor?:number;latestCommentId?:number};
-      high=Math.max(high,value.previousCursor ?? 0,value.cursor ?? 0,value.latestCommentId ?? 0);
+      const value=JSON.parse(row.payload) as {previousCursor?:number;cursor?:number;latestCommentId?:number;commentId?:number};
+      high=Math.max(high,value.previousCursor ?? 0,value.cursor ?? 0,value.latestCommentId ?? 0,value.commentId ?? 0);
     } catch {}
     return high;
   }

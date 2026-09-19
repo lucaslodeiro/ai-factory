@@ -96,7 +96,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.doesNotMatch(html,/Dismiss guide/);
     assert.doesNotMatch(html,/Stop daemon/);
     const client = await fetch(`http://127.0.0.1:${port}/app.js`).then(response => response.text());
-    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/); assert.match(client,/loadDaemonLogs/);
+    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/); assert.match(client,/loadDaemonLogs/); assert.doesNotMatch(client,/refreshIssue/);
     const daemonLogs = await fetch(`http://127.0.0.1:${port}/api/logs/daemon?lines=50`).then(response => response.json()) as any;
     assert.equal(daemonLogs.lines,50); assert.equal(daemonLogs.logs.length,2);
     assert.equal(daemonLogs.logs[0].path,".factory/service-logs/daemon.log");
@@ -131,8 +131,8 @@ echo "$*" >> "$PWD/update-actions.log"
     store.db.exec("CREATE TABLE daemon_lock(id INTEGER PRIMARY KEY,pid INTEGER NOT NULL,token TEXT NOT NULL)");
     store.db.prepare("INSERT INTO daemon_lock VALUES(1,?,?)").run(process.pid,"dashboard-test");
     const refreshIssue = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"refresh",target:"owner-demo-7"})});
-    assert.equal(refreshIssue.status,202);
-    assert.equal((store.db.prepare("SELECT kind,target FROM controls WHERE kind='refresh'").get() as any).target,"owner-demo-7");
+    assert.equal(refreshIssue.status,400);
+    assert.equal(store.db.prepare("SELECT kind,target FROM controls WHERE kind='refresh'").get(),undefined);
     const refreshList = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"refresh-list"})});
     assert.equal(refreshList.status,202);
     const refreshControl = store.db.prepare("SELECT id FROM controls WHERE kind='refresh-list'").get() as { id:number };
@@ -145,10 +145,10 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.deepEqual(refreshSnapshot.issueRefresh,{status:"completed",message:"Found 2 factory issues; added 1, updated 1."});
     assert.equal(refreshSnapshot.events[0].title,"Issue list refresh completed");
     assert.equal(refreshSnapshot.events[0].details,"2 found · 1 added · 1 updated");
-    store.event("github.issue_refreshed",{previousCursor:99,cursor:99,latestCommentId:50,state:"FAILED"},"owner-demo-7");
+    store.event("github.issue_reconciled",{changedFields:["title"],state:"FAILED"},"owner-demo-7");
     refreshSnapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
-    assert.equal(refreshSnapshot.events[0].title,"Issue refreshed from GitHub");
-    assert.equal(refreshSnapshot.events[0].details,"No newer comment was found; workflow is Failed.");
+    assert.equal(refreshSnapshot.events[0].title,"Issue metadata reconciled");
+    assert.equal(refreshSnapshot.events[0].details,"Updated title; workflow remains Failed.");
     fs.mkdirSync(path.join(settingsRoot,".factory"),{recursive:true});
     fs.writeFileSync(path.join(settingsRoot,".factory","update-state.json"),JSON.stringify({status:"updating",phase:"stale",pid:process.pid,startedAt:"2026-01-01T00:00:00.000Z"}));
     const staleUpdate = await fetch(`http://127.0.0.1:${port}/api/services`).then(response => response.json()) as any;

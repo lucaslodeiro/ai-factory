@@ -81,27 +81,19 @@ test("answer command accepts readable multi-line comments at the beginning or en
  await ignored.o.tick(); ignored.gh.reply("Use React.\n\n> /factory answer"); await ignored.o.tick();
  assert.equal(ignored.item().state,"WAITING_HUMAN"); ignored.store.db.close();
 });
-test("manual GitHub refresh updates issue data and evaluates only the latest comment", async () => {
+test("normal polling consumes comments in non-interactive stages without replaying commands", async () => {
  const f=setup(); await f.o.tick();
- f.gh.reply("/factory answer stale feedback");
- f.gh.reply("/factory approve v1");
- const refreshed=f.o.refreshIssue(f.item().id);
- assert.equal(refreshed.context.title,"Feature refreshed"); assert.equal(refreshed.context.body,"Updated issue body");
- assert.equal(refreshed.context.cursor,2); assert.equal(refreshed.state,"DEVELOPMENT");
- assert.equal(refreshed.context.approval?.commentId,2); assert.equal(refreshed.context.feedback.length,0);
- assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='github.issue_refreshed'").get() as any).n,1);
+ f.gh.reply("/factory approve v1"); await f.o.tick(); assert.equal(f.item().state,"DEVELOPMENT");
+ f.gh.reply("/factory answer this arrived during development"); await f.o.tick();
+ assert.equal(f.item().state,"QA"); assert.equal(f.item().context.cursor,2); assert.deepEqual(f.item().context.feedback,[]);
+ const observed=JSON.parse((f.store.db.prepare("SELECT payload FROM events WHERE type='github.comments_observed' ORDER BY id DESC LIMIT 1").get() as any).payload);
+ assert.deepEqual({state:observed.state,count:observed.count,cursor:observed.cursor},{state:"DEVELOPMENT",count:1,cursor:2});
  f.store.db.close();
 });
-test("manual GitHub refresh never rewinds a comment cursor", async () => {
+test("comment cursor repair uses the durable audit high-water mark", async () => {
  const f=setup(); await f.o.tick();
  const item=f.item(); item.context.cursor=50; f.store.save(item);
  f.store.event("github.issue_refreshed",{previousCursor:99,cursor:50,latestCommentId:50,state:"WAITING_HUMAN"},item.id);
- f.gh.replies=[{id:50,body:"/factory approve v1",user:{login:"owner",type:"User"}}];
- const refreshed=f.o.refreshIssue(item.id);
- assert.equal(refreshed.context.cursor,99); assert.equal(refreshed.state,"WAITING_HUMAN");
- assert.equal(refreshed.context.approval,undefined);
- const event=JSON.parse((f.store.db.prepare("SELECT payload FROM events WHERE type='github.issue_refreshed' ORDER BY id DESC LIMIT 1").get() as any).payload);
- assert.deepEqual({previousCursor:event.previousCursor,cursor:event.cursor,latestCommentId:event.latestCommentId},{previousCursor:99,cursor:99,latestCommentId:50});
  const damaged=f.item(); damaged.context.cursor=10; f.store.save(damaged); f.store.repairCommentCursors();
  assert.equal(f.item().context.cursor,99);
  assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='github.cursor_repaired'").get() as any).n,1);
@@ -109,7 +101,7 @@ test("manual GitHub refresh never rewinds a comment cursor", async () => {
 });
 test("manual issue-list refresh adds new queued issues and updates existing metadata without replaying work", async () => {
  const f=setup(); await f.o.tick();
- f.gh.reply("/factory answer ignored older comment"); f.gh.reply("/factory approve v1");
+ f.gh.reply("Context that is not a command"); f.gh.reply("/factory approve v1");
  f.gh.queued=[
   { number:1,title:"Feature renamed",body:"Updated body",url:"https://example.test/issues/1" },
   { number:2,title:"Second feature",body:"New work",url:"https://example.test/issues/2" },
@@ -118,10 +110,10 @@ test("manual issue-list refresh adds new queued issues and updates existing meta
  assert.deepEqual(result,{found:2,added:1,updated:1}); assert.equal(f.store.items().length,2);
  const existing=f.store.items().find(item=>item.issue_number===1)!;
  assert.equal(existing.context.title,"Feature renamed"); assert.equal(existing.context.body,"Updated body");
- assert.equal(existing.state,"DEVELOPMENT"); assert.equal(existing.context.cursor,2);
- assert.equal(existing.context.approval?.commentId,2); assert.equal(existing.context.feedback.length,0);
+ assert.equal(existing.state,"WAITING_HUMAN"); assert.equal(existing.context.cursor,0); assert.equal(existing.context.approval,undefined);
  const added=f.store.items().find(item=>item.issue_number===2)!; assert.equal(added.state,"SPEC"); assert.equal(added.context.cursor,0);
  assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='github.issue_list_refreshed'").get() as any).n,1);
+ await f.o.tick(); assert.equal(existing.id,f.item().id); assert.equal(f.item().state,"DEVELOPMENT"); assert.equal(f.item().context.cursor,2);
  f.store.db.close();
 });
 test("manual issue-list refresh safely recovers a remotely managed issue missing from local storage", () => {
@@ -178,15 +170,6 @@ test("authorized standalone issue comment retries the saved stage exactly once",
  assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='retry.comment_accepted'").get() as any).n,1);
  assert.ok([...f.gh.posted.values()].some(body=>body.includes("## Retry accepted") && body.includes("Product Architect")));
  await f.o.tick(); assert.equal(f.item().state,"WAITING_HUMAN"); assert.equal(f.calls.length,2);
- f.store.db.close();
-});
-test("manual refresh evaluates only the latest retry command", async () => {
- const f = setup(); await f.o.tick();
- const failed = f.item(); failed.context.resume = "SPEC"; f.store.transition(failed,"FAILED");
- f.gh.reply("older context"); f.gh.reply("/factory retry");
- const refreshed=f.o.refreshIssue(f.item().id);
- assert.equal(refreshed.state,"SPEC"); assert.equal(refreshed.context.cursor,2);
- assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='retry.comment_accepted'").get() as any).n,1);
  f.store.db.close();
 });
 test("environment allowlist and result contract reject unintended data", () => {
