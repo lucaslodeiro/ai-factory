@@ -42,6 +42,12 @@ test("real Git worktree isolation, QA boundaries, commit and branch publication"
   // A staged rename must check its source as well as its destination.
   git(cwd,["mv","app.txt","test/moved.test.ts"]);
   assert.throws(()=>ws.check(cwd,"qa",ws.head(cwd),branch),/non-test/);
+  // Recovery may preserve the branch while its previous worktree directory is gone.
+  git(repo,["worktree","remove","--force",cwd]);
+  config.dataDir=path.join(root,"recovered-data");
+  const recovered=new Workspaces().ensure("recovered",branch);
+  assert.equal(git(recovered,["branch","--show-current"]),branch);
+  assert.equal(fs.readFileSync(path.join(recovered,"app.txt"),"utf8"),"implementation");
 
  } finally { fs.rmSync(root,{recursive:true,force:true}); }
 });

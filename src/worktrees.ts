@@ -6,6 +6,10 @@ function gitOutput(cwd: string, args: string[]) {
  const r = spawnSync(config.gitCommand, args, { cwd, encoding: "utf8", timeout: 60000, maxBuffer: 10_000_000 });
  if (r.status !== 0) throw new Error(r.stderr || r.error?.message || "git failed"); return r.stdout;
 }
+function gitSucceeds(cwd: string, args: string[]) {
+ const result = spawnSync(config.gitCommand,args,{cwd,encoding:"utf8",timeout:60000,maxBuffer:10_000_000});
+ return result.status === 0;
+}
 export function git(cwd: string, args: string[]) { return gitOutput(cwd, args).trim(); }
 export interface WorkspacePort {
  assertBranch(cwd: string, branch: string): void;
@@ -28,7 +32,15 @@ export class Workspaces implements WorkspacePort {
    return target;
   }
   git(config.repoDir, ["fetch", "origin", config.defaultBranch]);
-  git(config.repoDir, ["worktree", "add", "-b", branch, target, `origin/${config.defaultBranch}`]); return target;
+  git(config.repoDir,["worktree","prune"]);
+  if (gitSucceeds(config.repoDir,["show-ref","--verify","--quiet",`refs/heads/${branch}`])) {
+   git(config.repoDir,["worktree","add",target,branch]);
+  } else {
+   const remoteBranch = gitSucceeds(config.repoDir,["fetch","origin",`${branch}:refs/remotes/origin/${branch}`])
+    && gitSucceeds(config.repoDir,["show-ref","--verify","--quiet",`refs/remotes/origin/${branch}`]);
+   git(config.repoDir,["worktree","add","-b",branch,target,remoteBranch ? `origin/${branch}` : `origin/${config.defaultBranch}`]);
+  }
+  return target;
  }
  head(cwd: string) { return git(cwd, ["rev-parse", "HEAD"]); }
  diff(cwd: string) { return git(cwd, ["diff", `origin/${config.defaultBranch}...HEAD`]); }

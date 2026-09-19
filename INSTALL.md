@@ -220,6 +220,8 @@ npm run factory -- stop
 
 Agent timeouts are configurable. SIGTERM escalates to SIGKILL after one second for a process group that does not exit. After a crash, interrupted executions are recorded as interrupted and the work item becomes FAILED. A stage checkpoint also detects crashes after provider exit but before the workflow state was committed. Each new run has a supervisor connected to the daemon by IPC. If the daemon dies, the supervisor terminates its worker group. Retry checks that any interrupted group is gone before proceeding, without signalling saved PIDs. Old bootstrap runs without a supervisor may still require manual process inspection. Worktrees and logs are retained for diagnosis.
 
+When an issue is recovered after its previous worktree directory disappeared, Retry prunes stale Git worktree registrations and reuses the issue's existing local or remote `factory/issue-*` branch. A branch is never recreated over existing work; if Git reports that the branch is actively checked out elsewhere, inspect that checkout before retrying.
+
 ## First end-to-end run
 
 Create the `factory:queued` label in the target repository, then create a feature issue carrying that label. Product Architect runs in a fresh process using its configured provider (Claude by default). Questions are posted on the issue; answer with a standalone command:
