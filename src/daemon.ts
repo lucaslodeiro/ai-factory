@@ -82,7 +82,10 @@ export async function startDaemon(store = new Store()) {
    daemonLog(level,row.type.replaceAll(".","_"),fields,row.ts);
   }
  };
- const controls = () => {
+ let controlsBusy=false;
+ const controls = async () => {
+  if(controlsBusy)return;controlsBusy=true;
+  try {
   const rows = store.db.prepare("SELECT * FROM controls WHERE handled=0 ORDER BY id").all() as { id: number; kind: string; target: string }[];
   for (const r of rows) {
    try {
@@ -91,6 +94,8 @@ export async function startDaemon(store = new Store()) {
     else if (r.kind === "retry") {const specVersion=(store.db.prepare("SELECT COALESCE(MAX(version),0) version FROM specs WHERE work_item_id=?").get(r.target) as {version:number}).version;result=commands.apply({kind:"retry",guidance:""},{workItemId:r.target,login:"dashboard",commentId:r.id,specVersion});}
     else if (r.kind === "start-issue") result = o.startIssue(r.target);
     else if (r.kind === "refresh-list") result = o.refreshIssueList();
+    else if(r.kind==="maintenance-confirm")result=await maintenance.confirm(r.target);
+    else if(r.kind==="maintenance-resume")result=maintenance.resume(r.target);
     else if (r.kind === "cancel") {
      const run = store.db.prepare("SELECT id,work_item_id FROM executions WHERE (id=? OR work_item_id=?) AND status='running'").get(r.target, r.target) as { id: string; work_item_id: string } | undefined;
      const workItemId=run?.work_item_id??r.target,row=store.db.prepare("SELECT id FROM work_items WHERE id=?").get(workItemId);
@@ -102,6 +107,7 @@ export async function startDaemon(store = new Store()) {
    store.db.prepare("UPDATE controls SET handled=1 WHERE id=?").run(r.id);
   }
   audit();
+  } finally {controlsBusy=false;}
  };
  const sigint=()=>stop("SIGINT"),sigterm=()=>stop("SIGTERM");
  process.on("SIGINT",sigint); process.on("SIGTERM",sigterm);
@@ -109,7 +115,7 @@ export async function startDaemon(store = new Store()) {
  try {
   const abandoned=store.db.prepare("SELECT id,work_item_id FROM executions WHERE status='running'").all() as Array<{id:string;work_item_id:string}>;
   for(const run of abandoned){store.db.prepare("UPDATE executions SET status='interrupted',recovery_pending=1,finished_at=?,interruption_reason='unexpected-shutdown' WHERE id=?").run(new Date().toISOString(),run.id);scheduler.fail(run.work_item_id,run.id,new Error("Agent execution was interrupted by an unexpected daemon shutdown"),"recovery");}
-  audit(); controls(); timer = setInterval(controls, 200);
+  audit(); await controls(); timer = setInterval(()=>void controls(), 200);
   daemonLog("info","daemon.ready",{items:(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL").get() as {count:number}).count,recoveredExecutions:abandoned.length});
   while (!stopping) {
    try { await o.tick(); audit(); } catch (e) { daemonLog("error","daemon.tick_failed",{error:String(e)}); }

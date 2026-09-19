@@ -12,6 +12,8 @@ import { readDashboardSetting, readDashboardSettings, saveDashboardSettings, val
 import { connectCredential, credentialStatuses, type CredentialProvider } from "./dashboard-credentials.js";
 import { SlackAdapter } from "./adapters/slack.js";
 import { publicNaming, roleShortName, stateName } from "./names.js";
+import {WorkflowMaintenance,type MaintenanceOperation} from "./workflow-maintenance.js";
+import type {ExecutionManager} from "./execution-manager.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
 const types: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
@@ -24,6 +26,9 @@ function daemonState(store: Store) {
   const lock = lockTable ? store.db.prepare("SELECT pid FROM daemon_lock WHERE id=1").get() as { pid: number } | undefined : undefined;
   return { running:Boolean(lock && alive(lock.pid)), pid:lock?.pid ?? null };
 }
+function maintenanceCoordinator(store:Store){const executionView={isRunning:(id:string)=>Boolean(store.db.prepare("SELECT 1 FROM executions WHERE id=? AND status='running'").get(id))} as ExecutionManager;return new WorkflowMaintenance(store,executionView);}
+function maintenanceOperation(store:Store,id:string){const operation=store.db.prepare("SELECT id,operation,actor,status,requested_at,confirmed_at,finished_at,error FROM maintenance_operations WHERE id=?").get(id) as any;if(!operation)throw new Error("Unknown maintenance operation");const affected=store.db.prepare(`SELECT mi.work_item_id,mi.confirmed_revision,mi.paused_at,mi.resumed_at,w.issue_number,w.stage,w.status,w.context FROM maintenance_items mi JOIN work_items w ON w.id=mi.work_item_id WHERE mi.maintenance_id=? ORDER BY w.issue_number`).all(id) as any[];return{...operation,affected:affected.map(item=>{let context:any={};try{context=JSON.parse(item.context||"{}");}catch{}return{...item,title:context.title??`Issue #${item.issue_number}`};})};}
+function requireMaintenance(store:Store,id:string|undefined,operations:string[]){const active=(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL AND status IN ('QUEUED','RUNNING')").get() as {count:number}).count;if(!active&&!id)return;if(!id)throw Object.assign(new Error(`${active} active task${active===1?"":"s"} must be paused before this operation.`),{maintenanceRequired:true});const operation=maintenanceOperation(store,id);if(!operations.includes(operation.operation)||operation.status!=="ready")throw new Error("Maintenance confirmation is missing, expired, or not ready");}
 function json(res: http.ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   res.end(JSON.stringify(body));
@@ -56,6 +61,7 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
     const value = JSON.parse(payload) as any;
     const role=roleLabel(value.role ?? runRole);
     if (type === "state.changed") return { title:`Workflow moved to ${stateLabel(value.to)}`,details:`Previous stage: ${stateLabel(value.from)}.`,severity:value.to === "FAILED" ? "error" : ["WAITING_HUMAN","PAUSED","CANCELLED"].includes(value.to) ? "warning" : ["READY_TO_MERGE","MERGED"].includes(value.to) ? "success" : "info",category:"Workflow" };
+    if(type==="workflow.transition"){const from=value.from,to=value.to;return{title:`Workflow moved to ${stateLabel(to?.stage)} · ${stateLabel(to?.status)}`,details:from?`Previous: ${stateLabel(from.stage)} · ${stateLabel(from.status)}. ${value.reason?.summary??""}`:`${value.reason?.summary??"Work started"}.`,severity:to?.status==="FAILED"?"error":["WAITING","PAUSED","CANCELLED"].includes(to?.status)?"warning":["COMPLETED"].includes(to?.status)?"success":"info",category:"Workflow"};}
     if (type === "execution.started") {
       const selection=value.selection;
       return { title:`${role} execution started`,details:selection ? `${selection.model} · ${selection.profile} profile` : "The agent process is running.",severity:"info",category:"Agent",brand:selection?.provider };
@@ -92,10 +98,11 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
     if (type === "github.cursor_repaired") return { title:"GitHub comment position repaired",details:"Older comments will not be processed again.",severity:"warning",category:"Recovery" };
     if (["github.poll_failed","github.start_poll_failed","github.delivery_failed","github.labels_failed","github.comments_failed","github.pr_poll_failed"].includes(type)) return { title:"GitHub synchronization failed",details:value.error ?? "The operation will be retried.",severity:"error",category:"GitHub" };
     if (type === "slack.delivery_failed") return { title:"Slack notification delayed",details:"Delivery failed and was scheduled for another attempt.",severity:"warning",category:"Notification",brand:"slack" };
+    if(type.startsWith("maintenance.")){const action=type.split(".")[1],titles:Record<string,string>={requested:"Maintenance requested",confirmed:"Maintenance confirmed",task_paused:"Task paused for maintenance",ready:"Tasks safely paused",started:"Maintenance started",completed:"Maintenance completed",failed:"Maintenance failed",tasks_resumed:"Paused tasks resumed"};return{title:titles[action]??"Maintenance update",details:value.error??`${value.operation??"Service operation"}${value.affected?.length!==undefined?` · ${value.affected.length} task${value.affected.length===1?"":"s"}`:""}`,severity:action==="failed"?"error":["completed","tasks_resumed"].includes(action)?"success":"warning",category:"Maintenance"};}
     if (type === "control.failed") return { title:`${value.kind === "refresh-list" ? "Issue list refresh" : value.kind === "refresh" ? "Issue refresh" : value.kind ?? "Control"} failed`,details:value.error ?? "Unknown error",severity:"error",category:"Control" };
     if (type === "control.applied") {
       if (value.kind === "refresh-list") return { title:"Issue list refresh completed",details:value.result ? `${value.result.found ?? 0} found · ${value.result.added ?? 0} added · ${value.result.updated ?? 0} updated` : "GitHub issues are synchronized.",severity:"success",category:"Control" };
-      if (value.kind === "start-issue") return { title:value.result?.created ? `Issue #${value.result.issue} started` : `Issue #${value.result?.issue ?? "?"} already tracked`,details:value.result?.created ? `Work item ${value.result.id} was created and Architect will begin Design.` : `Existing work item ${value.result?.id ?? "unknown"} remains ${stateLabel(value.result?.state)}.`,severity:"success",category:"Control" };
+      if (value.kind === "start-issue") return { title:value.result?.created ? `Issue #${value.result.issue} started` : `Issue #${value.result?.issue ?? "?"} already tracked`,details:value.result?.created ? `Work item ${value.result.id} was created and Architect will begin Design.` : `Existing work item ${value.result?.id ?? "unknown"} remains ${stateLabel(value.result?.stage)} · ${stateLabel(value.result?.status)}.`,severity:"success",category:"Control" };
       if (value.kind === "retry") return { title:"Retry started",details:"The workflow resumed from its saved stage.",severity:"success",category:"Control" };
       if (value.kind === "cancel") return { title:"Cancellation completed",details:"The active workflow was stopped and can be retried later.",severity:"warning",category:"Control" };
       if (value.kind === "stop") return { title:"Daemon stop completed",details:"Active work was paused safely.",severity:"warning",category:"Control" };
@@ -105,13 +112,14 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
   return { title,details:details(payload),severity:"info",category:"System" };
 }
 function snapshot(store: Store) {
-  const storedItems=store.items(),itemById=new Map(storedItems.map(item=>[item.id,item]));
-  const visibleItems=storedItems.filter(item=>!item.context.archivedAt);
+  const storedItems=(store.db.prepare("SELECT id,issue_number,repo,stage,status,attempt,revision,branch,updated_at,archived_at,context FROM work_items ORDER BY created_at").all() as any[]).map(item=>({...item,context:JSON.parse(item.context||"{}")}));
+  const itemById=new Map(storedItems.map(item=>[item.id,item]));
+  const visibleItems=storedItems.filter(item=>!item.archived_at);
   const items = visibleItems.slice().reverse().map(item => ({
-    id: item.id, issue: item.issue_number, repo: item.repo, state: item.state, title: item.context.title,
-    url: item.context.url, pr: item.context.pr ?? null, updatedAt: (store.db.prepare("SELECT updated_at FROM work_items WHERE id=?").get(item.id) as any).updated_at,
+    id:item.id,issue:item.issue_number,repo:item.repo,stage:item.stage,status:item.status,attempt:item.attempt,revision:item.revision,title:item.context.title,
+    url:item.context.url,pr:item.context.pr??null,updatedAt:item.updated_at,
   }));
-  const executionRows=(store.db.prepare("SELECT id,work_item_id,role,workflow_state,status,pid,started_at,finished_at,exit_code,input_tokens,output_tokens,cached_tokens,total_tokens FROM executions ORDER BY started_at DESC LIMIT 30").all() as any[]).filter(run=>!itemById.get(run.work_item_id)?.context.archivedAt);
+  const executionRows=(store.db.prepare("SELECT id,work_item_id,role,workflow_state,status,pid,started_at,finished_at,exit_code,input_tokens,output_tokens,cached_tokens,total_tokens,interruption_reason,maintenance_id FROM executions ORDER BY started_at DESC LIMIT 30").all() as any[]).filter(run=>!itemById.get(run.work_item_id)?.archived_at);
   const runMetadata=new Map((store.db.prepare("SELECT e.run_id,e.payload FROM events e JOIN executions x ON x.id=e.run_id WHERE e.type='execution.started' ORDER BY e.id DESC LIMIT 30").all() as Array<{run_id:string;payload:string}>).map(row=>{
     try { return [row.run_id,JSON.parse(row.payload)] as const; } catch { return [row.run_id,{}] as const; }
   }));
@@ -120,10 +128,10 @@ function snapshot(store: Store) {
     const item=itemById.get(run.work_item_id),selection=runMetadata.get(run.id)?.selection;
     const end=run.finished_at ? new Date(run.finished_at).getTime() : Date.now(),start=new Date(run.started_at).getTime();
     return { id:run.id,workItemId:run.work_item_id,role:run.role,workflowState:run.workflow_state,status:run.status,pid:run.pid,startedAt:run.started_at,finishedAt:run.finished_at,exitCode:run.exit_code,durationMs:Number.isFinite(start) ? Math.max(0,end-start) : null,
-      inputTokens:run.input_tokens,outputTokens:run.output_tokens,cachedTokens:run.cached_tokens,totalTokens:run.total_tokens,
+      inputTokens:run.input_tokens,outputTokens:run.output_tokens,cachedTokens:run.cached_tokens,totalTokens:run.total_tokens,interruptionReason:run.interruption_reason,maintenanceId:run.maintenance_id,
       issue:item?.issue_number ?? null,title:item?.context.title ?? "Unknown issue",url:item?.context.url ?? null,provider:selection?.provider ?? null,model:selection?.model ?? null,profile:selection?.profile ?? null };
   });
-  const usageRows=(store.db.prepare("SELECT work_item_id,role,workflow_state,status,started_at,finished_at,input_tokens,output_tokens,cached_tokens,total_tokens FROM executions ORDER BY started_at").all() as any[]).filter(run=>!itemById.get(run.work_item_id)?.context.archivedAt);
+  const usageRows=(store.db.prepare("SELECT work_item_id,role,workflow_state,status,started_at,finished_at,input_tokens,output_tokens,cached_tokens,total_tokens FROM executions ORDER BY started_at").all() as any[]).filter(run=>!itemById.get(run.work_item_id)?.archived_at);
   const usageMap=new Map<string,{workItemId:string;runs:number;durationMs:number;inputTokens:number;outputTokens:number;cachedTokens:number;totalTokens:number;unreportedTokenRuns:number;stages:Map<string,any>}>();
   const add=(target:any,run:any,durationMs:number)=>{target.runs++;target.durationMs+=durationMs;for(const [source,key] of [["input_tokens","inputTokens"],["output_tokens","outputTokens"],["cached_tokens","cachedTokens"],["total_tokens","totalTokens"]] as const) target[key]+=run[source] ?? 0;if(run.total_tokens === null || run.total_tokens === undefined) target.unreportedTokenRuns++;};
   for (const run of usageRows) {
@@ -137,7 +145,7 @@ function snapshot(store: Store) {
   const normalize=(value:any)=>({...value,totalTokens:value.unreportedTokenRuns===value.runs ? null : value.totalTokens});
   const usage=[...usageMap.values()].map(total=>{const item=itemById.get(total.workItemId);return {...normalize(total),stages:[...total.stages.values()].map(normalize),issue:item?.issue_number ?? null,title:item?.context.title ?? "Unknown issue",url:item?.context.url ?? null};}).sort((a,b)=>(b.issue ?? 0)-(a.issue ?? 0));
   const events = (store.db.prepare("SELECT id,ts,work_item_id,run_id,type,payload FROM events ORDER BY id DESC LIMIT 60").all() as any[])
-    .filter(event=>!event.work_item_id||!itemById.get(event.work_item_id)?.context.archivedAt)
+    .filter(event=>!event.work_item_id||!itemById.get(event.work_item_id)?.archived_at)
     .map(event => { const item=itemById.get(event.work_item_id),presentation=eventPresentation(event.type,event.payload,runRoles.get(event.run_id)); const description=String(presentation.details ?? ""); return {
       id:event.id,ts:event.ts,workItemId:event.work_item_id,runId:event.run_id,type:event.type,...presentation,details:description.length>500 ? `${description.slice(0,497)}…` : description,
       issue:item?.issue_number ?? null,issueTitle:item?.context.title ?? null,issueUrl:item?.context.url ?? null,
@@ -157,7 +165,8 @@ function snapshot(store: Store) {
       }
     }
   }
-  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), issueRefresh, items, executions, usage, events };
+  const maintenance=(store.db.prepare("SELECT id,operation,actor,status,requested_at,confirmed_at,finished_at,error FROM maintenance_operations ORDER BY requested_at DESC LIMIT 10").all() as any[]).map(operation=>({...operation,affected:(store.db.prepare("SELECT work_item_id,paused_at,resumed_at FROM maintenance_items WHERE maintenance_id=?").all(operation.id) as any[])}));
+  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), issueRefresh, items, executions, usage, events,maintenance };
 }
 async function readBody(req: http.IncomingMessage) {
   let body = "";
@@ -250,7 +259,7 @@ function restoreEnvironment(root: string, original: string | null) {
   fs.writeFileSync(temporary,original,{mode:0o600});
   fs.renameSync(temporary,file);
 }
-type UpdateState = { status: "idle" | "updating" | "completed" | "failed"; phase?: string; pid?: number; startedAt?: string; updatedAt?: string; finishedAt?: string; restoreDaemon?: boolean; restoreDashboard?: boolean };
+type UpdateState = { status: "idle" | "updating" | "completed" | "failed"; phase?: string; pid?: number; startedAt?: string; updatedAt?: string; finishedAt?: string; restoreDaemon?: boolean; restoreDashboard?: boolean;maintenanceId?:string };
 type VersionInfo = { number: string; revision: string; branch: string; display: string };
 const updateStateFile = (root: string) => path.join(root,".factory","update-state.json");
 function git(root: string, args: string[], timeout = 10000) {
@@ -313,7 +322,7 @@ function runService(root: string, service: "daemon" | "dashboard", action: "star
   if (result.status !== 0) throw new Error((result.stderr || result.stdout || `${service} ${action} failed`).trim());
   return { accepted:true, message:`${service} ${action} completed.` };
 }
-function runUpdate(root: string) {
+function runUpdate(root: string,maintenanceId?:string) {
   const current = updateState(root);
   if (current.status === "updating") throw new Error("A factory update is already running");
   const logs = path.join(root,".factory","service-logs");
@@ -323,7 +332,7 @@ function runUpdate(root: string) {
   // Capture service intent while both services still have their original state.
   // The detached job starts later and must not infer intent after stopping one.
   const daemonBefore=serviceStatus(root,"daemon"),dashboardBefore=serviceStatus(root,"dashboard");
-  const intent={restoreDaemon:daemonBefore.loaded,restoreDashboard:dashboardBefore.loaded};
+  const intent={restoreDaemon:daemonBefore.loaded,restoreDashboard:dashboardBefore.loaded,maintenanceId};
   writeUpdateState(root,{status:"updating",phase:"Preparing update…",startedAt:new Date().toISOString(),...intent});
   if (process.platform === "darwin" && dashboardBefore.loaded) {
     const label = `com.ai-factory.update.${Date.now()}`;
@@ -343,6 +352,7 @@ function runUpdate(root: string) {
   }
   return { accepted:true,message:"Factory update started. Services will stop, update, and reconnect when ready.",update:updateState(root) };
 }
+function reconcileUpdateMaintenance(store:Store,state:UpdateState){if(!state.maintenanceId||!["completed","failed"].includes(state.status))return;const row=store.db.prepare("SELECT status FROM maintenance_operations WHERE id=?").get(state.maintenanceId) as {status:string}|undefined;if(!row||["completed","failed"].includes(row.status))return;store.db.prepare("UPDATE maintenance_operations SET status=?,finished_at=?,error=? WHERE id=?").run(state.status,new Date().toISOString(),state.status==="failed"?state.phase??"Update failed":null,state.maintenanceId);store.event(state.status==="completed"?"maintenance.completed":"maintenance.failed",{maintenanceId:state.maintenanceId,operation:"update",error:state.status==="failed"?state.phase:undefined});}
 function slackStatus(root: string, store: Store) {
   const configured = Boolean(readDashboardSetting(root,"SLACK_WEBHOOK_URL"));
   const counts = store.db.prepare("SELECT COUNT(*) AS total,SUM(CASE WHEN sent=0 THEN 1 ELSE 0 END) AS pending,SUM(CASE WHEN sent=0 AND attempts>0 THEN 1 ELSE 0 END) AS failed,SUM(CASE WHEN sent=1 THEN 1 ELSE 0 END) AS sent FROM notifications").get() as { total:number; pending:number | null; failed:number | null; sent:number | null };
@@ -412,7 +422,7 @@ function dashboardSettings(root: string) {
   } : {});
   return {...settings,readiness:setupReadiness(root,credentials)};
 }
-function saveConfiguration(store: Store, root: string, values: Record<string,unknown>, clearSecrets: string[] = []) {
+function saveConfiguration(store: Store, root: string, values: Record<string,unknown>, clearSecrets: string[] = [],maintenanceId?:string) {
   const plan = validateDashboardSettings(root,values,clearSecrets);
   if (!plan.changedKeys.length) return {...dashboardSettings(root),daemonRunning:daemonState(store).running,restartedServices:[],dashboardRestarting:false,message:"Configuration is already up to date."};
   const daemon = serviceStatus(root,"daemon"), dashboard = serviceStatus(root,"dashboard");
@@ -420,9 +430,11 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
   const restartDaemon = plan.restartServices.includes("daemon") && daemonActive;
   const restartDashboard = plan.restartServices.includes("dashboard") && dashboard.running;
   if (plan.restartServices.includes("daemon") && daemonActive && !daemon.loaded) throw new Error("The daemon is running outside the service manager. Stop it, then save again.");
+  if(restartDaemon)requireMaintenance(store,maintenanceId,["configuration-apply"]);
   const environmentFile=path.join(root,".env"),originalEnvironment=fs.existsSync(environmentFile) ? fs.readFileSync(environmentFile,"utf8") : null;
   let daemonStopped = false,saved = false;
   try {
+    if(maintenanceId)maintenanceCoordinator(store).markStarted(maintenanceId);
     if (restartDaemon) {
       runService(root,"daemon","stop"); daemonStopped=true;
       if (!waitForDaemonStopped(root,before.pid)) throw new Error("The daemon did not stop completely before applying configuration.");
@@ -436,7 +448,9 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
         throw new Error(`The daemon did not become ready after restart.${error ? ` Last error: ${error.split(/\r?\n/).at(-1)}` : ""}`);
       }
     }
+    if(maintenanceId)maintenanceCoordinator(store).complete(maintenanceId);
   } catch (error) {
+    if(maintenanceId){store.db.prepare("UPDATE maintenance_operations SET status='failed',finished_at=?,error=? WHERE id=?").run(new Date().toISOString(),String(error),maintenanceId);store.event("maintenance.failed",{maintenanceId,operation:"configuration-apply",error:String(error)});}
     let recovery="";
     if (saved) try { restoreEnvironment(root,originalEnvironment); } catch (rollbackError) { recovery=` Configuration rollback failed: ${String(rollbackError)}`; }
     if (daemonStopped) try {
@@ -473,15 +487,24 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if (req.method === "GET" && url.pathname === "/api/settings") return json(res,200,{...dashboardSettings(settingsRoot),daemonRunning:daemonState(store).running});
       if (req.method === "GET" && url.pathname === "/api/credentials") return json(res,200,credentialStatuses(settingsRoot));
       if (req.method === "GET" && url.pathname === "/api/slack") return json(res,200,slackStatus(settingsRoot,store));
-      if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,{services:[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")],update:updateState(settingsRoot),version:runtimeVersion});
+      if (req.method === "GET" && url.pathname === "/api/services") {const update=updateState(settingsRoot);reconcileUpdateMaintenance(store,update);const resumable=store.db.prepare(`SELECT mo.id FROM maintenance_operations mo WHERE mo.status IN ('ready','running','completed','failed') AND EXISTS(SELECT 1 FROM maintenance_items mi JOIN work_items w ON w.id=mi.work_item_id WHERE mi.maintenance_id=mo.id AND mi.resumed_at IS NULL AND w.status='PAUSED') ORDER BY mo.requested_at DESC LIMIT 1`).get() as {id:string}|undefined;return json(res,200,{services:[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")],update,version:runtimeVersion,maintenance:resumable?maintenanceOperation(store,resumable.id):null});}
+      if(req.method==="GET"&&url.pathname.startsWith("/api/maintenance/"))return json(res,200,maintenanceOperation(store,url.pathname.split("/").at(-1)!));
+      if(req.method==="POST"&&url.pathname==="/api/maintenance"){
+        const body=await readBody(req) as {operation?:MaintenanceOperation};const allowed:MaintenanceOperation[]=["update","daemon-stop","daemon-restart","uninstall","configuration-apply","user-pause"];
+        if(!body.operation||!allowed.includes(body.operation))return json(res,400,{error:"Unknown maintenance operation"});return json(res,200,maintenanceCoordinator(store).request(body.operation,"dashboard"));
+      }
+      if(req.method==="POST"&&url.pathname.match(/^\/api\/maintenance\/[^/]+\/(confirm|resume)$/)){
+        const [, , ,id,action]=url.pathname.split("/");store.request(action==="confirm"?"maintenance-confirm":"maintenance-resume",id);return json(res,202,{ok:true,id,status:"queued"});
+      }
       if (req.method === "GET" && url.pathname === "/api/logs/daemon") return json(res,200,daemonLogs(settingsRoot,url.searchParams.get("lines")));
       if (req.method === "POST" && url.pathname === "/api/update/check") return json(res,200,checkUpdate(settingsRoot));
       if (req.method === "GET" && url.pathname === "/healthz") return json(res,200,{ok:true});
       if (req.method === "PUT" && url.pathname === "/api/settings") {
-        const body = await readBody(req) as { values?: Record<string,unknown>; clearSecrets?: string[] };
+        const body = await readBody(req) as { values?: Record<string,unknown>; clearSecrets?: string[];maintenanceId?:string };
         if (!body.values || typeof body.values !== "object" || Array.isArray(body.values)) return json(res,400,{error:"Settings are required"});
-        return json(res,200,saveConfiguration(store,settingsRoot,body.values,Array.isArray(body.clearSecrets) ? body.clearSecrets : []));
+        return json(res,200,saveConfiguration(store,settingsRoot,body.values,Array.isArray(body.clearSecrets) ? body.clearSecrets : [],body.maintenanceId));
       }
+      if(req.method==="POST"&&url.pathname==="/api/settings/validate") {const body=await readBody(req) as {values?:Record<string,unknown>;clearSecrets?:string[]};if(!body.values||typeof body.values!=="object"||Array.isArray(body.values))return json(res,400,{error:"Settings are required"});const plan=validateDashboardSettings(settingsRoot,body.values,Array.isArray(body.clearSecrets)?body.clearSecrets:[]),daemon=serviceStatus(settingsRoot,"daemon"),active=daemonState(store).running||daemon.running;return json(res,200,{changedKeys:plan.changedKeys,restartServices:plan.restartServices,requiresDaemonRestart:active&&plan.restartServices.includes("daemon")});}
       if (req.method === "POST" && url.pathname === "/api/control") {
         const body = await readBody(req) as { kind?: string; target?: string };
         if (!["stop","cancel","retry","refresh-list","start-issue"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});
@@ -491,9 +514,10 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         return json(res,202,{ok:true,message:body.kind === "refresh-list" ? "GitHub issue refresh queued." : body.kind === "start-issue" ? "Issue start queued." : `${body.kind} queued`});
       }
       if (req.method === "POST" && url.pathname === "/api/services") {
-        const body = await readBody(req) as { service?: string; action?: string };
+        const body = await readBody(req) as { service?: string; action?: string;maintenanceId?:string };
         if (!['daemon','dashboard'].includes(body.service ?? "") || !['start','stop','restart'].includes(body.action ?? "")) return json(res,400,{error:"Unknown service action"});
-        return json(res,202,runService(settingsRoot,body.service as "daemon" | "dashboard",body.action as "start" | "stop" | "restart"));
+        if(body.service==="daemon"&&["stop","restart"].includes(body.action!))requireMaintenance(store,body.maintenanceId,[body.action==="stop"?"daemon-stop":"daemon-restart"]);
+        const result=runService(settingsRoot,body.service as "daemon" | "dashboard",body.action as "start" | "stop" | "restart");if(body.maintenanceId){const coordinator=maintenanceCoordinator(store);coordinator.markStarted(body.maintenanceId);coordinator.complete(body.maintenanceId);}return json(res,202,result);
       }
       if (req.method === "POST" && url.pathname === "/api/credentials/connect") {
         const body = await readBody(req) as { provider?: string };
@@ -513,9 +537,11 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         return json(res,200,{...slackStatus(settingsRoot,store),message:"Slack test notification delivered."});
       }
       if (req.method === "POST" && url.pathname === "/api/update") {
+        const body=await readBody(req) as {maintenanceId?:string};requireMaintenance(store,body.maintenanceId,["update"]);
         const check = checkUpdate(settingsRoot);
         if (!check.available) return json(res,409,{error:`${check.current.display} is already up to date`,check});
-        return json(res,202,{...runUpdate(settingsRoot),check});
+        if(body.maintenanceId)maintenanceCoordinator(store).markStarted(body.maintenanceId);
+        return json(res,202,{...runUpdate(settingsRoot,body.maintenanceId),check});
       }
       if (req.method !== "GET") return json(res,405,{error:"Method not allowed"});
       const files: Record<string,string> = {

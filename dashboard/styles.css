@@ -60,10 +60,10 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .item p { font-size:.8rem; color:var(--muted); margin-top:.3rem }
 .state { display:inline-flex; align-items:center; gap:.4rem; font:700 .68rem ui-monospace,SFMono-Regular,monospace; padding:.35rem .5rem; border:1px solid currentColor; border-radius:999px; color:var(--blue) }
 .state i { width:.42rem; height:.42rem; border-radius:50%; background:currentColor }
-.state-waiting-human,.state-paused { color:var(--warn) }
-.state-development,.state-qa,.state-review,.state-spec { color:var(--blue) }
-.state-ready-to-merge,.state-merged,.state-succeeded { color:var(--accent) }
-.state-failed,.state-pr-closed,.state-cancelled,.state-timed-out,.state-interrupted { color:var(--danger) }
+.state-waiting-human,.state-waiting,.state-paused,.state-interrupted { color:var(--warn) }
+.state-development,.state-qa,.state-review,.state-spec,.state-queued,.state-running { color:var(--blue) }
+.state-ready-to-merge,.state-merged,.state-completed,.state-succeeded { color:var(--accent) }
+.state-failed,.state-pr-closed,.state-cancelled,.state-timed-out { color:var(--danger) }
 .actions { display:flex; gap:.4rem }
 .service-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem }
 .service-help { margin:-.35rem 0 1rem; max-width:58rem; font-size:.82rem; line-height:1.45 }

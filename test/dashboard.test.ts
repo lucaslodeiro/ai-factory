@@ -76,6 +76,8 @@ echo "$*" >> "$PWD/update-actions.log"
     .run("owner-demo-7",7,"owner/demo","FAILED","2026-01-01T00:00:00.000Z","2026-01-02T00:00:00.000Z",JSON.stringify({title:"Repair login",url:"https://github.com/owner/demo/issues/7",version:1,cursor:0,feedback:[],cycles:0,reports:{}}));
   store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,created_at,updated_at,context) VALUES(?,?,?,?,?,?,?)")
     .run("owner-demo-8",8,"owner/demo","CANCELLED","2026-01-01T00:00:00.000Z","2026-01-02T00:00:00.000Z",JSON.stringify({title:"Closed manually",url:"https://github.com/owner/demo/issues/8",version:1,cursor:0,feedback:[],cycles:0,reports:{},archivedAt:"2026-01-02T00:00:00.000Z",archivedFromState:"DEVELOPMENT"}));
+  store.db.prepare("UPDATE work_items SET stage='TEST',status='FAILED' WHERE id='owner-demo-7'").run();
+  store.db.prepare("UPDATE work_items SET stage='BUILD',status='CANCELLED',archived_at='2026-01-02T00:00:00.000Z' WHERE id='owner-demo-8'").run();
   store.event("github.issue_closed",{issue:8,state:"DEVELOPMENT",visibility:"archived"},"owner-demo-8");
   store.event("state.changed",{from:"QA",to:"FAILED"},"owner-demo-7");
   store.event("agent.result",{role:"qa",result:{outcome:"pass",summary:"All acceptance criteria passed",coverage:Array(20).fill({status:"passed"})}},"owner-demo-7");
@@ -130,6 +132,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(snapshot.daemon.running,false);
     assert.equal(snapshot.items.length,1);
     assert.equal(snapshot.items[0].title,"Repair login");
+    assert.deepEqual({stage:snapshot.items[0].stage,status:snapshot.items[0].status},{stage:"TEST",status:"FAILED"});
     assert.ok(snapshot.events.every((event:any)=>event.issue !== 8));
     assert.deepEqual({issue:snapshot.executions[0].issue,title:snapshot.executions[0].title,role:snapshot.executions[0].role,status:snapshot.executions[0].status,provider:snapshot.executions[0].provider,model:snapshot.executions[0].model,durationMs:snapshot.executions[0].durationMs,totalTokens:snapshot.executions[0].totalTokens},
       {issue:7,title:"Repair login",role:"qa",status:"succeeded",provider:"claude",model:"sonnet",durationMs:65000,totalTokens:1750});
