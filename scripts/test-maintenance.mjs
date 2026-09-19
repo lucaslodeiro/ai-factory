@@ -70,7 +70,7 @@ if [ "$1 $2" = "status dashboard" ]; then echo 'dashboard: loaded'; elif [ "$1" 
 `,{mode:0o755});
 run('bash',['scripts/update.sh','--start-services'],dest,false);
 const recovery=fs.readFileSync(path.join(temp,'service-recovery.log'),'utf8');
-assert.match(recovery,/stop all/);assert.match(recovery,/install dashboard/);assert.match(recovery,/start dashboard/);
+assert.match(recovery,/stop daemon/);assert.doesNotMatch(recovery,/stop all|install dashboard|start dashboard/);
 assert.equal(JSON.parse(fs.readFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,'utf8')).status,'failed');
-console.log('PASS: dashboard-first install, existing destination, fast-forward, config/worktree preservation, backup, dirty checkout, daemon lock, local-only commit, persisted update state and dashboard recovery.');
+console.log('PASS: dashboard-first install, existing destination, fast-forward, config/worktree preservation, backup, dirty checkout, daemon lock, local-only commit, persisted update state and dashboard availability.');
 } finally { fs.rmSync(temp,{recursive:true,force:true}); }
