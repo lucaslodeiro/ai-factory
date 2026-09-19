@@ -15,22 +15,7 @@ import { failureMarkdown } from "./failure-report.js";
 import { parseResult, validateCoverage } from "./results.js";
 import type { WorkItem, WorkState, AgentRole, AgentResult, DeliveryStage } from "./types.js";
 import { allowedTacticalNextRoles, tacticalRouteError } from "./tactical-routing.js";
-function humanAnswer(body: string) {
- const lines = body.trim().split(/\r?\n/);
- const first = lines[0]?.trim();
- const last = lines.at(-1)?.trim();
- if (first === "/factory answer") return lines.slice(1).join("\n").trim();
- if (first?.startsWith("/factory answer ")) return [first.slice(16), ...lines.slice(1)].join("\n").trim();
- if (last === "/factory answer") return lines.slice(0, -1).join("\n").trim();
- return "";
-}
-function retryGuidance(body: string) {
- const lines=body.trim().split(/\r?\n/);
- const first=lines[0]?.trim(),last=lines.at(-1)?.trim();
- if (first === "/factory retry") return lines.slice(1).join("\n").trim();
- if (last === "/factory retry") return lines.slice(0,-1).join("\n").trim();
- return null;
-}
+import { parseFactoryCommand } from "./factory-command.js";
 export class Orchestrator {
  constructor(readonly store: Store, private agents: Partial<Record<AgentRole, AgentAdapter>>,
   private github: GitHubPort = new GitHubAdapter(), private workspaces: WorkspacePort = new Workspaces(),
@@ -78,7 +63,8 @@ export class Orchestrator {
   let high=checkpoint.id;
   for (const comment of comments) {
    if (comment.id <= checkpoint.id) continue;
-   if (comment.body.trim() === "/factory start") {
+   let command;try{command=parseFactoryCommand(comment.body);}catch(error){this.store.event("command.rejected",{commentId:comment.id,login:comment.user.login,error:String(error)});command=null;}
+   if (command?.kind === "start") {
     const issueNumber=Number(comment.issue_url.split("/").at(-1));
     if (comment.created_at !== comment.updated_at) {
      this.store.event("start.command_rejected",{commentId:comment.id,issueNumber,login:comment.user.login,reason:"Edited comments cannot start work"});
@@ -144,8 +130,9 @@ export class Orchestrator {
  private processRetryComment(w: WorkItem,c: Comment) {
  w.context.cursor = c.id;
  this.store.save(w);
-  const guidance=retryGuidance(c.body);
-  if (c.user.type !== "User" || !config.approvers.includes(c.user.login) || guidance === null) return false;
+  let command;try{command=parseFactoryCommand(c.body);}catch(error){this.store.event("command.rejected",{commentId:c.id,login:c.user.login,error:String(error)},w.id);return false;}
+  if (c.user.type !== "User" || !config.approvers.includes(c.user.login) || command?.kind !== "retry") return false;
+  const guidance=command.guidance;
   try {
    if (guidance) {
     w.context.feedback.push(`${c.user.login} retry guidance: ${guidance}`);
@@ -266,7 +253,10 @@ export class Orchestrator {
  private recoverManagedIssue(issue: Issue,comments: Comment[]) {
   const existingId = comments.flatMap(comment => [...comment.body.matchAll(/Work item(?:\s*:|\s*\|)\s*`?([0-9a-f-]{16,})/gi)].map(match => match[1])).at(0);
   const id = existingId && !this.store.get(existingId) ? existingId : randomUUID();
-  const lastAnswer = [...comments].reverse().map(comment => ({ comment,answer:humanAnswer(comment.body) })).find(item => item.answer);
+  const lastAnswer = [...comments].reverse().map(comment => {
+   try { const command=parseFactoryCommand(comment.body);return {comment,answer:command?.kind==="answer" ? command.text : ""}; }
+   catch { return {comment,answer:""}; }
+  }).find(item => item.answer);
   const remoteLabel = issue.labels?.map(label => label.name).find(name => name.startsWith("factory:")) ?? "factory:unknown";
   const now = new Date().toISOString();
   const context = {
@@ -443,19 +433,19 @@ export class Orchestrator {
   w.context.cursor = c.id;
   if (c.user.type !== "User" || !config.approvers.includes(c.user.login)) { this.store.save(w); return false; }
   const body = c.body.trim();
-  if (body === `/factory approve v${w.context.version}` && w.context.waiting === "approval" && w.context.spec) {
+  let command;try{command=parseFactoryCommand(body);}catch(error){this.store.event("command.rejected",{commentId:c.id,login:c.user.login,error:String(error)},w.id);this.store.save(w);return false;}
+  if (command?.kind === "approve" && command.version === w.context.version && w.context.waiting === "approval" && w.context.spec) {
    w.context.approvedVersion = w.context.version; w.context.approval = { login: c.user.login, commentId: c.id };
    this.store.db.transaction(() => {
     this.store.event("spec.approved", { version: w.context.version, ...w.context.approval }, w.id);
     this.store.transition(w, "DEVELOPMENT");
    })(); return true;
   }
-  const answer = humanAnswer(body);
-  if (answer) {
+  if (command?.kind === "answer") {
    // A tactical consultation can require several human answers before it is
    // resolved. Preserve its route while those answers are collected.
    const correctionConsultation = w.context.consultation;
-   w.context.feedback.push(`${c.user.login}: ${answer}`); w.context.cycles = 0;
+   w.context.feedback.push(`${c.user.login}: ${command.text}`); w.context.cycles = 0;
    w.context.consultation = correctionConsultation;
    this.store.transition(w, "SPEC"); return true;
   }
