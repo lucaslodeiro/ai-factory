@@ -111,3 +111,19 @@ test("GitHub managed issue discovery excludes the removed queue label and unrela
  };
  assert.deepEqual(new GitHubAdapter(invoke).listManaged().map(issue => issue.number),[1]);
 });
+test("GitHub workflow projection maintains two-dimensional labels and one editable status comment",()=>{
+ const comments:Array<{id:number;body:string}>=[];let labels=[{name:"factory:design",color:"",description:""},{name:"factory:failed",color:"",description:""},{name:"bug",color:"",description:""}];
+ const calls:string[][]=[];
+ const invoke=(args:string[],input?:unknown)=>{calls.push(args);
+  if(args[0]==="issue"&&args[1]==="view")return JSON.stringify({labels});
+  if(args[0]==="label")return "";
+  if(args[0]==="issue"&&args[1]==="edit"){for(let index=0;index<args.length;index++)if(args[index]==="--remove-label")labels=labels.filter(label=>label.name!==args[index+1]);for(let index=0;index<args.length;index++)if(args[index]==="--add-label")labels.push({name:args[index+1],color:"",description:""});return "";}
+  if(args[0]==="issue"&&args[1]==="comment"){comments.push({id:12,body:args[args.indexOf("--body")+1]});return "";}
+  if(args[0]==="api"&&args.includes("--method")){comments[0].body=(input as {body:string}).body;return "{}";}
+  if(args[0]==="api")return JSON.stringify([comments]);throw new Error(`Unexpected ${args.join(" ")}`);
+ };
+ const gh=new GitHubAdapter(invoke);
+ gh.syncWorkflow(1,[{name:"factory:test",color:"fbca04",description:"Testing"},{name:"factory:waiting",color:"d4c5f9",description:"Waiting"}],"First");
+ gh.syncWorkflow(1,[{name:"factory:test",color:"fbca04",description:"Testing"},{name:"factory:waiting",color:"d4c5f9",description:"Waiting"}],"Second");
+ assert.deepEqual(labels.map(label=>label.name).sort(),["bug","factory:test","factory:waiting"]);assert.equal(comments.length,1);assert.match(comments[0].body,/^Second/);
+});
