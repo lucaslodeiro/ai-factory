@@ -308,7 +308,7 @@ The terminal alternative is to set `SLACK_WEBHOOK_URL` only in your local `.env`
 
 ## Structured reports and upgrades
 
-All provider results require coverage, test evidence, changed files, dependency rationale, decisions and review checks. See `templates/EXECUTION_RESULT.md`. A fresh schema is initialized transactionally, including concurrent CLI/daemon startup, and receives schema version 3 only after creation succeeds. An unversioned or older database is rejected before mutation.
+All provider results require coverage, test evidence, changed files, dependency rationale, decisions and review checks. See `templates/EXECUTION_RESULT.md`. A fresh schema is initialized transactionally, including concurrent CLI/daemon startup, and receives schema version 4 only after creation succeeds. An unversioned or older database is rejected before mutation.
 
 Delivery roles cannot alter the approved specification. The provider schema requests inert values for `spec`, `acceptanceCriteria`, `taskAssessment` and `nextRole`; the orchestrator also forces those fields to inert values before validating Implementation Engineer, Verification Engineer and Delivery Reviewer reports because provider structured-output implementations may not enforce every enum or zero-length-array constraint. Coverage, test evidence, findings and all other delivery requirements remain strictly validated.
 

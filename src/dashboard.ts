@@ -61,14 +61,13 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
   try {
     const value = JSON.parse(payload) as any;
     const role=roleLabel(value.role ?? runRole);
-    if (type === "state.changed") return { title:`Workflow moved to ${stateLabel(value.to)}`,details:`Previous stage: ${stateLabel(value.from)}.`,severity:value.to === "FAILED" ? "error" : ["WAITING_HUMAN","PAUSED","CANCELLED"].includes(value.to) ? "warning" : ["READY_TO_MERGE","MERGED"].includes(value.to) ? "success" : "info",category:"Workflow" };
     if(type==="workflow.transition"){const from=value.from,to=value.to;return{title:`Workflow moved to ${stateLabel(to?.stage)} · ${stateLabel(to?.status)}`,details:from?`Previous: ${stateLabel(from.stage)} · ${stateLabel(from.status)}. ${value.reason?.summary??""}`:`${value.reason?.summary??"Work started"}.`,severity:to?.status==="FAILED"?"error":["WAITING","PAUSED","CANCELLED"].includes(to?.status)?"warning":["COMPLETED"].includes(to?.status)?"success":"info",category:"Workflow"};}
     if (type === "execution.started") {
       const selection=value.selection;
       return { title:`${role} execution started`,details:selection ? `${selection.model} · ${selection.profile} profile` : "The agent process is running.",severity:"info",category:"Agent",brand:selection?.provider };
     }
     if (type === "execution.finished") { const result=value.code === null || value.code === undefined ? "The process finished without an exit code." : `Process exit code: ${value.code}.`;const usage=value.usage?.totalTokens === null || value.usage?.totalTokens === undefined ? " Token usage was not reported." : ` Tokens reported: ${Number(value.usage.totalTokens).toLocaleString("en-US")}.`;return { title:`${role} execution ${value.status ?? "finished"}`,details:result+usage,severity:value.status === "succeeded" ? "success" : value.status === "cancelled" ? "warning" : "error",category:"Agent" };}
-    if (type === "execution.interrupted" || type === "stage.interrupted") return { title:`${role} execution interrupted`,details:value.reason ?? "The daemon stopped before this stage was recorded as complete.",severity:"error",category:"Agent" };
+    if (type === "execution.interrupted") return { title:`${role} execution interrupted`,details:value.reason ?? "The daemon stopped before this stage was recorded as complete.",severity:"error",category:"Agent" };
     if (type === "agent.result") {
       const result=value.result ?? {},coverage=Array.isArray(result.coverage) ? result.coverage : [];
       const passed=coverage.filter((item:any)=>item.status === "passed").length;
@@ -77,27 +76,9 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
       return { title:`${role}: ${outcome}`,details:`${result.summary ?? "Agent result recorded."}${evidence}`,severity:["pass","spec","resolved"].includes(result.outcome) ? "success" : ["changes","questions","decision"].includes(result.outcome) ? "warning" : "info",category:"Result" };
     }
     if (type === "model.selected") return { title:`Model selected for ${role}`,details:`${value.selection?.model ?? "Automatic model"}${value.selection?.reason ? ` — ${value.selection.reason}` : ""}`,severity:"info",category:"Routing",brand:value.selection?.provider };
-    if (type === "spec.approved") return { title:`SPEC v${value.version} approved`,details:`Approved by ${value.login ?? "an authorized approver"} in GitHub.`,severity:"success",category:"Approval" };
-    if (type === "spec.review_required") return { title:"Architecture review required",details:`The task was assessed as ${value.assessment?.complexity ?? "unknown"} complexity and ${value.assessment?.risk ?? "unknown"} risk.`,severity:"warning",category:"Specification" };
-    if (type === "decision.tactical") return { title:"Architect resolved a delivery question",details:`The workflow will continue at ${stateLabel(value.to)} under SPEC v${value.specVersion}.`,severity:"success",category:"Decision" };
-    if (type === "work_item.created") return { title:`Issue #${value.issue} entered the factory`,details:"Architect will prepare the specification.",severity:"info",category:"Issue" };
     if (type === "start.command_rejected") return { title:"Factory start command rejected",details:`Issue #${value.issueNumber ?? "?"}: ${value.reason ?? "The command was not authorized"}.`,severity:"warning",category:"Issue" };
-    if (type === "start.command_ignored") return { title:"Issue already tracked",details:`Issue #${value.issueNumber ?? "?"} already has a work item; no duplicate was created.`,severity:"info",category:"Issue" };
-    if (type === "work_item.recovered") return { title:`Issue #${value.issue} recovered`,details:"Local state was missing. The issue was paused and can restart safely from Design with Architect.",severity:"warning",category:"Recovery" };
-    if (type === "workflow.error") return { title:"Workflow execution failed",details:value.error ?? "Inspect daemon and agent logs for the cause.",severity:"error",category:"Failure" };
-    if (type === "retry.requested") return { title:"Retry accepted",details:`The workflow will resume at ${stateLabel(value.to)}.`,severity:"info",category:"Recovery" };
-    if (type === "retry.comment_accepted") return { title:"Retry requested from GitHub",details:`${value.login ?? "An approver"} requested a retry; resuming at ${stateLabel(value.to)}.`,severity:"info",category:"Recovery" };
-    if (type === "retry.comment_rejected") return { title:"GitHub retry could not start",details:value.error ?? "The retry safety check failed.",severity:"error",category:"Recovery" };
-    if (type === "pull_request.reconciled") return { title:value.state === "MERGED" ? "Pull request merged" : value.state === "CLOSED" ? "Pull request closed" : "Pull request reopened",details:value.url ?? "Pull request status synchronized with GitHub.",severity:value.state === "MERGED" ? "success" : value.state === "CLOSED" ? "warning" : "info",category:"Delivery" };
-    if (type === "github.issue_refreshed") {
-      const advanced = (value.cursor ?? 0) > (value.previousCursor ?? 0);
-      return { title:"Issue refreshed from GitHub",details:advanced ? `Moved to the newest comment; workflow is ${stateLabel(value.state)}.` : `No newer comment was found; workflow is ${stateLabel(value.state)}.`,severity:"info",category:"GitHub" };
-    }
     if (type === "github.issue_list_refreshed") return { title:"Issue list refreshed",details:`Found ${value.found ?? 0}; added ${value.added ?? 0}; updated ${value.updated ?? 0}.`,severity:"success",category:"GitHub" };
-    if (type === "github.issue_reconciled") return { title:"Issue metadata reconciled",details:value.changedFields?.length ? `Updated ${value.changedFields.join(", ")}; workflow remains ${stateLabel(value.state)}.` : `No metadata changes; workflow remains ${stateLabel(value.state)}.`,severity:"info",category:"GitHub" };
-    if (type === "github.comments_observed") return { title:"New GitHub comment observed",details:`${value.count ?? 1} human comment${(value.count ?? 1) === 1 ? " was" : "s were"} read while the workflow was ${stateLabel(value.state)}. No command was applicable in that stage.`,severity:"info",category:"GitHub" };
-    if (type === "github.cursor_repaired") return { title:"GitHub comment position repaired",details:"Older comments will not be processed again.",severity:"warning",category:"Recovery" };
-    if (["github.poll_failed","github.start_poll_failed","github.delivery_failed","github.labels_failed","github.comments_failed","github.pr_poll_failed"].includes(type)) return { title:"GitHub synchronization failed",details:value.error ?? "The operation will be retried.",severity:"error",category:"GitHub" };
+    if (["github.issue_state_failed","github.projection_failed","github.pr_poll_failed"].includes(type)) return { title:"GitHub synchronization failed",details:value.error ?? "The operation will be retried.",severity:"error",category:"GitHub" };
     if (type === "slack.delivery_failed") return { title:"Slack notification delayed",details:"Delivery failed and was scheduled for another attempt.",severity:"warning",category:"Notification",brand:"slack" };
     if(type.startsWith("maintenance.")){const action=type.split(".")[1],titles:Record<string,string>={requested:"Maintenance requested",confirmed:"Maintenance confirmed",task_paused:"Task paused for maintenance",ready:"Tasks safely paused",started:"Maintenance started",completed:"Maintenance completed",failed:"Maintenance failed",tasks_resumed:"Paused tasks resumed"};return{title:titles[action]??"Maintenance update",details:value.error??`${value.operation??"Service operation"}${value.affected?.length!==undefined?` · ${value.affected.length} task${value.affected.length===1?"":"s"}`:""}`,severity:action==="failed"?"error":["completed","tasks_resumed"].includes(action)?"success":"warning",category:"Maintenance"};}
     if (type === "control.failed") return { title:`${value.kind === "refresh-list" ? "Issue list refresh" : value.kind === "refresh" ? "Issue refresh" : value.kind ?? "Control"} failed`,details:value.error ?? "Unknown error",severity:"error",category:"Control" };
@@ -120,7 +101,7 @@ function snapshot(store: Store) {
     id:item.id,issue:item.issue_number,repo:item.repo,stage:item.stage,status:item.status,attempt:item.attempt,revision:item.revision,title:item.context.title,
     url:item.context.url,pr:item.context.pr??null,updatedAt:item.updated_at,
   }));
-  const executionRows=(store.db.prepare("SELECT id,work_item_id,role,workflow_state,status,pid,started_at,finished_at,exit_code,input_tokens,output_tokens,cached_tokens,total_tokens,interruption_reason,maintenance_id FROM executions ORDER BY started_at DESC LIMIT 30").all() as any[]).filter(run=>!itemById.get(run.work_item_id)?.archived_at);
+  const executionRows=(store.db.prepare("SELECT id,work_item_id,role,stage,status,pid,started_at,finished_at,exit_code,input_tokens,output_tokens,cached_tokens,total_tokens,interruption_reason,maintenance_id FROM executions ORDER BY started_at DESC LIMIT 30").all() as any[]).filter(run=>!itemById.get(run.work_item_id)?.archived_at);
   const runMetadata=new Map((store.db.prepare("SELECT e.run_id,e.payload FROM events e JOIN executions x ON x.id=e.run_id WHERE e.type='execution.started' ORDER BY e.id DESC LIMIT 30").all() as Array<{run_id:string;payload:string}>).map(row=>{
     try { return [row.run_id,JSON.parse(row.payload)] as const; } catch { return [row.run_id,{}] as const; }
   }));
@@ -128,11 +109,11 @@ function snapshot(store: Store) {
   const executions = executionRows.map(run=>{
     const item=itemById.get(run.work_item_id),selection=runMetadata.get(run.id)?.selection;
     const end=run.finished_at ? new Date(run.finished_at).getTime() : Date.now(),start=new Date(run.started_at).getTime();
-    return { id:run.id,workItemId:run.work_item_id,role:run.role,workflowState:run.workflow_state,status:run.status,pid:run.pid,startedAt:run.started_at,finishedAt:run.finished_at,exitCode:run.exit_code,durationMs:Number.isFinite(start) ? Math.max(0,end-start) : null,
+    return { id:run.id,workItemId:run.work_item_id,role:run.role,workflowState:run.stage,status:run.status,pid:run.pid,startedAt:run.started_at,finishedAt:run.finished_at,exitCode:run.exit_code,durationMs:Number.isFinite(start) ? Math.max(0,end-start) : null,
       inputTokens:run.input_tokens,outputTokens:run.output_tokens,cachedTokens:run.cached_tokens,totalTokens:run.total_tokens,interruptionReason:run.interruption_reason,maintenanceId:run.maintenance_id,
       issue:item?.issue_number ?? null,title:item?.context.title ?? "Unknown issue",url:item?.context.url ?? null,provider:selection?.provider ?? null,model:selection?.model ?? null,profile:selection?.profile ?? null };
   });
-  const usageRows=(store.db.prepare("SELECT work_item_id,role,workflow_state,status,started_at,finished_at,input_tokens,output_tokens,cached_tokens,total_tokens FROM executions ORDER BY started_at").all() as any[]).filter(run=>!itemById.get(run.work_item_id)?.archived_at);
+  const usageRows=(store.db.prepare("SELECT work_item_id,role,stage,status,started_at,finished_at,input_tokens,output_tokens,cached_tokens,total_tokens FROM executions ORDER BY started_at").all() as any[]).filter(run=>!itemById.get(run.work_item_id)?.archived_at);
   const usageMap=new Map<string,{workItemId:string;runs:number;durationMs:number;inputTokens:number;outputTokens:number;cachedTokens:number;totalTokens:number;unreportedTokenRuns:number;stages:Map<string,any>}>();
   const add=(target:any,run:any,durationMs:number)=>{target.runs++;target.durationMs+=durationMs;for(const [source,key] of [["input_tokens","inputTokens"],["output_tokens","outputTokens"],["cached_tokens","cachedTokens"],["total_tokens","totalTokens"]] as const) target[key]+=run[source] ?? 0;if(run.total_tokens === null || run.total_tokens === undefined) target.unreportedTokenRuns++;};
   for (const run of usageRows) {
@@ -140,7 +121,7 @@ function snapshot(store: Store) {
     let item=usageMap.get(run.work_item_id);
     if(!item){item={workItemId:run.work_item_id,runs:0,durationMs:0,inputTokens:0,outputTokens:0,cachedTokens:0,totalTokens:0,unreportedTokenRuns:0,stages:new Map()};usageMap.set(run.work_item_id,item);}
     add(item,run,elapsed);
-    const state=run.workflow_state ?? ({"product-architect":"SPEC",developer:"DEVELOPMENT",qa:"QA",reviewer:"REVIEW"} as Record<string,string>)[run.role] ?? "UNKNOWN",key=`${state}:${run.role}`;
+    const state=run.stage ?? ({"product-architect":"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"} as Record<string,string>)[run.role] ?? "UNKNOWN",key=`${state}:${run.role}`;
     let stage=item.stages.get(key);if(!stage){stage={state,role:run.role,runs:0,durationMs:0,inputTokens:0,outputTokens:0,cachedTokens:0,totalTokens:0,unreportedTokenRuns:0};item.stages.set(key,stage);}add(stage,run,elapsed);
   }
   const normalize=(value:any)=>({...value,totalTokens:value.unreportedTokenRuns===value.runs ? null : value.totalTokens});

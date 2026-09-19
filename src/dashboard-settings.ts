@@ -106,8 +106,7 @@ function prepareDashboardSettings(root: string, changes: Record<string,unknown>,
   }
   for (const key of Object.keys(defaults)) validate(key,values[key] ?? "");
   let output = template.replace(/^([A-Z_][A-Z0-9_]*)=.*$/gm,(_,key) => `${key}=${encode(values[key] ?? "")}`);
-  const retiredModelSetting = (key: string) => /^(CODEX|CLAUDE)_MODEL_(FAST|BALANCED|STRONG)$/.test(key) || /^(PRODUCT_ARCHITECT|DEVELOPER|QA|REVIEWER)_MODEL_(MODE|FAST|BALANCED|STRONG)$/.test(key);
-  for (const [key,value] of Object.entries(saved)) if (!(key in defaults) && !retiredModelSetting(key)) output += `\n${key}=${encode(value)}`;
+  for (const [key,value] of Object.entries(saved)) if (!(key in defaults)) output += `\n${key}=${encode(value)}`;
   const changedKeys = Object.keys(defaults).filter(key => values[key] !== previous[key]);
   const restartServices = [...new Set(changedKeys.flatMap(key => {
     const restart = descriptions[key]?.restart;
@@ -132,12 +131,6 @@ export function readDashboardSettings(root: string, suggestions: Record<string,s
   const saved = fs.existsSync(names.env) ? parse(fs.readFileSync(names.env,"utf8")) : {};
   const values: Record<string,string> = {...defaults,...saved};
   for (const [key,value] of Object.entries(suggestions)) if (key in defaults && !values[key]) values[key]=value;
-  for (const prefix of ["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"]) {
-    if (`${prefix}_MODEL` in saved) continue;
-    const selected = values[`${prefix}_PROVIDER`] === "claude" ? "CLAUDE" : "CODEX";
-    values[`${prefix}_MODEL`] = saved[`${prefix}_MODEL_MODE`] === "auto" ? "auto"
-      : saved[`${prefix}_MODEL_BALANCED`] ?? saved[`${selected}_MODEL_BALANCED`] ?? values[`${prefix}_MODEL`];
-  }
   const providerCatalog = {
     codex:{options:codexModels,default:"gpt-5.6-terra"},
     claude:{options:claudeModels,default:"sonnet"},

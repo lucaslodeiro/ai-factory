@@ -3,6 +3,7 @@ import type { FactoryCommand } from "./factory-command.js";
 import { WorkflowFailures } from "./workflow-failures.js";
 import { WorkflowProjections } from "./workflow-projection.js";
 import { WorkflowRecords, type WorkflowRecord } from "./workflow-records.js";
+import {assertExecutionStopped} from "./execution-manager.js";
 
 export interface CommandContext { workItemId:string;login:string;commentId:number;specVersion:number; }
 
@@ -51,6 +52,7 @@ export class WorkflowCommands {
   }
   if(command.kind==="retry") {
    if(!["FAILED","PAUSED","CANCELLED"].includes(current.status))throw new Error(`Cannot retry while workflow is ${current.status}`);
+   assertExecutionStopped(this.store,context.workItemId);
    const ids:string[]=[];
    const next=this.projections.resumeStatus(context.workItemId),failure=this.failures.active(context.workItemId);
    const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:current.stage,status:next,attemptDelta:next==="QUEUED"?1:0,actor,source,reason:{code:"retry",summary:"Human requested retry"},recordIds:ids},()=>{

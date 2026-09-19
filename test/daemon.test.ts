@@ -81,7 +81,7 @@ if(codex){
   await waitFor(() => (store!.db.prepare("SELECT stage,status FROM work_items LIMIT 1").get() as any)?.status === "WAITING" && JSON.parse(fs.readFileSync(stateFile, "utf8")).comments.some((c: any) => c.body.includes("SPEC v1")));
   const state = JSON.parse(fs.readFileSync(stateFile, "utf8")); state.comments.push({ id: state.comments.length + 1, body: "/factory approve v1", user: { login: "owner", type: "User" } }); fs.writeFileSync(stateFile, JSON.stringify(state));
   await waitFor(() => fs.existsSync(path.join(root, "first-developer")));
-  const workId = store.items()[0].id;
+  const workId = (store.db.prepare("SELECT id FROM work_items LIMIT 1").get() as {id:string}).id;
   assert.equal(command("status").status, 0);
   assert.equal(command("sync").status, 1, "Standalone sync must not race the active daemon");
   assert.equal((store.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='running'").get() as any).n, 1);
@@ -89,7 +89,7 @@ if(codex){
   await waitFor(() => (store!.db.prepare("SELECT status FROM work_items LIMIT 1").get() as any)?.status === "CANCELLED" && (store!.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='running'").get() as any).n === 0);
   assert.equal(command("retry", workId).status, 0);
   await waitFor(() => {const row=store!.db.prepare("SELECT stage,status FROM work_items LIMIT 1").get() as any;return row?.stage==="DELIVERY"&&row?.status==="WAITING";});
-  const w = store.items()[0]; assert.equal(w.context.pr, "https://example.test/pull/1");
+  const workRow=store.db.prepare("SELECT branch,context FROM work_items LIMIT 1").get() as {branch:string;context:string};const w={branch:workRow.branch,context:JSON.parse(workRow.context)}; assert.equal(w.context.pr, "https://example.test/pull/1");
   assert.equal(git(origin, ["show", `${w.branch}:src/greet.mjs`]), 'export const greet = name => "Hello " + name;');
   assert.equal((store.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='succeeded'").get() as any).n, 4);
   assert.equal(JSON.parse(fs.readFileSync(stateFile, "utf8")).prs, 1);

@@ -13,7 +13,7 @@ const statusesForTest={QUEUED:"Queued",RUNNING:"Running",WAITING:"Waiting for yo
 
 function setup() {
  const store=new Store(":memory:");
- store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,created_at,updated_at,context) VALUES('work-1',7,'owner/demo','SPEC','now','now',?)").run(JSON.stringify({title:"Readable workflow"}));
+ store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context) VALUES('work-1',7,'owner/demo','now','now',?)").run(JSON.stringify({title:"Readable workflow"}));
  store.db.prepare("INSERT INTO specs(work_item_id,version,body) VALUES('work-1',2,'SPEC')").run();
  return {store,records:new WorkflowRecords(store),projections:new WorkflowProjections(store)};
 }
@@ -46,7 +46,7 @@ test("Architect-owned requests never render a human command",()=>{
 test("failed status explains the cause, identifies the execution and keeps one safe CTA",()=>{
  const s=setup();
  try {
-  s.store.db.prepare("INSERT INTO executions(id,work_item_id,role,workflow_state,status,started_at,finished_at,exit_code) VALUES('run-1','work-1','qa','TEST','failed','now','now',2)").run();
+  s.store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,finished_at,exit_code) VALUES('run-1','work-1','qa','TEST','failed','now','now',2)").run();
   new WorkflowFailures(s.store).open({workItemId:"work-1",executionId:"run-1",class:"execution",message:`Bearer ghp_abcdefghijklmnopqrstuvwxyz123456 failed at ${os.homedir()}/private/project`,stage:"TEST",attempt:3});
   s.projections.initialize("work-1","TEST","FAILED");
   const body=workflowStatusMarkdown(s.store,"work-1");

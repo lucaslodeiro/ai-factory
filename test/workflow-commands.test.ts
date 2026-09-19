@@ -8,7 +8,7 @@ import { WorkflowRecords } from "../src/workflow-records.js";
 
 function setup(stage:"DESIGN"|"BUILD"|"TEST"|"DELIVERY"="DESIGN",status:"QUEUED"|"WAITING"|"FAILED"|"PAUSED"|"CANCELLED"|"COMPLETED"="QUEUED") {
  const store=new Store(":memory:");
- store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,created_at,updated_at,context) VALUES('work-1',1,'owner/demo','SPEC','now','now','{}')").run();
+ store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context) VALUES('work-1',1,'owner/demo','now','now','{}')").run();
  store.db.prepare("INSERT INTO specs(work_item_id,version,body) VALUES('work-1',1,'SPEC v1')").run();
  const records=new WorkflowRecords(store),failures=new WorkflowFailures(store),projections=new WorkflowProjections(store);
  return {store,records,failures,projections,commands:new WorkflowCommands(store),initialize:()=>projections.initialize("work-1",stage,status)};

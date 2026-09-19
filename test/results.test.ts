@@ -44,7 +44,7 @@ test("architect consultation schema and validation enforce the exact tactical re
   decisions:[{kind:"tactical",decision:"Human confirmed the UI",rationale:"AC-6 is satisfied",conflictsWithHuman:false}],
  });
  assert.throws(
-  () => parseResult(resolved,"product-architect",["developer"],"DEVELOPMENT"),
+  () => parseResult(resolved,"product-architect",["developer"],"BUILD"),
   /selected nextRole=reviewer after a Build consultation; allowed nextRole value is: developer/,
  );
 });

@@ -58,9 +58,9 @@ fi
   assert.equal(provisionedValues.FACTORY_REPO_DIR,path.join(home,'Source','ai-factory-demo'));
   assert.match(provisioned.stdout,/Required target settings now have usable defaults/);
   assert.equal(spawnSync('git',['-C',provisionedValues.FACTORY_REPO_DIR,'log','-1','--format=%s'],{encoding:'utf8'}).stdout.trim(),'chore: initialize demo');
-  assert.match(fs.readFileSync(ghLog,'utf8'),/label create factory:queued/);
+  assert.doesNotMatch(fs.readFileSync(ghLog,'utf8'),/label create factory:queued/);
   assert.match(fs.readFileSync(ghLog,'utf8'),/auth login --hostname github.com --git-protocol https --web/);
-  fs.writeFileSync(file,"GITHUB_REPOSITORY=example/existing\nFACTORY_APPROVERS=alice\nFACTORY_DATA_DIR=.factory\nSLACK_WEBHOOK_URL=https://hooks.example.com/private-secret\nCODEX_MODEL_BALANCED=custom-balanced\nCUSTOM_VALUE='keep # $HOME'\n");
+  fs.writeFileSync(file,"GITHUB_REPOSITORY=example/existing\nFACTORY_APPROVERS=alice\nFACTORY_DATA_DIR=.factory\nSLACK_WEBHOOK_URL=https://hooks.example.com/private-secret\nDEVELOPER_MODEL=custom-balanced\nQA_MODEL=custom-balanced\nCUSTOM_VALUE='keep # $HOME'\n");
   const saved = fs.readFileSync(file,'utf8');
   const target = path.join(root,'my target #1');
   const answers = keys.map(key => ({FACTORY_REPO_DIR:target,FACTORY_POLL_INTERVAL_MS:'0\n5000',GITHUB_REPOSITORY:'invalid\nexample/new',FACTORY_APPROVERS:'-',REVIEWER_PROVIDER:'codex'}[key] ?? '')).join('\n') + '\n';
@@ -77,7 +77,6 @@ fi
   assert.equal(values.QA_MODEL,'custom-balanced');
   assert.equal(values.REVIEWER_PROVIDER,'codex');
   assert.equal(values.REVIEWER_MODEL,'gpt-5.6-terra');
-  assert.equal(values.CODEX_MODEL_BALANCED,undefined);
   const backups = fs.readdirSync(root).filter(name => name.startsWith('.env.backup-'));
   assert.equal(fs.readFileSync(path.join(root,backups.at(-1)),'utf8'),saved);
   assert.equal(fs.statSync(file).mode & 0o777,0o600);

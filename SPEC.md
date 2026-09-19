@@ -121,7 +121,7 @@ Use the direct-v1 policy in `docs/MODEL_POLICY.md`: Product Architect reports co
 | F12 | `src/notifications.ts`, `src/adapters/slack.ts`, SQLite queues | `test/notifications.test.ts`, GitHub-outage notification case |
 | F13 | `src/workflow-projection.ts`, `src/workflow-status.ts`, `src/cli.ts`, `src/dashboard.ts` | Projection, publisher, dashboard and daemon tests |
 | F15 | `src/model-policy.ts`, adapters, spec snapshots and execution events | `test/model-policy.test.ts`, workflow routing and subprocess argument/audit assertions |
-| F14 | `INSTALL.md`, `src/doctor.ts`, demo repository | Real four-role demo reached READY_TO_MERGE and created demo PR #2; see `docs/VALIDATION.md` |
+| F14 | `INSTALL.md`, `src/doctor.ts`, demo repository | Historical real four-role demo reached delivery readiness and created demo PR #2; see `docs/VALIDATION.md` |
 
 ## Operational boundaries and remaining acceptance work
 

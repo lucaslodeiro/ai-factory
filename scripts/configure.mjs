@@ -74,7 +74,6 @@ async function prepareTarget(values, lines, login) {
     requireSuccess(git(repoDir,values.GIT_COMMAND,['commit','-m','chore: initialize demo']),'Creating the initial demo commit');
     requireSuccess(git(repoDir,values.GIT_COMMAND,['push','-u','origin',values.GITHUB_DEFAULT_BRANCH],{timeout:120000}),'Publishing the initial demo branch');
   }
-  requireSuccess(run('gh',['label','create','factory:queued','--repo',values.GITHUB_REPOSITORY,'--color','7057ff','--description','Queued for AI Factory','--force']),'Creating the factory queue label');
   return true;
 }
 
@@ -116,8 +115,7 @@ export function saveConfig(root, template, values, original) {
   // Preserve unrecognized settings as well as every known setting.
   let output = template.replace(/^([A-Z_][A-Z0-9_]*)=.*$/gm, (_, key) => `${key}=${encode(values[key])}`);
   const known = parse(template);
-  const retiredModelSetting = key => /^(CODEX|CLAUDE)_MODEL_(FAST|BALANCED|STRONG)$/.test(key) || /^(PRODUCT_ARCHITECT|DEVELOPER|QA|REVIEWER)_MODEL_(MODE|FAST|BALANCED|STRONG)$/.test(key);
-  for (const [key, value] of Object.entries(values)) if (!(key in known) && !retiredModelSetting(key)) output += `\n${key}=${encode(value)}`;
+  for (const [key, value] of Object.entries(values)) if (!(key in known)) output += `\n${key}=${encode(value)}`;
   const file = path.join(root,'.env');
   const current = fs.existsSync(file) ? fs.readFileSync(file,'utf8') : null;
   if (current !== original) throw new Error('.env changed during configuration; rerun to load the new defaults.');
@@ -156,12 +154,6 @@ export async function configure(root, useDefaults = false) {
     if (found.status === 0) defaults[key] = found.stdout.trim();
   }
   const values = {...defaults,...saved};
-  for (const prefix of ['PRODUCT_ARCHITECT','DEVELOPER','QA','REVIEWER']) {
-    const selected = (values[`${prefix}_PROVIDER`] || defaults[`${prefix}_PROVIDER`]).toUpperCase();
-    const roleKey = `${prefix}_MODEL`;
-    if (!(roleKey in saved)) values[roleKey] = saved[`${prefix}_MODEL_MODE`] === 'auto' ? 'auto'
-      : saved[`${prefix}_MODEL_BALANCED`] || saved[`${selected}_MODEL_BALANCED`] || defaults[roleKey];
-  }
   assertStopped(root, values);
   const oldValues = {...values};
   let targetPrepared;

@@ -44,7 +44,6 @@ export class WorkflowOrchestrator {
   }
  }
  async flush(){
-  for(const row of this.store.db.prepare("SELECT * FROM outbox WHERE sent=0 ORDER BY id").all() as Array<{id:number;issue_number:number;body:string;delivery_key:string|null}>){const item=this.rows().find(candidate=>candidate.issue_number===row.issue_number);if(item?.archived_at){this.store.db.prepare("UPDATE outbox SET sent=1 WHERE id=?").run(row.id);continue;}try{this.github.commentOnce(row.issue_number,row.body,`${config.repo}:${row.delivery_key??row.id}`);this.store.db.prepare("UPDATE outbox SET sent=1 WHERE id=?").run(row.id);}catch(error){this.store.event("github.delivery_failed",{outboxId:row.id,error:String(error)});}}
   try{this.publisher.publishChanged();}catch(error){this.store.event("github.projection_failed",{error:String(error)});}
   await deliverNotifications(this.store,this.notifications);
  }

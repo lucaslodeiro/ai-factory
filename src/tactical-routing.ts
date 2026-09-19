@@ -3,8 +3,8 @@ import type { DeliveryStage } from "./types.js";
 export type TacticalNextRole = "developer" | "qa" | "reviewer";
 
 const routes: Record<DeliveryStage, TacticalNextRole[]> = {
-  DEVELOPMENT: ["developer"],
-  QA: ["developer", "qa"],
+  BUILD: ["developer"],
+  TEST: ["developer", "qa"],
   REVIEW: ["developer", "qa", "reviewer"],
 };
 
@@ -13,7 +13,7 @@ export function allowedTacticalNextRoles(from: DeliveryStage): TacticalNextRole[
 }
 
 export function deliveryStageName(stage: DeliveryStage) {
-  return ({ DEVELOPMENT: "Build", QA: "Test", REVIEW: "Review" } as const)[stage];
+  return ({ BUILD: "Build", TEST: "Test", REVIEW: "Review" } as const)[stage];
 }
 
 export function tacticalRouteError(selected: TacticalNextRole, allowed: TacticalNextRole[], from?: DeliveryStage) {

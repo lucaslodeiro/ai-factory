@@ -20,8 +20,8 @@ export class WorkflowIntake {
   if(!repo)throw new Error("Issue URL does not identify a GitHub repository");
   const eventId=randomUUID(),context={title:issue.title,body:issue.body,url:issue.url,cursor:origin.commentId??0};
   const run=this.store.db.transaction(()=>{
-   this.store.db.prepare(`INSERT INTO work_items(id,issue_number,repo,state,branch,created_at,updated_at,context,stage,status,attempt,revision,presentation_revision,correction_cycles)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,issue.number,repo,"SPEC",`factory/issue-${issue.number}-${id.slice(0,8)}`,now,now,JSON.stringify(context),"DESIGN","QUEUED",0,0,0,0);
+   this.store.db.prepare(`INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context,stage,status,attempt,revision,presentation_revision,correction_cycles)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,issue.number,repo,`factory/issue-${issue.number}-${id.slice(0,8)}`,now,now,JSON.stringify(context),"DESIGN","QUEUED",0,0,0,0);
    const initial=new WorkflowProjections(this.store).get(id),reason={code:"work-started",summary:"Issue accepted into the factory"};this.store.event("workflow.transition",{schemaVersion:1,eventId,type:"workflow.transition",workItemId:id,occurredAt:now,actor:{type:origin.source==="github-comment"?"human":"orchestrator",id:origin.actor},source:{commentId:origin.commentId},from:null,to:initial,reason,recordIds:[],specVersion:0},id);this.store.db.prepare("INSERT INTO notifications(body,work_item_id) VALUES(?,?)").run(workflowNotificationText(this.store,id,initial,reason),id);
    return {id,created:true};
   });

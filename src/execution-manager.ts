@@ -5,10 +5,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { Store } from "./storage.js";
 import { config, agentEnvironment } from "./config.js";
-import { failureMarkdown } from "./failure-report.js";
 import type { AgentRole, ModelSelection } from "./types.js";
 import { extractTokenUsage } from "./token-usage.js";
-const workflowState: Record<AgentRole,string> = {"product-architect":"SPEC",developer:"DEVELOPMENT",qa:"QA",reviewer:"REVIEW"};
+const workflowStage: Record<AgentRole,string> = {"product-architect":"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"};
 export interface PromptManifestInput {
   includedRecordIds?:string[];
   activeRequestId?:string;
@@ -35,7 +34,7 @@ export class ExecutionManager {
     const promptBytes=Buffer.byteLength(input),promptSha256=createHash("sha256").update(input).digest("hex"),specVersion=(this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}|undefined)?.version??0;
     const promptManifest={executionId:id,role,provider:selection?.provider??null,model:selection?.model??null,specVersion,
       includedRecordIds:promptMetadata.includedRecordIds??[],activeRequestId:promptMetadata.activeRequestId??null,
-      sectionBytes:promptMetadata.sectionBytes??{legacyPrompt:promptBytes},budgetBytes:promptMetadata.budgetBytes??null,budgetSource:promptMetadata.budgetSource??"legacy-unbounded",
+      sectionBytes:promptMetadata.sectionBytes??{rawPrompt:promptBytes},budgetBytes:promptMetadata.budgetBytes??null,budgetSource:promptMetadata.budgetSource??"direct-unbounded",
       promptBytes,promptSha256};
     fs.writeFileSync(path.join(logDir,"prompt.md"),input,{mode:0o600});
     fs.writeFileSync(path.join(logDir,"prompt.json"),JSON.stringify(promptManifest,null,2)+"\n",{mode:0o600});
@@ -45,8 +44,8 @@ export class ExecutionManager {
       const existing=this.store.db.prepare("SELECT work_item_id,role,status FROM executions WHERE id=?").get(id) as {work_item_id:string;role:string;status:string}|undefined;
       if(!existing||existing.work_item_id!==workItemId||existing.role!==role||existing.status!=="running")throw new Error("Precreated execution does not match the active workflow run");
       this.store.db.prepare("UPDATE executions SET prompt_bytes=?,prompt_sha256=? WHERE id=?").run(promptBytes,promptSha256,id);
-    } else this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,workflow_state,status,started_at,prompt_bytes,prompt_sha256) VALUES(?,?,?,?,?,?,?,?)")
-      .run(id, workItemId, role, workflowState[role], "running", new Date().toISOString(),promptBytes,promptSha256);
+    } else this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,prompt_bytes,prompt_sha256) VALUES(?,?,?,?,?,?,?,?)")
+      .run(id, workItemId, role, workflowStage[role], "running", new Date().toISOString(),promptBytes,promptSha256);
     this.store.event("execution.started", { role, command, cwd, logDir, selection }, workItemId, id);
     return new Promise((resolve, reject) => {
       let cancelled = false, interrupted = false, interruptionReason:string|undefined, timedOut = false;
@@ -91,35 +90,8 @@ export class ExecutionManager {
   interrupt(id:string,reason="planned-maintenance"){const entry=this.running.get(id);if(!entry)return false;entry.interrupt(reason);return true;}
   isRunning(id:string){return this.running.has(id);}
   cancelAll() { for (const e of this.running.values()) e.cancel(); }
-  recover() {
-    const rows = this.store.db.prepare("SELECT id,work_item_id FROM executions WHERE status='running'").all() as { id: string; work_item_id: string }[];
-    this.store.db.transaction(() => {
-      for (const r of rows) {
-        this.store.db.prepare("UPDATE executions SET status='interrupted',recovery_pending=1,finished_at=? WHERE id=?").run(new Date().toISOString(), r.id);
-        const w = this.store.get(r.work_item_id);
-        if (w && ["SPEC", "DEVELOPMENT", "QA", "REVIEW"].includes(w.state)) {
-          w.context.resume = w.context.pendingStage?.stage ?? w.state;
-          w.context.lastFailure = "An agent execution was interrupted because the daemon restarted.";
-          this.store.transition(w, "FAILED");
-          this.store.post(w.issue_number,failureMarkdown(this.store,w,w.context.lastFailure));
-        }
-        this.store.event("execution.interrupted", { reason: "Daemon restarted; supervisor disconnect terminates its worker group. Retry waits until group exit." }, r.work_item_id, r.id);
-      }
-      // Covers a crash after successful process exit but before the workflow transaction.
-      for (const w of this.store.items()) {
-        if (w.context.pendingStage && ["SPEC", "DEVELOPMENT", "QA", "REVIEW"].includes(w.state)) {
-          w.context.resume = w.context.pendingStage.stage;
-          w.context.lastFailure = "The daemon restarted before the workflow could record the completed agent stage.";
-          this.store.transition(w, "FAILED");
-          this.store.post(w.issue_number,failureMarkdown(this.store,w,w.context.lastFailure));
-          this.store.event("stage.interrupted", w.context.pendingStage, w.id);
-        }
-      }
-    })();
-    return rows.length;
-  }
 }
-export function assertRetrySafe(store: Store, workItemId: string) {
+export function assertExecutionStopped(store: Store, workItemId: string) {
   if (store.db.prepare("SELECT id FROM executions WHERE work_item_id=? AND status='running'").get(workItemId)) throw new Error("Wait for the active process to stop before retry");
   const pending = store.db.prepare("SELECT id,pid FROM executions WHERE work_item_id=? AND recovery_pending=1").all(workItemId) as { id: string; pid: number | null }[];
   for (const run of pending) {
@@ -130,7 +102,7 @@ export function assertRetrySafe(store: Store, workItemId: string) {
         store.db.prepare("UPDATE executions SET recovery_pending=0 WHERE id=?").run(run.id);
         continue;
       }
-      throw new Error(`Interrupted run ${run.id} still has a live process group; wait for supervisor cleanup before retry. Legacy runs may require inspection.`);
+      throw new Error(`Interrupted run ${run.id} still has a live process group; wait for supervisor cleanup before retry.`);
     }
     store.db.prepare("UPDATE executions SET recovery_pending=0 WHERE id=?").run(run.id);
   }

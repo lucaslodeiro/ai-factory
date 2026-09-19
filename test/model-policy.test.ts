@@ -16,7 +16,7 @@ test("balanced policy selects profiles by approved complexity, risk and independ
   assert.equal(selectModel(role, assessment("low", "high")).profile, "strong");
  }
 });
-test("initial assessment is balanced; legacy delivery and corrections are conservative", () => {
+test("initial assessment is balanced; missing assessment and corrections are conservative", () => {
  assert.equal(selectModel("product-architect").profile, "balanced");
  assert.equal(selectModel("developer").profile, "strong");
  assert.equal(selectModel("qa").profile, "strong");

@@ -21,7 +21,7 @@ test("concurrent CLI processes initialize a new V3 SQLite database exactly once"
   const s = new Store(filename);
   assert.equal((s.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='opened'").get() as any).n, 4);
   const executionColumns=(s.db.prepare("PRAGMA table_info(executions)").all() as any[]).map(column=>column.name);
-  for(const column of ["recovery_pending","workflow_state","input_tokens","output_tokens","cached_tokens","total_tokens"]) assert.ok(executionColumns.includes(column));
+  for(const column of ["recovery_pending","stage","input_tokens","output_tokens","cached_tokens","total_tokens"]) assert.ok(executionColumns.includes(column));
   s.db.close();
  } finally {
   for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");

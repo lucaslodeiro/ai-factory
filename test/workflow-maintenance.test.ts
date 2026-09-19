@@ -5,7 +5,7 @@ import {WorkflowProjections} from "../src/workflow-projection.js";
 import {WorkflowMaintenance} from "../src/workflow-maintenance.js";
 
 function fixture(running=false){
- const store=new Store(":memory:");store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,created_at,updated_at,context) VALUES('w',7,'owner/repo','SPEC','now','now',?)").run(JSON.stringify({title:"Safe maintenance"}));
+ const store=new Store(":memory:");store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context) VALUES('w',7,'owner/repo','now','now',?)").run(JSON.stringify({title:"Safe maintenance"}));
  const projections=new WorkflowProjections(store);projections.initialize("w","DESIGN","QUEUED");
  let active=false,runId:string|undefined;
  if(running){runId="run";projections.transition({workItemId:"w",expectedRevision:0,stage:"DESIGN",status:"RUNNING",activeRunId:runId,actor:{type:"orchestrator",id:"test"},source:{executionId:runId},reason:{code:"test",summary:"running"}},()=>store.db.prepare("INSERT INTO executions(id,work_item_id,role,status,started_at) VALUES('run','w','product-architect','running',?)").run(new Date().toISOString()));active=true;}

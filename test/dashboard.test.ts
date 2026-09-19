@@ -47,7 +47,7 @@ exit 0
   config.codexCommand=fakeCodex; config.claudeCommand=fakeClaude; process.env.GH_COMMAND=fakeGh;
   fs.writeFileSync(path.join(settingsRoot,"package.json"),JSON.stringify({version:"0.1.0"}));
   fs.copyFileSync(".env.example",path.join(settingsRoot,".env.example"));
-  fs.writeFileSync(path.join(settingsRoot,".env"),"FACTORY_POLL_INTERVAL_MS=15000\nSLACK_WEBHOOK_URL='https://hooks.example.com/private'\nDEVELOPER_MODEL_MODE='manual'\nDEVELOPER_MODEL_BALANCED='custom-codex-model'\nCODEX_MODEL_FAST='retired-model'\n");
+  fs.writeFileSync(path.join(settingsRoot,".env"),"FACTORY_POLL_INTERVAL_MS=15000\nSLACK_WEBHOOK_URL='https://hooks.example.com/private'\nDEVELOPER_MODEL='custom-codex-model'\n");
   fs.mkdirSync(path.join(settingsRoot,"scripts"));
   fs.writeFileSync(path.join(settingsRoot,"scripts","services.sh"),`#!/usr/bin/env bash
 state="$PWD/daemon-service-state"
@@ -72,17 +72,17 @@ echo "$*" >> "$PWD/update-actions.log"
   fs.mkdirSync(serviceLogs,{recursive:true});
   fs.writeFileSync(path.join(serviceLogs,"daemon.log"),Array.from({length:80},(_,index)=>`output-line-${index}`).join("\n")+"\n");
   fs.writeFileSync(path.join(serviceLogs,"daemon.error.log"),"provider temporarily unavailable\nretry scheduled\n");
-  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,created_at,updated_at,context) VALUES(?,?,?,?,?,?,?)")
-    .run("owner-demo-7",7,"owner/demo","FAILED","2026-01-01T00:00:00.000Z","2026-01-02T00:00:00.000Z",JSON.stringify({title:"Repair login",url:"https://github.com/owner/demo/issues/7",version:1,cursor:0,feedback:[],cycles:0,reports:{}}));
-  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,created_at,updated_at,context) VALUES(?,?,?,?,?,?,?)")
-    .run("owner-demo-8",8,"owner/demo","CANCELLED","2026-01-01T00:00:00.000Z","2026-01-02T00:00:00.000Z",JSON.stringify({title:"Closed manually",url:"https://github.com/owner/demo/issues/8",version:1,cursor:0,feedback:[],cycles:0,reports:{},archivedAt:"2026-01-02T00:00:00.000Z",archivedFromState:"DEVELOPMENT"}));
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context) VALUES(?,?,?,?,?,?)")
+    .run("owner-demo-7",7,"owner/demo","2026-01-01T00:00:00.000Z","2026-01-02T00:00:00.000Z",JSON.stringify({title:"Repair login",url:"https://github.com/owner/demo/issues/7"}));
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context) VALUES(?,?,?,?,?,?)")
+    .run("owner-demo-8",8,"owner/demo","2026-01-01T00:00:00.000Z","2026-01-02T00:00:00.000Z",JSON.stringify({title:"Closed manually",url:"https://github.com/owner/demo/issues/8"}));
   store.db.prepare("UPDATE work_items SET stage='TEST',status='FAILED' WHERE id='owner-demo-7'").run();
   store.db.prepare("UPDATE work_items SET stage='BUILD',status='CANCELLED',archived_at='2026-01-02T00:00:00.000Z' WHERE id='owner-demo-8'").run();
-  store.event("github.issue_closed",{issue:8,state:"DEVELOPMENT",visibility:"archived"},"owner-demo-8");
-  store.event("state.changed",{from:"QA",to:"FAILED"},"owner-demo-7");
+  store.event("github.issue_closed",{issue:8,visibility:"archived"},"owner-demo-8");
+  store.event("workflow.transition",{from:{stage:"TEST",status:"RUNNING"},to:{stage:"TEST",status:"FAILED"},reason:{summary:"Tests failed"}},"owner-demo-7");
   store.event("agent.result",{role:"qa",result:{outcome:"pass",summary:"All acceptance criteria passed",coverage:Array(20).fill({status:"passed"})}},"owner-demo-7");
-  store.db.prepare("INSERT INTO executions(id,work_item_id,role,workflow_state,status,started_at,finished_at,exit_code,input_tokens,output_tokens,cached_tokens,total_tokens) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")
-    .run("run-12345678","owner-demo-7","qa","QA","succeeded","2026-01-02T00:00:00.000Z","2026-01-02T00:01:05.000Z",0,1000,250,500,1750);
+  store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,finished_at,exit_code,input_tokens,output_tokens,cached_tokens,total_tokens) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")
+    .run("run-12345678","owner-demo-7","qa","TEST","succeeded","2026-01-02T00:00:00.000Z","2026-01-02T00:01:05.000Z",0,1000,250,500,1750);
   config.dataDir=path.join(settingsRoot,"runtime");fs.mkdirSync(path.join(config.dataDir,"runs","run-12345678"),{recursive:true});fs.writeFileSync(path.join(config.dataDir,"runs","run-12345678","prompt.md"),"sensitive prompt",{mode:0o600});
   store.event("execution.started",{role:"qa",selection:{provider:"claude",model:"sonnet",profile:"balanced"}},"owner-demo-7","run-12345678");
   store.event("execution.finished",{status:"succeeded",code:0,usage:{inputTokens:1000,outputTokens:250,cachedTokens:500,totalTokens:1750}},"owner-demo-7","run-12345678");
@@ -138,10 +138,10 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.deepEqual({issue:snapshot.executions[0].issue,title:snapshot.executions[0].title,role:snapshot.executions[0].role,status:snapshot.executions[0].status,provider:snapshot.executions[0].provider,model:snapshot.executions[0].model,durationMs:snapshot.executions[0].durationMs,totalTokens:snapshot.executions[0].totalTokens},
       {issue:7,title:"Repair login",role:"qa",status:"succeeded",provider:"claude",model:"sonnet",durationMs:65000,totalTokens:1750});
     assert.deepEqual({issue:snapshot.usage[0].issue,runs:snapshot.usage[0].runs,durationMs:snapshot.usage[0].durationMs,totalTokens:snapshot.usage[0].totalTokens,stage:snapshot.usage[0].stages[0].state},
-      {issue:7,runs:1,durationMs:65000,totalTokens:1750,stage:"QA"});
-    const resultEvent=snapshot.events.find((event:any)=>event.type==="agent.result"),stateEvent=snapshot.events.find((event:any)=>event.type==="state.changed"),executionEvent=snapshot.events.find((event:any)=>event.type==="execution.finished");
+      {issue:7,runs:1,durationMs:65000,totalTokens:1750,stage:"TEST"});
+    const resultEvent=snapshot.events.find((event:any)=>event.type==="agent.result"),stateEvent=snapshot.events.find((event:any)=>event.type==="workflow.transition"),executionEvent=snapshot.events.find((event:any)=>event.type==="execution.finished");
     assert.equal(resultEvent.title,"Tester: Passed"); assert.match(resultEvent.details,/All acceptance criteria passed/); assert.match(resultEvent.details,/20\/20 passed/); assert.equal(resultEvent.severity,"success");
-    assert.equal(stateEvent.title,"Workflow moved to Failed"); assert.equal(stateEvent.details,"Previous stage: Test."); assert.equal(stateEvent.severity,"error");
+    assert.equal(stateEvent.title,"Workflow moved to Test · Failed"); assert.match(stateEvent.details,/Previous: Test · Running/); assert.equal(stateEvent.severity,"error");
     assert.match(executionEvent.details,/Tokens reported: 1,750/);
     const promptDenied=await fetch(`http://127.0.0.1:${port}/api/executions/run-12345678/prompt`,{method:"POST",headers:{"content-type":"application/json"},body:"{}"});assert.equal(promptDenied.status,400);const prompt=await fetch(`http://127.0.0.1:${port}/api/executions/run-12345678/prompt`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({acknowledgeSensitive:true})}).then(response=>response.json()) as any;assert.equal(prompt.prompt,"sensitive prompt");assert.match(prompt.warning,/Sensitive/);
     assert.equal(resultEvent.issueTitle,"Repair login"); assert.equal(resultEvent.issueUrl,"https://github.com/owner/demo/issues/7");
@@ -182,10 +182,6 @@ echo "$*" >> "$PWD/update-actions.log"
     const startIssue = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"start-issue",target:"#19"})});
     assert.equal(startIssue.status,202);
     assert.deepEqual(store.db.prepare("SELECT kind,target FROM controls WHERE kind='start-issue'").get(),{kind:"start-issue",target:"#19"});
-    store.event("github.issue_reconciled",{changedFields:["title"],state:"FAILED"},"owner-demo-7");
-    refreshSnapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
-    assert.equal(refreshSnapshot.events[0].title,"Issue metadata reconciled");
-    assert.equal(refreshSnapshot.events[0].details,"Updated title; workflow remains Failed.");
     fs.mkdirSync(path.join(settingsRoot,".factory"),{recursive:true});
     fs.writeFileSync(path.join(settingsRoot,".factory","update-state.json"),JSON.stringify({status:"updating",phase:"stale",pid:process.pid,startedAt:"2026-01-01T00:00:00.000Z"}));
     const staleUpdate = await fetch(`http://127.0.0.1:${port}/api/services`).then(response => response.json()) as any;
@@ -284,7 +280,6 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^SLACK_WEBHOOK_URL='https:\/\/hooks\.example\.com\/private'$/m);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^DEVELOPER_PROVIDER='claude'$/m);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^DEVELOPER_MODEL='auto'$/m);
-    assert.doesNotMatch(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/DEVELOPER_MODEL_(MODE|BALANCED)|CODEX_MODEL_FAST/);
     assert.ok(fs.readdirSync(settingsRoot).some(file => file.startsWith(".env.backup-")));
     const serviceActionsBeforeInvalid = fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8");
     const invalid = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_DASHBOARD_PORT:"70000"}})});

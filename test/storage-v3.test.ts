@@ -7,11 +7,11 @@ import Database from "better-sqlite3";
 import { Store, schemaVersion } from "../src/storage.js";
 
 function insertItem(store: Store,id="work-1") {
- store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,created_at,updated_at,context) VALUES(?,?,?,?,?,?,?)")
-  .run(id,1,"owner/demo","SPEC","now","now",JSON.stringify({title:"Demo",body:"",url:"",version:0,cursor:0,feedback:[],cycles:0,reports:{}}));
+ store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context) VALUES(?,?,?,?,?,?)")
+  .run(id,1,"owner/demo","now","now",JSON.stringify({title:"Demo",body:"",url:""}));
 }
 
-test("a fresh V3 database enables foreign keys and creates projection storage", () => {
+test("a fresh completed-V3 database enables foreign keys and creates only projection storage", () => {
  const store=new Store(":memory:");
  try {
   assert.equal(store.db.pragma("foreign_keys",{simple:true}),1);
@@ -20,6 +20,7 @@ test("a fresh V3 database enables foreign keys and creates projection storage", 
    assert.ok(store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table));
   }
   const columns=new Set((store.db.prepare("PRAGMA table_info(work_items)").all() as Array<{name:string}>).map(column=>column.name));
+  assert.equal(columns.has("state"),false);
   for (const column of ["stage","status","attempt","revision","presentation_revision","published_presentation_revision","active_run_id","active_request_id","active_failure_id","correction_cycles","archived_at"]) assert.ok(columns.has(column),column);
   const executionColumns=new Set((store.db.prepare("PRAGMA table_info(executions)").all() as Array<{name:string}>).map(column=>column.name));
   for (const column of ["prompt_bytes","prompt_sha256","interruption_reason","maintenance_id"]) assert.ok(executionColumns.has(column),column);
@@ -56,7 +57,7 @@ test("an unversioned existing database is rejected without mutation",()=>{
  const unsupported=new Database(file);
  unsupported.exec("CREATE TABLE work_items(id TEXT PRIMARY KEY, payload TEXT); INSERT INTO work_items VALUES('old','preserve me')");
  unsupported.close();
- assert.throws(()=>new Store(file),/V3 requires a fresh data directory/);
+ assert.throws(()=>new Store(file),/completed V3 runtime requires a fresh data directory/);
  const inspected=new Database(file,{readonly:true});
  try {
   assert.deepEqual(inspected.prepare("SELECT * FROM work_items").all(),[{id:"old",payload:"preserve me"}]);

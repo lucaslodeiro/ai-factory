@@ -3,12 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { config } from "./config.js";
 import type { Store } from "./storage.js";
-import type { AgentRole, WorkItem, WorkState } from "./types.js";
-import { roleShortName, stateName } from "./names.js";
+import type { AgentRole } from "./types.js";
+import { roleShortName } from "./names.js";
 import type { WorkflowFailure } from "./workflow-failures.js";
-
-const stageRoles: Partial<Record<WorkState,AgentRole>> = { SPEC:"product-architect",DEVELOPMENT:"developer",QA:"qa",REVIEW:"reviewer" };
-const stageLabel = (state: WorkState) => stateName(state);
 
 export function sanitizeFailureEvidence(value: unknown, limit = 4000) {
   let text=String(value ?? "")
@@ -138,30 +135,6 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
     `**Evidence:** ${reason.replace(/\s+/g," ")}`,
     "**Recommended action:** Inspect the evidence below and daemon logs, add clarifying guidance to the retry comment if needed, then retry the saved stage.",
   ].join("\n\n");
-}
-
-export function failureMarkdown(store: Store, w: WorkItem, error: unknown) {
-  const stage=w.context.resume ?? w.context.pendingStage?.stage ?? w.state;
-  const expectedRole=stageRoles[stage];
-  const latest=store.db.prepare("SELECT id,role,status,started_at,finished_at,exit_code FROM executions WHERE work_item_id=? ORDER BY started_at DESC LIMIT 1").get(w.id) as {id:string;role:AgentRole;status:string;started_at:string;finished_at:string|null;exit_code:number|null} | undefined;
-  const run=latest && (!expectedRole || latest.role===expectedRole) ? latest : undefined;
-  const selectionRow=run ? store.db.prepare("SELECT payload FROM events WHERE run_id=? AND type='execution.started' ORDER BY id DESC LIMIT 1").get(run.id) as {payload:string} | undefined : undefined;
-  let selection: {selection?:{provider?:string;model?:string}} = {};
-  try { selection=JSON.parse(selectionRow?.payload ?? "{}"); } catch {}
-  const stderr=run && path.basename(run.id)===run.id ? failureLogTail(path.join(config.dataDir,"runs",run.id,"stderr.log")) : "";
-  const reason=sanitizeFailureEvidence(error,1600) || "The workflow stopped without an error message.";
-  const analysis=failureDiagnosis(reason,stderr,run);
-  const facts=[`**Stage:** ${stageLabel(stage)}`];
-  if (run) {
-    facts.push(`**Agent:** ${roleShortName(run.role)}`);
-    if (selection.selection?.provider || selection.selection?.model) facts.push(`**Provider / model:** ${[selection.selection.provider,selection.selection.model].filter(Boolean).join(" · ")}`);
-    facts.push(`**Execution:** \`${run.id}\``);
-    facts.push(`**Process result:** ${run.status}${run.exit_code === null ? "" : ` · exit ${run.exit_code}`}`);
-  }
-  const troubleshooting=stderr
-    ? `\n\n<details>\n<summary>Last ${Math.min(30,stderr.split("\n").length)} stderr lines</summary>\n\n\`\`\`text\n${stderr}\n\`\`\`\n\n</details>`
-    : `\n\n_No stderr output was available. Use **Daemon logs** in the dashboard for additional context._`;
-  return `## Execution failed\n\n${facts.join("  \n")}\n\n### What happened\n\n${reason}\n\n### Troubleshooting\n\n#### Diagnosis\n\n${analysis}${troubleshooting}\n\n### Next actions\n\nCorrect the reported cause, then choose one retry option.\n\n**From this GitHub issue**\n\n\`\`\`text\n/factory retry\n\`\`\`\n\nYou may add guidance for the next agent above or below the command.\n\n**From the dashboard**\n\n> Open this issue and select **Retry**.\n\n**From the factory terminal**\n\n\`\`\`bash\nnpm run factory -- retry ${w.id}\n\`\`\``;
 }
 
 export function workflowFailureEvidence(store:Store,failure:WorkflowFailure) {

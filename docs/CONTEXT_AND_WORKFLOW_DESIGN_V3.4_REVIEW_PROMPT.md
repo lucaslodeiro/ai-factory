@@ -39,7 +39,7 @@ Determine whether V3.4 remains internally consistent, implementable and safe. In
    - label and marker consistency for newly created V3 work items.
 
 5. **Clean cutover**
-   - fresh databases are marked version 3 only after schema creation succeeds;
+   - fresh databases are marked version 4 only after schema creation succeeds;
    - older or unversioned databases are rejected before mutation;
    - the error gives the supported uninstall or empty-data-directory recovery path;
    - no importer, dual-read or legacy fallback remains.

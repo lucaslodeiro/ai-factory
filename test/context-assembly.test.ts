@@ -6,7 +6,7 @@ import { WorkflowRecords } from "../src/workflow-records.js";
 
 function setup() {
   const store=new Store(":memory:");
-  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,created_at,updated_at,context) VALUES('work-1',1,'owner/demo','QA','now','now',?)").run(JSON.stringify({title:"Issue",body:"Body",url:"https://example.test/1",version:1,cursor:0,feedback:[],cycles:0,reports:{}}));
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context) VALUES('work-1',1,'owner/demo','now','now',?)").run(JSON.stringify({title:"Issue",body:"Body",url:"https://example.test/1",version:1,cursor:0,feedback:[],cycles:0,reports:{}}));
   store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment) VALUES('work-1',1,'Build it',?,?)").run(JSON.stringify([{id:"AC-1",description:"works"}]),JSON.stringify({complexity:"low",risk:"low",rationale:"small"}));
   return {store,records:new WorkflowRecords(store),assembler:new ContextAssembler(store)};
 }

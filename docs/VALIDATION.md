@@ -2,7 +2,7 @@
 
 ## Automated checks
 
-`npm run build` and `npm test` pass on macOS with Node 26.4.0. The current suite has 148 passing tests, zero failures and zero skips. Shell syntax validation passes for every `scripts/*.sh`; the isolated configuration, dashboard-address, maintenance/update, no-Homebrew installer and uninstall scenarios also pass. `shellcheck` was not installed on the validation host.
+`npm run build` and `npm test` pass on macOS with Node 26.4.0. The current suite has 95 passing tests, zero failures and zero skips. Shell syntax validation passes for every `scripts/*.sh`; the isolated configuration, dashboard-address, maintenance/update, no-Homebrew installer and uninstall scenarios also pass. `shellcheck` was not installed on the validation host.
 
 A Node 22/Linux GitHub Actions template is provided in `docs/ci.example.yml`. It is not activated: the current GitHub OAuth credential lacks the workflow scope, and GitHub rejected a push containing `.github/workflows/ci.yml`. Copy the template there using a credential permitted to manage workflows when ready.
 
@@ -14,7 +14,7 @@ The automated suite covers:
 - Closed-issue exclusion/reopen behavior, idempotent GitHub projection, sanitized human-readable failure diagnosis and retry guidance, plus durable Slack delivery independent from GitHub availability.
 - Bounded repository Check, Sync, Publish, Clear and Restore behavior, including dirty/diverged/protected-branch and unsafe-path refusal.
 
-- Full foreground daemon with real SQLite, separate CLI control processes, real Git worktrees and a local bare remote. Deterministic provider executables consume the actual adapter arguments and stdin; a GitHub executable fixture supplies issues/comments and records the PR. The test approves a version, starts Implementation Engineer, checks status without recovery side effects, cancels, retries, runs Verification Engineer/Delivery Reviewer, publishes a branch and verifies READY_TO_MERGE, then stops the daemon.
+- Full foreground daemon with real SQLite, separate CLI control processes, real Git worktrees and a local bare remote. Deterministic provider executables consume the actual adapter arguments and stdin; a GitHub executable fixture supplies issues/comments and records the PR. The test approves a version, starts Implementation Engineer, checks status without recovery side effects, cancels, retries, runs Verification Engineer/Delivery Reviewer, publishes a branch and verifies Delivery/Waiting, then stops the daemon.
 - Native Claude/Codex output envelopes, role-specific generation schemas and local validation. Read-only Delivery Reviewer receives attributed Verification Engineer execution evidence without Implementation Engineer reasoning or Verification Engineer summary conclusions.
 - Per-role provider/model routing in `direct-v1`, including direct model selection, `auto` argument omission for both adapters, and an end-to-end run with every role assigned to the opposite provider from its default (Codex Architect/Delivery Reviewer and Claude Implementation Engineer/Verification Engineer). Claude delivery roles receive editing tools while provider-independent worktree checks preserve read-only and Verification Engineer boundaries.
 - Invalid/stale/unauthorized/bot approvals and question/answer loops.
@@ -29,7 +29,7 @@ The automated suite covers:
 - Simultaneous SQLite migrations from four independent processes.
 - Single-daemon lock, environment filtering, Verification Engineer file restrictions and branch publication restrictions.
 - Assigned-branch checks before agent execution and commits, including same-commit branch switches and detached HEAD. Real Git regression cases preserve raw Unicode/newline/tab/space filenames and reject renaming production files into test paths during Verification Engineer.
-- Transient GitHub comment-read failures preserve WAITING_HUMAN and its approval cursor; polling recovers without a manual retry or another agent invocation.
+- Transient GitHub comment-read failures preserve Design/Waiting and its approval cursor; polling recovers without a manual retry or another agent invocation.
 - Dashboard-first installation creates a private default `.env`, accepts a loopback host and port, selects the next available port when occupied, installs both service definitions, starts only the dashboard and opens the effective first-time setup URL. Every setting with a safe universal value has a displayed default; authenticated GitHub identity supplies editable defaults for the otherwise unknown target repository, clone and approver. Dashboard saves validate before service changes, restart affected running services, preserve stopped services, and leave service state untouched on invalid input. Update preserves configuration without invoking the supported terminal recovery wizard.
 - Uninstall removes both factory service definitions, the installation checkout and internal or marked external runtime data while preserving the target repository and shared tools. Unsafe removal roots are rejected.
 

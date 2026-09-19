@@ -55,7 +55,7 @@ export class ContextAssembler {
 
   assemble(input:ContextAssemblyInput):AssembledContext {
     if (!Number.isSafeInteger(input.budgetBytes) || input.budgetBytes < 1) throw new Error("Context budget must be a positive integer");
-    const item=this.store.get(input.workItemId);
+    const item=this.store.db.prepare("SELECT id FROM work_items WHERE id=?").get(input.workItemId);
     if (!item) throw new Error("Unknown work item");
     const spec=this.store.db.prepare("SELECT body,criteria,assessment FROM specs WHERE work_item_id=? AND version=?").get(input.workItemId,input.specVersion) as SpecRow|undefined;
     if (input.role !== "product-architect" && !spec) throw new InvalidContextError(`Approved SPEC v${input.specVersion} is unavailable`);

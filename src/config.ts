@@ -41,9 +41,7 @@ function contextBudgetOverrides() {
 }
 function role(prefix: string, fallback: "codex" | "claude", fallbackModel: string) {
   const selected = provider(`${prefix}_PROVIDER`,fallback);
-  const legacy = process.env[`${prefix}_MODEL_MODE`] === "auto" ? "auto"
-    : process.env[`${prefix}_MODEL_BALANCED`] ?? process.env[`${selected.toUpperCase()}_MODEL_BALANCED`] ?? fallbackModel;
-  return { provider:selected,model:model(`${prefix}_MODEL`,legacy) };
+  return { provider:selected,model:model(`${prefix}_MODEL`,fallbackModel) };
 }
 export const config = {
   roles: {

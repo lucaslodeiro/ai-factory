@@ -2,33 +2,11 @@ import path from "node:path";
 import { config } from "./config.js";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { AgentProvider, AgentRole, WorkItem } from "./types.js";
-import { allowedTacticalNextRoles, deliveryStageName } from "./tactical-routing.js";
+import type { AgentProvider, AgentRole } from "./types.js";
+import { deliveryStageName } from "./tactical-routing.js";
 import type { TacticalNextRole } from "./tactical-routing.js";
 const root = new URL("../", import.meta.url);
 const read = (p: string) => fs.readFileSync(fileURLToPath(new URL(p, root)), "utf8");
-function conciseFeedback(entries: string[]) {
-  const compact=entries.slice(-20).map(entry => {
-    if (entry.length <= 4000) return entry;
-    const split=entry.indexOf(": {");
-    if (split < 0) return entry.slice(0,4000);
-    try {
-      const label=entry.slice(0,split);
-      const report=JSON.parse(entry.slice(split+2)) as {summary?:string;findings?:Array<{classification?:string;evidence?:string}>;decisions?:Array<{decision?:string;rationale?:string}>};
-      return [
-        `${label}: ${(report.summary ?? "Delivery feedback").slice(0,1500)}`,
-        ...(report.findings ?? []).map(f=>`Finding (${f.classification ?? "unspecified"}): ${(f.evidence ?? "").slice(0,1000)}`),
-        ...(report.decisions ?? []).map(d=>`Decision: ${(d.decision ?? "").slice(0,700)}${d.rationale ? ` — ${d.rationale.slice(0,700)}` : ""}`),
-      ].join("\n").slice(0,4000);
-    } catch { return entry.slice(0,4000); }
-  });
-  let total=0;
-  return compact.reverse().filter(entry => {
-    if (total + entry.length > 24000) return false;
-    total += entry.length;
-    return true;
-  }).reverse();
-}
 export interface PromptContractOptions {architecturalReview?:boolean;tacticalRoute?:{from:import("./types.js").DeliveryStage;allowedNextRoles:TacticalNextRole[]};}
 export function promptContractParts(role:AgentRole,selectedProvider:AgentProvider,options:PromptContractOptions={}) {
   const provider = selectedProvider === "codex" ? "codex/AGENTS.md" : "claude/CLAUDE.md";
@@ -54,29 +32,3 @@ export function promptContractParts(role:AgentRole,selectedProvider:AgentProvide
   return {prefix,roleContract};
 }
 export function promptContract(role:AgentRole,selectedProvider:AgentProvider,options:PromptContractOptions={}) {const parts=promptContractParts(role,selectedProvider,options);return `${parts.prefix}\n\n${parts.roleContract}`;}
-export function promptParts(w: WorkItem, role: AgentRole, selectedProvider: AgentProvider) {
-  const legacyRetryGuidance=[...w.context.feedback].reverse().find(item=>item.includes(" retry guidance: "));
-  const retryGuidance=w.context.retryGuidance?.text ?? legacyRetryGuidance?.split(" retry guidance: ").slice(1).join(" retry guidance: ");
-  const retrySource=w.context.retryGuidance ? `@${w.context.retryGuidance.login} in GitHub comment ${w.context.retryGuidance.commentId}` : "an authorized human retry comment";
-  const tacticalRoute = role === "product-architect" && w.context.consultation
-    ? { from: w.context.consultation.from, allowedNextRoles: allowedTacticalNextRoles(w.context.consultation.from) }
-    : undefined;
-  const {prefix,roleContract}=promptContractParts(role,selectedProvider,{architecturalReview:Boolean(w.context.architectDraft),tacticalRoute});
-  const dynamic=[JSON.stringify({ issue: { title: w.context.title, body: w.context.body }, spec: w.context.spec, version: w.context.version,
-      taskAssessment: w.context.taskAssessment, acceptanceCriteria: w.context.criteria, approvedVersion: w.context.approvedVersion, decisions: w.context.decisions ?? [],
-      qaExecutionEvidence: role === "reviewer" && w.context.reports.qa?.outcome === "pass"
-        ? { source: "Tester report for current approved delivery", tests: w.context.reports.qa.tests, coverage: w.context.reports.qa.coverage } : undefined,
-      unapprovedArchitectDraft: role === "product-architect" ? w.context.architectDraft : undefined,
-      consultation: tacticalRoute,
-      feedback: role === "qa" || role === "reviewer" ? [] : conciseFeedback(w.context.feedback),
-      recovery: w.context.pendingStage ? "Previous attempt did not complete this workflow stage; inspect retained changes and verify everything again. Do not assume prior success." : undefined,
-      approval: w.context.approval }, null, 2),
-    retryGuidance
-      ? `HUMAN RETRY GUIDANCE — REQUIRED FOR THIS DELIVERY\nSource: ${retrySource}\n\n${retryGuidance}\n\nFollow this instruction in this and every remaining delivery stage when it is compatible with the approved specification. It takes precedence over suggestions and deferred findings from earlier agents. Do not perform an action the human explicitly prohibited. If the instruction cannot be followed or conflicts with the approved specification, return a decision outcome with an actionable decision-required finding instead of silently ignoring it.`
-      : ""].filter(Boolean).join("\n\n");
-  return {prefix,roleContract,dynamic};
-}
-export function prompt(w: WorkItem, role: AgentRole, selectedProvider: AgentProvider) {
-  const parts=promptParts(w,role,selectedProvider);
-  return [parts.prefix,parts.roleContract,parts.dynamic].filter(Boolean).join("\n\n");
-}

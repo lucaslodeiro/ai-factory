@@ -8,7 +8,7 @@ import { workflowProjectionProblems } from "../src/workflow-doctor.js";
 
 function setup() {
  const store=new Store(":memory:");
- store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,created_at,updated_at,context) VALUES('work-1',1,'owner/demo','SPEC','now','now','{}')").run();
+ store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context) VALUES('work-1',1,'owner/demo','now','now','{}')").run();
  return store;
 }
 

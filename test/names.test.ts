@@ -12,6 +12,6 @@ test("agent names consistently expose full role, short name and workflow stage",
   assert.equal(roleFullName("developer"),"Implementation Engineer");
   assert.equal(roleShortName("qa"),"Tester");
   assert.equal(roleStageName("reviewer"),"Review");
-  assert.equal(stateName("DEVELOPMENT"),"Build");
-  assert.equal(stateName("QA"),"Test");
+  assert.equal(stateName("BUILD"),"Build");
+  assert.equal(stateName("TEST"),"Test");
 });

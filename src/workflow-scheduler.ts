@@ -22,7 +22,7 @@ export class WorkflowScheduler {
   if(blocked)throw new Error("Confirmed maintenance prevents new agent execution");
   const id=randomUUID(),startedAt=new Date().toISOString();
   const projection=this.projections.transition({workItemId,expectedRevision:current.revision,stage:current.stage,status:"RUNNING",activeRunId:id,actor:{type:"orchestrator",id:"scheduler"},source:{executionId:id},reason:{code:"execution-started",summary:`${role} execution started`}},()=>{
-   this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,workflow_state,status,started_at) VALUES(?,?,?,?,?,?)").run(id,workItemId,role,current.stage,"running",startedAt);
+   this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at) VALUES(?,?,?,?,?,?)").run(id,workItemId,role,current.stage,"running",startedAt);
   });
   return {executionId:id,role,projection};
  }

@@ -12,7 +12,7 @@ import type { V3Stage } from "../src/workflow-records.js";
 
 function setup(stage:V3Stage="DESIGN",approved=false) {
  const store=new Store(":memory:");
- store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,created_at,updated_at,context) VALUES('work-1',1,'owner/demo','SPEC','now','now',?)").run(JSON.stringify({title:"Demo",body:"Build it",cursor:5}));
+ store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context) VALUES('work-1',1,'owner/demo','now','now',?)").run(JSON.stringify({title:"Demo",body:"Build it",cursor:5}));
  if(approved)store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment,approved_by,approval_comment_id,approved_at) VALUES('work-1',1,'SPEC',?,?, 'owner',4,'now')").run(JSON.stringify([{id:"AC1",description:"Returns 42"}]),JSON.stringify({complexity:"medium",risk:"low",rationale:"standard"}));
  const projections=new WorkflowProjections(store);projections.initialize("work-1",stage,"QUEUED");
  return {store,projections,records:new WorkflowRecords(store),results:new WorkflowResults(store)};

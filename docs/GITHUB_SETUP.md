@@ -1,39 +1,30 @@
 # GitHub setup
 
-Authenticate `gh` with issue, content and pull-request write access to the target repository. Run `npm run configure` and set `GITHUB_REPOSITORY`, `FACTORY_REPO_DIR`, `GITHUB_DEFAULT_BRANCH` and `FACTORY_APPROVERS`. The wizard uses existing `.env` values as defaults and installation defaults for missing settings. Run it only while the daemon is stopped, then validate with `npm run factory -- doctor`.
+Authenticate `gh` with issue, content and pull-request write access to the target repository. Configure `GITHUB_REPOSITORY`, `FACTORY_REPO_DIR`, `GITHUB_DEFAULT_BRANCH` and `FACTORY_APPROVERS` in the dashboard, then validate them with Doctor. The terminal configurator remains available as a recovery path with `npm run configure`.
 
-Create an open issue and post `/factory start` as a new standalone comment from a login listed in `FACTORY_APPROVERS`. The daemon reads the repository-wide recent-comment stream, validates the human approver, fetches the issue and creates the work item exactly once. Quoted commands, edited comments, bots and unauthorized users do not start work. The dashboard and `ai-factory start-issue <number-or-url>` provide equivalent explicit entry points.
+Create an open issue and post `/factory start` as a new standalone comment from a login listed in `FACTORY_APPROVERS`. The daemon validates the approver, fetches the issue and creates the work item exactly once. Quoted commands, edited comments, bots, closed issues and unauthorized users do not start work. The dashboard and `ai-factory start-issue <number-or-url>` provide equivalent explicit entry points.
 
-Workflow labels are outputs of the orchestrator. They are created and changed automatically after an explicit start command; users do not need to create or administer labels. An obsolete `factory:queued` label is removed if encountered while synchronizing an already tracked issue, but it never starts work.
+Workflow labels are projections created and changed automatically. Users never need to create or move them manually. The V4 runtime has no legacy label intake or compatibility behavior.
 
-Use `/factory answer <text>` and `/factory approve vN` as standalone comments from a configured human approver. For an item in FAILED, PAUSED or CANCELLED, post a new standalone `/factory retry` comment to resume its saved stage. The same configured-approver, human-account and one-time cursor checks apply; quoted commands and edits to an already-read comment do not execute. A label is not a start, approval or retry command. Spec versions and command comment IDs are audited in SQLite. Comments are read with pagination. GitHub outage delivery is retried using hidden idempotency markers; SQLite remains authoritative.
+Use `/factory answer <text>` and `/factory approve vN` as standalone comments from a configured approver. For a failed, paused or cancelled item, post `/factory retry` to resume the preserved stage. A label is never a start, approval or retry command. Commands, spec versions and comment IDs are audited in SQLite.
 
-The daemon reads new comments during normal polling; no manual per-issue refresh is required. **Refresh issue list** is a global reconciliation tool for discovering missing managed issues, updating title/body/URL metadata and moving each issue's saved position to its newest comment. It deliberately skips older unread comments and evaluates only the newest comment when it is valid for the current state (`answer`/`approve` while waiting for a person or `retry` while stopped). It does not replay completed work.
+The daemon reads new comments during normal polling. **Refresh issue list** is a global reconciliation tool for recovering missing managed issues, updating issue metadata and advancing each saved cursor to the newest comment. It evaluates only that newest comment when it is valid for the current state and never replays completed work.
 
-The final PR includes the approved spec, Test/Review evidence and deferred findings. Merge is always performed by a human.
+The delivered pull request contains `Closes #N`, the approved specification and Review evidence. A human performs the merge; GitHub closes the issue after that merge.
 
 ## Visible workflow state
 
-GitHub issue Open/Closed tracks whether the work is still outstanding. The issue stays open through Design, Build, Test, Review and ready-to-merge. The delivered PR includes `Closes #N`; GitHub closes the issue when that PR merges into the default branch. The orchestrator polls delivered PRs: a confirmed merge records MERGED, merge time and commit; a closed unmerged PR records PR_CLOSED; reopening restores READY_TO_MERGE. These updates never execute agents or merge anything. GitHub outages retain the previous state for a later retry.
+The status model is the product of a stage and a condition:
 
-Workflow progress is mirrored in a colored label and one updatable **AI Factory** status comment with milestones and the next human action:
+| Dimension | Values |
+|---|---|
+| Stage | Design, Build, Test, Review, Delivery |
+| Condition | Queued, Running, Waiting for you, Failed, Paused, Cancelled, Completed |
 
-| Orchestrator | Label | Meaning |
-|---|---|---|
-| SPEC | factory:spec | Design · Architect prepares the specification |
-| WAITING_HUMAN | factory:waiting-human | Approval or answer needed |
-| DEVELOPMENT | factory:development | Build · Builder implements the approved specification |
-| QA | factory:qa | Test · Tester verifies the acceptance criteria |
-| REVIEW | factory:review | Review · Reviewer inspects delivery evidence |
-| READY_TO_MERGE | factory:ready-to-merge | Human merge pending |
-| MERGED | factory:merged | GitHub confirmed completed delivery |
-| PR_CLOSED | factory:pr-closed | Closed without integration; can be reopened |
-| FAILED | factory:failed | Inspect and retry |
-| PAUSED | factory:paused | Paused |
-| CANCELLED | factory:cancelled | Cancelled |
+The factory projects the current stage as `factory:design`, `factory:build`, `factory:test`, `factory:review` or `factory:delivery`. Waiting, failed, paused and cancelled add a second condition label. Completion replaces them with `factory:done`.
 
-Only known workflow labels are replaced; unrelated labels, including other `factory:*` labels, remain intact. The progress comment is updated only when its content changes. During GitHub outages, the next daemon flush retries reconciliation from SQLite. This does not create or manage a GitHub Projects board.
+One updatable **AI Factory** issue comment contains the stage, condition, current actor, approved spec version, attempt, active request, failure summary, active human instructions and recent transition history. It ends with exactly one authoritative next-action section. Presentation delivery is idempotent and is retried after GitHub outages; SQLite remains authoritative.
 
-Spec and role reports are Markdown with summaries, findings, and expandable criteria/test/review evidence. Long evidence is abbreviated for readability (up to 20 rows per section); the complete structured report remains in SQLite and execution logs. Human commands remain standalone new comments. Formatting changes to an existing generated spec do not change the approved version or overwrite human approval comments.
+Only managed workflow labels are replaced. Unrelated labels remain intact. Generated specs and role reports use readable Markdown with expandable evidence while full structured results remain in SQLite and execution logs.
 
-Lifecycle reconciliation runs during normal daemon polling. With the daemon stopped, run `npm run factory -- sync` to reconcile PR state and publish pending status/reports without authenticating or running agent providers. It uses the same singleton lock and refuses to race an active daemon. MERGED is terminal; ordinary retry cannot restart it.
+Lifecycle reconciliation runs during normal polling. A manually closed issue disappears from factory operation. Reopening it restores a paused item without processing comments written while it was closed. With the daemon stopped, `npm run factory -- sync` reconciles pending GitHub projections without invoking an agent and refuses to race an active daemon.
