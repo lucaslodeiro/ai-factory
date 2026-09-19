@@ -8,7 +8,7 @@ type Field = { key: string; label: string; description: string; group: string; s
 
 const groups = [
   {id:"credentials",label:"Credentials",description:"Authentication for the services used by the factory."},
-  {id:"project",label:"Project & GitHub",description:"Repository, checkout and delivery workflow."},
+  {id:"project",label:"Project",description:"Repository connector, checkout and delivery workflow."},
   {id:"runtime",label:"Runtime",description:"Storage, polling and execution limits."},
   {id:"dashboard",label:"Dashboard",description:"Local administration server."},
   {id:"models",label:"Agent roles",description:"Provider and direct model selection for every factory role."},

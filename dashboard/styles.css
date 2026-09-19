@@ -23,7 +23,6 @@ h3 { font-size:.8rem; text-transform:uppercase; letter-spacing:.12em; color:var(
 .brand-github,.brand-openai { filter:invert(1) }
 html[data-theme="light"] .brand-github,html[data-theme="light"] .brand-openai { filter:none }
 .brand-label,.brand-link,.brand-category,.brand-fact { display:inline-flex; align-items:center; gap:.4rem }
-.brand-cluster { display:inline-flex; align-items:center; gap:.3rem }
 .brand-link { min-width:0 }
 #repository { display:flex; align-items:center; gap:.45rem; margin-top:.25rem }
 .eyebrow { color:var(--accent); font:700 .72rem ui-monospace,SFMono-Regular,monospace; letter-spacing:.16em; margin-bottom:.55rem }
@@ -130,6 +129,7 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .event-entry .entry-head strong { font-size:.82rem; line-height:1.35 }
 .event-entry time { flex:none; color:var(--muted); font-size:.68rem }
 .event-entry p { margin-top:.6rem; color:var(--text) }
+.event-entry p.brand-event-detail { display:flex; align-items:center; gap:.45rem }
 .event-context { margin-top:.6rem; color:var(--muted); font-size:.68rem }
 .empty { padding:2rem; color:var(--muted); text-align:center }
 .empty:has(.brand-icon) { display:flex; align-items:center; justify-content:center; gap:.5rem }
@@ -151,12 +151,12 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .settings-navigation button { display:grid; gap:.2rem; width:100%; padding:.7rem .8rem; text-align:left; background:transparent; border-color:transparent }
 .settings-navigation button:hover { background:var(--panel); border-color:var(--line) }
 .settings-navigation button[aria-selected="true"] { color:var(--accent); background:color-mix(in srgb,var(--accent) 9%,var(--panel)); border-color:color-mix(in srgb,var(--accent) 35%,var(--line)) }
-.settings-navigation strong { display:flex; align-items:center; gap:.5rem; font-size:.82rem }
+.settings-navigation strong { font-size:.82rem }
 .settings-navigation small { font-size:.67rem }
 .settings-content { min-width:0 }
 .settings-group[hidden] { display:none }
 .settings-group-title { display:grid; gap:.35rem; margin-bottom:1rem }
-.settings-group-title h3 { display:flex; align-items:center; gap:.55rem; color:var(--text); font-size:1rem; letter-spacing:0; text-transform:none }
+.settings-group-title h3 { color:var(--text); font-size:1rem; letter-spacing:0; text-transform:none }
 .settings-group-title p { color:var(--muted); font-size:.8rem }
 .settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem }
 .credentials-intro { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem; color:var(--muted); font-size:.8rem; line-height:1.45 }
