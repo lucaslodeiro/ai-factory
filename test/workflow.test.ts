@@ -224,7 +224,8 @@ test("authorized retry comment forwards multiline guidance from before or after 
  before.gh.reply("Do not use Chromium for validation.\n\n/factory retry"); await before.o.tick();
  assert.equal(before.item().state,"DEVELOPMENT");
  assert.ok(before.item().context.feedback.includes("owner retry guidance: Do not use Chromium for validation."));
- assert.ok([...before.gh.posted.values()].some(body=>body.includes("accompanying guidance was added")));
+ assert.deepEqual(before.item().context.retryGuidance,{login:"owner",commentId:1,text:"Do not use Chromium for validation."});
+ assert.ok([...before.gh.posted.values()].some(body=>body.includes("### Human guidance applied") && body.includes("> Do not use Chromium for validation.")));
  before.store.db.close();
 
  const after=setup(); await after.o.tick();

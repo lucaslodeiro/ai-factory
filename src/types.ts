@@ -28,6 +28,7 @@ export interface Context {
   approvedVersion?: number; approval?: { login: string; commentId: number };
   cursor: number; waiting?: "questions" | "approval" | "loop";
   feedback: string[]; cycles: number; resume?: WorkState;
+  retryGuidance?: { login: string; commentId: number; text: string };
   lastFailure?: string;
   pendingStage?: { stage: WorkState; beforeHead: string; startedAt: string };
   reports: Partial<Record<AgentRole, AgentResult>>; pr?: string; merge?: { at: string; commit: string | null };

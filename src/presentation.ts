@@ -133,8 +133,9 @@ export function architecturalReviewMarkdown() {
 export function correctionLimitMarkdown() {
  return `## Automatic correction limit reached\n\nThe current implementation, reports and worktree are preserved. Product Architect needs human guidance before replanning the next attempt.\n\n${nextAction(`Post a new comment describing how to proceed:\n\n${commandBox("/factory answer <guidance>")}`)}`;
 }
-export function retryAcceptedMarkdown(login: string, to: string, hasGuidance = false) {
- return `## Retry accepted\n\n@${login} requested a retry. The factory will resume from **${to}**.${hasGuidance ? " The accompanying guidance was added to the next agent's context." : ""}\n\n${noAction("The next execution has been queued and its result will be published here.")}`;
+export function retryAcceptedMarkdown(login: string, to: string, guidance?: string) {
+ const applied=guidance ? `\n\n### Human guidance applied\n\n${guidance.split(/\r?\n/).map(line=>`> ${line}`).join("\n")}` : "";
+ return `## Retry accepted\n\n@${login} requested a retry. The factory will resume from **${to}**.${applied}\n\n${noAction("The next execution has been queued and its result will be published here.")}`;
 }
 export function retryRejectedMarkdown(error: unknown) {
  return `## Retry could not start\n\n${String(error)}\n\n${retryAction("Resolve the reported condition, then post a new comment containing exactly:")}`;

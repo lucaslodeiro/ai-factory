@@ -10,6 +10,9 @@ export function prompt(w: WorkItem, role: AgentRole, selectedProvider: AgentProv
   const template = role === "product-architect" ? "SPEC" : role === "qa" ? "QA_REPORT" : role === "reviewer" ? "REVIEW_REPORT" : null;
   const toolDirs = [path.dirname(process.execPath), ...(path.isAbsolute(config.gitCommand) ? [path.dirname(config.gitCommand)] : [])].join(path.delimiter);
   const shellPrefix = `export PATH='${toolDirs.replaceAll("'", "'\\''") }':"$PATH";`;
+  const legacyRetryGuidance=[...w.context.feedback].reverse().find(item=>item.includes(" retry guidance: "));
+  const retryGuidance=w.context.retryGuidance?.text ?? legacyRetryGuidance?.split(" retry guidance: ").slice(1).join(" retry guidance: ");
+  const retrySource=w.context.retryGuidance ? `@${w.context.retryGuidance.login} in GitHub comment ${w.context.retryGuidance.commentId}` : "an authorized human retry comment";
   return [read(`agents/common/${role}.md`), read(`agents/${provider}`), template ? read(`templates/${template}.md`) : "",
     "Return every field in the JSON schema. A new spec must include taskAssessment with complexity and risk (low/medium/high) plus a concrete rationale; use null in other outcomes. Low complexity means a small localized change with clear behavior; high means broad architecture, difficult algorithms, concurrency or migrations. High risk includes authentication/authorization, secrets, payments, destructive data changes or security boundaries. Unknown scope requires questions or a conservative assessment. Never choose model names; the orchestrator owns model selection. Use empty arrays and null nextRole where inapplicable. A spec needs stable acceptanceCriteria IDs also present in its markdown. Delivery reports need coverage for those exact IDs, executed tests with command/exitCode/evidence, changedFiles and dependencies with rationale. Reviewer must report each review dimension, including evidence for not-applicable. Never claim a test passed without executing it.",
     `Runtime: use Node at ${process.execPath} and Git at ${config.gitCommand}. Login shells can replace PATH: prefix EVERY shell command that uses node/npm/git with ${shellPrefix} Verify node --version before tests.`,
@@ -30,5 +33,8 @@ export function prompt(w: WorkItem, role: AgentRole, selectedProvider: AgentProv
       consultation: role === "product-architect" ? w.context.consultation : undefined,
       feedback: role === "qa" || role === "reviewer" ? [] : w.context.feedback,
       recovery: w.context.pendingStage ? "Previous attempt did not complete this workflow stage; inspect retained changes and verify everything again. Do not assume prior success." : undefined,
-      approval: w.context.approval }, null, 2)].join("\n\n");
+      approval: w.context.approval }, null, 2),
+    retryGuidance
+      ? `HUMAN RETRY GUIDANCE — REQUIRED FOR THIS DELIVERY\nSource: ${retrySource}\n\n${retryGuidance}\n\nFollow this instruction in this and every remaining delivery stage when it is compatible with the approved specification. It takes precedence over suggestions and deferred findings from earlier agents. Do not perform an action the human explicitly prohibited. If the instruction cannot be followed or conflicts with the approved specification, return a decision outcome with an actionable decision-required finding instead of silently ignoring it.`
+      : ""].filter(Boolean).join("\n\n");
 }

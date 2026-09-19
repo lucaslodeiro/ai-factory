@@ -60,7 +60,7 @@ test("actionable lifecycle messages explain preserved work and next steps", () =
  const comments=[
   startedMarkdown(w,"owner","comment"),pausedMarkdown(w,"Daemon stopped",true),cancelledMarkdown(w,false),recoveredMarkdown(w,"factory:review",42),
   readyToMergeMarkdown(w,"def456"),prClosedMarkdown(w),mergedMarkdown(w),architecturalReviewMarkdown(),correctionLimitMarkdown(),
-  retryAcceptedMarkdown("owner","QA"),retryRejectedMarkdown("still running"),pullRequestReopenedMarkdown(w.context.pr!),
+  retryAcceptedMarkdown("owner","QA","Do not use Chromium."),retryRejectedMarkdown("still running"),pullRequestReopenedMarkdown(w.context.pr!),
   tacticalResolutionMarkdown(2,[{kind:"tactical",decision:"Keep the API",rationale:"Approved scope",conflictsWithHuman:false}],"QA"),
  ];
  for (const comment of comments) assert.match(comment,/### Next actions?\n\n[\s\S]+$/);

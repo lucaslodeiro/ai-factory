@@ -143,10 +143,14 @@ export class Orchestrator {
   const guidance=retryGuidance(c.body);
   if (c.user.type !== "User" || !config.approvers.includes(c.user.login) || guidance === null) return false;
   try {
-   if (guidance) { w.context.feedback.push(`${c.user.login} retry guidance: ${guidance}`); this.store.save(w); }
+   if (guidance) {
+    w.context.feedback.push(`${c.user.login} retry guidance: ${guidance}`);
+    w.context.retryGuidance={login:c.user.login,commentId:c.id,text:guidance};
+    this.store.save(w);
+   }
    const to = retry(this.store,w.id);
    this.store.event("retry.comment_accepted",{ login:c.user.login,commentId:c.id,to,guidance:guidance || undefined },w.id);
-   this.store.post(w.issue_number,retryAcceptedMarkdown(c.user.login,retryStageLabel(to),Boolean(guidance)));
+   this.store.post(w.issue_number,retryAcceptedMarkdown(c.user.login,retryStageLabel(to),guidance || undefined));
   } catch (e) {
    this.store.event("retry.comment_rejected",{ login:c.user.login,commentId:c.id,error:String(e) },w.id);
    this.store.post(w.issue_number,retryRejectedMarkdown(e));
