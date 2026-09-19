@@ -83,10 +83,14 @@ export class Orchestrator {
   w.context.body = remote.body;
   w.context.url = remote.url;
   // WAITING_HUMAN evaluates only the newest comment through the normal command
-  // rules. Other states merely align the cursor and never rerun an agent stage.
-  w.context.cursor = w.state === "WAITING_HUMAN" && latest ? comments.at(-2)?.id ?? 0 : latest?.id ?? 0;
+  // rules. Never move a cursor backwards if a previously observed comment was
+  // deleted or omitted by GitHub. Other states only advance to the newest ID.
+  const hasNewLatest = Boolean(latest && latest.id > previousCursor);
+  w.context.cursor = w.state === "WAITING_HUMAN" && hasNewLatest
+   ? Math.max(previousCursor,comments.at(-2)?.id ?? 0)
+   : Math.max(previousCursor,latest?.id ?? 0);
   this.store.save(w);
-  if (w.state === "WAITING_HUMAN" && latest) this.human(w);
+  if (w.state === "WAITING_HUMAN" && hasNewLatest) this.human(w);
   const refreshed = this.store.get(w.id)!;
   this.store.event("github.issue_refreshed",{ previousCursor,cursor:refreshed.context.cursor,latestCommentId:latest?.id ?? null,state:refreshed.state },w.id);
   this.github.syncState(refreshed.issue_number,refreshed.state,progressMarkdown(refreshed));

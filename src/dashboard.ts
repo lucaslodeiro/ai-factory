@@ -47,6 +47,25 @@ function details(payload: string) {
     return text.length > 420 ? `${text.slice(0,417)}…` : text;
   } catch { return payload; }
 }
+function eventDetails(type: string, payload: string) {
+  try {
+    const value = JSON.parse(payload) as { kind?:string; target?:string; error?:string; result?:{found?:number;added?:number;updated?:number}; previousCursor?:number; cursor?:number; latestCommentId?:number | null; state?:string };
+    if (type === "github.issue_refreshed") {
+      const advanced = (value.cursor ?? 0) > (value.previousCursor ?? 0);
+      const state = value.state ? value.state.toLowerCase().replaceAll("_"," ") : "unchanged";
+      return advanced ? `GitHub issue refreshed to the newest comment; workflow remains ${state}.` : `GitHub issue refreshed; no newer comment was found and workflow remains ${state}.`;
+    }
+    if (type === "control.failed") return `${value.kind === "refresh-list" ? "Issue list refresh" : value.kind === "refresh" ? "Issue refresh" : value.kind ?? "Control"} failed: ${value.error ?? "unknown error"}`;
+    if (type === "control.applied") {
+      if (value.kind === "refresh-list") return value.result ? `Issue list refreshed: ${value.result.found ?? 0} found, ${value.result.added ?? 0} added, ${value.result.updated ?? 0} updated.` : "Issue list refreshed successfully.";
+      if (value.kind === "refresh") return "GitHub issue refreshed successfully.";
+      if (value.kind === "retry") return "Retry started successfully.";
+      if (value.kind === "cancel") return "Cancellation applied successfully.";
+      if (value.kind === "stop") return "Stop request applied successfully.";
+    }
+  } catch {}
+  return details(payload);
+}
 function snapshot(store: Store) {
   const items = store.items().slice().reverse().map(item => ({
     id: item.id, issue: item.issue_number, repo: item.repo, state: item.state, title: item.context.title,
@@ -54,7 +73,7 @@ function snapshot(store: Store) {
   }));
   const executions = store.db.prepare("SELECT id,work_item_id,role,status,pid,started_at,finished_at,exit_code FROM executions ORDER BY started_at DESC LIMIT 30").all();
   const events = (store.db.prepare("SELECT id,ts,work_item_id,type,payload FROM events ORDER BY id DESC LIMIT 60").all() as any[])
-    .map(event => ({ id:event.id, ts:event.ts, workItemId:event.work_item_id, type:event.type, details:details(event.payload) }));
+    .map(event => ({ id:event.id, ts:event.ts, workItemId:event.work_item_id, type:event.type, details:eventDetails(event.type,event.payload) }));
   const lastRefresh = store.db.prepare("SELECT id,handled FROM controls WHERE kind='refresh-list' ORDER BY id DESC LIMIT 1").get() as { id:number; handled:number } | undefined;
   let issueRefresh: { status:"queued" | "completed" | "failed"; message:string } | null = null;
   if (lastRefresh) {

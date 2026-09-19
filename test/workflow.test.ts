@@ -92,6 +92,17 @@ test("manual GitHub refresh updates issue data and evaluates only the latest com
  assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='github.issue_refreshed'").get() as any).n,1);
  f.store.db.close();
 });
+test("manual GitHub refresh never rewinds a comment cursor", async () => {
+ const f=setup(); await f.o.tick();
+ const item=f.item(); item.context.cursor=99; f.store.save(item);
+ f.gh.replies=[{id:50,body:"/factory approve v1",user:{login:"owner",type:"User"}}];
+ const refreshed=f.o.refreshIssue(item.id);
+ assert.equal(refreshed.context.cursor,99); assert.equal(refreshed.state,"WAITING_HUMAN");
+ assert.equal(refreshed.context.approval,undefined);
+ const event=JSON.parse((f.store.db.prepare("SELECT payload FROM events WHERE type='github.issue_refreshed' ORDER BY id DESC LIMIT 1").get() as any).payload);
+ assert.deepEqual({previousCursor:event.previousCursor,cursor:event.cursor,latestCommentId:event.latestCommentId},{previousCursor:99,cursor:99,latestCommentId:50});
+ f.store.db.close();
+});
 test("manual issue-list refresh adds new queued issues and updates existing metadata without replaying work", async () => {
  const f=setup(); await f.o.tick();
  f.gh.reply("/factory answer ignored older comment"); f.gh.reply("/factory approve v1");

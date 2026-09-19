@@ -126,6 +126,10 @@ echo "$*" >> "$PWD/update-actions.log"
     store.event("control.applied",{id:refreshControl.id,kind:"refresh-list",target:"",result:{found:2,added:1,updated:1}});
     refreshSnapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
     assert.deepEqual(refreshSnapshot.issueRefresh,{status:"completed",message:"Found 2 factory issues; added 1, updated 1."});
+    assert.equal(refreshSnapshot.events[0].details,"Issue list refreshed: 2 found, 1 added, 1 updated.");
+    store.event("github.issue_refreshed",{previousCursor:99,cursor:99,latestCommentId:50,state:"FAILED"},"owner-demo-7");
+    refreshSnapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
+    assert.equal(refreshSnapshot.events[0].details,"GitHub issue refreshed; no newer comment was found and workflow remains failed.");
     fs.mkdirSync(path.join(settingsRoot,".factory"),{recursive:true});
     fs.writeFileSync(path.join(settingsRoot,".factory","update-state.json"),JSON.stringify({status:"updating",phase:"stale",pid:process.pid,startedAt:"2026-01-01T00:00:00.000Z"}));
     const staleUpdate = await fetch(`http://127.0.0.1:${port}/api/services`).then(response => response.json()) as any;

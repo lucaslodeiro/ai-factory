@@ -75,8 +75,8 @@ export async function startDaemon(store = new Store()) {
      if (w.state !== "CANCELLED") { w.context.resume = w.state; store.transition(w, "CANCELLED"); }
      if (run) executions.cancel(run.id);
     }
-    store.event("control.applied", { ...r,result });
-   } catch (e) { store.event("control.failed", { ...r, error: String(e) }); }
+    store.event("control.applied",{id:r.id,kind:r.kind,target:r.target,result});
+   } catch (e) { store.event("control.failed",{id:r.id,kind:r.kind,target:r.target,error:String(e)}); }
    store.db.prepare("UPDATE controls SET handled=1 WHERE id=?").run(r.id);
   }
  };
