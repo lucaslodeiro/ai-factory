@@ -10,7 +10,7 @@ Create an open issue labelled `factory:queued`. The daemon discovers up to 100 q
 
 Use `/factory answer <text>` and `/factory approve vN` as standalone comments from a configured human approver. For an item in FAILED, PAUSED or CANCELLED, post a new standalone `/factory retry` comment to resume its saved stage. The same configured-approver, human-account and one-time cursor checks apply; quoted commands and edits to an already-read comment do not execute. A label is not an approval or retry. Spec versions and command comment IDs are audited in SQLite. Comments are read with pagination. GitHub outage delivery is retried using hidden idempotency markers; SQLite remains authoritative.
 
-The daemon reads new comments during normal polling; no manual per-issue refresh is required. **Refresh issue list** is a global reconciliation tool for discovering missing managed issues and updating title, body and URL metadata. It does not execute comments or move the saved comment position of existing tracked work.
+The daemon reads new comments during normal polling; no manual per-issue refresh is required. **Refresh issue list** is a global reconciliation tool for discovering missing managed issues, updating title/body/URL metadata and moving each issue's saved position to its newest comment. It deliberately skips older unread comments and evaluates only the newest comment when it is valid for the current state (`answer`/`approve` while waiting for a person or `retry` while stopped). It does not replay completed work.
 
 The final PR includes the approved spec, QA/review evidence and deferred findings. Merge is always performed by a human.
 

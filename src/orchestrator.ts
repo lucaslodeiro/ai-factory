@@ -75,20 +75,21 @@ export class Orchestrator {
   catch (e) { this.store.event("github.comments_failed", { error: String(e) }, w.id); return; }
   const cursor = this.store.commentCursorHighWater(w.id,w.context.cursor);
   const comments = replies.filter(c => c.id > cursor).sort((a,b) => a.id-b.id);
-  for (const c of comments) {
-   w.context.cursor = c.id;
-   this.store.save(w);
-   if (c.user.type !== "User" || !config.approvers.includes(c.user.login) || c.body.trim() !== "/factory retry") continue;
-   try {
-    const to = retry(this.store,w.id);
-    this.store.event("retry.comment_accepted",{ login:c.user.login,commentId:c.id,to },w.id);
-    this.store.post(w.issue_number,`## Retry accepted\n\n@${c.user.login} requested \`/factory retry\`. The factory will resume from **${retryStageLabel(to)}**.`);
-   } catch (e) {
-    this.store.event("retry.comment_rejected",{ login:c.user.login,commentId:c.id,error:String(e) },w.id);
-    this.store.post(w.issue_number,`## Retry could not start\n\n${String(e)}\n\nResolve the condition, then post a new \`/factory retry\` comment.`);
-   }
-   return;
+  for (const c of comments) if (this.processRetryComment(w,c)) return;
+ }
+ private processRetryComment(w: WorkItem,c: Comment) {
+  w.context.cursor = c.id;
+  this.store.save(w);
+  if (c.user.type !== "User" || !config.approvers.includes(c.user.login) || c.body.trim() !== "/factory retry") return false;
+  try {
+   const to = retry(this.store,w.id);
+   this.store.event("retry.comment_accepted",{ login:c.user.login,commentId:c.id,to },w.id);
+   this.store.post(w.issue_number,`## Retry accepted\n\n@${c.user.login} requested \`/factory retry\`. The factory will resume from **${retryStageLabel(to)}**.`);
+  } catch (e) {
+   this.store.event("retry.comment_rejected",{ login:c.user.login,commentId:c.id,error:String(e) },w.id);
+   this.store.post(w.issue_number,`## Retry could not start\n\n${String(e)}\n\nResolve the condition, then post a new \`/factory retry\` comment.`);
   }
+  return true;
  }
  async reconcilePullRequests() {
   for (const w of this.store.items()) {
@@ -117,8 +118,24 @@ export class Orchestrator {
   w.context.url = remote.url;
   this.store.save(w);
   this.store.event("github.issue_reconciled",{changedFields,state:w.state},w.id);
-  this.github.syncState(w.issue_number,w.state,progressMarkdown(w));
   return w;
+ }
+ private refreshLatestComment(w: WorkItem) {
+  const comments=this.github.comments(w.issue_number).slice().sort((a,b)=>a.id-b.id);
+  const latest=comments.at(-1);
+  const previousCursor=this.store.commentCursorHighWater(w.id,w.context.cursor);
+  if (latest && latest.id > previousCursor) {
+   if (["FAILED","CANCELLED","PAUSED"].includes(w.state)) this.processRetryComment(w,latest);
+   else if (w.state === "WAITING_HUMAN") this.processHumanComment(w,latest);
+   else { w.context.cursor=latest.id; this.store.save(w); }
+  }
+  const current=this.store.get(w.id)!;
+  const targetCursor=Math.max(previousCursor,latest?.id ?? 0);
+  if (current.context.cursor < targetCursor) { current.context.cursor=targetCursor; this.store.save(current); }
+  this.store.event("github.issue_refreshed",{
+   previousCursor,cursor:current.context.cursor,latestCommentId:latest?.id ?? null,state:current.state,
+  },w.id);
+  return current;
  }
  refreshIssueList() {
   const managed = this.github.listManaged();
@@ -133,13 +150,19 @@ export class Orchestrator {
     if (queued) {
      this.ingest(issue);
      const created = this.store.items().find(w => w.repo === config.repo && w.issue_number === issue.number)!;
-     const latest=this.github.comments(issue.number).slice().sort((a,b)=>a.id-b.id).at(-1);
-     if (latest) { created.context.cursor=latest.id; this.store.save(created); }
      this.reconcileKnownIssue(created,issue);
-    } else this.recoverManagedIssue(issue,this.github.comments(issue.number).slice().sort((a,b) => a.id-b.id));
+     const refreshed=this.refreshLatestComment(created);
+     this.github.syncState(refreshed.issue_number,refreshed.state,progressMarkdown(refreshed));
+    } else {
+     const recovered=this.recoverManagedIssue(issue,this.github.comments(issue.number).slice().sort((a,b) => a.id-b.id));
+     const refreshed=this.refreshLatestComment(recovered);
+     this.github.syncState(refreshed.issue_number,refreshed.state,progressMarkdown(refreshed));
+    }
     added++; continue;
    }
    this.reconcileKnownIssue(existing,issue);
+   const refreshed=this.refreshLatestComment(existing);
+   this.github.syncState(refreshed.issue_number,refreshed.state,progressMarkdown(refreshed));
    updated++;
   }
   this.store.event("github.issue_list_refreshed",{ found:issues.length,added,updated });
@@ -152,13 +175,14 @@ export class Orchestrator {
   const remoteLabel = issue.labels?.map(label => label.name).find(name => name.startsWith("factory:") && name !== "factory:queued") ?? "factory:unknown";
   const now = new Date().toISOString();
   const context = {
-   title:issue.title,body:issue.body,url:issue.url,version:0,cursor:comments.at(-1)?.id ?? 0,
+   title:issue.title,body:issue.body,url:issue.url,version:0,cursor:0,
    feedback:lastAnswer ? [`${lastAnswer.comment.user.login}: ${lastAnswer.answer}`] : [],cycles:0,reports:{},resume:"SPEC" as const,
    lastFailure:`Recovered from GitHub state ${remoteLabel}. Local workflow evidence was unavailable; retry restarts at Product Architect.`,
   };
   this.store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,branch,created_at,updated_at,context) VALUES(?,?,?,?,?,?,?,?)")
    .run(id,issue.number,config.repo,"PAUSED",`factory/issue-${issue.number}-${id.slice(0,8)}`,now,now,JSON.stringify(context));
-  this.store.event("work_item.recovered",{ issue,remoteLabel,cursor:context.cursor,resume:"SPEC" },id);
+  this.store.event("work_item.recovered",{ issue,remoteLabel,cursor:comments.at(-1)?.id ?? 0,resume:"SPEC" },id);
+  return this.store.get(id)!;
  }
  private ingest(issue: Issue) {
   if (this.store.items().some(w => w.repo === config.repo && w.issue_number === issue.number)) return;
@@ -299,24 +323,26 @@ export class Orchestrator {
    this.store.event("github.comments_failed", { error: String(e) }, w.id); return;
   }
   const comments = replies.filter(c => c.id > w.context.cursor).sort((a,b) => a.id-b.id);
-  for (const c of comments) {
-   w.context.cursor = c.id;
-   if (c.user.type !== "User" || !config.approvers.includes(c.user.login)) { this.store.save(w); continue; }
-   const body = c.body.trim();
-   if (body === `/factory approve v${w.context.version}` && w.context.waiting === "approval" && w.context.spec) {
-    w.context.approvedVersion = w.context.version; w.context.approval = { login: c.user.login, commentId: c.id };
-    this.store.db.transaction(() => {
-     this.store.event("spec.approved", { version: w.context.version, ...w.context.approval }, w.id);
-     this.store.transition(w, "DEVELOPMENT");
-    })(); return;
-   }
-   const answer = humanAnswer(body);
-   if (answer) {
-    w.context.feedback.push(`${c.user.login}: ${answer}`); w.context.cycles = 0;
-    w.context.consultation = undefined;
-    this.store.transition(w, "SPEC"); return;
-   }
-   this.store.save(w);
+  for (const c of comments) if (this.processHumanComment(w,c)) return;
+ }
+ private processHumanComment(w: WorkItem,c: Comment) {
+  w.context.cursor = c.id;
+  if (c.user.type !== "User" || !config.approvers.includes(c.user.login)) { this.store.save(w); return false; }
+  const body = c.body.trim();
+  if (body === `/factory approve v${w.context.version}` && w.context.waiting === "approval" && w.context.spec) {
+   w.context.approvedVersion = w.context.version; w.context.approval = { login: c.user.login, commentId: c.id };
+   this.store.db.transaction(() => {
+    this.store.event("spec.approved", { version: w.context.version, ...w.context.approval }, w.id);
+    this.store.transition(w, "DEVELOPMENT");
+   })(); return true;
   }
+  const answer = humanAnswer(body);
+  if (answer) {
+   w.context.feedback.push(`${c.user.login}: ${answer}`); w.context.cycles = 0;
+   w.context.consultation = undefined;
+   this.store.transition(w, "SPEC"); return true;
+  }
+  this.store.save(w);
+  return false;
  }
 }

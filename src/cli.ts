@@ -31,7 +31,7 @@ p.command("status").argument("[id]").action(id => {
 for (const name of ["cancel", "retry"] as const) p.command(name).argument("<id>").description(`${name} a work item`).action(id => {
  const store = new Store(); store.request(name, id); store.db.close(); console.log(`${name} queued; processed by factory start.`);
 });
-p.command("refresh-list").description("Reload the queued GitHub issue list without replaying existing work").action(() => {
+p.command("refresh-list").description("Reconcile GitHub issues and evaluate only each issue's newest comment").action(() => {
  const store = new Store(); store.request("refresh-list"); store.db.close(); console.log("Issue-list refresh queued; processed by factory start.");
 });
 p.command("stop").action(() => { const s = new Store(); s.request("stop"); s.db.close(); console.log("Stop queued."); });

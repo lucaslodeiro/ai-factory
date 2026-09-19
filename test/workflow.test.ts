@@ -99,7 +99,7 @@ test("comment cursor repair uses the durable audit high-water mark", async () =>
  assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='github.cursor_repaired'").get() as any).n,1);
  f.store.db.close();
 });
-test("manual issue-list refresh adds new queued issues and updates existing metadata without replaying work", async () => {
+test("manual issue-list refresh updates metadata and processes only the newest comment", async () => {
  const f=setup(); await f.o.tick();
  f.gh.reply("Context that is not a command"); f.gh.reply("/factory approve v1");
  f.gh.queued=[
@@ -110,10 +110,28 @@ test("manual issue-list refresh adds new queued issues and updates existing meta
  assert.deepEqual(result,{found:2,added:1,updated:1}); assert.equal(f.store.items().length,2);
  const existing=f.store.items().find(item=>item.issue_number===1)!;
  assert.equal(existing.context.title,"Feature renamed"); assert.equal(existing.context.body,"Updated body");
- assert.equal(existing.state,"WAITING_HUMAN"); assert.equal(existing.context.cursor,0); assert.equal(existing.context.approval,undefined);
+ assert.equal(existing.state,"DEVELOPMENT"); assert.equal(existing.context.cursor,2); assert.equal(existing.context.approval?.commentId,2);
  const added=f.store.items().find(item=>item.issue_number===2)!; assert.equal(added.state,"SPEC"); assert.equal(added.context.cursor,0);
  assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='github.issue_list_refreshed'").get() as any).n,1);
- await f.o.tick(); assert.equal(existing.id,f.item().id); assert.equal(f.item().state,"DEVELOPMENT"); assert.equal(f.item().context.cursor,2);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='github.issue_refreshed'").get() as any).n,2);
+ f.store.db.close();
+});
+test("manual issue-list refresh skips older commands when a newer comment exists", async () => {
+ const f=setup(); await f.o.tick();
+ f.gh.reply("/factory approve v1"); f.gh.reply("Keep this parked until I confirm the API.");
+ f.o.refreshIssueList();
+ assert.equal(f.item().state,"WAITING_HUMAN"); assert.equal(f.item().context.cursor,2); assert.equal(f.item().context.approval,undefined);
+ await f.o.tick();
+ assert.equal(f.item().state,"WAITING_HUMAN"); assert.equal(f.item().context.approval,undefined);
+ f.store.db.close();
+});
+test("manual issue-list refresh accepts a newest retry command for a stopped issue", async () => {
+ const f=setup({"product-architect":[result("questions",{questions:["Choose a source"]})]}); await f.o.tick();
+ const item=f.item(); item.context.resume="SPEC"; f.store.transition(item,"PAUSED");
+ f.gh.reply("Old context"); f.gh.reply("/factory retry");
+ f.o.refreshIssueList();
+ assert.equal(f.item().state,"SPEC"); assert.equal(f.item().context.cursor,2);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='retry.comment_accepted'").get() as any).n,1);
  f.store.db.close();
 });
 test("manual issue-list refresh safely recovers a remotely managed issue missing from local storage", () => {
