@@ -73,6 +73,12 @@ export class WorkflowRecords {
   if (leaves.length > 1) throw new Error("Open requests do not form one causal chain");
   return leaves[0];
  }
+ requestChain(workItemId:string) {
+  const open=this.openRequests(workItemId),byId=new Map(open.map(record=>[record.id,record]));
+  const active=this.activeRequest(workItemId),chain:WorkflowRecord[]=[];
+  for (let record:WorkflowRecord|undefined=active;record;record=record.parentId ? byId.get(record.parentId) : undefined) chain.unshift(record);
+  return chain;
+ }
  resolveRequest(id:string,resolvedBy?:string) {
   const record=this.get(id);
   if (!record || record.kind !== "request" || record.status !== "open") throw new Error("Only an open request can be resolved");
