@@ -13,6 +13,7 @@ export class Store {
     this.db = new Database(filename);
     this.db.pragma("busy_timeout = 5000");
     this.db.pragma("journal_mode = WAL");
+    this.db.pragma("foreign_keys = ON");
     // CLI and daemon can open a fresh database together: serialize all migrations.
     this.db.transaction(() => {
     this.db.exec(`CREATE TABLE IF NOT EXISTS work_items(id TEXT PRIMARY KEY,issue_number INTEGER NOT NULL,repo TEXT NOT NULL,state TEXT NOT NULL,branch TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
@@ -24,9 +25,61 @@ export class Store {
       CREATE TABLE IF NOT EXISTS controls(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,target TEXT,handled INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
       CREATE UNIQUE INDEX IF NOT EXISTS issue_identity ON work_items(repo,issue_number);`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS records(
+        id TEXT PRIMARY KEY,
+        work_item_id TEXT NOT NULL REFERENCES work_items(id),
+        sequence INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        spec_version INTEGER NOT NULL,
+        scope TEXT NOT NULL,
+        status TEXT NOT NULL,
+        applies_to TEXT NOT NULL DEFAULT '[]',
+        payload TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        parent_id TEXT REFERENCES records(id),
+        superseded_by TEXT REFERENCES records(id),
+        resolved_by TEXT REFERENCES executions(id),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS records_active ON records(work_item_id,kind,status,spec_version);
+      CREATE UNIQUE INDEX IF NOT EXISTS records_sequence ON records(work_item_id,sequence);
+      CREATE TABLE IF NOT EXISTS failures(
+        id TEXT PRIMARY KEY,
+        work_item_id TEXT NOT NULL REFERENCES work_items(id),
+        execution_id TEXT REFERENCES executions(id),
+        class TEXT NOT NULL,
+        message TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        attempt INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        resolved_at TEXT,
+        resolved_by TEXT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS failures_one_open ON failures(work_item_id) WHERE resolved_at IS NULL;
+      CREATE TABLE IF NOT EXISTS maintenance_operations(
+        id TEXT PRIMARY KEY,
+        operation TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        status TEXT NOT NULL,
+        requested_at TEXT NOT NULL,
+        confirmed_at TEXT,
+        finished_at TEXT,
+        error TEXT
+      );
+      CREATE TABLE IF NOT EXISTS maintenance_items(
+        maintenance_id TEXT NOT NULL REFERENCES maintenance_operations(id),
+        work_item_id TEXT NOT NULL REFERENCES work_items(id),
+        confirmed_revision INTEGER NOT NULL,
+        paused_at TEXT,
+        resumed_at TEXT,
+        PRIMARY KEY(maintenance_id,work_item_id)
+      );`);
     const cols = this.db.prepare("PRAGMA table_info(work_items)").all() as { name: string }[];
     if (!cols.some(c => c.name === "context")) this.db.exec("ALTER TABLE work_items ADD COLUMN context TEXT NOT NULL DEFAULT '{}'");
-    for (const [table, column, type] of [["specs", "assessment", "TEXT"], ["specs", "criteria", "TEXT NOT NULL DEFAULT '[]'"], ["executions", "recovery_pending", "INTEGER NOT NULL DEFAULT 0"], ["executions", "workflow_state", "TEXT"], ["executions", "input_tokens", "INTEGER"], ["executions", "output_tokens", "INTEGER"], ["executions", "cached_tokens", "INTEGER"], ["executions", "total_tokens", "INTEGER"], ["outbox", "delivery_key", "TEXT"], ["notifications", "work_item_id", "TEXT"]]) {
+    for (const [table, column, type] of [["specs", "assessment", "TEXT"], ["specs", "criteria", "TEXT NOT NULL DEFAULT '[]'"], ["executions", "recovery_pending", "INTEGER NOT NULL DEFAULT 0"], ["executions", "workflow_state", "TEXT"], ["executions", "input_tokens", "INTEGER"], ["executions", "output_tokens", "INTEGER"], ["executions", "cached_tokens", "INTEGER"], ["executions", "total_tokens", "INTEGER"], ["executions", "prompt_bytes", "INTEGER"], ["executions", "prompt_sha256", "TEXT"], ["executions", "interruption_reason", "TEXT"], ["executions", "maintenance_id", "TEXT"], ["work_items", "stage", "TEXT"], ["work_items", "status", "TEXT"], ["work_items", "attempt", "INTEGER NOT NULL DEFAULT 0"], ["work_items", "revision", "INTEGER NOT NULL DEFAULT 0"], ["work_items", "presentation_revision", "INTEGER NOT NULL DEFAULT 0"], ["work_items", "published_presentation_revision", "INTEGER"], ["work_items", "active_run_id", "TEXT"], ["work_items", "active_request_id", "TEXT"], ["work_items", "active_failure_id", "TEXT"], ["work_items", "correction_cycles", "INTEGER NOT NULL DEFAULT 0"], ["work_items", "archived_at", "TEXT"], ["outbox", "delivery_key", "TEXT"], ["notifications", "work_item_id", "TEXT"]]) {
       const existing = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
       if (!existing.some(c => c.name === column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
     }
