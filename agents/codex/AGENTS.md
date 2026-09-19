@@ -10,11 +10,11 @@ This file contains provider-specific instructions for Codex workers. The canonic
 - Produce a concise machine-readable completion summary when requested.
 - Every role runs as a separate fresh execution. Never reuse conversational context between roles.
 
-## Developer
+## Implementation Engineer (Builder)
 Apply `agents/common/developer.md`.
 
-## QA
-Apply `agents/common/qa.md`. QA may change tests but MUST NOT change production code.
+## Verification Engineer (Tester)
+Apply `agents/common/qa.md`. The Verification Engineer may change tests but MUST NOT change production code.
 
-## Product Architect and Reviewer
+## Product Architect (Architect) and Delivery Reviewer (Reviewer)
 Apply the supplied common role contract. Both roles are read-only; never modify the worktree.

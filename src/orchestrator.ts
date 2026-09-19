@@ -1,5 +1,6 @@
 import { specMarkdown, reportMarkdown, progressMarkdown, questionsMarkdown, startedMarkdown, recoveredMarkdown, readyToMergeMarkdown, prClosedMarkdown, mergedMarkdown, architecturalReviewMarkdown, correctionLimitMarkdown, retryAcceptedMarkdown, retryRejectedMarkdown, pullRequestReopenedMarkdown, tacticalResolutionMarkdown } from "./presentation.js";
 import { modelForWork } from "./model-policy.js";
+import { roleShortName } from "./names.js";
 import { randomUUID } from "node:crypto";
 import { Store } from "./storage.js";
 import { config } from "./config.js";
@@ -234,7 +235,7 @@ export class Orchestrator {
   const context = {
    title:issue.title,body:issue.body,url:issue.url,version:0,cursor:0,
    feedback:lastAnswer ? [`${lastAnswer.comment.user.login}: ${lastAnswer.answer}`] : [],cycles:0,reports:{},resume:"SPEC" as const,
-   lastFailure:`Recovered from GitHub state ${remoteLabel}. Local workflow evidence was unavailable; retry restarts at Product Architect.`,
+   lastFailure:`Recovered from GitHub state ${remoteLabel}. Local workflow evidence was unavailable; retry restarts at Architect.`,
   };
   this.store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,branch,created_at,updated_at,context) VALUES(?,?,?,?,?,?,?,?)")
    .run(id,issue.number,config.repo,"PAUSED",`factory/issue-${issue.number}-${id.slice(0,8)}`,now,now,JSON.stringify(context));
@@ -285,13 +286,13 @@ export class Orchestrator {
   this.store.save(w);
   this.store.event("model.selected", { role, specVersion: w.context.version, selection }, w.id);
   const adapter = this.agents[role];
-  if (!adapter) throw new Error(`No adapter configured for ${role}`);
+  if (!adapter) throw new Error(`No adapter configured for ${roleShortName(role)}`);
   const result = parseResult(await adapter.run({ workItemId: w.id, role, cwd: w.context.cwd, instructions, selection }), role);
   if (this.store.get(w.id)!.state !== w.state) return;
   if (role !== "product-architect") validateCoverage(result, w.context.criteria ?? []);
   this.workspaces.check(w.context.cwd, role, before, w.branch);
   // Only the orchestrator commits; preserve evidence of all role outputs separately.
-  if (role === "developer" || role === "qa") this.workspaces.commit(w.context.cwd, `factory: ${role} for #${w.issue_number}`, w.branch);
+  if (role === "developer" || role === "qa") this.workspaces.commit(w.context.cwd, `factory: ${roleShortName(role)} for #${w.issue_number}`, w.branch);
   w.context.reports[role] = result;
   this.store.event("agent.result", { role, result, specVersion: w.context.version }, w.id);
   w.context.pendingStage = undefined;
@@ -330,11 +331,12 @@ export class Orchestrator {
   const decision = result.outcome === "decision" || result.findings.some(f => f.classification === "decision-required");
   const changes = result.outcome === "changes" || result.findings.some(f => f.classification === "auto-fix");
   if (decision || changes) {
-   w.context.feedback.push(`${role}: ${JSON.stringify(result)}`); w.context.cycles++;
+   w.context.feedback.push(`${roleShortName(role)}: ${JSON.stringify(result)}`); w.context.cycles++;
    this.store.db.transaction(() => {
     this.store.post(w.issue_number, reportMarkdown(role, w.context.version, result));
     if (w.context.cycles >= config.maxCycles) {
      w.context.waiting = "loop";
+     w.context.consultation = { from: w.state as DeliveryStage };
      this.store.post(w.issue_number,correctionLimitMarkdown());
      this.store.transition(w, "WAITING_HUMAN");
     } else if (decision) { w.context.consultation = { from: w.state as DeliveryStage }; this.store.transition(w, "SPEC"); }
@@ -344,10 +346,10 @@ export class Orchestrator {
   }
   let publishedCommit: string | undefined;
   if (role === "reviewer") {
-   if (w.context.reports.developer?.outcome !== "pass" || w.context.reports.qa?.outcome !== "pass") throw new Error("Developer and QA must pass before publication");
+   if (w.context.reports.developer?.outcome !== "pass" || w.context.reports.qa?.outcome !== "pass") throw new Error("Builder and Tester must pass before publication");
    this.workspaces.publish(w.context.cwd, w.branch);
    w.context.pr = this.github.ensurePR(w.branch, `#${w.issue_number}: ${w.context.title}`,
-    `Closes #${w.issue_number}\n\nApproved SPEC v${w.context.version} by ${w.context.approval?.login}.\n\n${w.context.spec}\n\n## QA\n${w.context.reports.qa.summary.slice(0, 4000)}\n\n## Review\n${result.summary.slice(0, 4000)}\n\nReports, evidence, decisions and deferred findings: ${w.context.url}\n\nHuman merge required.`);
+    `Closes #${w.issue_number}\n\nApproved SPEC v${w.context.version} by ${w.context.approval?.login}.\n\n${w.context.spec}\n\n## Test · Tester\n${w.context.reports.qa.summary.slice(0, 4000)}\n\n## Review · Reviewer\n${result.summary.slice(0, 4000)}\n\nReports, evidence, decisions and deferred findings: ${w.context.url}\n\nHuman merge required.`);
    publishedCommit=this.workspaces.head(w.context.cwd);
   }
   this.store.db.transaction(() => {
@@ -357,7 +359,7 @@ export class Orchestrator {
   })();
  }
  private routeDelivery(w: WorkItem, to: DeliveryStage) {
-  // Invalidate downstream evidence whenever implementation or verification reruns.
+  // Invalidate downstream evidence whenever Build or Test reruns.
   if (to === "DEVELOPMENT") delete w.context.reports.developer;
   if (to !== "REVIEW") delete w.context.reports.qa;
   delete w.context.reports.reviewer;
@@ -400,8 +402,9 @@ export class Orchestrator {
   }
   const answer = humanAnswer(body);
   if (answer) {
+   const correctionConsultation = w.context.waiting === "loop" ? w.context.consultation : undefined;
    w.context.feedback.push(`${c.user.login}: ${answer}`); w.context.cycles = 0;
-   w.context.consultation = undefined;
+   w.context.consultation = correctionConsultation;
    this.store.transition(w, "SPEC"); return true;
   }
   this.store.save(w);

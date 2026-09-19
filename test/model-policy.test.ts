@@ -35,7 +35,7 @@ test("policy uses each role's configured provider and model IDs", () => {
   config.roles.developer.model = "auto";
   assert.equal(selectModel("developer", assessment("low", "low")).model, "auto");
   config.roles.developer.model = "";
-  assert.throws(() => selectModel("developer", assessment("low", "low")), /Missing claude model for developer/);
+  assert.throws(() => selectModel("developer", assessment("low", "low")), /Missing claude model for Builder/);
  } finally { config.roles.developer = saved; }
 });
 test("only new specs can set an assessment and every assessment needs valid levels and rationale", () => {

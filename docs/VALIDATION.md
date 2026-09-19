@@ -6,21 +6,21 @@
 
 65 tests cover:
 
-- Full foreground daemon with real SQLite, separate CLI control processes, real Git worktrees and a local bare remote. Deterministic provider executables consume the actual adapter arguments and stdin; a GitHub executable fixture supplies issues/comments and records the PR. The test approves a version, starts Developer, checks status without recovery side effects, cancels, retries, runs QA/Reviewer, publishes a branch and verifies READY_TO_MERGE, then stops the daemon.
-- Native Claude/Codex output envelopes, role-specific generation schemas and local validation. Read-only Reviewer receives attributed QA execution evidence without Developer reasoning or QA summary conclusions.
-- Per-role provider/model routing in `direct-v1`, including direct model selection, `auto` argument omission for both adapters, and an end-to-end run with every role assigned to the opposite provider from its default (Codex Architect/Reviewer and Claude Developer/QA). Claude delivery roles receive editing tools while provider-independent worktree checks preserve read-only and QA boundaries.
+- Full foreground daemon with real SQLite, separate CLI control processes, real Git worktrees and a local bare remote. Deterministic provider executables consume the actual adapter arguments and stdin; a GitHub executable fixture supplies issues/comments and records the PR. The test approves a version, starts Implementation Engineer, checks status without recovery side effects, cancels, retries, runs Verification Engineer/Delivery Reviewer, publishes a branch and verifies READY_TO_MERGE, then stops the daemon.
+- Native Claude/Codex output envelopes, role-specific generation schemas and local validation. Read-only Delivery Reviewer receives attributed Verification Engineer execution evidence without Implementation Engineer reasoning or Verification Engineer summary conclusions.
+- Per-role provider/model routing in `direct-v1`, including direct model selection, `auto` argument omission for both adapters, and an end-to-end run with every role assigned to the opposite provider from its default (Codex Architect/Delivery Reviewer and Claude Implementation Engineer/Verification Engineer). Claude delivery roles receive editing tools while provider-independent worktree checks preserve read-only and Verification Engineer boundaries.
 - Invalid/stale/unauthorized/bot approvals and question/answer loops.
 - Explicit issue entry through an authorized, unedited standalone `/factory start` repository comment or dashboard/CLI controls, with persistent comment cursors and deduplication. Pull requests, closed issues, labels, quoted commands, edited comments, bots and unauthorized users cannot start work.
-- QA auto-fix, decision routing, bounded correction loops and deferred findings.
+- Verification Engineer auto-fix, decision routing, bounded correction loops and deferred findings.
 - Durable GitHub outbox, idempotent delivery and malformed output failure.
 - Process success, spawn errors, preserved provider exit codes, timeout and cancellation.
 - Forced daemon SIGKILL with TERM-resistant worker/descendant cleanup, live-group retry blocking, and the crash window between successful process exit and workflow commit.
-- Tactical resolutions retaining the approved spec/version/approval, routing back to Developer or QA, and rejection of self-approval, human conflicts and skipped gates.
+- Tactical resolutions retaining the approved spec/version/approval, routing back to Implementation Engineer or Verification Engineer, and rejection of self-approval, human conflicts and skipped gates.
 - Mandatory criteria coverage, executed-test evidence, dependency rationale and review dimensions.
 - Durable Slack retries across database reopening, disabled notifications, independent GitHub outages and real local HTTP adapter tests (not a real Slack channel).
 - Simultaneous SQLite migrations from four independent processes.
-- Single-daemon lock, environment filtering, QA file restrictions and branch publication restrictions.
-- Assigned-branch checks before agent execution and commits, including same-commit branch switches and detached HEAD. Real Git regression cases preserve raw Unicode/newline/tab/space filenames and reject renaming production files into test paths during QA.
+- Single-daemon lock, environment filtering, Verification Engineer file restrictions and branch publication restrictions.
+- Assigned-branch checks before agent execution and commits, including same-commit branch switches and detached HEAD. Real Git regression cases preserve raw Unicode/newline/tab/space filenames and reject renaming production files into test paths during Verification Engineer.
 - Transient GitHub comment-read failures preserve WAITING_HUMAN and its approval cursor; polling recovers without a manual retry or another agent invocation.
 - Dashboard-first installation creates a private default `.env`, accepts a loopback host and port, selects the next available port when occupied, installs both service definitions, starts only the dashboard and opens the effective first-time setup URL. Every setting with a safe universal value has a displayed default; authenticated GitHub identity supplies editable defaults for the otherwise unknown target repository, clone and approver. Dashboard saves validate before service changes, restart affected running services, preserve stopped services, and leave service state untouched on invalid input. Update preserves configuration without invoking the supported terminal recovery wizard.
 - Uninstall removes both factory service definitions, the installation checkout and internal or marked external runtime data while preserving the target repository and shared tools. Unsafe removal roots are rejected.
@@ -41,28 +41,28 @@ On 2026-09-18, the real pipeline reached **READY_TO_MERGE** and created demo PR 
 - Work item: `e3d45eaf-fad3-48c0-8e99-fccc121cecd7`.
 - Claude authenticated successfully; doctor passed for both providers, Git/GitHub, target repository and SQLite.
 - Product Architect (Sonnet) published SPEC v1 with ten acceptance criteria and low complexity/low risk. The human `lucaslodeiro` approved the exact version in comment `5732900319`.
-- Developer (Luna) implemented the pure Unicode text-analysis function, stdin/stdout CLI, README, ESM package and nine tests without dependencies.
-- QA (Terra), in a fresh execution, ran all nine tests successfully with Node 26.4.0 and additional independent function/CLI, exit-status, output and dependency checks.
-- Reviewer (Sonnet), in a fresh read-only execution, independently inspected code, tests and all review dimensions. It explicitly attributed runtime evidence to QA, reported no blocking findings and returned PASS.
+- Implementation Engineer (Luna) implemented the pure Unicode text-analysis function, stdin/stdout CLI, README, ESM package and nine tests without dependencies.
+- Verification Engineer (Terra), in a fresh execution, ran all nine tests successfully with Node 26.4.0 and additional independent function/CLI, exit-status, output and dependency checks.
+- Delivery Reviewer (Sonnet), in a fresh read-only execution, independently inspected code, tests and all review dimensions. It explicitly attributed runtime evidence to Verification Engineer, reported no blocking findings and returned PASS.
 - The orchestrator committed and pushed `factory/issue-1-e3d45eaf` (commit `63ac9beb12ea1f676ed9a5472741c504849837a2`), created PR #2 against main and delivered all queued GitHub messages. No automatic merge. The daemon was stopped after completion.
 
 ### Live integration failures found and corrected
 
 This was not an uninterrupted first-attempt success. Two validation failures were retained in the audit trail and resolved before explicit stage retries:
 
-1. Developer's first process completed but returned forbidden spec/criteria/nextRole fields and historical failed commands in its PASS report. Its login shell also selected Node 20 and Xcode Git. Provider output schemas now constrain delivery fields by role; prompts distinguish final verification from historical failures and prepend the configured Node/Git directories to shell commands. Developer retried on retained files and verified Node 26.4.0 with nine passing tests.
-2. Read-only Reviewer initially lacked QA execution evidence and returned PASS with an execution-dependent criterion marked not-run. The coverage gate rejected it. Reviewer now receives attributed QA test/criterion evidence, without Developer reasoning or QA summary conclusions, and distinguishes those results from commands it personally ran. The retry passed without weakening the coverage gate or adding shell access.
+1. Implementation Engineer's first process completed but returned forbidden spec/criteria/nextRole fields and historical failed commands in its PASS report. Its login shell also selected Node 20 and Xcode Git. Provider output schemas now constrain delivery fields by role; prompts distinguish final verification from historical failures and prepend the configured Node/Git directories to shell commands. Implementation Engineer retried on retained files and verified Node 26.4.0 with nine passing tests.
+2. Read-only Delivery Reviewer initially lacked Verification Engineer execution evidence and returned PASS with an execution-dependent criterion marked not-run. The coverage gate rejected it. Delivery Reviewer now receives attributed Verification Engineer test/criterion evidence, without Implementation Engineer reasoning or Verification Engineer summary conclusions, and distinguishes those results from commands it personally ran. The retry passed without weakening the coverage gate or adding shell access.
 
 ### Run evidence
 
 | Role/attempt | Run ID | Result |
 |---|---|---|
 | Architect | `3921aab6-8fa7-4b70-82a2-f16dee7e7c85` | SPEC v1 |
-| Developer first attempt | `5340fb8d-fc33-456b-96df-32700c6a9a94` | Process succeeded; report rejected |
-| Developer retry | `226bae67-60ee-4791-a7fc-bf12f9fd442f` | PASS |
-| QA | `34c5aeb5-0f3a-487c-a4b5-d962cabddf11` | PASS |
-| Reviewer first attempt | `a7250093-7fc1-4d22-b051-9fea2b0dc6f9` | Process succeeded; coverage rejected |
-| Reviewer retry | `e5d80fb7-42a5-480d-91d7-60b38178543f` | PASS |
+| Implementation Engineer first attempt | `5340fb8d-fc33-456b-96df-32700c6a9a94` | Process succeeded; report rejected |
+| Implementation Engineer retry | `226bae67-60ee-4791-a7fc-bf12f9fd442f` | PASS |
+| Verification Engineer | `34c5aeb5-0f3a-487c-a4b5-d962cabddf11` | PASS |
+| Delivery Reviewer first attempt | `a7250093-7fc1-4d22-b051-9fea2b0dc6f9` | Process succeeded; coverage rejected |
+| Delivery Reviewer retry | `e5d80fb7-42a5-480d-91d7-60b38178543f` | PASS |
 
 Logs and SQLite remain under `.factory/demo/` on the original validation machine. Earlier standalone Codex protocol checks also passed, including explicit Terra selection (`d83d51bd-d69f-49da-bed3-97e3baca45a1`).
 

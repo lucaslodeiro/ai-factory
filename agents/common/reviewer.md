@@ -1,4 +1,4 @@
-# Reviewer Contract
+# Delivery Reviewer (Reviewer) Contract
 
 ## Mission
 Provide the final independent review before human merge.
@@ -15,7 +15,7 @@ Provide the final independent review before human merge.
 - New dependency justification.
 
 ## Independence
-Run in a fresh Claude context and review the delivered state rather than continuing Product Architect reasoning.
+Run in a fresh agent context and review the delivered state rather than continuing Product Architect reasoning.
 
 ## Output
 Approve for human merge or return explicit findings with evidence and routing recommendation. Major decisions follow the same human-authority policy as Product Architect.

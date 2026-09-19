@@ -12,8 +12,8 @@ The factory does not translate task complexity into `fast`, `balanced`, or `stro
 | A correction/decision cycle has occurred, or Architect is handling a consultation | strong |
 | Approved complexity or risk is high | strong |
 | Legacy delivery item without an assessment | strong |
-| Developer on low complexity AND low risk | fast |
-| All other cases, including initial Architect, QA and Reviewer | balanced |
+| Builder on low complexity AND low risk | fast |
+| All other cases, including initial Architect, Tester and Reviewer | balanced |
 
 These internal tiers describe workflow treatment only. For example, a high-complexity or high-risk draft receives a fresh Architect review before publication for approval. The review uses the same provider and model configured for Product Architect. The tier is retained in audit events so the reason for additional review remains visible.
 
@@ -23,12 +23,12 @@ The assessment and rationale are published with SPEC vN and stored in its immuta
 
 ## Configured roles
 
-| Role | Default provider | Default model |
-|---|---|---|
-| Product Architect | Claude | sonnet |
-| Developer | Codex | gpt-5.6-terra |
-| QA | Codex | gpt-5.6-terra |
-| Reviewer | Claude | sonnet |
+| Role | Short name | Stage | Default provider | Default model |
+|---|---|---|---|---|
+| Product Architect | Architect | Design | Claude | sonnet |
+| Implementation Engineer | Builder | Build | Codex | gpt-5.6-terra |
+| Verification Engineer | Tester | Test | Codex | gpt-5.6-terra |
+| Delivery Reviewer | Reviewer | Review | Claude | sonnet |
 
 Dashboard → Configuration → Agent roles exposes one card per role. Each card writes `<ROLE>_PROVIDER` and `<ROLE>_MODEL`, where `<ROLE>` is `PRODUCT_ARCHITECT`, `DEVELOPER`, `QA`, or `REVIEWER`. The model selector offers `Auto (provider recommended)`, known model IDs for the selected provider, and preserves an existing custom ID.
 
@@ -36,7 +36,7 @@ When an older installation is loaded, an old `auto` mode migrates to `auto`; oth
 
 The Codex choices follow the [official model catalog](https://developers.openai.com/es-419/docs/models). OpenAI documents that Codex uses a recommended model when none is specified. Claude's [official CLI reference](https://code.claude.com/docs/en/cli-usage) documents `--model` as an override. Availability depends on the account and provider. A rejected model fails the run; the factory never silently changes provider or model. Changing role settings requires restarting the daemon and affects future attempts.
 
-Both providers receive the same canonical role contract. Product Architect and Reviewer remain read-only; Developer can edit the worktree; QA remains restricted to test files by the orchestrator's mutation checks.
+Both providers receive the same canonical role contract. Product Architect and Delivery Reviewer remain read-only; Implementation Engineer can edit the worktree; Verification Engineer remains restricted to test files by the orchestrator's mutation checks.
 
 ## Inspecting and auditing
 

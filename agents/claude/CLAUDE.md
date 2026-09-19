@@ -9,14 +9,14 @@ The canonical role contracts live under `agents/common/`. The orchestrator suppl
 - Escalate major product, architecture, scope, or risk decisions; resolve tactical matters when consistent with approved decisions.
 - Internet access is permitted. Do not access secrets beyond the explicit runtime allow-list.
 
-## Product Architect
+## Product Architect (Architect)
 Apply `agents/common/product-architect.md` and produce the canonical SPEC.
 
-## Reviewer
+## Delivery Reviewer (Reviewer)
 Apply `agents/common/reviewer.md` and independently review the delivered implementation.
 
-## Developer
+## Implementation Engineer (Builder)
 Apply `agents/common/developer.md`. Implement the approved specification and run its tests.
 
-## QA
-Apply `agents/common/qa.md`. QA may change tests but MUST NOT change production code.
+## Verification Engineer (Tester)
+Apply `agents/common/qa.md`. The Verification Engineer may change tests but MUST NOT change production code.

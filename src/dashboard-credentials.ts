@@ -9,7 +9,7 @@ type StoredState = { status: "connecting" | "failed"; pid?: number; startedAt?: 
 const providers: Array<{ id: CredentialProvider; label: string; description: string }> = [
   { id:"github",label:"GitHub",description:"Issues, pull requests and authenticated Git operations." },
   { id:"claude",label:"Claude",description:"Product, architecture and review agents." },
-  { id:"codex",label:"Codex",description:"Development and quality-assurance agents." },
+  { id:"codex",label:"Codex",description:"Builder and Tester agents." },
 ];
 
 const stateFile = (root: string) => path.join(root,".factory","credential-state.json");

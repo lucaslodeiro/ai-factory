@@ -10,7 +10,7 @@ test("human reports render evidence and actions as Markdown instead of serialize
  assert.match(spec, /Complexity:\*\* medium/); assert.match(spec, /factory approve v3/);
  assert.doesNotMatch(spec, /"complexity":|"acceptanceCriteria":/);
  const report = reportMarkdown("qa", 3, result("pass", { findings: [{ classification: "defer", evidence: "Optional | optimization\nnext line" }] }), "https://example.test/pr/1");
- assert.match(report, /QA — Passed/); assert.match(report, /<details>/);
+ assert.match(report, /Tester — Passed/); assert.match(report, /<details>/);
  assert.match(report, /Optional &#124; optimization<br>next line/);
  assert.match(report, /node --test/); assert.match(report, /AC1/);
  assert.doesNotMatch(report, /"outcome":|"coverage":/);
@@ -21,7 +21,7 @@ test("architect questions render as readable instructions without visible line e
   "Competition scope: Should tournaments be configured manually, or derived dynamically?\\nPlease choose one.",
   "Is there a required hosting target?\\"
  ]);
- assert.match(markdown,/## Product Architect — input needed/);
+ assert.match(markdown,/## Architect — input needed/);
  assert.match(markdown,/### 1\. Data source\n\nDo we already have an approved provider\?/);
  assert.match(markdown,/### 2\. Competition scope/);
  assert.match(markdown,/Should tournaments be configured manually, or derived dynamically\?\nPlease choose one\./);
@@ -44,16 +44,16 @@ test("waiting-for-human progress explains the gate and ends with boxed action ch
  assert.match(approval,/Why the factory is waiting/); assert.match(approval,/SPEC v2 needs your approval/);
  assert.match(approval,/### Next actions[\s\S]*```text\n\/factory approve v2\n```[\s\S]*```text\n\/factory answer <feedback>\n```$/);
  w.context.waiting="questions";
- assert.match(progressMarkdown(w),/Product Architect needs clarification[\s\S]*```text\n\/factory answer\n<your response>\n```$/);
+ assert.match(progressMarkdown(w),/Architect needs clarification[\s\S]*```text\n\/factory answer\n<your response>\n```$/);
  w.context.waiting="loop";
  assert.match(progressMarkdown(w),/automatic correction limit was reached[\s\S]*```text\n\/factory answer <guidance>\n```$/i);
 });
 test("actionable lifecycle messages explain preserved work and next steps", () => {
  const w: WorkItem = { id:"work-1",repo:"owner/demo",issue_number:1,branch:"factory/issue-1",state:"PAUSED",context:{title:"Demo",body:"",url:"https://example.test/issues/1",version:2,cursor:0,feedback:[],cycles:0,resume:"QA",reports:{qa:result("pass"),reviewer:result("pass")},approval:{login:"owner",commentId:7},approvedVersion:2,pr:"https://example.test/pr/1",merge:{at:"2026-09-19T12:00:00Z",commit:"abc123"}} };
  assert.match(startedMarkdown(w,"owner","comment"),/GitHub command from @owner/);
- assert.match(pausedMarkdown(w,"Daemon stopped",true),/Interrupted stage \| QA/); assert.match(pausedMarkdown(w,"Daemon stopped",true),/Work preserved \| Yes/);
- assert.match(cancelledMarkdown(w,false),/Retry resumes at \| QA/);
- assert.match(recoveredMarkdown(w,"factory:review",42),/Safe resume stage \| Product Architect/);
+ assert.match(pausedMarkdown(w,"Daemon stopped",true),/Interrupted stage \| Test/); assert.match(pausedMarkdown(w,"Daemon stopped",true),/Work preserved \| Yes/);
+ assert.match(cancelledMarkdown(w,false),/Retry resumes at \| Test/);
+ assert.match(recoveredMarkdown(w,"factory:review",42),/Safe resume stage \| Design/);
  assert.match(readyToMergeMarkdown(w,"def456"),/Published commit \| `def456`/);
  assert.match(prClosedMarkdown(w),/Delivery status \| Not integrated/);
  assert.match(mergedMarkdown(w),/Merge commit \| `abc123`/);

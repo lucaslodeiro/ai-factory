@@ -10,21 +10,21 @@ Use `/factory answer <text>` and `/factory approve vN` as standalone comments fr
 
 The daemon reads new comments during normal polling; no manual per-issue refresh is required. **Refresh issue list** is a global reconciliation tool for discovering missing managed issues, updating title/body/URL metadata and moving each issue's saved position to its newest comment. It deliberately skips older unread comments and evaluates only the newest comment when it is valid for the current state (`answer`/`approve` while waiting for a person or `retry` while stopped). It does not replay completed work.
 
-The final PR includes the approved spec, QA/review evidence and deferred findings. Merge is always performed by a human.
+The final PR includes the approved spec, Test/Review evidence and deferred findings. Merge is always performed by a human.
 
 ## Visible workflow state
 
-GitHub issue Open/Closed tracks whether the work is still outstanding. The issue stays open through specification, implementation, QA, review and ready-to-merge. The delivered PR includes `Closes #N`; GitHub closes the issue when that PR merges into the default branch. The orchestrator polls delivered PRs: a confirmed merge records MERGED, merge time and commit; a closed unmerged PR records PR_CLOSED; reopening restores READY_TO_MERGE. These updates never execute agents or merge anything. GitHub outages retain the previous state for a later retry.
+GitHub issue Open/Closed tracks whether the work is still outstanding. The issue stays open through Design, Build, Test, Review and ready-to-merge. The delivered PR includes `Closes #N`; GitHub closes the issue when that PR merges into the default branch. The orchestrator polls delivered PRs: a confirmed merge records MERGED, merge time and commit; a closed unmerged PR records PR_CLOSED; reopening restores READY_TO_MERGE. These updates never execute agents or merge anything. GitHub outages retain the previous state for a later retry.
 
 Workflow progress is mirrored in a colored label and one updatable **AI Factory** status comment with milestones and the next human action:
 
 | Orchestrator | Label | Meaning |
 |---|---|---|
-| SPEC | factory:spec | Designing the specification |
+| SPEC | factory:spec | Design · Architect prepares the specification |
 | WAITING_HUMAN | factory:waiting-human | Approval or answer needed |
-| DEVELOPMENT | factory:development | Implementing |
-| QA | factory:qa | Independent testing |
-| REVIEW | factory:review | Reviewing |
+| DEVELOPMENT | factory:development | Build · Builder implements the approved specification |
+| QA | factory:qa | Test · Tester verifies the acceptance criteria |
+| REVIEW | factory:review | Review · Reviewer inspects delivery evidence |
 | READY_TO_MERGE | factory:ready-to-merge | Human merge pending |
 | MERGED | factory:merged | GitHub confirmed completed delivery |
 | PR_CLOSED | factory:pr-closed | Closed without integration; can be reopened |

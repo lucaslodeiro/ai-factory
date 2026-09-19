@@ -51,7 +51,7 @@ export class Workspaces implements WorkspacePort {
   // detection so a production-file deletion cannot hide behind a test-file destination.
   const changed = [...gitOutput(cwd, ["diff", "--name-only", "--no-renames", "-z", "HEAD"]).split("\0"), ...gitOutput(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]).split("\0")].filter(Boolean);
   if ((role === "product-architect" || role === "reviewer") && changed.length) throw new Error(`${role} modified the worktree`);
-  if (role === "qa" && changed.some(p => !/(^|\/)(__tests__|tests?|specs?)\/|\.(test|spec)\.[^/]+$/.test(p))) throw new Error("QA modified a non-test file; inspect before retry");
+  if (role === "qa" && changed.some(p => !/(^|\/)(__tests__|tests?|specs?)\/|\.(test|spec)\.[^/]+$/.test(p))) throw new Error("Verification Engineer modified a non-test file; inspect before retry");
   if (changed.some(p => /(^|\/)(\.env($|\.)|auth\.json$|credentials)/.test(p))) throw new Error("Potential credential file in changes; inspect before commit");
  }
  commit(cwd: string, message: string, branch: string) {

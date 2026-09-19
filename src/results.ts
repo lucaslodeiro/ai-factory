@@ -79,7 +79,7 @@ export function parseResult(raw: unknown, role: AgentRole): AgentResult {
   if (r.outcome === "pass") {
     if (r.findings.some(f => f.classification !== "defer") || r.questions.length || r.decisions.some(d => d.kind === "major" || d.conflictsWithHuman)) throw new Error("PASS contradicts a blocking finding or decision");
     if ((role === "developer" || role === "qa") && (!r.tests.length || r.tests.some(t => t.exitCode !== 0))) throw new Error("PASS requires successful executed tests with exit codes");
-    if (role === "reviewer" && (r.reviewChecks.length !== reviewDimensions.length || r.reviewChecks.some(c => c.status === "failed"))) throw new Error("Reviewer PASS requires all review dimensions");
+    if (role === "reviewer" && (r.reviewChecks.length !== reviewDimensions.length || r.reviewChecks.some(c => c.status === "failed"))) throw new Error("Delivery Reviewer PASS requires all review dimensions");
   }
   return r;
 }

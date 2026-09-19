@@ -4,11 +4,10 @@ import path from "node:path";
 import { config } from "./config.js";
 import type { Store } from "./storage.js";
 import type { AgentRole, WorkItem, WorkState } from "./types.js";
+import { roleShortName, stateName } from "./names.js";
 
-const roleLabels: Record<AgentRole,string> = { "product-architect":"Product Architect",developer:"Developer",qa:"QA",reviewer:"Reviewer" };
 const stageRoles: Partial<Record<WorkState,AgentRole>> = { SPEC:"product-architect",DEVELOPMENT:"developer",QA:"qa",REVIEW:"reviewer" };
-const stageLabels: Partial<Record<WorkState,string>> = { SPEC:"Product Architect",WAITING_HUMAN:"human input",DEVELOPMENT:"Development",QA:"QA",REVIEW:"Review" };
-const stageLabel = (state: WorkState) => stageLabels[state] ?? state;
+const stageLabel = (state: WorkState) => stateName(state);
 
 function sanitize(value: unknown, limit = 4000) {
   let text=String(value ?? "")
@@ -113,7 +112,7 @@ export function failureMarkdown(store: Store, w: WorkItem, error: unknown) {
   const analysis=diagnosis(reason,stderr,run);
   const facts=[`**Stage:** ${stageLabel(stage)}`];
   if (run) {
-    facts.push(`**Agent:** ${roleLabels[run.role]}`);
+    facts.push(`**Agent:** ${roleShortName(run.role)}`);
     if (selection.selection?.provider || selection.selection?.model) facts.push(`**Provider / model:** ${[selection.selection.provider,selection.selection.model].filter(Boolean).join(" · ")}`);
     facts.push(`**Execution:** \`${run.id}\``);
     facts.push(`**Process result:** ${run.status}${run.exit_code === null ? "" : ` · exit ${run.exit_code}`}`);

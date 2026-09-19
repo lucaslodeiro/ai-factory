@@ -41,7 +41,7 @@ if(a[0]==='--version'){console.log('fake-1');process.exit(0)}
 if(a[0]==='login'){process.exit(0)}
 if(a[0]==='auth'){console.log(JSON.stringify({loggedIn:true}));process.exit(0)}
 const input=fs.readFileSync(0,'utf8');const codex=a[0]==='exec';
-const architect=input.includes('# Product Architect Contract'),developer=input.includes('# Developer Contract'),qa=input.includes('# QA Contract');
+const architect=input.includes('# Product Architect (Architect) Contract'),developer=input.includes('# Implementation Engineer (Builder) Contract'),qa=input.includes('# Verification Engineer (Tester) Contract');
 let result=architect?${JSON.stringify(result("spec"))}:${JSON.stringify(result("pass"))};
 if(developer){
   const marker=${JSON.stringify(path.join(root, 'first-developer'))};
@@ -98,7 +98,7 @@ if(codex){
   assert.equal(fs.existsSync(path.join(data, "daemon.lock")), false);
   const daemonLog=fs.readFileSync(path.join(root,"daemon.log"),"utf8");
   assert.match(daemonLog,/INFO\s+daemon\.starting/); assert.match(daemonLog,/INFO\s+daemon\.ready/);
-  assert.match(daemonLog,/INFO\s+execution_started[\s\S]*role="developer"/); assert.match(daemonLog,/INFO\s+state_changed/);
+  assert.match(daemonLog,/INFO\s+execution_started[\s\S]*role="Builder"/); assert.match(daemonLog,/INFO\s+state_changed/);
   assert.match(daemonLog,/INFO\s+daemon\.stopped/); assert.doesNotMatch(daemonLog,/Add greet function and tests/);
  } finally {
   if (child.exitCode === null && child.pid) { try { process.kill(-child.pid, "SIGKILL"); } catch {} await exited; }

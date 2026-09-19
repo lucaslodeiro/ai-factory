@@ -19,7 +19,7 @@ test("failure report provides useful execution evidence and redacts troubleshoot
     const runDir=path.join(root,"runs","run-1"); fs.mkdirSync(runDir,{recursive:true});
     fs.writeFileSync(path.join(runDir,"stderr.log"),`${Array.from({length:34},(_,index)=>`diagnostic ${index}`).join("\n")}\nAuthorization: Bearer secret-value-123456\n\u001b[31mcompilation failed\u001b[0m\n`);
     const markdown=failureMarkdown(store,store.get("work-1")!,new Error(`${config.repoDir}/src/app.ts failed`));
-    assert.match(markdown,/\*\*Stage:\*\* Development/); assert.match(markdown,/\*\*Agent:\*\* Developer/);
+    assert.match(markdown,/\*\*Stage:\*\* Build/); assert.match(markdown,/\*\*Agent:\*\* Builder/);
     assert.match(markdown,/Codex|codex/); assert.match(markdown,/gpt-test/); assert.match(markdown,/exit 2/);
     assert.match(markdown,/Last 30 stderr lines/); assert.match(markdown,/compilation failed/); assert.doesNotMatch(markdown,/diagnostic 0/);
     assert.match(markdown,/### Troubleshooting[\s\S]*#### Diagnosis[\s\S]*agent subprocess failed[\s\S]*exit code 2/i);

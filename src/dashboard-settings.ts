@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parse } from "dotenv";
+import { roleFullName } from "./names.js";
 
 type Option = { value: string; label: string };
 type Field = { key: string; label: string; description: string; group: string; secret?: boolean; required?: boolean; type?: "number" | "text" | "select"; options?: Option[]; unit?: string; restart?: "daemon" | "dashboard" | "all"; hidden?: boolean; section?: string; role?: string; kind?: "provider" | "role-model" };
@@ -27,7 +28,7 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   FACTORY_REPO_DIR:{label:"Target checkout",description:"Absolute path to the application clone.",group:"project",required:true,restart:"daemon"},
   FACTORY_POLL_INTERVAL_MS:{label:"GitHub polling interval",description:"How often the daemon checks issues and comments.",group:"runtime",type:"number",unit:"milliseconds",restart:"daemon"},
   FACTORY_EXECUTION_TIMEOUT_MS:{label:"Agent execution timeout",description:"Maximum duration of one agent process.",group:"runtime",type:"number",unit:"milliseconds",restart:"daemon"},
-  FACTORY_MAX_FIX_CYCLES:{label:"Automatic correction cycles",description:"Maximum Developer and QA correction loops before human input.",group:"runtime",type:"number",unit:"cycles",restart:"daemon"},
+  FACTORY_MAX_FIX_CYCLES:{label:"Automatic correction cycles",description:"Maximum Builder and Tester correction loops before human input.",group:"runtime",type:"number",unit:"cycles",restart:"daemon"},
   FACTORY_DASHBOARD_HOST:{label:"Listen address",description:"Loopback address used by the administration UI.",group:"dashboard",type:"select",options:["127.0.0.1","localhost","::1"].map(value => ({value,label:value})),required:true,restart:"dashboard"},
   FACTORY_DASHBOARD_PORT:{label:"HTTP port",description:"Local port for the administration UI.",group:"dashboard",type:"number",unit:"port",required:true,restart:"dashboard"},
   GITHUB_REPOSITORY:{label:"Repository",description:"GitHub owner/name used for issues and pull requests.",group:"project",required:true,restart:"daemon"},
@@ -38,14 +39,14 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   CLAUDE_COMMAND:{label:"Claude CLI",description:"Absolute path or command used to start Claude.",group:"tools",required:true,restart:"all"},
   GIT_COMMAND:{label:"Git executable",description:"Absolute path or command used for Git operations.",group:"tools",required:true,restart:"all"},
   AGENT_SECRET_ALLOWLIST:{label:"Agent environment allowlist",description:"Extra environment variable names forwarded to worker processes.",group:"access",restart:"daemon"},
-  PRODUCT_ARCHITECT_PROVIDER:roleField("Product Architect","product-architect","Product Architect"),
-  PRODUCT_ARCHITECT_MODEL:modelField("Product Architect","product-architect"),
-  DEVELOPER_PROVIDER:roleField("Developer","developer","Developer"),
-  DEVELOPER_MODEL:modelField("Developer","developer"),
-  QA_PROVIDER:roleField("QA","qa","QA"),
-  QA_MODEL:modelField("QA","qa"),
-  REVIEWER_PROVIDER:roleField("Reviewer","reviewer","Reviewer"),
-  REVIEWER_MODEL:modelField("Reviewer","reviewer"),
+  PRODUCT_ARCHITECT_PROVIDER:roleField(roleFullName("product-architect"),"product-architect",roleFullName("product-architect")),
+  PRODUCT_ARCHITECT_MODEL:modelField(roleFullName("product-architect"),"product-architect"),
+  DEVELOPER_PROVIDER:roleField(roleFullName("developer"),"developer",roleFullName("developer")),
+  DEVELOPER_MODEL:modelField(roleFullName("developer"),"developer"),
+  QA_PROVIDER:roleField(roleFullName("qa"),"qa",roleFullName("qa")),
+  QA_MODEL:modelField(roleFullName("qa"),"qa"),
+  REVIEWER_PROVIDER:roleField(roleFullName("reviewer"),"reviewer",roleFullName("reviewer")),
+  REVIEWER_MODEL:modelField(roleFullName("reviewer"),"reviewer"),
 };
 
 function encode(value: string) {

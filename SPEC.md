@@ -11,13 +11,13 @@ Run a software factory on the user's Mac that turns a GitHub Issue into a tested
 | ID | Decision |
 |---|---|
 | D01 | Orchestration and agent processes always execute locally. GitHub is the collaboration UI, not the execution engine. Initial platform: macOS, without Docker. |
-| D02 | Four independent roles: Product Architect, Developer, QA and Reviewer. Each invocation starts a fresh context. The operator configures Codex or Claude independently for every role, then selects automatic provider model choice or explicit fast/balanced/strong model IDs; defaults remain Claude, Codex, Codex and Claude respectively. |
+| D02 | Four independent roles: Product Architect (Architect) in Design, Implementation Engineer (Builder) in Build, Verification Engineer (Tester) in Test and Delivery Reviewer (Reviewer) in Review. Each invocation starts a fresh context. The operator configures Codex or Claude independently for every role, then selects automatic provider model choice or explicit fast/balanced/strong model IDs; defaults remain Claude, Codex, Codex and Claude respectively. |
 | D03 | GitHub Issues accept requests and human feedback; comments and labels mirror progress. SQLite is authoritative for workflow state and audit history. |
 | D04 | Initial specs and material revisions need explicit human approval. Approved specs are immutable versioned contracts with verifiable acceptance criteria. |
 | D05 | Product Architect may challenge a human decision and propose alternatives, but cannot silently override it. Major product, architecture, scope, risk or conflicting decisions go to the human. |
-| D06 | Tactical questions consistent with approved constraints are resolved and documented by Product Architect, without another human approval. Developer consults this role first. |
-| D07 | QA derives verification from the approved spec independently. It may create/modify tests and run commands, but must not change production code. |
-| D08 | Reviewer checks specification compliance, quality, security, performance, product/UI/copy consistency, tests and dependencies. |
+| D06 | Tactical questions consistent with approved constraints are resolved and documented by Product Architect, without another human approval. Implementation Engineer consults this role first. |
+| D07 | Verification Engineer derives verification from the approved spec independently. It may create/modify tests and run commands, but must not change production code. |
+| D08 | Delivery Reviewer checks specification compliance, quality, security, performance, product/UI/copy consistency, tests and dependencies. |
 | D09 | Internet is allowed for documentation and dependencies. Extra environment secrets require an explicit allowlist. Local provider authentication remains available. |
 | D10 | Slack notifies; decisions happen in GitHub. Required notices include state changes and human action, with a direct link and explanation. |
 | D11 | Runs must be observable, cancellable, subject to timeout and recoverable. Interrupted work must never be assumed successful. |
@@ -26,10 +26,10 @@ Run a software factory on the user's Mac that turns a GitHub Issue into a tested
 ## Actors and artifacts
 
 - Human: submits work, answers questions, approves an exact spec version, resolves major choices and merges.
-- Product Architect: reads the request and repository; proposes requirements, alternatives and architecture; produces specs or tactical decision records.
-- Developer: implements the approved contract in the assigned worktree; declares changes, tests, coverage and dependency rationale.
-- QA: independently verifies each approved criterion; reports evidence and classified findings; only test edits are permitted.
-- Reviewer: independently reviews the delivered implementation/diff and all required review dimensions.
+- Product Architect (**Architect**, Design): reads the request and repository; proposes requirements, alternatives and architecture; produces specs or tactical decision records.
+- Implementation Engineer (**Builder**, Build): implements the approved contract in the assigned worktree; declares changes, tests, coverage and dependency rationale.
+- Verification Engineer (**Tester**, Test): independently verifies each approved criterion; reports evidence and classified findings; only test edits are permitted.
+- Delivery Reviewer (**Reviewer**, Review): independently reviews the delivered implementation/diff and all required review dimensions.
 - Orchestrator: controls identity, state, approvals, role routing, execution, persistence, commits, pushes and PR creation.
 
 Artifacts: immutable spec markdown plus structured acceptance criteria; approval login/comment ID; tactical decisions with rationale; structured per-role reports; run logs/completion records; Git commits/work branches; GitHub comments/PR; durable notification queues.
@@ -42,7 +42,7 @@ Given an open issue with `factory:queued` in the configured repository, polling 
 
 ### F02 — Fresh role contexts
 
-Each role invocation receives its common contract, provider-specific instructions, applicable template and current approved artifacts. QA/Reviewer do not inherit Developer conversation or conclusions. Documented Product Architect decisions are shared, since they are part of the authoritative work contract. Reviewer receives the implementation diff and attributed QA test commands/results and criterion evidence, without QA summary conclusions. It independently inspects code and test quality, and never claims QA executions as its own.
+Each role invocation receives its common contract, provider-specific instructions, applicable template and current approved artifacts. Verification Engineer/Delivery Reviewer do not inherit Implementation Engineer conversation or conclusions. Documented Product Architect decisions are shared, since they are part of the authoritative work contract. Delivery Reviewer receives the implementation diff and attributed Verification Engineer test commands/results and criterion evidence, without Verification Engineer summary conclusions. It independently inspects code and test quality, and never claims Verification Engineer executions as its own.
 
 ### F03 — Clarification and human authority
 
@@ -54,25 +54,25 @@ A proposal contains nonempty markdown and unique structured criterion IDs also a
 
 ### F05 — Tactical consultation
 
-Given an approved spec and a question raised from Developer, QA or Reviewer, Product Architect can return a `resolved` result with only tactical decisions, rationale, no human conflicts and a permitted return role. The spec, criterion set, version and original approval remain unchanged. No new approval notice is generated. Decisions are recorded and supplied to later roles.
+Given an approved spec and a question raised from Implementation Engineer, Verification Engineer or Delivery Reviewer, Product Architect can return a `resolved` result with only tactical decisions, rationale, no human conflicts and a permitted return role. The spec, criterion set, version and original approval remain unchanged. No new approval notice is generated. Decisions are recorded and supplied to later roles.
 
-The return route cannot skip a gate: a Developer consultation returns to Developer; QA can return to Developer or QA; Reviewer can return to Developer, QA or Reviewer. Returning upstream invalidates affected downstream reports. An initial spec cannot be self-approved through this route. A revised spec or unresolved major question must return to the human gate.
+The return route cannot skip a gate: an Implementation Engineer consultation returns to Implementation Engineer; Verification Engineer can return to Implementation Engineer or Verification Engineer; Delivery Reviewer can return to Implementation Engineer, Verification Engineer or Delivery Reviewer. Returning upstream invalidates affected downstream reports. An initial spec cannot be self-approved through this route. A revised spec or unresolved major question must return to the human gate.
 
-### F06 — Developer report
+### F06 — Build / Implementation Engineer report
 
-Before passing to QA, a Developer result must contain evidence for every approved criterion, at least one successful executed test command with numeric zero exit code, explicit changed-file and dependency arrays, and no blocking findings or human conflicts. Added/updated/removed dependencies require a rationale. Empty dependency arrays explicitly mean none reported.
+Before passing to Verification Engineer, an Implementation Engineer result must contain evidence for every approved criterion, at least one successful executed test command with numeric zero exit code, explicit changed-file and dependency arrays, and no blocking findings or human conflicts. Added/updated/removed dependencies require a rationale. Empty dependency arrays explicitly mean none reported.
 
-### F07 — Independent QA
+### F07 — Test / Verification Engineer
 
-QA receives approved requirements and decisions, derives tests independently, and reports criterion-level evidence. Passing requires all criteria covered and successful executed tests. Non-test file edits fail the stage before the orchestrator commits. The MVP recognizes `test`, `tests`, `spec`, `specs`, `__tests__` directories and `.test.*` / `.spec.*` filenames; other test layouts need an explicit future policy extension.
+Verification Engineer receives approved requirements and decisions, derives tests independently, and reports criterion-level evidence. Passing requires all criteria covered and successful executed tests. Non-test file edits fail the stage before the orchestrator commits. The MVP recognizes `test`, `tests`, `spec`, `specs`, `__tests__` directories and `.test.*` / `.spec.*` filenames; other test layouts need an explicit future policy extension.
 
-### F08 — Reviewer gate
+### F08 — Review / Delivery Reviewer gate
 
-Reviewer PASS requires evidence for every approved criterion and each review dimension: specification, code quality, security, performance, product/UI/copy, test quality and dependencies. Not-applicable checks require evidence too. Missing checks, failed dimensions, unresolved major decisions or blocking findings prevent readiness.
+Delivery Reviewer PASS requires evidence for every approved criterion and each review dimension: specification, code quality, security, performance, product/UI/copy, test quality and dependencies. Not-applicable checks require evidence too. Missing checks, failed dimensions, unresolved major decisions or blocking findings prevent readiness.
 
 ### F09 — Finding routing
 
-- `auto-fix`: return to Developer, preserving the approved contract, then rerun downstream verification.
+- `auto-fix`: return to Implementation Engineer, preserving the approved contract, then rerun downstream verification.
 - `decision-required`: consult Product Architect; tactical resolution follows F05, otherwise the human gate applies.
 - `defer`: record the finding in the full report; it does not block a PASS when all acceptance criteria pass.
 
@@ -80,7 +80,7 @@ Correction cycles are bounded by configuration. Reaching the limit requires huma
 
 ### F10 — Pull request delivery
 
-After Developer, QA and Reviewer pass for the current approved work, push only the work item's `factory/*` branch and create or reuse its open PR against the configured base. The PR contains the approved spec, summaries and a link to complete reports/decisions/deferred findings. Do not merge automatically or push to the default branch. Reconcile the published PR with GitHub: MERGED is terminal and records the merge timestamp/commit; PR_CLOSED distinguishes closure without integration and can return to READY_TO_MERGE on reopening. Preserve state on API errors and emit each lifecycle transition once. The daemon and standalone sync command perform this without executing agents.
+After Implementation Engineer, Verification Engineer and Delivery Reviewer pass for the current approved work, push only the work item's `factory/*` branch and create or reuse its open PR against the configured base. The PR contains the approved spec, summaries and a link to complete reports/decisions/deferred findings. Do not merge automatically or push to the default branch. Reconcile the published PR with GitHub: MERGED is terminal and records the merge timestamp/commit; PR_CLOSED distinguishes closure without integration and can return to READY_TO_MERGE on reopening. Preserve state on API errors and emit each lifecycle transition once. The daemon and standalone sync command perform this without executing agents.
 
 ### F11 — Execution, cancellation and recovery
 

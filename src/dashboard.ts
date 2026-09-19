@@ -10,6 +10,7 @@ import { Store } from "./storage.js";
 import { readDashboardSetting, readDashboardSettings, saveDashboardSettings, validateDashboardSettings } from "./dashboard-settings.js";
 import { connectCredential, credentialStatuses, type CredentialProvider } from "./dashboard-credentials.js";
 import { SlackAdapter } from "./adapters/slack.js";
+import { publicNaming, roleShortName, stateName } from "./names.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
 const types: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8" };
@@ -47,13 +48,8 @@ function details(payload: string) {
     return text.length > 420 ? `${text.slice(0,417)}…` : text;
   } catch { return payload; }
 }
-const roleLabels: Record<string,string> = { "product-architect":"Product Architect",developer:"Developer",qa:"QA",reviewer:"Reviewer" };
-const stateLabels: Record<string,string> = {
-  NEW:"Queued",SPEC:"Product Architect",WAITING_HUMAN:"Waiting for input",DEVELOPMENT:"Development",QA:"QA",REVIEW:"Review",
-  READY_TO_MERGE:"Ready to merge",MERGED:"Merged",PR_CLOSED:"PR closed",PAUSED:"Paused",FAILED:"Failed",CANCELLED:"Cancelled",
-};
-const roleLabel = (role?: string) => roleLabels[role ?? ""] ?? role ?? "Agent";
-const stateLabel = (state?: string) => stateLabels[state ?? ""] ?? state?.toLowerCase().replaceAll("_"," ") ?? "unknown state";
+const roleLabel = (role?: string) => role ? roleShortName(role) : "Agent";
+const stateLabel = (state?: string) => state ? stateName(state) : "unknown state";
 function eventPresentation(type: string, payload: string, runRole?: string) {
   try {
     const value = JSON.parse(payload) as any;
@@ -75,11 +71,11 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
     if (type === "model.selected") return { title:`Model selected for ${role}`,details:`${value.selection?.provider ?? "Provider"} · ${value.selection?.model ?? "automatic model"}${value.selection?.reason ? ` — ${value.selection.reason}` : ""}`,severity:"info",category:"Routing" };
     if (type === "spec.approved") return { title:`SPEC v${value.version} approved`,details:`Approved by ${value.login ?? "an authorized approver"} in GitHub.`,severity:"success",category:"Approval" };
     if (type === "spec.review_required") return { title:"Architecture review required",details:`The task was assessed as ${value.assessment?.complexity ?? "unknown"} complexity and ${value.assessment?.risk ?? "unknown"} risk.`,severity:"warning",category:"Specification" };
-    if (type === "decision.tactical") return { title:"Product Architect resolved a delivery question",details:`The workflow will continue at ${stateLabel(value.to)} under SPEC v${value.specVersion}.`,severity:"success",category:"Decision" };
-    if (type === "work_item.created") return { title:`Issue #${value.issue} entered the factory`,details:"Product Architect will prepare the specification.",severity:"info",category:"Issue" };
+    if (type === "decision.tactical") return { title:"Architect resolved a delivery question",details:`The workflow will continue at ${stateLabel(value.to)} under SPEC v${value.specVersion}.`,severity:"success",category:"Decision" };
+    if (type === "work_item.created") return { title:`Issue #${value.issue} entered the factory`,details:"Architect will prepare the specification.",severity:"info",category:"Issue" };
     if (type === "start.command_rejected") return { title:"Factory start command rejected",details:`Issue #${value.issueNumber ?? "?"}: ${value.reason ?? "The command was not authorized"}.`,severity:"warning",category:"Issue" };
     if (type === "start.command_ignored") return { title:"Issue already tracked",details:`Issue #${value.issueNumber ?? "?"} already has a work item; no duplicate was created.`,severity:"info",category:"Issue" };
-    if (type === "work_item.recovered") return { title:`Issue #${value.issue} recovered`,details:"Local state was missing. The issue was paused and can restart safely from Product Architect.",severity:"warning",category:"Recovery" };
+    if (type === "work_item.recovered") return { title:`Issue #${value.issue} recovered`,details:"Local state was missing. The issue was paused and can restart safely from Design with Architect.",severity:"warning",category:"Recovery" };
     if (type === "workflow.error") return { title:"Workflow execution failed",details:value.error ?? "Inspect daemon and agent logs for the cause.",severity:"error",category:"Failure" };
     if (type === "retry.requested") return { title:"Retry accepted",details:`The workflow will resume at ${stateLabel(value.to)}.`,severity:"info",category:"Recovery" };
     if (type === "retry.comment_accepted") return { title:"Retry requested from GitHub",details:`${value.login ?? "An approver"} requested a retry; resuming at ${stateLabel(value.to)}.`,severity:"info",category:"Recovery" };
@@ -98,7 +94,7 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
     if (type === "control.failed") return { title:`${value.kind === "refresh-list" ? "Issue list refresh" : value.kind === "refresh" ? "Issue refresh" : value.kind ?? "Control"} failed`,details:value.error ?? "Unknown error",severity:"error",category:"Control" };
     if (type === "control.applied") {
       if (value.kind === "refresh-list") return { title:"Issue list refresh completed",details:value.result ? `${value.result.found ?? 0} found · ${value.result.added ?? 0} added · ${value.result.updated ?? 0} updated` : "GitHub issues are synchronized.",severity:"success",category:"Control" };
-      if (value.kind === "start-issue") return { title:value.result?.created ? `Issue #${value.result.issue} started` : `Issue #${value.result?.issue ?? "?"} already tracked`,details:value.result?.created ? `Work item ${value.result.id} was created and Product Architect will begin.` : `Existing work item ${value.result?.id ?? "unknown"} remains ${stateLabel(value.result?.state)}.`,severity:"success",category:"Control" };
+      if (value.kind === "start-issue") return { title:value.result?.created ? `Issue #${value.result.issue} started` : `Issue #${value.result?.issue ?? "?"} already tracked`,details:value.result?.created ? `Work item ${value.result.id} was created and Architect will begin Design.` : `Existing work item ${value.result?.id ?? "unknown"} remains ${stateLabel(value.result?.state)}.`,severity:"success",category:"Control" };
       if (value.kind === "retry") return { title:"Retry started",details:"The workflow resumed from its saved stage.",severity:"success",category:"Control" };
       if (value.kind === "cancel") return { title:"Cancellation completed",details:"The active workflow was stopped and can be retried later.",severity:"warning",category:"Control" };
       if (value.kind === "stop") return { title:"Daemon stop completed",details:"Active work was paused safely.",severity:"warning",category:"Control" };
@@ -158,7 +154,7 @@ function snapshot(store: Store) {
       }
     }
   }
-  return { generatedAt:new Date().toISOString(), repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), issueRefresh, items, executions, usage, events };
+  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), issueRefresh, items, executions, usage, events };
 }
 async function readBody(req: http.IncomingMessage) {
   let body = "";

@@ -114,8 +114,8 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.deepEqual({issue:snapshot.usage[0].issue,runs:snapshot.usage[0].runs,durationMs:snapshot.usage[0].durationMs,totalTokens:snapshot.usage[0].totalTokens,stage:snapshot.usage[0].stages[0].state},
       {issue:7,runs:1,durationMs:65000,totalTokens:1750,stage:"QA"});
     const resultEvent=snapshot.events.find((event:any)=>event.type==="agent.result"),stateEvent=snapshot.events.find((event:any)=>event.type==="state.changed"),executionEvent=snapshot.events.find((event:any)=>event.type==="execution.finished");
-    assert.equal(resultEvent.title,"QA: Passed"); assert.match(resultEvent.details,/All acceptance criteria passed/); assert.match(resultEvent.details,/20\/20 passed/); assert.equal(resultEvent.severity,"success");
-    assert.equal(stateEvent.title,"Workflow moved to Failed"); assert.equal(stateEvent.details,"Previous stage: QA."); assert.equal(stateEvent.severity,"error");
+    assert.equal(resultEvent.title,"Tester: Passed"); assert.match(resultEvent.details,/All acceptance criteria passed/); assert.match(resultEvent.details,/20\/20 passed/); assert.equal(resultEvent.severity,"success");
+    assert.equal(stateEvent.title,"Workflow moved to Failed"); assert.equal(stateEvent.details,"Previous stage: Test."); assert.equal(stateEvent.severity,"error");
     assert.match(executionEvent.details,/Tokens reported: 1,750/);
     assert.equal(resultEvent.issueTitle,"Repair login"); assert.equal(resultEvent.issueUrl,"https://github.com/owner/demo/issues/7");
     const controller = new AbortController();
@@ -195,7 +195,7 @@ echo "$*" >> "$PWD/update-actions.log"
     const developerProvider = settings.fields.find((field: any) => field.key === "DEVELOPER_PROVIDER");
     assert.equal(developerProvider.group,"models"); assert.equal(developerProvider.type,"select"); assert.deepEqual(developerProvider.options.map((option: any) => option.value),["codex","claude"]);
     const developerModel = settings.fields.find((field: any) => field.key === "DEVELOPER_MODEL");
-    assert.equal(developerModel.kind,"role-model"); assert.equal(developerModel.section,"Developer");
+    assert.equal(developerModel.kind,"role-model"); assert.equal(developerModel.section,"Implementation Engineer");
     assert.equal(developerModel.value,"custom-codex-model");
     assert.ok(developerModel.options.some((option: any) => option.value === "auto"));
     assert.ok(developerModel.options.some((option: any) => option.value === "gpt-5.6-terra"));

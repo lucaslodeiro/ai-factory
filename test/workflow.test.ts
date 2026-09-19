@@ -194,6 +194,22 @@ test("material decision invalidates previous approval and repeated fixes escalat
  for (let i=0;i<config.maxCycles;i++) await g.o.tick();
  assert.equal(g.item().state, "WAITING_HUMAN"); assert.equal(g.item().context.waiting, "loop"); g.store.db.close();
 });
+test("human guidance after the correction limit preserves the delivery route for a tactical resolution", async () => {
+ const f = setup({
+  "product-architect": [result("spec"), tactical()],
+  developer: Array.from({ length: config.maxCycles }, () => result("changes", { findings: [{ classification: "auto-fix", evidence: "Needs human guidance" }] })),
+ });
+ await f.o.tick(); f.gh.reply("/factory approve v1"); await f.o.tick();
+ for (let i=0;i<config.maxCycles;i++) await f.o.tick();
+ assert.equal(f.item().state,"WAITING_HUMAN");
+ assert.deepEqual(f.item().context.consultation,{from:"DEVELOPMENT"});
+ f.gh.reply("/factory answer\nRun the existing application locally and expose its HTTP URL.");
+ await f.o.tick(); assert.equal(f.item().state,"SPEC");
+ await f.o.tick(); assert.equal(f.item().state,"DEVELOPMENT");
+ assert.equal(f.item().context.consultation,undefined);
+ assert.match([...f.gh.posted.values()].at(-1) ?? "",/Architect — tactical question resolved/);
+ f.store.db.close();
+});
 test("durable GitHub outbox retries; malformed outputs fail closed and retry routes correctly", async () => {
  const f = setup({ developer: [result("pass", { findings: [{ classification: "auto-fix", evidence: "blocking" }] })] });
  f.gh.fail = true; await f.o.tick(); assert.equal(f.gh.posted.size, 0);
@@ -202,9 +218,22 @@ test("durable GitHub outbox retries; malformed outputs fail closed and retry rou
  f.gh.reply("/factory approve v1"); await f.o.tick(); await f.o.tick();
  assert.equal(f.item().state, "FAILED");
  const failureComment=[...f.gh.posted.values()].find(body=>body.includes("## Execution failed"))!;
- assert.match(failureComment,/### What happened/); assert.match(failureComment,/### Troubleshooting/); assert.match(failureComment,/\*\*Stage:\*\* Development/); assert.match(failureComment,/\/factory retry/);
+ assert.match(failureComment,/### What happened/); assert.match(failureComment,/### Troubleshooting/); assert.match(failureComment,/\*\*Stage:\*\* Build/); assert.match(failureComment,/\/factory retry/);
  retry(f.store, f.item().id); assert.equal(f.item().state, "DEVELOPMENT");
  await f.o.tick(); assert.equal(f.item().state, "QA"); f.store.db.close();
+});
+test("retry recovers the correction route for legacy failed items that lost consultation context", async () => {
+ const f=setup(); await f.o.tick();
+ const failed=f.item();
+ failed.state="FAILED"; failed.context.resume="SPEC"; failed.context.waiting="loop";
+ failed.context.approvedVersion=failed.context.version;
+ failed.context.consultation=undefined;
+ failed.context.reports.developer=result("changes",{findings:[{classification:"auto-fix",evidence:"Blocking correction"}]});
+ f.store.save(failed);
+ retry(f.store,failed.id);
+ assert.equal(f.item().state,"SPEC");
+ assert.deepEqual(f.item().context.consultation,{from:"DEVELOPMENT"});
+ f.store.db.close();
 });
 test("authorized standalone issue comment retries the saved stage exactly once", async () => {
  const f = setup(); await f.o.tick();
@@ -214,7 +243,7 @@ test("authorized standalone issue comment retries the saved stage exactly once",
  f.gh.reply("/factory retry"); await f.o.tick();
  assert.equal(f.item().state,"SPEC"); assert.equal(f.calls.length,1); assert.equal(f.item().context.cursor,3);
  assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='retry.comment_accepted'").get() as any).n,1);
- assert.ok([...f.gh.posted.values()].some(body=>body.includes("## Retry accepted") && body.includes("Product Architect")));
+ assert.ok([...f.gh.posted.values()].some(body=>body.includes("## Retry accepted") && body.includes("Design")));
  await f.o.tick(); assert.equal(f.item().state,"WAITING_HUMAN"); assert.equal(f.calls.length,2);
  f.store.db.close();
 });
@@ -372,7 +401,7 @@ test("read-only reviewer receives attributed QA execution evidence without devel
  for (let i = 0; i < 3; i++) await f.o.tick();
  const instructions = f.calls.find(call => call.role === "reviewer")!.instructions;
  assert.match(instructions, /INDEPENDENT_QA_EXECUTION/);
- assert.match(instructions, /explicitly attributing it to QA/);
+ assert.match(instructions, /explicitly attributing it to the Tester/);
  assert.doesNotMatch(instructions, /PRIVATE_DEVELOPER_REASONING|QA_CONCLUSION_NOT_SHARED/);
  assert.equal(f.item().state, "READY_TO_MERGE"); f.store.db.close();
 });

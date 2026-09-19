@@ -1,4 +1,4 @@
-# QA Report — <Work Item>
+# Verification Report — <Work Item>
 
 ## Summary
 PASS | FAIL | PASS_WITH_DEFERRED

@@ -2,6 +2,7 @@
 import { config } from "./config.js";
 import { modelForWork, modelPolicyVersion } from "./model-policy.js";
 import type { AgentRole } from "./types.js";
+import { roleShortName, roleStageName, stateName } from "./names.js";
 import { Orchestrator } from "./orchestrator.js";
 import { Command } from "commander";
 import { doctor } from "./doctor.js";
@@ -12,11 +13,11 @@ import { startDashboard } from "./dashboard.js";
 const p = new Command().name("factory").description("Local AI Software Factory").version("0.1.0");
 p.command("models").argument("[id]").description("Show model policy or preview role selections for a work item").action(id => {
  console.log(`Model policy: ${modelPolicyVersion}`);
- if (!id) { console.table(Object.entries(config.roles).map(([role, routing]) => ({ role,provider:routing.provider,model:routing.model }))); return; }
+ if (!id) { console.table(Object.entries(config.roles).map(([role, routing]) => ({ stage:roleStageName(role),agent:roleShortName(role),provider:routing.provider,model:routing.model }))); return; }
  const s = new Store();
  try {
   const w = s.get(id); if (!w) throw new Error("Unknown work item");
-  console.table((["product-architect", "developer", "qa", "reviewer"] as AgentRole[]).map(role => ({ role, ...modelForWork(w, role) })));
+  console.table((["product-architect", "developer", "qa", "reviewer"] as AgentRole[]).map(role => ({ stage:roleStageName(role),agent:roleShortName(role), ...modelForWork(w, role) })));
  } finally { s.db.close(); }
 });
 p.command("sync").description("Reconcile PR lifecycle and publish pending status/reports without running agents").action(async () => {
@@ -25,8 +26,9 @@ p.command("sync").description("Reconcile PR lifecycle and publish pending status
 p.command("doctor").action(() => { process.exitCode = doctor() ? 0 : 1; });
 p.command("status").argument("[id]").action(id => {
  const store = new Store();
- console.table(store.items().filter(w => !id || w.id === id).map(w => ({ id: w.id, issue: w.issue_number, state: w.state, resume: w.context.resume, interruptedStage: w.context.pendingStage?.stage, spec: w.context.version, pr: w.context.pr })));
- console.table(store.db.prepare("SELECT id,work_item_id,role,status,pid,recovery_pending FROM executions ORDER BY started_at DESC LIMIT 20").all()); store.db.close();
+ console.table(store.items().filter(w => !id || w.id === id).map(w => ({ id: w.id, issue: w.issue_number, state: stateName(w.state), resume: w.context.resume ? stateName(w.context.resume) : undefined, interruptedStage: w.context.pendingStage?.stage ? stateName(w.context.pendingStage.stage) : undefined, spec: w.context.version, pr: w.context.pr })));
+ const runs = store.db.prepare("SELECT id,work_item_id,role,status,pid,recovery_pending FROM executions ORDER BY started_at DESC LIMIT 20").all() as Array<Record<string,unknown> & { role:string }>;
+ console.table(runs.map(run => ({...run,role:roleShortName(run.role)}))); store.db.close();
 });
 for (const name of ["cancel", "retry"] as const) p.command(name).argument("<id>").description(`${name} a work item`).action(id => {
  const store = new Store(); store.request(name, id); store.db.close(); console.log(`${name} queued; processed by factory start.`);
