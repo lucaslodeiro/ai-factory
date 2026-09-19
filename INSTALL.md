@@ -244,7 +244,7 @@ Create an open feature issue, then post this standalone comment as a configured 
 /factory start
 ```
 
-You can instead enter its number or URL in the dashboard's **Start issue** field or run `ai-factory start-issue <number-or-url>`. The daemon validates the issue and caller, creates the workflow labels itself, and starts the Product Architect (Architect) in a fresh process using its configured provider. Questions are posted on the issue; answer with a standalone command:
+You can instead enter its number or URL in the dashboard's **Start tracking issue** field or run `ai-factory start-issue <number-or-url>`. The daemon validates the issue and caller, creates the workflow labels itself, and starts the Product Architect (Architect) in a fresh process using its configured provider. Questions are posted on the issue; answer with a standalone command:
 
 ```text
 /factory answer

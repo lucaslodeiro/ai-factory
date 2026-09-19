@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import type { AddressInfo } from "node:net";
+import Database from "better-sqlite3";
 import { config } from "./config.js";
 import { Store } from "./storage.js";
 import { readDashboardSetting, readDashboardSettings, saveDashboardSettings, validateDashboardSettings } from "./dashboard-settings.js";
@@ -209,6 +210,44 @@ function serviceStatus(root: string, service: "daemon" | "dashboard") {
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
   return { service, loaded:result.status === 0 && output.includes(`${service}: loaded`), running:/state = (running|active)/.test(output), detail:output.trim() };
 }
+const waitBuffer = new Int32Array(new SharedArrayBuffer(4));
+function waitUntil(check: () => boolean, timeoutMs: number, intervalMs = 100) {
+  const deadline=Date.now()+timeoutMs;
+  while (Date.now()<deadline) {
+    if (check()) return true;
+    Atomics.wait(waitBuffer,0,0,intervalMs);
+  }
+  return check();
+}
+function configuredDaemonLock(root: string) {
+  const configured=readDashboardSetting(root,"FACTORY_DATA_DIR");
+  const directory=path.resolve(root,configured || ".factory"),file=path.join(directory,"factory.db");
+  if (!fs.existsSync(file)) return null;
+  try {
+    const db=new Database(file,{readonly:true,fileMustExist:true});
+    try {
+      const table=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='daemon_lock'").get();
+      const lock=table ? db.prepare("SELECT pid FROM daemon_lock WHERE id=1").get() as {pid:number} | undefined : undefined;
+      return Boolean(lock && alive(lock.pid));
+    } finally { db.close(); }
+  } catch { return false; }
+}
+function waitForDaemonStopped(root: string, previousPid: number | null) {
+  return waitUntil(()=>!serviceStatus(root,"daemon").loaded && (!previousPid || !alive(previousPid)),15000);
+}
+function waitForDaemonStarted(root: string) {
+  const started=Date.now();
+  return waitUntil(()=>{
+    const service=serviceStatus(root,"daemon"),lock=configuredDaemonLock(root);
+    return service.running && (lock === true || (lock === null && Date.now()-started>=1500));
+  },75000,200);
+}
+function restoreEnvironment(root: string, original: string | null) {
+  const file=path.join(root,".env"),temporary=`${file}.rollback-${process.pid}`;
+  if (original === null) { fs.rmSync(file,{force:true}); return; }
+  fs.writeFileSync(temporary,original,{mode:0o600});
+  fs.renameSync(temporary,file);
+}
 type UpdateState = { status: "idle" | "updating" | "completed" | "failed"; phase?: string; pid?: number; startedAt?: string; updatedAt?: string; finishedAt?: string; restoreDaemon?: boolean; restoreDashboard?: boolean };
 type VersionInfo = { number: string; revision: string; branch: string; display: string };
 const updateStateFile = (root: string) => path.join(root,".factory","update-state.json");
@@ -375,25 +414,42 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
   const plan = validateDashboardSettings(root,values,clearSecrets);
   if (!plan.changedKeys.length) return {...dashboardSettings(root),daemonRunning:daemonState(store).running,restartedServices:[],dashboardRestarting:false,message:"Configuration is already up to date."};
   const daemon = serviceStatus(root,"daemon"), dashboard = serviceStatus(root,"dashboard");
-  const daemonActive = daemonState(store).running || daemon.running;
+  const before=daemonState(store),daemonActive = before.running || daemon.running;
   const restartDaemon = plan.restartServices.includes("daemon") && daemonActive;
   const restartDashboard = plan.restartServices.includes("dashboard") && dashboard.running;
   if (plan.restartServices.includes("daemon") && daemonActive && !daemon.loaded) throw new Error("The daemon is running outside the service manager. Stop it, then save again.");
-  let daemonStopped = false;
+  const environmentFile=path.join(root,".env"),originalEnvironment=fs.existsSync(environmentFile) ? fs.readFileSync(environmentFile,"utf8") : null;
+  let daemonStopped = false,saved = false;
   try {
-    if (restartDaemon) { runService(root,"daemon","stop"); daemonStopped=true; }
+    if (restartDaemon) {
+      runService(root,"daemon","stop"); daemonStopped=true;
+      if (!waitForDaemonStopped(root,before.pid)) throw new Error("The daemon did not stop completely before applying configuration.");
+    }
     saveDashboardSettings(root,values,clearSecrets);
+    saved=true;
+    if (restartDaemon) {
+      runService(root,"daemon","start");
+      if (!waitForDaemonStarted(root)) {
+        const error=tailLog(path.join(root,".factory","service-logs","daemon.error.log"),25).content;
+        throw new Error(`The daemon did not become ready after restart.${error ? ` Last error: ${error.split(/\r?\n/).at(-1)}` : ""}`);
+      }
+    }
   } catch (error) {
-    if (daemonStopped) try { runService(root,"daemon","start"); } catch {}
-    throw error;
+    let recovery="";
+    if (saved) try { restoreEnvironment(root,originalEnvironment); } catch (rollbackError) { recovery=` Configuration rollback failed: ${String(rollbackError)}`; }
+    if (daemonStopped) try {
+      if (serviceStatus(root,"daemon").loaded) runService(root,"daemon","stop");
+      runService(root,"daemon","start");
+      if (!waitForDaemonStarted(root)) recovery+=` The previous daemon configuration could not be restored automatically.`;
+    } catch (restartError) { recovery+=` The previous daemon configuration could not be restored: ${String(restartError)}`; }
+    throw new Error(`${saved ? "Configuration was rolled back" : "Configuration was not saved"}: ${error instanceof Error ? error.message : String(error)}${recovery}`);
   }
   const restartedServices: string[] = [];
-  if (restartDaemon) {
-    try { runService(root,"daemon","start"); restartedServices.push("daemon"); }
-    catch (error) { throw new Error(`Configuration was saved, but the daemon could not restart: ${error instanceof Error ? error.message : String(error)}`); }
-  }
+  if (restartDaemon) restartedServices.push("daemon");
   if (restartDashboard) { runService(root,"dashboard","restart"); restartedServices.push("dashboard"); }
-  const message = restartedServices.length ? `Configuration saved. Restarting ${restartedServices.join(" and ")}.` : "Configuration saved. Stopped services were left stopped.";
+  const message = restartedServices.length
+    ? `Configuration saved. ${restartDaemon ? "Daemon restarted and verified." : ""}${restartDashboard ? `${restartDaemon ? " " : ""}Dashboard restart scheduled.` : ""}`
+    : "Configuration saved. Stopped services were left stopped.";
   return {...dashboardSettings(root),daemonRunning:daemonState(store).running,restartedServices,dashboardRestarting:restartDashboard,message};
 }
 

@@ -50,12 +50,21 @@ exit 0
   fs.writeFileSync(path.join(settingsRoot,".env"),"FACTORY_POLL_INTERVAL_MS=15000\nSLACK_WEBHOOK_URL='https://hooks.example.com/private'\nDEVELOPER_MODEL_MODE='manual'\nDEVELOPER_MODEL_BALANCED='custom-codex-model'\nCODEX_MODEL_FAST='retired-model'\n");
   fs.mkdirSync(path.join(settingsRoot,"scripts"));
   fs.writeFileSync(path.join(settingsRoot,"scripts","services.sh"),`#!/usr/bin/env bash
+state="$PWD/daemon-service-state"
 if [[ $1 == status ]]; then
-  if [[ $2 == daemon ]]; then printf 'daemon: loaded\\n  state = running\\n'; else echo 'dashboard: stopped'; fi
-else
-  echo "$1 $2" >> "$PWD/service-actions.log"
+  if [[ $2 == daemon && -f $state ]]; then printf 'daemon: loaded\\n  state = running\\n'; else echo "$2: stopped"; fi
+  exit 0
+fi
+echo "$1 $2" >> "$PWD/service-actions.log"
+if [[ $2 == daemon ]]; then
+  if [[ $1 == stop ]]; then rm -f "$state"; fi
+  if [[ $1 == start || $1 == restart ]]; then
+    if [[ -f "$PWD/fail-next-daemon-start" ]]; then rm -f "$PWD/fail-next-daemon-start"; echo 'simulated daemon start failure' >&2; exit 1; fi
+    touch "$state"
+  fi
 fi
 `);
+  fs.writeFileSync(path.join(settingsRoot,"daemon-service-state"),"");
   fs.writeFileSync(path.join(settingsRoot,"scripts","update.sh"),`#!/usr/bin/env bash
 echo "$*" >> "$PWD/update-actions.log"
 `);
@@ -93,6 +102,8 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(html,/Time and tokens by issue/);
     assert.match(html,/Configuration/);
     assert.match(html,/settings-navigation/);
+    assert.match(html,/Start tracking issue/);
+    assert.match(html,/Start an open issue by number or URL/);
     assert.match(html,/ACTION REQUIRED/);
     assert.match(html,/Complete the required setup/);
     assert.doesNotMatch(html,/Dismiss guide/);
@@ -251,10 +262,14 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.deepEqual({value:suggestedValue("FACTORY_APPROVERS").value,suggested:suggestedValue("FACTORY_APPROVERS").suggested},{value:"demo-user",suggested:true});
     const unknownCredential = await fetch(`http://127.0.0.1:${port}/api/credentials/connect`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({provider:"other"})});
     assert.equal(unknownCredential.status,400);
+    // From here the launchd stub is authoritative. Avoid treating this test process as
+    // the daemon process while saveConfiguration waits for the old daemon PID to exit.
+    store.db.prepare("DELETE FROM daemon_lock").run();
     const saved = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_POLL_INTERVAL_MS:"5000",SLACK_WEBHOOK_URL:"",DEVELOPER_PROVIDER:"claude",DEVELOPER_MODEL:"auto"}})});
     assert.equal(saved.status,200);
     const savedResult = await saved.json() as any;
     assert.deepEqual(savedResult.restartedServices,["daemon"]);
+    assert.match(savedResult.message,/Daemon restarted and verified/);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^FACTORY_POLL_INTERVAL_MS='5000'$/m);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^SLACK_WEBHOOK_URL='https:\/\/hooks\.example\.com\/private'$/m);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^DEVELOPER_PROVIDER='claude'$/m);
@@ -277,6 +292,14 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(appliedSlackWhileRunning.status,200);
     assert.equal((await appliedSlackWhileRunning.json() as any).configured,false);
     assert.match(fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8"),/stop daemon[\s\S]*start daemon/);
+    assert.ok(fs.existsSync(path.join(settingsRoot,"daemon-service-state")));
+    const beforeFailedRestart=fs.readFileSync(path.join(settingsRoot,".env"),"utf8");
+    fs.writeFileSync(path.join(settingsRoot,"fail-next-daemon-start"),"");
+    const failedRestart = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_POLL_INTERVAL_MS:"7000"}})});
+    assert.equal(failedRestart.status,400);
+    assert.match(await failedRestart.text(),/Configuration was rolled back/);
+    assert.equal(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),beforeFailedRestart);
+    assert.ok(fs.existsSync(path.join(settingsRoot,"daemon-service-state")));
     store.db.prepare("DELETE FROM daemon_lock").run();
     const stoppedRefresh = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"refresh-list"})});
     assert.equal(stoppedRefresh.status,409); assert.match(await stoppedRefresh.text(),/Start the daemon/);
