@@ -55,7 +55,22 @@ function snapshot(store: Store) {
   const executions = store.db.prepare("SELECT id,work_item_id,role,status,pid,started_at,finished_at,exit_code FROM executions ORDER BY started_at DESC LIMIT 30").all();
   const events = (store.db.prepare("SELECT id,ts,work_item_id,type,payload FROM events ORDER BY id DESC LIMIT 60").all() as any[])
     .map(event => ({ id:event.id, ts:event.ts, workItemId:event.work_item_id, type:event.type, details:details(event.payload) }));
-  return { generatedAt:new Date().toISOString(), repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), items, executions, events };
+  const lastRefresh = store.db.prepare("SELECT id,handled FROM controls WHERE kind='refresh-list' ORDER BY id DESC LIMIT 1").get() as { id:number; handled:number } | undefined;
+  let issueRefresh: { status:"queued" | "completed" | "failed"; message:string } | null = null;
+  if (lastRefresh) {
+    if (!lastRefresh.handled) issueRefresh={status:"queued",message:"Waiting for the daemon to refresh GitHub issues…"};
+    else {
+      const outcome = (store.db.prepare("SELECT type,payload FROM events WHERE type IN ('control.applied','control.failed') ORDER BY id DESC").all() as Array<{type:string;payload:string}>).map(event => {
+        try { return {...event,data:JSON.parse(event.payload) as { id?:number; error?:string; result?:{found?:number;added?:number;updated?:number} }}; } catch { return null; }
+      }).find(event => event?.data.id === lastRefresh.id);
+      if (outcome?.type === "control.failed") issueRefresh={status:"failed",message:outcome.data.error ?? "GitHub issue refresh failed."};
+      else if (outcome?.type === "control.applied") {
+        const result=outcome.data.result;
+        issueRefresh={status:"completed",message:result ? `Found ${result.found ?? 0} queued issue${result.found === 1 ? "" : "s"}; added ${result.added ?? 0}, updated ${result.updated ?? 0}.` : "GitHub issue refresh completed."};
+      }
+    }
+  }
+  return { generatedAt:new Date().toISOString(), repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), issueRefresh, items, executions, events };
 }
 async function readBody(req: http.IncomingMessage) {
   let body = "";
@@ -173,14 +188,68 @@ function slackStatus(root: string, store: Store) {
   const last = store.db.prepare("SELECT last_error FROM notifications WHERE last_error IS NOT NULL ORDER BY id DESC LIMIT 1").get() as { last_error:string } | undefined;
   return { configured,pending:counts.pending ?? 0,failed:counts.failed ?? 0,sent:counts.sent ?? 0,lastError:last?.last_error ?? null };
 }
+type SetupRequirement = { id: string; label: string; group: "credentials" | "project" | "access" };
+function normalizedRepository(value: string) {
+  return value.trim().replace(/^https?:\/\/github\.com\//,"https://github.com/").replace(/^git@github\.com:/,"https://github.com/").replace(/\.git$/i,"").replace(/\/$/,"").toLowerCase();
+}
+function setupReadiness(root: string, credentials: ReturnType<typeof credentialStatuses>) {
+  const missing: SetupRequirement[] = [];
+  const require = (condition: boolean, requirement: SetupRequirement) => { if (!condition) missing.push(requirement); };
+  const repository = readDashboardSetting(root,"GITHUB_REPOSITORY").trim();
+  const repoDirValue = readDashboardSetting(root,"FACTORY_REPO_DIR").trim();
+  const repoDir = repoDirValue ? path.resolve(root,repoDirValue) : "";
+  const approvers = readDashboardSetting(root,"FACTORY_APPROVERS").split(",").map(item => item.trim()).filter(Boolean);
+  const gitCommand = readDashboardSetting(root,"GIT_COMMAND").trim() || config.gitCommand;
+  const credential = (id: CredentialProvider) => credentials.credentials.find(item => item.id === id);
+  const github = credential("github");
+
+  require(Boolean(github?.installed && github.connected),{
+    id:"github-credential",label:github?.installed ? "Connect GitHub." : "Install the GitHub CLI and connect GitHub.",group:"credentials",
+  });
+  const selectedProviders = new Set(["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"].map(role => readDashboardSetting(root,`${role}_PROVIDER`) as CredentialProvider));
+  for (const provider of ["claude","codex"] as const) {
+    if (!selectedProviders.has(provider)) continue;
+    const status = credential(provider), label = provider === "claude" ? "Claude" : "Codex";
+    require(Boolean(status?.installed && status.connected),{
+      id:`${provider}-credential`,label:status?.installed ? `Connect ${label}; at least one agent role uses it.` : `Install and connect ${label}; at least one agent role uses it.`,group:"credentials",
+    });
+  }
+
+  require(/^[\w.-]+\/[\w.-]+$/.test(repository),{id:"repository",label:"Choose the GitHub repository to process.",group:"project"});
+  require(Boolean(approvers.length),{id:"approvers",label:"Add at least one authorized approver.",group:"access"});
+  const checkoutExists = Boolean(repoDir && fs.existsSync(repoDir) && fs.statSync(repoDir).isDirectory());
+  if (!checkoutExists) {
+    require(false,{id:"checkout",label:"Choose an existing local checkout of the target repository.",group:"project"});
+  } else {
+    const runGit = (args: string[]) => spawnSync(gitCommand,args,{cwd:repoDir,encoding:"utf8",timeout:5000});
+    const inside = runGit(["rev-parse","--is-inside-work-tree"]);
+    if (inside.status !== 0 || inside.stdout.trim() !== "true") {
+      require(false,{id:"checkout-git",label:"Use a target checkout that is a Git working tree.",group:"project"});
+    } else {
+      const name = runGit(["config","user.name"]), email = runGit(["config","user.email"]);
+      require(name.status === 0 && Boolean(name.stdout.trim()) && email.status === 0 && Boolean(email.stdout.trim()),{
+        id:"git-identity",label:"Configure Git user.name and user.email for the target checkout.",group:"project",
+      });
+      if (/^[\w.-]+\/[\w.-]+$/.test(repository)) {
+        const origin = runGit(["remote","get-url","origin"]), expected = `https://github.com/${repository}`;
+        require(origin.status === 0 && normalizedRepository(origin.stdout) === normalizedRepository(expected),{
+          id:"origin",label:`Point the target checkout origin to ${repository}.`,group:"project",
+        });
+      }
+    }
+  }
+  return { ready:missing.length === 0,missing };
+}
 function dashboardSettings(root: string) {
-  const github = credentialStatuses(root).credentials.find(item => item.id === "github");
+  const credentials = credentialStatuses(root);
+  const github = credentials.credentials.find(item => item.id === "github");
   const login = github?.status === "connected" ? github.account : undefined;
-  return readDashboardSettings(root,login ? {
+  const settings = readDashboardSettings(root,login ? {
     GITHUB_REPOSITORY:`${login}/ai-factory-demo`,
     FACTORY_REPO_DIR:path.join(os.homedir(),"Source","ai-factory-demo"),
     FACTORY_APPROVERS:login,
   } : {});
+  return {...settings,readiness:setupReadiness(root,credentials)};
 }
 function saveConfiguration(store: Store, root: string, values: Record<string,unknown>, clearSecrets: string[] = []) {
   const plan = validateDashboardSettings(root,values,clearSecrets);
@@ -238,8 +307,9 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         const body = await readBody(req) as { kind?: string; target?: string };
         if (!["stop","cancel","retry","refresh","refresh-list"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});
         if (!["stop","refresh-list"].includes(body.kind ?? "") && !body.target) return json(res,400,{error:"A work item or run id is required"});
+        if (["refresh","refresh-list"].includes(body.kind ?? "") && !daemonState(store).running) return json(res,409,{error:"Start the daemon before refreshing GitHub issues."});
         store.request(body.kind!,body.target ?? "");
-        return json(res,202,{ok:true,message:`${body.kind} queued`});
+        return json(res,202,{ok:true,message:body.kind === "refresh-list" ? "GitHub issue refresh queued." : `${body.kind} queued`});
       }
       if (req.method === "POST" && url.pathname === "/api/services") {
         const body = await readBody(req) as { service?: string; action?: string };

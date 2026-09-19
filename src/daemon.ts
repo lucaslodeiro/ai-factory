@@ -63,10 +63,11 @@ export async function startDaemon(store = new Store()) {
   const rows = store.db.prepare("SELECT * FROM controls WHERE handled=0 ORDER BY id").all() as { id: number; kind: string; target: string }[];
   for (const r of rows) {
    try {
+    let result: unknown;
     if (r.kind === "stop") stop();
     else if (r.kind === "retry") retry(store, r.target);
-    else if (r.kind === "refresh-list") o.refreshIssueList();
-    else if (r.kind === "refresh") o.refreshIssue(r.target);
+    else if (r.kind === "refresh-list") result = o.refreshIssueList();
+    else if (r.kind === "refresh") result = o.refreshIssue(r.target);
     else if (r.kind === "cancel") {
      const run = store.db.prepare("SELECT id,work_item_id FROM executions WHERE (id=? OR work_item_id=?) AND status='running'").get(r.target, r.target) as { id: string; work_item_id: string } | undefined;
      const w = store.get(run?.work_item_id ?? r.target);
@@ -74,7 +75,7 @@ export async function startDaemon(store = new Store()) {
      if (w.state !== "CANCELLED") { w.context.resume = w.state; store.transition(w, "CANCELLED"); }
      if (run) executions.cancel(run.id);
     }
-    store.event("control.applied", r);
+    store.event("control.applied", { ...r,result });
    } catch (e) { store.event("control.failed", { ...r, error: String(e) }); }
    store.db.prepare("UPDATE controls SET handled=1 WHERE id=?").run(r.id);
   }
