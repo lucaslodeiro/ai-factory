@@ -34,4 +34,10 @@ export class WorkflowScheduler {
   const projection=this.projections.transition({workItemId,expectedRevision:current.revision,stage:current.stage,status:"FAILED",actor:{type:"orchestrator",id:"runner"},source:{executionId},reason:{code:`${failureClass}-failure`,summary:message}},()=>{failureId=this.failures.open({workItemId,executionId,class:failureClass,message,stage:current.stage,attempt:current.attempt}).id;});
   return {discarded:false,projection,failureId};
  }
+ rejectQueued(workItemId:string,error:unknown,failureClass:FailureClass) {
+  const current=this.projections.get(workItemId);if(current.status!=="QUEUED")throw new Error(`Cannot reject queued work while it is ${current.status}`);
+  let failureId="";const message=error instanceof Error?error.message:String(error);
+  const projection=this.projections.transition({workItemId,expectedRevision:current.revision,stage:current.stage,status:"FAILED",actor:{type:"orchestrator",id:"runner"},source:{},reason:{code:`${failureClass}-failure`,summary:message}},()=>{failureId=this.failures.open({workItemId,class:failureClass,message,stage:current.stage,attempt:current.attempt}).id;});
+  return {projection,failureId};
+ }
 }
