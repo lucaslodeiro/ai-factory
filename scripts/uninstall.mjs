@@ -27,6 +27,7 @@ const dataDir = path.resolve(root,values.FACTORY_DATA_DIR || ".factory");
 const targetDir = values.FACTORY_REPO_DIR ? path.resolve(root,values.FACTORY_REPO_DIR) : null;
 const externalData = dataDir !== root && !dataDir.startsWith(`${root}${path.sep}`);
 const plists = ["daemon","dashboard"].map(service => path.join(home,"Library","LaunchAgents",`com.ai-factory.${service}.plist`));
+const launcher = path.join(home,".local","bin","ai-factory");
 
 if ([path.parse(root).root,home,path.dirname(home)].includes(root)) throw new Error(`Unsafe installation path: ${root}`);
 if (externalData && ([path.parse(dataDir).root,home,path.dirname(home),targetDir].filter(Boolean).includes(dataDir))) throw new Error(`Unsafe configured data directory: ${dataDir}`);
@@ -54,6 +55,9 @@ if (process.platform === "darwin" && process.env.AI_FACTORY_UNINSTALL_SKIP_LAUNC
   }
 }
 for (const plist of plists) fs.rmSync(plist,{force:true});
+try {
+  if (fs.lstatSync(launcher).isSymbolicLink() && path.resolve(path.dirname(launcher),fs.readlinkSync(launcher)) === path.join(root,"scripts","ai-factory")) fs.rmSync(launcher,{force:true});
+} catch {}
 if (externalData) fs.rmSync(dataDir,{recursive:true,force:true});
 const callerWasInsideInstallation = process.cwd() === root || process.cwd().startsWith(`${root}${path.sep}`);
 if (callerWasInsideInstallation) process.chdir(home);

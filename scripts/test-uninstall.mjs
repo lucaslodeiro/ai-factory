@@ -12,6 +12,7 @@ try {
   fs.mkdirSync(path.join(root,"scripts"),{recursive:true}); fs.mkdirSync(data,{recursive:true}); fs.mkdirSync(target,{recursive:true}); fs.mkdirSync(agents,{recursive:true});
   fs.writeFileSync(path.join(root,"package.json"),JSON.stringify({name:"ai-factory"}));
   fs.copyFileSync(path.join(source,"scripts","uninstall.mjs"),path.join(root,"scripts","uninstall.mjs"));
+  fs.mkdirSync(path.join(home,".local","bin"),{recursive:true}); fs.symlinkSync(path.join(root,"scripts","ai-factory"),path.join(home,".local","bin","ai-factory"));
   fs.writeFileSync(path.join(root,".env"),`FACTORY_DATA_DIR=${data}\nFACTORY_REPO_DIR=${target}\n`);
   fs.writeFileSync(path.join(data,"factory.db"),"fixture"); fs.writeFileSync(path.join(target,"keep"),"target");
   for (const service of ["daemon","dashboard"]) fs.writeFileSync(path.join(agents,`com.ai-factory.${service}.plist`),"fixture");
@@ -24,6 +25,7 @@ try {
   assert.equal(result.status,0,result.stderr+result.stdout);
   assert.equal(fs.existsSync(root),false); assert.equal(fs.existsSync(data),false);
   assert.equal(fs.existsSync(path.join(agents,"com.ai-factory.daemon.plist")),false); assert.equal(fs.existsSync(path.join(agents,"com.ai-factory.dashboard.plist")),false);
+  assert.equal(fs.existsSync(path.join(home,".local","bin","ai-factory")),false);
   assert.equal(fs.readFileSync(path.join(target,"keep"),"utf8"),"target"); assert.equal(fs.readFileSync(path.join(home,".local-tool"),"utf8"),"keep");
   assert.match(result.stdout,/AI Factory was uninstalled/);
   assert.match(result.stdout,/parent shell may still reference the removed directory/);

@@ -13,7 +13,8 @@ fs.writeFileSync(path.join(bin,'npm'),`#!/bin/sh\nif [ \"$1\" = ci ]; then ln -s
 fs.writeFileSync(path.join(bin,'curl'),`#!/bin/sh\nexit 0\n`,{mode:0o755});
 fs.writeFileSync(path.join(bin,'open'),`#!/bin/sh\nprintf '%s\\n' \"$1\" >> \"$AI_FACTORY_OPEN_LOG\"\n`,{mode:0o755});
 fs.writeFileSync(path.join(bin,'uname'),`#!/bin/sh\necho Darwin\n`,{mode:0o755});
-const env={...process.env,PATH:`${bin}:${process.env.PATH}`,AI_FACTORY_SKIP_SERVICES:'1'};
+const home=path.join(temp,'home');fs.mkdirSync(home);
+const env={...process.env,HOME:home,PATH:`${bin}:${process.env.PATH}`,AI_FACTORY_SKIP_SERVICES:'1'};
 for(const k of Object.keys(env)) if(/^(FACTORY_|GITHUB_|CODEX_COMMAND|CLAUDE_COMMAND|GIT_COMMAND)/.test(k)) delete env[k];
 function run(command,args,cwd=temp,ok=true){const r=spawnSync(command,args,{cwd,env,encoding:'utf8'}); if(ok)assert.equal(r.status,0,r.stderr+r.stdout);else assert.notEqual(r.status,0);return r;}
 try {
@@ -33,6 +34,7 @@ env.AI_FACTORY_SERVICE_LOG=path.join(temp,'install-services.log');
 env.AI_FACTORY_OPEN_LOG=path.join(temp,'open.log');
 const installation = run('bash',[path.join(source,'scripts/install.sh'),'--skip-tools','--defaults','--repo',remote,'--dir',dest]);
 assert.match(installation.stdout,/installation completed successfully/);
+assert.equal(fs.readlinkSync(path.join(home,'.local','bin','ai-factory')),path.join(dest,'scripts','ai-factory'));
 assert.match(installation.stdout,/continue in the dashboard/);
 assert.doesNotMatch(installation.stdout,/Setup incomplete/);
 assert.doesNotMatch(installation.stdout,/Configure factory/);
@@ -64,6 +66,7 @@ db.prepare('DELETE FROM daemon_lock').run();db.close();
 run('git',['config','user.email','test@example.com'],dest);run('git',['config','user.name','Test'],dest);
 fs.writeFileSync(path.join(dest,'local'),'local');run('git',['add','.'],dest);run('git',['commit','-m','local'],dest);
 assert.match(run('bash',['scripts/update.sh'],dest,false).stderr,/merge-base/);
+assert.match(JSON.parse(fs.readFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,'utf8')).phase,/checking the local checkout|merge-base/i);
 env.AI_FACTORY_SKIP_SERVICES='0';
 fs.writeFileSync(path.join(dest,'scripts','services.sh'),`#!/bin/sh
 if [ "$1 $2" = "status dashboard" ]; then echo 'dashboard: loaded'; elif [ "$1" = status ]; then echo "$2: stopped"; else echo "$1 $2" >> '${path.join(temp,'service-recovery.log')}'; fi

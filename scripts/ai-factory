@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script=${BASH_SOURCE[0]}
+while [[ -L $script ]]; do
+  directory=$(CDPATH= cd -- "$(dirname -- "$script")" && pwd)
+  target=$(readlink "$script")
+  [[ $target == /* ]] && script=$target || script=$directory/$target
+done
+root=$(CDPATH= cd -- "$(dirname -- "$script")/.." && pwd)
+command=${1:-help}
+[[ $# == 0 ]] || shift
+
+case $command in
+  uninstall) exec node "$root/scripts/uninstall.mjs" "$@";;
+  update) exec bash "$root/scripts/update.sh" --restart-services "$@";;
+  service) exec bash "$root/scripts/services.sh" "$@";;
+  configure) exec bash "$root/scripts/configure.sh" "$@";;
+  help|-h|--help)
+    cat <<'EOF'
+Usage:
+  ai-factory <factory-command> [arguments]
+  ai-factory service <action> <daemon|dashboard|all>
+  ai-factory update
+  ai-factory configure
+  ai-factory uninstall [--yes]
+
+Runs the installed factory from any working directory.
+EOF
+    ;;
+  *) exec node "$root/dist/src/cli.js" "$command" "$@";;
+esac

@@ -14,8 +14,10 @@ class GitHub implements GitHubPort {
  prState: "OPEN" | "CLOSED" | "MERGED" = "OPEN"; failPR = false;
  pullRequestState() { if (this.failPR) throw new Error("offline"); return { state: this.prState, mergedAt: this.prState === "MERGED" ? "2026-09-18T18:00:00Z" : null, mergeCommit: this.prState === "MERGED" ? { oid: "abc123" } : null }; }
  replies: Comment[] = []; posted = new Map<string,string>(); states: WorkState[] = []; prs = 0; fail = false; failComments = false;
- listQueued() { return [{ number: 1, title: "Feature", body: "Implement feature", url: "https://example.test/issues/1" }]; }
- comments() { if (this.failComments) throw new Error("GitHub temporarily unavailable"); return this.replies; }
+ queued = [{ number: 1, title: "Feature", body: "Implement feature", url: "https://example.test/issues/1" }];
+ listQueued() { return this.queued; }
+ issue(n: number) { return { number:n,title:"Feature refreshed",body:"Updated issue body",url:`https://example.test/issues/${n}` }; }
+ comments(n: number) { if (this.failComments) throw new Error("GitHub temporarily unavailable"); return n === 1 ? this.replies : []; }
  commentOnce(_n: number, body: string, key: string) { if (this.fail) throw new Error("offline"); this.posted.set(key, body); }
  syncState(_n: number, state: WorkState) { this.states.push(state); }
  ensurePR() { this.prs++; return "https://example.test/pull/1"; }
@@ -76,6 +78,34 @@ test("answer command accepts readable multi-line comments at the beginning or en
  const ignored = setup({ "product-architect": [result("questions", { questions: ["Choose a stack"] })] });
  await ignored.o.tick(); ignored.gh.reply("Use React.\n\n> /factory answer"); await ignored.o.tick();
  assert.equal(ignored.item().state,"WAITING_HUMAN"); ignored.store.db.close();
+});
+test("manual GitHub refresh updates issue data and evaluates only the latest comment", async () => {
+ const f=setup(); await f.o.tick();
+ f.gh.reply("/factory answer stale feedback");
+ f.gh.reply("/factory approve v1");
+ const refreshed=f.o.refreshIssue(f.item().id);
+ assert.equal(refreshed.context.title,"Feature refreshed"); assert.equal(refreshed.context.body,"Updated issue body");
+ assert.equal(refreshed.context.cursor,2); assert.equal(refreshed.state,"DEVELOPMENT");
+ assert.equal(refreshed.context.approval?.commentId,2); assert.equal(refreshed.context.feedback.length,0);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='github.issue_refreshed'").get() as any).n,1);
+ f.store.db.close();
+});
+test("manual issue-list refresh adds new queued issues and updates existing metadata without replaying work", async () => {
+ const f=setup(); await f.o.tick();
+ f.gh.reply("/factory answer ignored older comment"); f.gh.reply("/factory approve v1");
+ f.gh.queued=[
+  { number:1,title:"Feature renamed",body:"Updated body",url:"https://example.test/issues/1" },
+  { number:2,title:"Second feature",body:"New work",url:"https://example.test/issues/2" },
+ ];
+ const result=f.o.refreshIssueList();
+ assert.deepEqual(result,{found:2,added:1,updated:1}); assert.equal(f.store.items().length,2);
+ const existing=f.store.items().find(item=>item.issue_number===1)!;
+ assert.equal(existing.context.title,"Feature renamed"); assert.equal(existing.context.body,"Updated body");
+ assert.equal(existing.state,"DEVELOPMENT"); assert.equal(existing.context.cursor,2);
+ assert.equal(existing.context.approval?.commentId,2); assert.equal(existing.context.feedback.length,0);
+ const added=f.store.items().find(item=>item.issue_number===2)!; assert.equal(added.state,"SPEC"); assert.equal(added.context.cursor,0);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='github.issue_list_refreshed'").get() as any).n,1);
+ f.store.db.close();
 });
 test("QA fixes rerun developer and QA; deferred findings permit review", async () => {
  const f = setup({ qa: [result("changes", { findings: [{ classification: "auto-fix", evidence: "AC1 fails" }] }), result("pass", { findings: [{ classification: "defer", evidence: "optional optimization" }] })] });

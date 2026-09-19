@@ -7,7 +7,7 @@ export type Comment = { id: number; body: string; user: { login: string; type: s
 export interface PullRequestState { state: "OPEN" | "CLOSED" | "MERGED"; mergedAt: string | null; mergeCommit: { oid: string } | null; }
 export interface GitHubPort {
  pullRequestState(url: string): PullRequestState;
- listQueued(): Issue[]; comments(n: number): Comment[];
+ listQueued(): Issue[]; issue(n: number): Issue; comments(n: number): Comment[];
  commentOnce(n: number, body: string, key: string): void;
  syncState(n: number, state: WorkState, progress?: string): void;
  ensurePR(branch: string, title: string, body: string): string;
@@ -20,6 +20,9 @@ export class GitHubAdapter implements GitHubPort {
  constructor(private invoke: (args: string[], input?: unknown) => string = gh) {}
  listQueued(): Issue[] {
   return JSON.parse(this.invoke(["issue", "list", "--repo", config.repo, "--label", "factory:queued", "--state", "open", "--limit", "100", "--json", "number,title,body,url"]));
+ }
+ issue(n: number): Issue {
+  return JSON.parse(this.invoke(["issue","view",String(n),"--repo",config.repo,"--json","number,title,body,url"]));
  }
  comments(n: number): Comment[] {
   return JSON.parse(this.invoke(["api", "--paginate", "--slurp", `repos/${config.repo}/issues/${n}/comments?per_page=100`])).flat();

@@ -108,6 +108,12 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8"),/restart daemon/);
     const perServiceUpdate = await fetch(`http://127.0.0.1:${port}/api/services`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({service:"daemon",action:"update"})});
     assert.equal(perServiceUpdate.status,400);
+    const refreshIssue = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"refresh",target:"owner-demo-7"})});
+    assert.equal(refreshIssue.status,202);
+    assert.equal((store.db.prepare("SELECT kind,target FROM controls WHERE kind='refresh'").get() as any).target,"owner-demo-7");
+    const refreshList = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"refresh-list"})});
+    assert.equal(refreshList.status,202);
+    assert.ok(store.db.prepare("SELECT id FROM controls WHERE kind='refresh-list'").get());
     fs.mkdirSync(path.join(settingsRoot,".factory"),{recursive:true});
     fs.writeFileSync(path.join(settingsRoot,".factory","update-state.json"),JSON.stringify({status:"updating",phase:"stale",pid:process.pid,startedAt:"2026-01-01T00:00:00.000Z"}));
     const staleUpdate = await fetch(`http://127.0.0.1:${port}/api/services`).then(response => response.json()) as any;
@@ -216,7 +222,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8"),actionsBeforeStoppedDashboardChange);
     const response = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"retry",target:"owner-demo-7"})});
     assert.equal(response.status,202);
-    assert.deepEqual(store.db.prepare("SELECT kind,target FROM controls").get(),{kind:"retry",target:"owner-demo-7"});
+    assert.deepEqual(store.db.prepare("SELECT kind,target FROM controls WHERE kind='retry'").get(),{kind:"retry",target:"owner-demo-7"});
   } finally {
     globalThis.fetch=originalFetch;
     await new Promise<void>(resolve => server.close(() => resolve()));

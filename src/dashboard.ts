@@ -78,7 +78,7 @@ function serviceStatus(root: string, service: "daemon" | "dashboard") {
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
   return { service, loaded:result.status === 0 && output.includes(`${service}: loaded`), running:/state = (running|active)/.test(output), detail:output.trim() };
 }
-type UpdateState = { status: "idle" | "updating" | "completed" | "failed"; phase?: string; pid?: number; startedAt?: string; finishedAt?: string };
+type UpdateState = { status: "idle" | "updating" | "completed" | "failed"; phase?: string; pid?: number; startedAt?: string; updatedAt?: string; finishedAt?: string };
 type VersionInfo = { number: string; revision: string; branch: string; display: string };
 const updateStateFile = (root: string) => path.join(root,".factory","update-state.json");
 function git(root: string, args: string[], timeout = 10000) {
@@ -236,8 +236,8 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       }
       if (req.method === "POST" && url.pathname === "/api/control") {
         const body = await readBody(req) as { kind?: string; target?: string };
-        if (!["stop","cancel","retry"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});
-        if (body.kind !== "stop" && !body.target) return json(res,400,{error:"A work item or run id is required"});
+        if (!["stop","cancel","retry","refresh","refresh-list"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});
+        if (!["stop","refresh-list"].includes(body.kind ?? "") && !body.target) return json(res,400,{error:"A work item or run id is required"});
         store.request(body.kind!,body.target ?? "");
         return json(res,202,{ok:true,message:`${body.kind} queued`});
       }

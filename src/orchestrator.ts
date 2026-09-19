@@ -69,6 +69,49 @@ export class Orchestrator {
    } catch (e) { this.store.event("github.pr_poll_failed", { error: String(e), url: w.context.pr }, w.id); }
   }
  }
+ refreshIssue(id: string) {
+  const w = this.store.get(id);
+  if (!w) throw new Error("Unknown work item");
+  const remote = this.github.issue(w.issue_number);
+  const comments = this.github.comments(w.issue_number).slice().sort((a,b) => a.id-b.id);
+  return this.refreshKnownIssue(w,remote,comments);
+ }
+ private refreshKnownIssue(w: WorkItem,remote: Issue,comments: Comment[]) {
+  const latest = comments.at(-1);
+  const previousCursor = w.context.cursor;
+  w.context.title = remote.title;
+  w.context.body = remote.body;
+  w.context.url = remote.url;
+  // WAITING_HUMAN evaluates only the newest comment through the normal command
+  // rules. Other states merely align the cursor and never rerun an agent stage.
+  w.context.cursor = w.state === "WAITING_HUMAN" && latest ? comments.at(-2)?.id ?? 0 : latest?.id ?? 0;
+  this.store.save(w);
+  if (w.state === "WAITING_HUMAN" && latest) this.human(w);
+  const refreshed = this.store.get(w.id)!;
+  this.store.event("github.issue_refreshed",{ previousCursor,cursor:refreshed.context.cursor,latestCommentId:latest?.id ?? null,state:refreshed.state },w.id);
+  this.github.syncState(refreshed.issue_number,refreshed.state,progressMarkdown(refreshed));
+  return refreshed;
+ }
+ refreshIssueList() {
+  const queued = this.github.listQueued();
+  const byNumber = new Map(queued.map(issue => [issue.number,issue]));
+  for (const local of this.store.items()) if (local.repo === config.repo && !byNumber.has(local.issue_number)) byNumber.set(local.issue_number,this.github.issue(local.issue_number));
+  const issues = [...byNumber.values()];
+  let added = 0,updated = 0;
+  for (const issue of issues) {
+   const existing = this.store.items().find(w => w.repo === config.repo && w.issue_number === issue.number);
+   if (!existing) {
+    this.ingest(issue);
+    const created = this.store.items().find(w => w.repo === config.repo && w.issue_number === issue.number)!;
+    this.refreshKnownIssue(created,issue,this.github.comments(issue.number).slice().sort((a,b) => a.id-b.id));
+    added++; continue;
+   }
+   this.refreshKnownIssue(existing,issue,this.github.comments(issue.number).slice().sort((a,b) => a.id-b.id));
+   updated++;
+  }
+  this.store.event("github.issue_list_refreshed",{ found:issues.length,added,updated });
+  return { found:issues.length,added,updated };
+ }
  private ingest(issue: Issue) {
   if (this.store.items().some(w => w.repo === config.repo && w.issue_number === issue.number)) return;
   const id = randomUUID(), now = new Date().toISOString();

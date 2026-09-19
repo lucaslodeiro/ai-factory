@@ -65,6 +65,8 @@ export async function startDaemon(store = new Store()) {
    try {
     if (r.kind === "stop") stop();
     else if (r.kind === "retry") retry(store, r.target);
+    else if (r.kind === "refresh-list") o.refreshIssueList();
+    else if (r.kind === "refresh") o.refreshIssue(r.target);
     else if (r.kind === "cancel") {
      const run = store.db.prepare("SELECT id,work_item_id FROM executions WHERE (id=? OR work_item_id=?) AND status='running'").get(r.target, r.target) as { id: string; work_item_id: string } | undefined;
      const w = store.get(run?.work_item_id ?? r.target);

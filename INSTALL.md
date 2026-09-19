@@ -52,10 +52,15 @@ will be removed:
 
 ```sh
 cd "$HOME"
-npm --prefix "$HOME/ai-factory" run uninstall
+ai-factory uninstall
 ```
 
-The uninstaller prints the exact installation, runtime-data and LaunchAgent paths, then requires typing `uninstall`. For an automated disposable-machine test, use `npm run uninstall -- --yes`.
+The installer places `ai-factory` in `~/.local/bin`, so service, update,
+configuration and factory commands work from any directory. If that directory
+is not yet on the current shell's `PATH`, use
+`npm --prefix "$HOME/ai-factory" run uninstall` instead.
+
+The uninstaller prints the exact installation, runtime-data and LaunchAgent paths, then requires typing `uninstall`. For an automated disposable-machine test, use `ai-factory uninstall --yes`.
 
 If an older uninstall left a terminal pointing at the removed checkout, run
 `cd "$HOME"` before using that terminal again. Both installers now recover
@@ -139,9 +144,13 @@ The `logs` action prints the last 100 stdout/error lines and continues following
 
 Open `http://127.0.0.1:4173` after starting the dashboard. It shows daemon health, the issue queue, recent agent executions and readable audit events. Its persistent theme selector follows the operating-system preference initially and switches between light and dark modes. Issue status badges, the complete issue list, metrics, executions and events update through a local Server-Sent Events stream every two seconds; a visible Live/Reconnecting badge reports stream health and a 15-second poll remains as fallback. Retry, Cancel and Stop actions write to the same durable control queue as the CLI.
 
+**Refresh from GitHub** on an issue reloads its current title, body and URL, moves the comment cursor to the newest comment and evaluates only that newest comment under the issue's current workflow state. A valid latest approval or answer can therefore resume a waiting issue. Earlier comments and completed agent stages are never replayed. The CLI equivalent is `npm run factory -- refresh <work-item-id>`; the daemon processes the queued action.
+
+**Refresh issue list** fetches new open `factory:queued` issues and every ticket already tracked locally, adds newly discovered work and updates the title, body and URL of known items. It aligns each cursor to the latest comment and, when an item is waiting on a human, evaluates only that latest comment under the current state reflected by its factory label. Earlier comments and completed stages are not replayed. The CLI equivalent is `ai-factory refresh-list` or `npm run factory -- refresh-list`.
+
 The service cards start, restart and stop the daemon or dashboard independently. Above them, the global update area shows the installed package version and Git revision. It fetches the checked-out branch from `origin` on load and every five minutes; **Update Factory** is offered only when the remote commit is a valid fast-forward. The server repeats that check immediately before starting the update.
 
-The update action records which services are loaded and submits an independent transient `launchd` job. That job stops the daemon while leaving the dashboard available, runs `scripts/update.sh --restart-services`, and downloads, builds and tests the new revision. Only after validation succeeds does it refresh both LaunchAgents and briefly restart the dashboard; it then restores the daemon when it was previously running. Progress is persisted on disk, and a stale PID is verified as an updater process before it can keep the UI locked. When the restarted dashboard reports a different revision, the browser reloads the new frontend automatically. Follow details with `tail -f .factory/service-logs/update.log`. If validation fails, the dashboard remains available to show the failure and the daemon remains stopped; inspect the log and fix the cause before starting it again.
+The update action records which services are loaded and submits an independent transient `launchd` job. That job stops the daemon while leaving the dashboard available, runs `scripts/update.sh --restart-services`, and downloads, builds and tests the new revision. Only after validation succeeds does it refresh both LaunchAgents and briefly restart the dashboard; it then restores the daemon when it was previously running. Progress is persisted on disk, and a stale PID is verified as an updater process before it can keep the UI locked. The dashboard reports the active checkout, download, backup, dependency, build and validation phase plus elapsed time. Network, dependency, build and test commands have bounded execution times; a timeout or command failure replaces **Updating…** with the concrete failing stage. When the restarted dashboard reports a different revision, the browser reloads the new frontend automatically. Follow details with `tail -f .factory/service-logs/update.log`. If validation fails, the dashboard remains available to show the failure and the daemon remains stopped; inspect the log and fix the cause before starting it again.
 
 The **Configuration** panel has eight categories. **Credentials** reports authentication for GitHub, Claude and Codex plus the Slack connection state. **Connect** or **Reconnect** starts that provider's official CLI login in the background and opens its browser flow on the Mac running the dashboard; complete the provider page and use **Refresh status** if the card has not updated yet. CLI credentials stay in each provider's local secure store. The dashboard never receives or displays their tokens. Login output is available in `.factory/service-logs/credentials.log`. The Slack card opens its dedicated **Notifications** configuration.
 

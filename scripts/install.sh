@@ -80,6 +80,13 @@ cd "$dest"
 npm ci
 npm run build
 npm test
+mkdir -p "$HOME/.local/bin"
+launcher="$HOME/.local/bin/ai-factory"
+if [[ -e $launcher && ! -L $launcher ]]; then
+  echo "Cannot install launcher over existing file: $launcher" >&2
+  exit 1
+fi
+ln -sfn "$dest/scripts/ai-factory" "$launcher"
 umask 077
 cp .env.example .env
 dashboard_url=$(node scripts/prepare-dashboard-config.mjs "$dashboard_host" "$dashboard_port")
@@ -104,6 +111,7 @@ printf 'Configuration: continue in the dashboard\n'
 printf 'Daemon:        not started\n'
 if "$dashboard_ready"; then printf 'Dashboard:     running at %s\n' "$dashboard_url"; else printf 'Dashboard:     started; health check pending at %s (see .factory/service-logs/dashboard.error.log)\n' "$dashboard_url"; fi
 printf 'Services:      daemon and dashboard definitions installed\n'
+printf 'Launcher:      %s\n' "$HOME/.local/bin/ai-factory"
 if [[ ${AI_FACTORY_INSTALL_MODE:-} == no-brew ]]; then
   printf 'Toolchain:     %s (no Homebrew)\n' "$HOME/.local"
   cat <<'PATH_NEXT'

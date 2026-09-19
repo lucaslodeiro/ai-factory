@@ -30,13 +30,15 @@ restore_daemon=false
 restore_dashboard=false
 write_update_state() {
   [[ -n ${AI_FACTORY_UPDATE_STATE_FILE:-} ]] || return 0
-  node -e 'const fs=require("fs"),path=require("path");const [file,status,phase,pid]=process.argv.slice(1);let old={};try{old=JSON.parse(fs.readFileSync(file,"utf8"))}catch{}const now=new Date().toISOString();const next={...old,status,phase,pid:Number(pid),startedAt:old.startedAt||now};if(status!=="updating")next.finishedAt=now;fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file+".tmp",JSON.stringify(next,null,2),{mode:0o600});fs.renameSync(file+".tmp",file);' "$AI_FACTORY_UPDATE_STATE_FILE" "$1" "$2" "$$"
+  node -e 'const fs=require("fs"),path=require("path");const [file,status,phase,pid]=process.argv.slice(1);let old={};try{old=JSON.parse(fs.readFileSync(file,"utf8"))}catch{}const now=new Date().toISOString();const next={...old,status,phase,pid:Number(pid),startedAt:old.startedAt||now,updatedAt:now};if(status!=="updating")next.finishedAt=now;fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file+".tmp",JSON.stringify(next,null,2),{mode:0o600});fs.renameSync(file+".tmp",file);' "$AI_FACTORY_UPDATE_STATE_FILE" "$1" "$2" "$$"
 }
 finish_update() {
   if "$update_complete"; then
     write_update_state completed "Update completed. Services restored."
   else
-    write_update_state failed "Update failed. Inspect .factory/service-logs/update.log."
+    if [[ -z ${AI_FACTORY_UPDATE_STATE_FILE:-} ]] || ! node -e 'const fs=require("fs");try{process.exit(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).status==="failed"?0:1)}catch{process.exit(1)}' "$AI_FACTORY_UPDATE_STATE_FILE"; then
+      write_update_state failed "Update failed. Inspect .factory/service-logs/update.log."
+    fi
     if "$restore_dashboard" && ! bash scripts/services.sh status dashboard 2>/dev/null | grep -q '^dashboard: loaded'; then
       set +e
       AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install dashboard
@@ -65,6 +67,13 @@ write_update_state updating "Downloading, building and validating…"
 node scripts/update.mjs
 write_update_state updating "Preserving configuration…"
 if [[ ! -f .env ]]; then umask 077; cp .env.example .env; fi
+mkdir -p "$HOME/.local/bin"
+launcher="$HOME/.local/bin/ai-factory"
+if [[ ! -e $launcher || -L $launcher ]]; then
+  ln -sfn "$PWD/scripts/ai-factory" "$launcher"
+else
+  echo "Launcher not replaced because a regular file already exists: $launcher" >&2
+fi
 if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
   write_update_state updating "Installing and restarting services…"
   AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install all
