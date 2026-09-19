@@ -28,11 +28,13 @@ export class WorkflowRunner {
   const selection=selectModel(role,assessment,projection.correctionCycles,consultation),budget=resolveContextBudget(role,selection);
   const route=consultation&&active?.payload.kind==="request"?this.route(active.payload.originatingStage,active.payload.allowedReturnStages):undefined;
   const contract=promptContract(role,selection.provider,{tacticalRoute:route}),contractBytes=Buffer.byteLength(contract);
+  const summary=["qa","reviewer"].includes(role)?this.workspaces.changeSummary(cwd):undefined;
+  const reviewerContext=role==="reviewer"?this.workspaces.prepareReviewerContext(cwd,workItemId):undefined;
   let assembled;
   try {
    if(contractBytes+2>=budget.bytes)throw new InvalidContextError(`Protected prompt contract requires ${contractBytes} bytes but the budget is ${budget.bytes}`);
-   assembled=this.assembler.assemble({workItemId,role,specVersion,budgetBytes:budget.bytes-contractBytes-2,budgetSource:budget.source,issue:{title:context.title??`Issue #${row.issue_number}`,body:context.body??""},qaEvidence:role==="reviewer"?this.latestResult(workItemId,"qa"):undefined});
-  } catch(error){if(error instanceof InvalidContextError){this.scheduler.rejectQueued(workItemId,error,"invalid-context");return true;}throw error;}
+   assembled=this.assembler.assemble({workItemId,role,specVersion,budgetBytes:budget.bytes-contractBytes-2,budgetSource:budget.source,issue:{title:context.title??`Issue #${row.issue_number}`,body:context.body??""},changedFiles:(reviewerContext??summary)?.files,diffStat:(reviewerContext??summary)?.stat,diffPath:reviewerContext?.path,qaEvidence:role==="reviewer"?this.latestResult(workItemId,"qa"):undefined});
+  } catch(error){if(reviewerContext)this.workspaces.cleanupReviewerContext(cwd,workItemId);if(error instanceof InvalidContextError){this.scheduler.rejectQueued(workItemId,error,"invalid-context");return true;}throw error;}
   const instructions=`${contract}\n\n${assembled.markdown}`,before=this.workspaces.head(cwd),started=this.scheduler.begin(workItemId);
   this.store.event("model.selected",{role,specVersion,selection,budget},workItemId,started.executionId);
   try {
@@ -44,6 +46,7 @@ export class WorkflowRunner {
    if(role==="reviewer"&&result.outcome==="pass"){this.workspaces.publish(cwd,row.branch);pullRequestUrl=this.delivery.ensurePR(row.branch,`#${row.issue_number}: ${context.title??"Factory delivery"}`,this.prBody(workItemId,result));}
    this.results.apply({workItemId,executionId:started.executionId,role,result,pullRequestUrl});return true;
   } catch(error){this.scheduler.fail(workItemId,started.executionId,error,error instanceof InvalidContextError?"invalid-context":/result|coverage|SPEC/i.test(String(error))?"invalid-result":"execution");return true;}
+  finally{if(reviewerContext)this.workspaces.cleanupReviewerContext(cwd,workItemId);}
  }
  private specVersion(workItemId:string){return (this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;}
  private assessment(workItemId:string,version:number){const row=this.store.db.prepare("SELECT assessment FROM specs WHERE work_item_id=? AND version=?").get(workItemId,version) as {assessment:string|null}|undefined;if(!row?.assessment)return undefined;return JSON.parse(row.assessment) as TaskAssessment;}

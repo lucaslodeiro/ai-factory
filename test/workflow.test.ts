@@ -32,7 +32,7 @@ function setup(overrides: Partial<Record<AgentRole, AgentResult[]>> = {},initial
  const agents = Object.fromEntries((["product-architect", "developer", "qa", "reviewer"] as AgentRole[]).map(role => [role, { async run(req: AgentRunRequest) {
   calls.push(req); return overrides[role]?.shift() ?? result(role === "product-architect" ? "spec" : "pass");
  } }])) as any;
- const ws = { assertBranch() {}, ensure: () => "/tmp/fake", head: () => "abc", diff: () => "diff", check() {}, commit() {}, publish() { published++; } };
+ const ws = { assertBranch() {}, ensure: () => "/tmp/fake", head: () => "abc", diff: () => "diff", check() {}, commit() {}, publish() { published++; },changeSummary(){return{files:[],stat:""};},prepareReviewerContext(){return{path:"/tmp/fake/.factory-context/review.diff",files:[],stat:""};},cleanupReviewerContext(){} };
  const notifications: string[] = [];
  const o = new Orchestrator(store, agents, gh, ws, { enabled: true, async notify(text) { notifications.push(text); } });
  if (initial) o.startIssue("1","Test setup");

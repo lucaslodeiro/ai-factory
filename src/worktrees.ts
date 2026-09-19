@@ -19,6 +19,9 @@ export interface WorkspacePort {
  check(cwd: string, role: string, before: string, branch: string): void;
  commit(cwd: string, message: string, branch: string): void;
  publish(cwd: string, branch: string): void;
+ changeSummary(cwd:string):{files:string[];stat:string};
+ prepareReviewerContext(cwd:string,workItemId:string):{path:string;files:string[];stat:string};
+ cleanupReviewerContext(cwd:string,workItemId:string):void;
 }
 export class Workspaces implements WorkspacePort {
  assertBranch(cwd: string, branch: string) {
@@ -63,4 +66,12 @@ export class Workspaces implements WorkspacePort {
   if (!branch.startsWith("factory/") || branch === config.defaultBranch || git(cwd, ["branch", "--show-current"]) !== branch) throw new Error("Refusing to push unexpected branch");
   git(cwd, ["push", "--set-upstream", "origin", `HEAD:refs/heads/${branch}`]);
  }
+ changeSummary(cwd:string){const range=`origin/${config.defaultBranch}...HEAD`,files=gitOutput(cwd,["diff","--name-only","--no-renames","-z",range]).split("\0").filter(Boolean),stat=gitOutput(cwd,["diff","--stat",range]).trim();return{files,stat};}
+ prepareReviewerContext(cwd:string,workItemId:string){const directory=path.join(cwd,".factory-context"),owner=path.join(directory,"OWNER"),diff=path.join(directory,"review.diff"),expected=`ai-factory:${workItemId}\n`;
+  this.assertContextSafe(cwd,directory,owner,expected,true);if(fs.existsSync(directory))fs.rmSync(directory,{recursive:true});fs.mkdirSync(directory,{mode:0o700});fs.writeFileSync(owner,expected,{mode:0o600});const summary=this.changeSummary(cwd);fs.writeFileSync(diff,gitOutput(cwd,["diff","--binary",`origin/${config.defaultBranch}...HEAD`]),{mode:0o600});
+  const excludeValue=git(cwd,["rev-parse","--git-path","info/exclude"]),exclude=path.isAbsolute(excludeValue)?excludeValue:path.resolve(cwd,excludeValue);fs.mkdirSync(path.dirname(exclude),{recursive:true});const current=fs.existsSync(exclude)?fs.readFileSync(exclude,"utf8"):"";if(!current.split(/\r?\n/).includes("/.factory-context/"))fs.appendFileSync(exclude,`${current&&!current.endsWith("\n")?"\n":""}/.factory-context/\n`);
+  return{path:diff,files:summary.files,stat:summary.stat};
+ }
+ cleanupReviewerContext(cwd:string,workItemId:string){const directory=path.join(cwd,".factory-context"),owner=path.join(directory,"OWNER");if(!fs.existsSync(directory))return;this.assertContextSafe(cwd,directory,owner,`ai-factory:${workItemId}\n`,false);fs.rmSync(directory,{recursive:true});}
+ private assertContextSafe(cwd:string,directory:string,owner:string,expected:string,allowMissing:boolean){if(!fs.existsSync(directory)){if(allowMissing)return;throw new Error("Reviewer context directory is missing");}const stat=fs.lstatSync(directory);if(stat.isSymbolicLink()||!stat.isDirectory())throw new Error("Reviewer context path must be an owned directory");if(gitOutput(cwd,["ls-files","--",path.relative(cwd,directory)]).trim())throw new Error("Refusing to replace a tracked reviewer context directory");if(!fs.existsSync(owner)||fs.lstatSync(owner).isSymbolicLink()||fs.readFileSync(owner,"utf8")!==expected)throw new Error("Reviewer context directory is foreign or has no valid owner marker");}
 }

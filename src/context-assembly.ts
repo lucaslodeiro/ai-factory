@@ -16,6 +16,7 @@ export interface ContextAssemblyInput {
   issue:{title:string;body:string};
   changedFiles?:string[];
   diffStat?:string;
+  diffPath?:string;
   previousAttempt?:unknown;
   builderSummary?:unknown;
   qaEvidence?:unknown;
@@ -81,7 +82,7 @@ export class ContextAssembler {
       ...(activeFailure ? [{name:"Active failure",value:activeFailure,protected:true}] : []),
       ...(input.previousAttempt ? [{name:"Previous attempt",value:input.previousAttempt,protected:false}] : []),
       ...(input.role === "product-architect" && input.builderSummary ? [{name:"Builder summary",value:input.builderSummary,protected:false}] : []),
-      ...(["developer","qa","reviewer"].includes(input.role) && (input.changedFiles || input.diffStat) ? [{name:"Changed files",value:{files:input.changedFiles??[],diffStat:input.diffStat??""},protected:false}] : []),
+      ...(["developer","qa","reviewer"].includes(input.role) && (input.changedFiles || input.diffStat) ? [{name:"Changed files",value:{files:input.changedFiles??[],diffStat:input.diffStat??"",...(input.role==="reviewer"&&input.diffPath?{diffPath:input.diffPath}:{})},protected:false}] : []),
       ...(input.role === "reviewer" && input.qaEvidence ? [{name:"Tester execution evidence",value:input.qaEvidence,protected:false}] : []),
       ...(input.recovery ? [{name:"Recovery note",value:input.recovery,protected:false}] : []),
     ];

@@ -13,6 +13,7 @@ import type { WorkspacePort } from "../src/worktrees.js";
 
 class Workspace implements WorkspacePort {
  commits:string[]=[];ensure(){return "/tmp/factory-work";}assertBranch(){}head(){return "abc";}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){}
+ changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/factory-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){}
 }
 
 test("runner assembles bounded context and drives Architect then Builder through V3",async()=>{
