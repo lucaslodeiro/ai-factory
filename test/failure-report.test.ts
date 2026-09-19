@@ -22,8 +22,15 @@ test("failure report provides useful execution evidence and redacts troubleshoot
     assert.match(markdown,/\*\*Stage:\*\* Development/); assert.match(markdown,/\*\*Agent:\*\* Developer/);
     assert.match(markdown,/Codex|codex/); assert.match(markdown,/gpt-test/); assert.match(markdown,/exit 2/);
     assert.match(markdown,/Last 30 stderr lines/); assert.match(markdown,/compilation failed/); assert.doesNotMatch(markdown,/diagnostic 0/);
+    assert.match(markdown,/### Troubleshooting[\s\S]*#### Diagnosis[\s\S]*agent subprocess failed[\s\S]*exit code 2/i);
     assert.doesNotMatch(markdown,/secret-value-123456|\u001b\[31m/); assert.match(markdown,/\[REDACTED\]/);
     assert.match(markdown,/<target-checkout>\/src\/app\.ts failed/); assert.match(markdown,/\/factory retry/);
     assert.match(markdown,/### Next actions[\s\S]*From this GitHub issue[\s\S]*From the dashboard[\s\S]*From the factory terminal[\s\S]*npm run factory -- retry work-1\n```$/);
+
+    store.db.prepare("UPDATE executions SET status='succeeded',exit_code=0 WHERE id='run-1'").run();
+    fs.writeFileSync(path.join(runDir,"stderr.log"),"Playwright launching chrome-headless-shell\nFATAL MachPortRendezvous bootstrap_check_in: Permission denied\n");
+    const chromium=failureMarkdown(store,store.get("work-1")!,new Error("Changes require actionable findings"));
+    assert.match(chromium,/#### Diagnosis[\s\S]*orchestrator rejected its report[\s\S]*Playwright\/Chromium also failed/i);
+    assert.match(chromium,/Do not repeat the same Chromium validation/);
   } finally { store.db.close(); config.dataDir=previousDataDir; fs.rmSync(root,{recursive:true,force:true}); }
 });

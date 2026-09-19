@@ -43,6 +43,63 @@ function tail(file: string, maxLines = 30) {
   } catch { return ""; }
 }
 
+function diagnosis(reason: string, stderr: string, run?: {status:string;exit_code:number|null}) {
+  const evidence=`${reason}\n${stderr}`;
+  if (/Changes require actionable findings/i.test(reason)) {
+    const browserBlocked=/(?:playwright|chromium|chrome-headless-shell)/i.test(stderr) && /(?:permission denied|MachPortRendezvous|bootstrap_check_in|SIGTRAP)/i.test(stderr);
+    if (browserBlocked) return [
+        "**Summary:** The agent process completed, but the orchestrator rejected its report because it requested changes without providing an actionable finding. During validation, Playwright/Chromium also failed before the browser could start.",
+        "**Evidence:** The process exited successfully, the result contract reported non-actionable changes, and Chromium was stopped by a macOS permission/sandbox error (`MachPortRendezvous` / `Permission denied`).",
+        "**Recommended action:** Do not repeat the same Chromium validation on this host. Retry with explicit non-browser validation guidance, or use a host where browser processes are permitted if browser verification is mandatory.",
+      ].join("\n\n");
+    return [
+      "**Summary:** The agent process completed, but its structured report requested changes without an actionable finding, so the orchestrator could not determine a safe next step.",
+      "**Evidence:** The provider exited successfully, then result validation raised `Changes require actionable findings`.",
+      "**Recommended action:** Retry with guidance that tells the agent to either complete the work and return PASS evidence, or report a concrete auto-fix/decision-required finding.",
+    ].join("\n\n");
+  }
+  if (/(?:playwright|chromium|chrome-headless-shell)/i.test(evidence) && /(?:permission denied|MachPortRendezvous|bootstrap_check_in|SIGTRAP)/i.test(evidence)) return [
+    "**Summary:** Browser-based validation could not start on this host.",
+    "**Evidence:** Playwright launched Chromium, but macOS denied its rendezvous/process operation before the page or tests ran.",
+    "**Recommended action:** Validate without Chromium when the approved scope permits it, or run the browser check on a host with the required permissions.",
+  ].join("\n\n");
+  if (/branch named ['\"].+['\"] already exists/i.test(evidence)) return [
+    "**Summary:** Worktree preparation stopped because the factory branch already exists.",
+    "**Evidence:** Git refused to create a new branch with an existing name.",
+    "**Recommended action:** Inspect the preserved worktree/branch and retry through the factory so it can resume the saved stage; remove the branch only after confirming it contains no work that must be kept.",
+  ].join("\n\n");
+  if (/(?:authentication|not logged in|unauthorized|forbidden|HTTP 401|HTTP 403)/i.test(evidence)) return [
+    "**Summary:** An external command or integration rejected the configured credentials.",
+    "**Evidence:** The failure output contains an authentication or authorization error.",
+    "**Recommended action:** Reconnect the affected credential in the dashboard, run Doctor, and retry after the connection passes validation.",
+  ].join("\n\n");
+  if (/(?:command not found|ENOENT|No such file or directory)/i.test(evidence)) return [
+    "**Summary:** A required executable or file was not available to the agent process.",
+    "**Evidence:** The failure output reports a missing command or path.",
+    "**Recommended action:** Verify the configured command paths and target checkout with Doctor, then retry after the missing dependency is available.",
+  ].join("\n\n");
+  if (/(?:timed out|timeout|ETIMEDOUT)/i.test(evidence)) return [
+    "**Summary:** The operation exceeded its allowed execution time or could not reach a dependency in time.",
+    "**Evidence:** The workflow or subprocess reported a timeout.",
+    "**Recommended action:** Check daemon and integration connectivity, increase the execution timeout only if the operation is expected to run longer, then retry.",
+  ].join("\n\n");
+  if (/daemon restart|daemon restarted|interrupted/i.test(evidence)) return [
+    "**Summary:** The stage was interrupted before the orchestrator could safely record completion.",
+    "**Evidence:** Recovery found an unfinished execution after the daemon stopped or restarted.",
+    "**Recommended action:** Confirm the daemon is stable, inspect the preserved worktree, and retry the saved stage.",
+  ].join("\n\n");
+  if (run?.status === "failed" || (run?.exit_code !== null && run?.exit_code !== undefined && run.exit_code !== 0)) return [
+    "**Summary:** The agent subprocess failed before the workflow stage could complete.",
+    `**Evidence:** The recorded process status is ${run.status}${run.exit_code === null ? "" : ` with exit code ${run.exit_code}`}.`,
+    "**Recommended action:** Use the stderr evidence below to correct the first concrete command or test failure, then retry the saved stage.",
+  ].join("\n\n");
+  return [
+    "**Summary:** The workflow rejected the stage result after the agent process returned.",
+    `**Evidence:** ${reason.replace(/\s+/g," ")}`,
+    "**Recommended action:** Inspect the evidence below and daemon logs, add clarifying guidance to the retry comment if needed, then retry the saved stage.",
+  ].join("\n\n");
+}
+
 export function failureMarkdown(store: Store, w: WorkItem, error: unknown) {
   const stage=w.context.resume ?? w.context.pendingStage?.stage ?? w.state;
   const expectedRole=stageRoles[stage];
@@ -53,6 +110,7 @@ export function failureMarkdown(store: Store, w: WorkItem, error: unknown) {
   try { selection=JSON.parse(selectionRow?.payload ?? "{}"); } catch {}
   const stderr=run && path.basename(run.id)===run.id ? tail(path.join(config.dataDir,"runs",run.id,"stderr.log")) : "";
   const reason=sanitize(error,1600) || "The workflow stopped without an error message.";
+  const analysis=diagnosis(reason,stderr,run);
   const facts=[`**Stage:** ${stageLabel(stage)}`];
   if (run) {
     facts.push(`**Agent:** ${roleLabels[run.role]}`);
@@ -63,5 +121,5 @@ export function failureMarkdown(store: Store, w: WorkItem, error: unknown) {
   const troubleshooting=stderr
     ? `\n\n<details>\n<summary>Last ${Math.min(30,stderr.split("\n").length)} stderr lines</summary>\n\n\`\`\`text\n${stderr}\n\`\`\`\n\n</details>`
     : `\n\n_No stderr output was available. Use **Daemon logs** in the dashboard for additional context._`;
-  return `## Execution failed\n\n${facts.join("  \n")}\n\n### What happened\n\n${reason}\n\n### Troubleshooting${troubleshooting}\n\n### Next actions\n\nCorrect the reported cause, then choose one retry option.\n\n**From this GitHub issue**\n\n\`\`\`text\n/factory retry\n\`\`\`\n\nYou may add guidance for the next agent above or below the command.\n\n**From the dashboard**\n\n> Open this issue and select **Retry**.\n\n**From the factory terminal**\n\n\`\`\`bash\nnpm run factory -- retry ${w.id}\n\`\`\``;
+  return `## Execution failed\n\n${facts.join("  \n")}\n\n### What happened\n\n${reason}\n\n### Troubleshooting\n\n#### Diagnosis\n\n${analysis}${troubleshooting}\n\n### Next actions\n\nCorrect the reported cause, then choose one retry option.\n\n**From this GitHub issue**\n\n\`\`\`text\n/factory retry\n\`\`\`\n\nYou may add guidance for the next agent above or below the command.\n\n**From the dashboard**\n\n> Open this issue and select **Retry**.\n\n**From the factory terminal**\n\n\`\`\`bash\nnpm run factory -- retry ${w.id}\n\`\`\``;
 }
