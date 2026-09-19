@@ -26,7 +26,7 @@ function details(title: string, body: string) { return `<details>\n<summary>${ti
 const commandBox = (command: string) => `\`\`\`text\n${command}\n\`\`\``;
 const nextAction = (body: string, multiple = false) => `### Next action${multiple ? "s" : ""}\n\n${body}`;
 const noAction = (body: string) => nextAction(`> **No action required.** ${body}`);
-const retryAction = (prefix = "When the cause is resolved, post a new comment containing exactly:") => nextAction(`${prefix}\n\n${commandBox("/factory retry")}`);
+const retryAction = (prefix = "When the cause is resolved, post a new comment containing this command:") => nextAction(`${prefix}\n\n${commandBox("/factory retry")}\n\nYou may add guidance for the next agent above or below the command.`);
 export function decisionsMarkdown(decisions: Decision[]) {
  return table(["Decision", "Rationale", "Type"], decisions.map(d => [d.decision, d.rationale, d.conflictsWithHuman ? "Requires human decision" : d.kind]));
 }
@@ -133,8 +133,8 @@ export function architecturalReviewMarkdown() {
 export function correctionLimitMarkdown() {
  return `## Automatic correction limit reached\n\nThe current implementation, reports and worktree are preserved. Product Architect needs human guidance before replanning the next attempt.\n\n${nextAction(`Post a new comment describing how to proceed:\n\n${commandBox("/factory answer <guidance>")}`)}`;
 }
-export function retryAcceptedMarkdown(login: string, to: string) {
- return `## Retry accepted\n\n@${login} requested a retry. The factory will resume from **${to}**.\n\n${noAction("The next execution has been queued and its result will be published here.")}`;
+export function retryAcceptedMarkdown(login: string, to: string, hasGuidance = false) {
+ return `## Retry accepted\n\n@${login} requested a retry. The factory will resume from **${to}**.${hasGuidance ? " The accompanying guidance was added to the next agent's context." : ""}\n\n${noAction("The next execution has been queued and its result will be published here.")}`;
 }
 export function retryRejectedMarkdown(error: unknown) {
  return `## Retry could not start\n\n${String(error)}\n\n${retryAction("Resolve the reported condition, then post a new comment containing exactly:")}`;

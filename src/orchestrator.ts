@@ -22,6 +22,13 @@ function humanAnswer(body: string) {
  if (last === "/factory answer") return lines.slice(0, -1).join("\n").trim();
  return "";
 }
+function retryGuidance(body: string) {
+ const lines=body.trim().split(/\r?\n/);
+ const first=lines[0]?.trim(),last=lines.at(-1)?.trim();
+ if (first === "/factory retry") return lines.slice(1).join("\n").trim();
+ if (last === "/factory retry") return lines.slice(0,-1).join("\n").trim();
+ return null;
+}
 export class Orchestrator {
  constructor(readonly store: Store, private agents: Partial<Record<AgentRole, AgentAdapter>>,
   private github: GitHubPort = new GitHubAdapter(), private workspaces: WorkspacePort = new Workspaces(),
@@ -131,13 +138,15 @@ export class Orchestrator {
   for (const c of comments) if (this.processRetryComment(w,c)) return;
  }
  private processRetryComment(w: WorkItem,c: Comment) {
-  w.context.cursor = c.id;
-  this.store.save(w);
-  if (c.user.type !== "User" || !config.approvers.includes(c.user.login) || c.body.trim() !== "/factory retry") return false;
+ w.context.cursor = c.id;
+ this.store.save(w);
+  const guidance=retryGuidance(c.body);
+  if (c.user.type !== "User" || !config.approvers.includes(c.user.login) || guidance === null) return false;
   try {
+   if (guidance) { w.context.feedback.push(`${c.user.login} retry guidance: ${guidance}`); this.store.save(w); }
    const to = retry(this.store,w.id);
-   this.store.event("retry.comment_accepted",{ login:c.user.login,commentId:c.id,to },w.id);
-   this.store.post(w.issue_number,retryAcceptedMarkdown(c.user.login,retryStageLabel(to)));
+   this.store.event("retry.comment_accepted",{ login:c.user.login,commentId:c.id,to,guidance:guidance || undefined },w.id);
+   this.store.post(w.issue_number,retryAcceptedMarkdown(c.user.login,retryStageLabel(to),Boolean(guidance)));
   } catch (e) {
    this.store.event("retry.comment_rejected",{ login:c.user.login,commentId:c.id,error:String(e) },w.id);
    this.store.post(w.issue_number,retryRejectedMarkdown(e));

@@ -218,6 +218,22 @@ test("authorized standalone issue comment retries the saved stage exactly once",
  await f.o.tick(); assert.equal(f.item().state,"WAITING_HUMAN"); assert.equal(f.calls.length,2);
  f.store.db.close();
 });
+test("authorized retry comment forwards multiline guidance from before or after the command", async () => {
+ const before=setup(); await before.o.tick();
+ const failedBefore=before.item(); failedBefore.context.resume="DEVELOPMENT"; before.store.transition(failedBefore,"FAILED");
+ before.gh.reply("Do not use Chromium for validation.\n\n/factory retry"); await before.o.tick();
+ assert.equal(before.item().state,"DEVELOPMENT");
+ assert.ok(before.item().context.feedback.includes("owner retry guidance: Do not use Chromium for validation."));
+ assert.ok([...before.gh.posted.values()].some(body=>body.includes("accompanying guidance was added")));
+ before.store.db.close();
+
+ const after=setup(); await after.o.tick();
+ const failedAfter=after.item(); failedAfter.context.resume="QA"; after.store.transition(failedAfter,"PAUSED");
+ after.gh.reply("/factory retry\n\nValidate the layout without a browser."); await after.o.tick();
+ assert.equal(after.item().state,"QA");
+ assert.ok(after.item().context.feedback.includes("owner retry guidance: Validate the layout without a browser."));
+ after.store.db.close();
+});
 test("environment allowlist and result contract reject unintended data", () => {
  assert.deepEqual(agentEnvironment({ PATH: "/bin", GITHUB_TOKEN: "secret", SLACK_WEBHOOK_URL: "secret", OPENAI_API_KEY: "allowed", AGENT_SECRET_ALLOWLIST: "OPENAI_API_KEY" }), { PATH: "/bin", OPENAI_API_KEY: "allowed" });
  assert.throws(() => parseResult(result("pass"), "product-architect"));
