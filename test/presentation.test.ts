@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { reportMarkdown, specMarkdown, progressMarkdown, questionsMarkdown } from "../src/presentation.js";
 import { GitHubAdapter } from "../src/adapters/github.js";
+import { config } from "../src/config.js";
 import { result } from "./fixtures.js";
 import type { WorkItem } from "../src/types.js";
 test("human reports render evidence and actions as Markdown instead of serialized results", () => {
@@ -59,4 +60,15 @@ test("GitHub status updates one comment, preserves unrelated factory labels, and
  assert.ok(comments[0].body.startsWith("Testing"));
  assert.deepEqual(labels.map(l => l.name).sort(), ["bug", "factory:priority-high", "factory:qa"]);
  assert.ok(!calls.some(a => a.includes("close")));
+});
+test("GitHub managed issue discovery includes workflow states and excludes unrelated labels", () => {
+ const invoke = (args: string[]) => {
+  assert.deepEqual(args,["issue","list","--repo",config.repo,"--state","open","--limit","1000","--json","number,title,body,url,labels"]);
+  return JSON.stringify([
+   {number:1,title:"Paused",body:"",url:"one",labels:[{name:"factory:paused"}]},
+   {number:2,title:"Queued",body:"",url:"two",labels:[{name:"factory:queued"}]},
+   {number:3,title:"Bug",body:"",url:"three",labels:[{name:"bug"}]},
+  ]);
+ };
+ assert.deepEqual(new GitHubAdapter(invoke).listManaged().map(issue => issue.number),[1,2]);
 });

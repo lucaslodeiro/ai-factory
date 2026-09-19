@@ -31,6 +31,7 @@ esac
   fs.writeFileSync(fakeGh,`#!/usr/bin/env bash
 if [[ $1 == auth && $2 == status ]]; then [[ -f "$PWD/gh-authenticated" ]]; exit; fi
 if [[ $1 == auth && $2 == login ]]; then touch "$PWD/gh-authenticated"; exit; fi
+if [[ $1 == auth && $2 == refresh ]]; then touch "$PWD/gh-refreshed"; exit; fi
 if [[ $1 == auth && $2 == setup-git ]]; then exit; fi
 if [[ $1 == api && $2 == user ]]; then echo demo-user; exit; fi
 exit 1
@@ -124,7 +125,7 @@ echo "$*" >> "$PWD/update-actions.log"
     store.db.prepare("UPDATE controls SET handled=1 WHERE id=?").run(refreshControl.id);
     store.event("control.applied",{id:refreshControl.id,kind:"refresh-list",target:"",result:{found:2,added:1,updated:1}});
     refreshSnapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
-    assert.deepEqual(refreshSnapshot.issueRefresh,{status:"completed",message:"Found 2 queued issues; added 1, updated 1."});
+    assert.deepEqual(refreshSnapshot.issueRefresh,{status:"completed",message:"Found 2 factory issues; added 1, updated 1."});
     fs.mkdirSync(path.join(settingsRoot,".factory"),{recursive:true});
     fs.writeFileSync(path.join(settingsRoot,".factory","update-state.json"),JSON.stringify({status:"updating",phase:"stale",pid:process.pid,startedAt:"2026-01-01T00:00:00.000Z"}));
     const staleUpdate = await fetch(`http://127.0.0.1:${port}/api/services`).then(response => response.json()) as any;
@@ -196,6 +197,10 @@ echo "$*" >> "$PWD/update-actions.log"
     }
     assert.equal(connected.credentials.find((item: any) => item.id === "github").status,"connected");
     assert.equal(connected.credentials.find((item: any) => item.id === "github").account,"demo-user");
+    const reconnect = await fetch(`http://127.0.0.1:${port}/api/credentials/connect`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({provider:"github"})});
+    assert.equal(reconnect.status,202); assert.match(await reconnect.text(),/reauthentication/);
+    for (let attempt=0; attempt<60 && !fs.existsSync(path.join(settingsRoot,"gh-refreshed")); attempt++) await new Promise(resolve => setTimeout(resolve,25));
+    assert.ok(fs.existsSync(path.join(settingsRoot,"gh-refreshed")));
     const suggestedSettings = await fetch(`http://127.0.0.1:${port}/api/settings`).then(response => response.json()) as any;
     assert.equal(suggestedSettings.readiness.ready,false);
     assert.equal(suggestedSettings.readiness.missing.some((item: any) => item.id === "github-credential"),false);

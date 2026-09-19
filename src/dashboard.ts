@@ -66,7 +66,7 @@ function snapshot(store: Store) {
       if (outcome?.type === "control.failed") issueRefresh={status:"failed",message:outcome.data.error ?? "GitHub issue refresh failed."};
       else if (outcome?.type === "control.applied") {
         const result=outcome.data.result;
-        issueRefresh={status:"completed",message:result ? `Found ${result.found ?? 0} queued issue${result.found === 1 ? "" : "s"}; added ${result.added ?? 0}, updated ${result.updated ?? 0}.` : "GitHub issue refresh completed."};
+        issueRefresh={status:"completed",message:result ? `Found ${result.found ?? 0} factory issue${result.found === 1 ? "" : "s"}; added ${result.added ?? 0}, updated ${result.updated ?? 0}.` : "GitHub issue refresh completed."};
       }
     }
   }
@@ -243,7 +243,7 @@ function setupReadiness(root: string, credentials: ReturnType<typeof credentialS
 function dashboardSettings(root: string) {
   const credentials = credentialStatuses(root);
   const github = credentials.credentials.find(item => item.id === "github");
-  const login = github?.status === "connected" ? github.account : undefined;
+  const login = github?.connected ? github.account : undefined;
   const settings = readDashboardSettings(root,login ? {
     GITHUB_REPOSITORY:`${login}/ai-factory-demo`,
     FACTORY_REPO_DIR:path.join(os.homedir(),"Source","ai-factory-demo"),

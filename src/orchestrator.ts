@@ -93,17 +93,20 @@ export class Orchestrator {
   return refreshed;
  }
  refreshIssueList() {
-  const queued = this.github.listQueued();
-  const byNumber = new Map(queued.map(issue => [issue.number,issue]));
+  const managed = this.github.listManaged();
+  const byNumber = new Map(managed.map(issue => [issue.number,issue]));
   for (const local of this.store.items()) if (local.repo === config.repo && !byNumber.has(local.issue_number)) byNumber.set(local.issue_number,this.github.issue(local.issue_number));
   const issues = [...byNumber.values()];
   let added = 0,updated = 0;
   for (const issue of issues) {
    const existing = this.store.items().find(w => w.repo === config.repo && w.issue_number === issue.number);
    if (!existing) {
-    this.ingest(issue);
-    const created = this.store.items().find(w => w.repo === config.repo && w.issue_number === issue.number)!;
-    this.refreshKnownIssue(created,issue,this.github.comments(issue.number).slice().sort((a,b) => a.id-b.id));
+    const queued = issue.labels?.some(label => label.name === "factory:queued") ?? false;
+    if (queued) {
+     this.ingest(issue);
+     const created = this.store.items().find(w => w.repo === config.repo && w.issue_number === issue.number)!;
+     this.refreshKnownIssue(created,issue,this.github.comments(issue.number).slice().sort((a,b) => a.id-b.id));
+    } else this.recoverManagedIssue(issue,this.github.comments(issue.number).slice().sort((a,b) => a.id-b.id));
     added++; continue;
    }
    this.refreshKnownIssue(existing,issue,this.github.comments(issue.number).slice().sort((a,b) => a.id-b.id));
@@ -111,6 +114,21 @@ export class Orchestrator {
   }
   this.store.event("github.issue_list_refreshed",{ found:issues.length,added,updated });
   return { found:issues.length,added,updated };
+ }
+ private recoverManagedIssue(issue: Issue,comments: Comment[]) {
+  const existingId = comments.flatMap(comment => [...comment.body.matchAll(/Work item:\s*([0-9a-f-]{16,})/gi)].map(match => match[1])).at(0);
+  const id = existingId && !this.store.get(existingId) ? existingId : randomUUID();
+  const lastAnswer = [...comments].reverse().map(comment => ({ comment,answer:humanAnswer(comment.body) })).find(item => item.answer);
+  const remoteLabel = issue.labels?.map(label => label.name).find(name => name.startsWith("factory:") && name !== "factory:queued") ?? "factory:unknown";
+  const now = new Date().toISOString();
+  const context = {
+   title:issue.title,body:issue.body,url:issue.url,version:0,cursor:comments.at(-1)?.id ?? 0,
+   feedback:lastAnswer ? [`${lastAnswer.comment.user.login}: ${lastAnswer.answer}`] : [],cycles:0,reports:{},resume:"SPEC" as const,
+   lastFailure:`Recovered from GitHub state ${remoteLabel}. Local workflow evidence was unavailable; retry restarts at Product Architect.`,
+  };
+  this.store.db.prepare("INSERT INTO work_items(id,issue_number,repo,state,branch,created_at,updated_at,context) VALUES(?,?,?,?,?,?,?,?)")
+   .run(id,issue.number,config.repo,"PAUSED",`factory/issue-${issue.number}-${id.slice(0,8)}`,now,now,JSON.stringify(context));
+  this.store.event("work_item.recovered",{ issue,remoteLabel,cursor:context.cursor,resume:"SPEC" },id);
  }
  private ingest(issue: Issue) {
   if (this.store.items().some(w => w.repo === config.repo && w.issue_number === issue.number)) return;
@@ -125,10 +143,10 @@ export class Orchestrator {
   })();
  }
  async flush() {
-  const rows = this.store.db.prepare("SELECT * FROM outbox WHERE sent=0 ORDER BY id").all() as { id: number; issue_number: number; body: string }[];
+  const rows = this.store.db.prepare("SELECT * FROM outbox WHERE sent=0 ORDER BY id").all() as { id: number; issue_number: number; body: string; delivery_key: string | null }[];
   for (const r of rows) {
    try {
-    this.github.commentOnce(r.issue_number, r.body, `${config.repo}:${r.id}`);
+    this.github.commentOnce(r.issue_number,r.body,`${config.repo}:${r.delivery_key ?? r.id}`);
     this.store.db.prepare("UPDATE outbox SET sent=1 WHERE id=?").run(r.id);
 
    } catch (e) { this.store.event("github.delivery_failed", { outboxId: r.id, error: String(e) }); }

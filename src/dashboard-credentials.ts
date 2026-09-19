@@ -62,8 +62,8 @@ export function credentialStatuses(root: string) {
   const credentials = providers.map(provider => {
     const actual = actualStatus(root,provider.id);
     const pending = stored[provider.id];
-    if (actual.connected) return {...provider,...actual,status:"connected" as const};
     if (pending?.status === "connecting" && processAlive(pending.pid)) return {...provider,...actual,status:"connecting" as const,startedAt:pending.startedAt};
+    if (actual.connected) return {...provider,...actual,status:"connected" as const};
     if (pending?.status === "connecting") {
       stored[provider.id] = {...pending,status:"failed",finishedAt:new Date().toISOString()};
       changed = true;
@@ -79,15 +79,18 @@ export function connectCredential(root: string, provider: CredentialProvider) {
   if (!providers.some(item => item.id === provider)) throw new Error("Unknown credential provider");
   const existing = readState(root)[provider];
   if (existing?.status === "connecting" && processAlive(existing.pid)) throw new Error(`${provider} login is already running`);
-  const installed = actualStatus(root,provider).installed;
-  if (!installed) throw new Error(`${providers.find(item => item.id === provider)!.label} CLI is not installed or cannot be executed`);
+  const current = actualStatus(root,provider);
+  if (!current.installed) throw new Error(`${providers.find(item => item.id === provider)!.label} CLI is not installed or cannot be executed`);
 
   const log = logFile(root);
   fs.mkdirSync(path.dirname(log),{recursive:true});
   const output = fs.openSync(log,"a",0o600);
   const command = provider === "github" ? "/bin/bash" : provider === "claude" ? config.claudeCommand : config.codexCommand;
+  const githubScript = current.connected
+    ? '"$1" auth refresh --hostname github.com --reset-scopes && "$1" auth setup-git --hostname github.com'
+    : '"$1" auth login --hostname github.com --git-protocol https --web && "$1" auth setup-git --hostname github.com';
   const args = provider === "github"
-    ? ["-c",'"$1" auth login --hostname github.com --git-protocol https --web && "$1" auth setup-git --hostname github.com',"factory-github-login",githubCommand()]
+    ? ["-c",githubScript,"factory-github-login",githubCommand()]
     : provider === "claude" ? ["auth","login"] : ["login"];
   const child = spawn(command,args,{cwd:root,detached:true,stdio:["ignore",output,output],env:process.env});
   fs.closeSync(output);
@@ -99,5 +102,6 @@ export function connectCredential(root: string, provider: CredentialProvider) {
     if (!authenticated) saveProviderState(root,provider,{status:"failed",startedAt,finishedAt:new Date().toISOString()});
   });
   child.unref();
-  return { accepted:true,message:`${providers.find(item => item.id === provider)!.label} login opened on this Mac. Complete it in the browser, then refresh status.` };
+  const action = provider === "github" && current.connected ? "reauthentication" : "login";
+  return { accepted:true,message:`${providers.find(item => item.id === provider)!.label} ${action} opened on this Mac. Complete it in the browser, then refresh status.` };
 }

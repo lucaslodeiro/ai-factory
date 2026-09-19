@@ -16,6 +16,8 @@ class GitHub implements GitHubPort {
  replies: Comment[] = []; posted = new Map<string,string>(); states: WorkState[] = []; prs = 0; fail = false; failComments = false;
  queued = [{ number: 1, title: "Feature", body: "Implement feature", url: "https://example.test/issues/1" }];
  listQueued() { return this.queued; }
+ managed: Array<(typeof this.queued)[number] & { labels?: Array<{name:string}> }> | null = null;
+ listManaged() { return this.managed ?? this.queued.map(issue => ({...issue,labels:[{name:"factory:queued"}]})); }
  issue(n: number) { return { number:n,title:"Feature refreshed",body:"Updated issue body",url:`https://example.test/issues/${n}` }; }
  comments(n: number) { if (this.failComments) throw new Error("GitHub temporarily unavailable"); return n === 1 ? this.replies : []; }
  commentOnce(_n: number, body: string, key: string) { if (this.fail) throw new Error("offline"); this.posted.set(key, body); }
@@ -105,6 +107,23 @@ test("manual issue-list refresh adds new queued issues and updates existing meta
  assert.equal(existing.context.approval?.commentId,2); assert.equal(existing.context.feedback.length,0);
  const added=f.store.items().find(item=>item.issue_number===2)!; assert.equal(added.state,"SPEC"); assert.equal(added.context.cursor,0);
  assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='github.issue_list_refreshed'").get() as any).n,1);
+ f.store.db.close();
+});
+test("manual issue-list refresh safely recovers a remotely managed issue missing from local storage", () => {
+ const f=setup();
+ f.gh.managed=[{number:1,title:"Recovered feature",body:"Original request",url:"https://example.test/issues/1",labels:[{name:"factory:qa"}]}];
+ f.gh.replies=[
+  {id:10,body:"AI Factory started. Work item: a744b9a1-25b7-4a30-ac8e-fd232253e88f",user:{login:"factory",type:"Bot"}},
+  {id:11,body:"/factory answer\nUse the latest verified source.",user:{login:"owner",type:"User"}},
+ ];
+ const result=f.o.refreshIssueList();
+ assert.deepEqual(result,{found:1,added:1,updated:0});
+ const recovered=f.item();
+ assert.equal(recovered.id,"a744b9a1-25b7-4a30-ac8e-fd232253e88f");
+ assert.equal(recovered.state,"PAUSED"); assert.equal(recovered.context.resume,"SPEC"); assert.equal(recovered.context.cursor,11);
+ assert.deepEqual(recovered.context.feedback,["owner: Use the latest verified source."]);
+ assert.match(recovered.context.lastFailure ?? "",/factory:qa/);
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM outbox").get() as any).n,0);
  f.store.db.close();
 });
 test("QA fixes rerun developer and QA; deferred findings permit review", async () => {

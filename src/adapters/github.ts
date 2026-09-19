@@ -2,12 +2,12 @@ import { statePresentation } from "../presentation.js";
 import { spawnSync } from "node:child_process";
 import { config } from "../config.js";
 import type { WorkState } from "../types.js";
-export type Issue = { number: number; title: string; body: string; url: string; };
+export type Issue = { number: number; title: string; body: string; url: string; labels?: Array<{ name: string }> };
 export type Comment = { id: number; body: string; user: { login: string; type: string }; };
 export interface PullRequestState { state: "OPEN" | "CLOSED" | "MERGED"; mergedAt: string | null; mergeCommit: { oid: string } | null; }
 export interface GitHubPort {
  pullRequestState(url: string): PullRequestState;
- listQueued(): Issue[]; issue(n: number): Issue; comments(n: number): Comment[];
+ listQueued(): Issue[]; listManaged(): Issue[]; issue(n: number): Issue; comments(n: number): Comment[];
  commentOnce(n: number, body: string, key: string): void;
  syncState(n: number, state: WorkState, progress?: string): void;
  ensurePR(branch: string, title: string, body: string): string;
@@ -20,6 +20,11 @@ export class GitHubAdapter implements GitHubPort {
  constructor(private invoke: (args: string[], input?: unknown) => string = gh) {}
  listQueued(): Issue[] {
   return JSON.parse(this.invoke(["issue", "list", "--repo", config.repo, "--label", "factory:queued", "--state", "open", "--limit", "100", "--json", "number,title,body,url"]));
+ }
+ listManaged(): Issue[] {
+  const managed = new Set(["factory:queued",...Object.keys(statePresentation).map(state => `factory:${state.toLowerCase().replaceAll("_","-")}`)]);
+  const issues = JSON.parse(this.invoke(["issue","list","--repo",config.repo,"--state","open","--limit","1000","--json","number,title,body,url,labels"])) as Issue[];
+  return issues.filter(issue => issue.labels?.some(label => managed.has(label.name)));
  }
  issue(n: number): Issue {
   return JSON.parse(this.invoke(["issue","view",String(n),"--repo",config.repo,"--json","number,title,body,url"]));
