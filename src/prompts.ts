@@ -4,6 +4,28 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { AgentProvider, AgentRole, WorkItem } from "./types.js";
 const root = new URL("../", import.meta.url);
+function conciseFeedback(entries: string[]) {
+  const compact=entries.slice(-20).map(entry => {
+    if (entry.length <= 4000) return entry;
+    const split=entry.indexOf(": {");
+    if (split < 0) return entry.slice(0,4000);
+    try {
+      const label=entry.slice(0,split);
+      const report=JSON.parse(entry.slice(split+2)) as {summary?:string;findings?:Array<{classification?:string;evidence?:string}>;decisions?:Array<{decision?:string;rationale?:string}>};
+      return [
+        `${label}: ${(report.summary ?? "Delivery feedback").slice(0,1500)}`,
+        ...(report.findings ?? []).map(f=>`Finding (${f.classification ?? "unspecified"}): ${(f.evidence ?? "").slice(0,1000)}`),
+        ...(report.decisions ?? []).map(d=>`Decision: ${(d.decision ?? "").slice(0,700)}${d.rationale ? ` — ${d.rationale.slice(0,700)}` : ""}`),
+      ].join("\n").slice(0,4000);
+    } catch { return entry.slice(0,4000); }
+  });
+  let total=0;
+  return compact.reverse().filter(entry => {
+    if (total + entry.length > 24000) return false;
+    total += entry.length;
+    return true;
+  }).reverse();
+}
 export function prompt(w: WorkItem, role: AgentRole, selectedProvider: AgentProvider) {
   const read = (p: string) => fs.readFileSync(fileURLToPath(new URL(p, root)), "utf8");
   const provider = selectedProvider === "codex" ? "codex/AGENTS.md" : "claude/CLAUDE.md";
@@ -31,7 +53,7 @@ export function prompt(w: WorkItem, role: AgentRole, selectedProvider: AgentProv
         ? { source: "Tester report for current approved delivery", tests: w.context.reports.qa.tests, coverage: w.context.reports.qa.coverage } : undefined,
       unapprovedArchitectDraft: role === "product-architect" ? w.context.architectDraft : undefined,
       consultation: role === "product-architect" ? w.context.consultation : undefined,
-      feedback: role === "qa" || role === "reviewer" ? [] : w.context.feedback,
+      feedback: role === "qa" || role === "reviewer" ? [] : conciseFeedback(w.context.feedback),
       recovery: w.context.pendingStage ? "Previous attempt did not complete this workflow stage; inspect retained changes and verify everything again. Do not assume prior success." : undefined,
       approval: w.context.approval }, null, 2),
     retryGuidance

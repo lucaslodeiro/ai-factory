@@ -311,8 +311,15 @@ export class Orchestrator {
    }
    // Ignore commands posted before this new specification exists.
    w.context.cursor = Math.max(w.context.cursor, ...this.github.comments(w.issue_number).map(c => c.id));
+   const consultationQuestion = result.outcome === "questions" && Boolean(
+    w.context.consultation && w.context.approvedVersion === w.context.version
+   );
    this.store.db.transaction(() => {
-    w.context.approvedVersion = undefined; w.context.approval = undefined; w.context.consultation = undefined;
+    // Follow-up questions in a tactical consultation remain governed by the
+    // approved SPEC and must retain their delivery return route.
+    if (!consultationQuestion) {
+     w.context.approvedVersion = undefined; w.context.approval = undefined; w.context.consultation = undefined;
+    }
     if (result.outcome === "questions") {
      w.context.waiting = "questions";
      this.store.post(w.issue_number, questionsMarkdown(result.questions));
@@ -402,7 +409,9 @@ export class Orchestrator {
   }
   const answer = humanAnswer(body);
   if (answer) {
-   const correctionConsultation = w.context.waiting === "loop" ? w.context.consultation : undefined;
+   // A tactical consultation can require several human answers before it is
+   // resolved. Preserve its route while those answers are collected.
+   const correctionConsultation = w.context.consultation;
    w.context.feedback.push(`${c.user.login}: ${answer}`); w.context.cycles = 0;
    w.context.consultation = correctionConsultation;
    this.store.transition(w, "SPEC"); return true;

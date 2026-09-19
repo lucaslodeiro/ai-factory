@@ -286,6 +286,48 @@ test("architect resolves a developer consultation without a new spec or approval
  assert.equal(f.item().state, "READY_TO_MERGE"); assert.match(f.calls[3].instructions, /existing parser helper/);
  assert.equal(f.notifications.filter(n => n.includes("Action required · Review SPEC v1")).length, 1); f.store.db.close();
 });
+test("follow-up questions preserve an approved consultation and its delivery route", async () => {
+ const f=setup({
+  developer:[result("decision")],
+  "product-architect":[result("spec"),result("questions",{questions:["Where should this run?"]}),tactical()],
+ });
+ await f.o.tick(); f.gh.reply("/factory approve v1"); await f.o.tick();
+ const approval=f.item().context.approval;
+ await f.o.tick(); assert.equal(f.item().state,"SPEC");
+ await f.o.tick(); assert.equal(f.item().state,"WAITING_HUMAN");
+ assert.equal(f.item().context.waiting,"questions");
+ assert.equal(f.item().context.approvedVersion,1);
+ assert.deepEqual(f.item().context.approval,approval);
+ assert.deepEqual(f.item().context.consultation,{from:"DEVELOPMENT"});
+ f.gh.reply("/factory answer\nRun it locally and expose its HTTP URL.");
+ await f.o.tick(); await f.o.tick();
+ assert.equal(f.item().state,"DEVELOPMENT");
+ assert.equal(f.item().context.version,1);
+ assert.deepEqual(f.item().context.approval,approval);
+ f.store.db.close();
+});
+test("retry repairs approval and consultation erased by an older release", async () => {
+ const f=setup({developer:[result("decision")],"product-architect":[result("spec"),result("questions",{questions:["Where should this run?"]})]});
+ await f.o.tick(); f.gh.reply("/factory approve v1"); await f.o.tick(); await f.o.tick(); await f.o.tick();
+ const damaged=f.item();
+ damaged.context.approvedVersion=undefined; damaged.context.approval=undefined; damaged.context.consultation=undefined;
+ damaged.context.resume="SPEC"; damaged.state="FAILED"; f.store.save(damaged);
+ retry(f.store,damaged.id);
+ assert.equal(f.item().state,"SPEC");
+ assert.equal(f.item().context.approvedVersion,1);
+ assert.deepEqual(f.item().context.approval,{login:"owner",commentId:1});
+ assert.deepEqual(f.item().context.consultation,{from:"DEVELOPMENT"});
+ assert.equal((f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='consultation.recovered'").get() as any).n,1);
+ f.store.db.close();
+});
+test("legacy delivery reports are compacted before being sent back to an agent", async () => {
+ const f=setup(); const item=f.item();
+ item.context.feedback.push(`Builder: ${JSON.stringify({summary:"x".repeat(50000),findings:[{classification:"auto-fix",evidence:"Keep the actionable evidence"}],decisions:[]})}`);
+ f.store.save(item); await f.o.tick();
+ assert.ok(f.calls[0].instructions.length < 50000);
+ assert.match(f.calls[0].instructions,/Keep the actionable evidence/);
+ f.store.db.close();
+});
 test("QA consultation can return to QA without inheriting developer reasoning", async () => {
  const f = setup({ qa: [result("decision")], "product-architect": [result("spec"), tactical("qa")] });
  await f.o.tick(); f.gh.reply("/factory approve v1"); await f.o.tick();

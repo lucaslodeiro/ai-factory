@@ -44,6 +44,16 @@ function tail(file: string, maxLines = 30) {
 
 function diagnosis(reason: string, stderr: string, run?: {status:string;exit_code:number|null}) {
   const evidence=`${reason}\n${stderr}`;
+  if (/Tactical resolution requires an approved-spec consultation/i.test(reason)) return [
+    "**Summary:** Architect returned a tactical resolution, but the saved workflow no longer contained the approved consultation route needed to apply it.",
+    "**Evidence:** The agent completed successfully; the orchestrator rejected the result while validating the approved SPEC and delivery return stage.",
+    "**Recommended action:** Update the factory to a version that preserves and repairs consultation state, then retry. The existing SPEC, approval audit and worktree can be reused.",
+  ].join("\n\n");
+  if (/Tactical resolution cannot require a human decision/i.test(reason)) return [
+    "**Summary:** Architect marked its response as a completed tactical resolution while the same response still requested a human decision or conflicted with prior human guidance.",
+    "**Evidence:** The agent process succeeded, but its structured result combined `resolved` with questions, a major/conflicting decision, or a decision-required finding.",
+    "**Recommended action:** Retry with clear guidance: resolve within the approved SPEC when the decision is already known, or ask one explicit question when human input is still required.",
+  ].join("\n\n");
   if (/Changes require actionable findings/i.test(reason)) {
     const browserBlocked=/(?:playwright|chromium|chrome-headless-shell)/i.test(stderr) && /(?:permission denied|MachPortRendezvous|bootstrap_check_in|SIGTRAP)/i.test(stderr);
     if (browserBlocked) return [
