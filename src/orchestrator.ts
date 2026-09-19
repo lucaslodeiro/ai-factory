@@ -29,8 +29,6 @@ export class Orchestrator {
  async tick() {
   try { this.discoverStartCommands(); }
   catch (e) { this.store.event("github.start_poll_failed", { error: String(e) }); }
-  try { for (const issue of this.github.listQueued()) this.ingest(issue); }
-  catch (e) { this.store.event("github.poll_failed", { error: String(e) }); }
   await this.reconcilePullRequests();
   await this.flush();
   for (const snapshot of this.store.items()) {
@@ -201,18 +199,9 @@ export class Orchestrator {
   for (const issue of issues) {
    const existing = this.store.items().find(w => w.repo === config.repo && w.issue_number === issue.number);
    if (!existing) {
-    const queued = issue.labels?.some(label => label.name === "factory:queued") ?? false;
-    if (queued) {
-     this.ingest(issue);
-     const created = this.store.items().find(w => w.repo === config.repo && w.issue_number === issue.number)!;
-     this.reconcileKnownIssue(created,issue);
-     const refreshed=this.refreshLatestComment(created);
-     this.github.syncState(refreshed.issue_number,refreshed.state,progressMarkdown(refreshed));
-    } else {
-     const recovered=this.recoverManagedIssue(issue,this.github.comments(issue.number).slice().sort((a,b) => a.id-b.id));
-     const refreshed=this.refreshLatestComment(recovered);
-     this.github.syncState(refreshed.issue_number,refreshed.state,progressMarkdown(refreshed));
-    }
+    const recovered=this.recoverManagedIssue(issue,this.github.comments(issue.number).slice().sort((a,b) => a.id-b.id));
+    const refreshed=this.refreshLatestComment(recovered);
+    this.github.syncState(refreshed.issue_number,refreshed.state,progressMarkdown(refreshed));
     added++; continue;
    }
    this.reconcileKnownIssue(existing,issue);
@@ -227,7 +216,7 @@ export class Orchestrator {
   const existingId = comments.flatMap(comment => [...comment.body.matchAll(/Work item(?:\s*:|\s*\|)\s*`?([0-9a-f-]{16,})/gi)].map(match => match[1])).at(0);
   const id = existingId && !this.store.get(existingId) ? existingId : randomUUID();
   const lastAnswer = [...comments].reverse().map(comment => ({ comment,answer:humanAnswer(comment.body) })).find(item => item.answer);
-  const remoteLabel = issue.labels?.map(label => label.name).find(name => name.startsWith("factory:") && name !== "factory:queued") ?? "factory:unknown";
+  const remoteLabel = issue.labels?.map(label => label.name).find(name => name.startsWith("factory:")) ?? "factory:unknown";
   const now = new Date().toISOString();
   const context = {
    title:issue.title,body:issue.body,url:issue.url,version:0,cursor:0,
@@ -241,7 +230,7 @@ export class Orchestrator {
   this.store.post(issue.number,recoveredMarkdown(recovered,remoteLabel,comments.at(-1)?.id ?? null));
   return recovered;
  }
- private ingest(issue: Issue,start: {source:"comment"|"control"|"label";requestedBy:string;commentId?:number}={source:"label",requestedBy:"factory:queued"}) {
+ private ingest(issue: Issue,start: {source:"comment"|"control";requestedBy:string;commentId?:number}) {
   if (this.store.items().some(w => w.repo === config.repo && w.issue_number === issue.number)) return;
   const id = randomUUID(), now = new Date().toISOString();
   const context = { title: issue.title, body: issue.body, url: issue.url, version: 0, cursor: start.commentId ?? 0, feedback: [], cycles: 0, reports: {} };

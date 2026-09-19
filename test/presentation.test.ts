@@ -83,7 +83,7 @@ test("GitHub status updates one comment, preserves unrelated factory labels, and
  assert.deepEqual(labels.map(l => l.name).sort(), ["bug", "factory:priority-high", "factory:qa"]);
  assert.ok(!calls.some(a => a.includes("close")));
 });
-test("GitHub managed issue discovery includes workflow states and excludes unrelated labels", () => {
+test("GitHub managed issue discovery excludes the removed queue label and unrelated labels", () => {
  const invoke = (args: string[]) => {
   assert.deepEqual(args,["issue","list","--repo",config.repo,"--state","open","--limit","1000","--json","number,title,body,url,labels"]);
   return JSON.stringify([
@@ -92,5 +92,5 @@ test("GitHub managed issue discovery includes workflow states and excludes unrel
    {number:3,title:"Bug",body:"",url:"three",labels:[{name:"bug"}]},
   ]);
  };
- assert.deepEqual(new GitHubAdapter(invoke).listManaged().map(issue => issue.number),[1,2]);
+ assert.deepEqual(new GitHubAdapter(invoke).listManaged().map(issue => issue.number),[1]);
 });

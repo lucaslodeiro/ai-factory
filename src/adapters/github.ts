@@ -8,7 +8,7 @@ export type RepositoryComment = Comment & { issue_url: string; created_at: strin
 export interface PullRequestState { state: "OPEN" | "CLOSED" | "MERGED"; mergedAt: string | null; mergeCommit: { oid: string } | null; }
 export interface GitHubPort {
  pullRequestState(url: string): PullRequestState;
- listQueued(): Issue[]; listManaged(): Issue[]; issue(n: number): Issue; comments(n: number): Comment[]; repositoryComments?(since: string): RepositoryComment[];
+ listManaged(): Issue[]; issue(n: number): Issue; comments(n: number): Comment[]; repositoryComments?(since: string): RepositoryComment[];
  commentOnce(n: number, body: string, key: string): void;
  syncState(n: number, state: WorkState, progress?: string): void;
  ensurePR(branch: string, title: string, body: string): string;
@@ -19,11 +19,8 @@ function gh(args: string[], input?: unknown) {
 }
 export class GitHubAdapter implements GitHubPort {
  constructor(private invoke: (args: string[], input?: unknown) => string = gh) {}
- listQueued(): Issue[] {
-  return JSON.parse(this.invoke(["issue", "list", "--repo", config.repo, "--label", "factory:queued", "--state", "open", "--limit", "100", "--json", "number,title,body,url"]));
- }
  listManaged(): Issue[] {
-  const managed = new Set(["factory:queued",...Object.keys(statePresentation).map(state => `factory:${state.toLowerCase().replaceAll("_","-")}`)]);
+  const managed = new Set(Object.keys(statePresentation).map(state => `factory:${state.toLowerCase().replaceAll("_","-")}`));
   const issues = JSON.parse(this.invoke(["issue","list","--repo",config.repo,"--state","open","--limit","1000","--json","number,title,body,url,labels"])) as Issue[];
   return issues.filter(issue => issue.labels?.some(label => managed.has(label.name)));
  }
@@ -47,11 +44,11 @@ export class GitHubAdapter implements GitHubPort {
  syncState(n: number, state: WorkState, progress?: string) {
   const label = `factory:${state.toLowerCase().replaceAll("_", "-")}`;
   const display = statePresentation[state];
-  const managed = new Set(["factory:queued", ...Object.keys(statePresentation).map(s => `factory:${s.toLowerCase().replaceAll("_", "-")}`)]);
+  const managed = new Set(Object.keys(statePresentation).map(s => `factory:${s.toLowerCase().replaceAll("_", "-")}`));
   const current = JSON.parse(this.invoke(["issue", "view", String(n), "--repo", config.repo, "--json", "labels"])).labels as { name: string; color?: string; description?: string }[];
   const present = current.find(l => l.name === label);
   if (!present || present.color !== display.color || present.description !== display.description) this.invoke(["label", "create", label, "--repo", config.repo, "--color", display.color, "--description", display.description, "--force"]);
-  const stale = current.filter(l => managed.has(l.name) && l.name !== label);
+  const stale = current.filter(l => (managed.has(l.name) || l.name === "factory:queued") && l.name !== label);
   if (!present || stale.length) {
    const args = ["issue", "edit", String(n), "--repo", config.repo, "--add-label", label];
    for (const l of stale) args.push("--remove-label", l.name);

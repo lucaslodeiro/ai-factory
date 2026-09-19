@@ -10,7 +10,7 @@
 - Native Claude/Codex output envelopes, role-specific generation schemas and local validation. Read-only Reviewer receives attributed QA execution evidence without Developer reasoning or QA summary conclusions.
 - Per-role provider/model routing in `direct-v1`, including direct model selection, `auto` argument omission for both adapters, and an end-to-end run with every role assigned to the opposite provider from its default (Codex Architect/Reviewer and Claude Developer/QA). Claude delivery roles receive editing tools while provider-independent worktree checks preserve read-only and QA boundaries.
 - Invalid/stale/unauthorized/bot approvals and question/answer loops.
-- Explicit issue entry through an authorized, unedited standalone `/factory start` repository comment, dashboard/CLI controls, persistent comment cursors and deduplication. Pull requests, closed issues, quoted commands, edited comments, bots and unauthorized users cannot start work; `factory:queued` remains compatible.
+- Explicit issue entry through an authorized, unedited standalone `/factory start` repository comment or dashboard/CLI controls, with persistent comment cursors and deduplication. Pull requests, closed issues, labels, quoted commands, edited comments, bots and unauthorized users cannot start work.
 - QA auto-fix, decision routing, bounded correction loops and deferred findings.
 - Durable GitHub outbox, idempotent delivery and malformed output failure.
 - Process success, spawn errors, preserved provider exit codes, timeout and cancellation.

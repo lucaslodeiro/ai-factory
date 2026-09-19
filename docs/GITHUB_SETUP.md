@@ -4,7 +4,7 @@ Authenticate `gh` with issue, content and pull-request write access to the targe
 
 Create an open issue and post `/factory start` as a new standalone comment from a login listed in `FACTORY_APPROVERS`. The daemon reads the repository-wide recent-comment stream, validates the human approver, fetches the issue and creates the work item exactly once. Quoted commands, edited comments, bots and unauthorized users do not start work. The dashboard and `ai-factory start-issue <number-or-url>` provide equivalent explicit entry points.
 
-`factory:queued` remains supported for compatibility. When present on an open issue, the daemon discovers it during normal polling and removes it when mirroring the persisted state. All workflow labels are created and managed automatically; unrelated labels are preserved.
+Workflow labels are outputs of the orchestrator. They are created and changed automatically after an explicit start command; users do not need to create or administer labels. An obsolete `factory:queued` label is removed if encountered while synchronizing an already tracked issue, but it never starts work.
 
 Use `/factory answer <text>` and `/factory approve vN` as standalone comments from a configured human approver. For an item in FAILED, PAUSED or CANCELLED, post a new standalone `/factory retry` comment to resume its saved stage. The same configured-approver, human-account and one-time cursor checks apply; quoted commands and edits to an already-read comment do not execute. A label is not a start, approval or retry command. Spec versions and command comment IDs are audited in SQLite. Comments are read with pagination. GitHub outage delivery is retried using hidden idempotency markers; SQLite remains authoritative.
 

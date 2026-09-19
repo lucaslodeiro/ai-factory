@@ -66,8 +66,8 @@ export function reportMarkdown(role: AgentRole, version: number, r: AgentResult,
  sections.push("Full structured evidence is retained in the local execution audit.");
  return sections.join("\n\n");
 }
-export function startedMarkdown(w: WorkItem,requestedBy: string,source: "comment" | "control" | "label") {
- const origin=source === "comment" ? `GitHub command from @${requestedBy}` : source === "control" ? requestedBy : "factory:queued compatibility label";
+export function startedMarkdown(w: WorkItem,requestedBy: string,source: "comment" | "control") {
+ const origin=source === "comment" ? `GitHub command from @${requestedBy}` : requestedBy;
  return `## AI Factory started\n\n| Detail | Value |\n| --- | --- |\n| Work item | \`${w.id}\` |\n| Starting stage | Product Architect |\n| Requested through | ${origin} |\n| Branch | \`${w.branch}\` |\n\nThe factory is preparing the initial specification. No action is required until Product Architect requests input or publishes a SPEC for approval.`;
 }
 export function pausedMarkdown(w: WorkItem,reason: string,activeExecution: boolean) {

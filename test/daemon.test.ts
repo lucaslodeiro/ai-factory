@@ -16,7 +16,7 @@ test("full daemon and CLI integration with local Git remote and deterministic pr
  git(repo, ["config", "user.name", "Factory Test"]); git(repo, ["config", "user.email", "factory@example.test"]);
  fs.writeFileSync(path.join(repo, "README.md"), "Demo"); git(repo, ["add", "."]); git(repo, ["commit", "-m", "base"]);
  git(repo, ["branch", "-M", "main"]); git(repo, ["remote", "add", "origin", origin]); git(repo, ["push", "-u", "origin", "main"]);
- const stateFile = path.join(root, "github.json"); fs.writeFileSync(stateFile, JSON.stringify({ comments: [], label: "factory:queued", prs: 0 }));
+ const stateFile = path.join(root, "github.json"); fs.writeFileSync(stateFile, JSON.stringify({ comments: [], label: "bug", prs: 0 }));
  const executable = (name: string, code: string) => {
   const file = path.join(bin, name); fs.writeFileSync(file, `#!${process.execPath}\n${code}`, { mode: 0o755 }); return file;
  };
@@ -24,7 +24,7 @@ test("full daemon and CLI integration with local Git remote and deterministic pr
 const fs=require('node:fs');const file=${JSON.stringify(stateFile)};const a=process.argv.slice(2);const s=JSON.parse(fs.readFileSync(file));
 const save=()=>fs.writeFileSync(file,JSON.stringify(s));const out=x=>console.log(JSON.stringify(x));
 if(a[0]==='auth'){process.exit(0)}
-if(a[0]==='api'){if(a.includes('--method')){const id=Number(a[1].split('/').pop());s.comments.find(c=>c.id===id).body=JSON.parse(fs.readFileSync(0,'utf8')).body;save();out({});}else out([s.comments])}
+if(a[0]==='api'){if(a.includes('--method')){const id=Number(a[1].split('/').pop());s.comments.find(c=>c.id===id).body=JSON.parse(fs.readFileSync(0,'utf8')).body;save();out({});}else if(a[1]==='repos/owner/demo/issues/1'){out({number:1,title:'Add greet',body:'Add greet function and tests',html_url:'https://example.test/issues/1',state:'open'});}else out([s.comments])}
 else if(a[0]==='label'){}
 else if(a[0]==='issue'&&a[1]==='list'){out([{number:1,title:'Add greet',body:'Add greet function and tests',url:'https://example.test/issues/1'}])}
 else if(a[0]==='issue'&&a[1]==='view'){out({labels:[{name:s.label}]})}
@@ -76,10 +76,11 @@ if(codex){
  try {
   await waitFor(() => fs.existsSync(path.join(data, "factory.db")));
   store = new Store(path.join(data, "factory.db"));
+  const command = (name: string, id?: string) => spawnSync(process.execPath, ["--import", "tsx", cli, name, ...(id ? [id] : [])], { env, encoding: "utf8" });
+  assert.equal(command("start-issue", "1").status,0);
   await waitFor(() => store!.items()[0]?.state === "WAITING_HUMAN" && JSON.parse(fs.readFileSync(stateFile, "utf8")).comments.some((c: any) => c.body.includes("SPEC v1")));
   const state = JSON.parse(fs.readFileSync(stateFile, "utf8")); state.comments.push({ id: state.comments.length + 1, body: "/factory approve v1", user: { login: "owner", type: "User" } }); fs.writeFileSync(stateFile, JSON.stringify(state));
   await waitFor(() => fs.existsSync(path.join(root, "first-developer")));
-  const command = (name: string, id?: string) => spawnSync(process.execPath, ["--import", "tsx", cli, name, ...(id ? [id] : [])], { env, encoding: "utf8" });
   const workId = store.items()[0].id;
   assert.equal(command("status").status, 0);
   assert.equal(command("sync").status, 1, "Standalone sync must not race the active daemon");
