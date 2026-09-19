@@ -14,6 +14,7 @@ export interface TransitionInput {
  workItemId:string;expectedRevision:number;stage:V3Stage;status:V3Status;actor:TransitionActor;source:TransitionSource;
  reason:{code:string;summary:string};recordIds?:string[];activeRunId?:string;attemptDelta?:number;correctionCycles?:number;
 }
+export interface PresentationInput { workItemId:string;expectedRevision:number;actor:TransitionActor;source:TransitionSource;reason:{code:string;summary:string};recordIds?:string[]; }
 type Row={stage:string|null;status:string|null;attempt:number;revision:number;presentation_revision:number;published_presentation_revision:number|null;active_run_id:string|null;active_request_id:string|null;active_failure_id:string|null;correction_cycles:number;archived_at:string|null};
 
 function projection(row:Row):WorkflowProjection {
@@ -67,6 +68,20 @@ export class WorkflowProjections {
    this.store.event("workflow.transition",{schemaVersion:1,eventId,type:"workflow.transition",workItemId:input.workItemId,occurredAt:new Date().toISOString(),actor:input.actor,source:input.source,
     from,to,reason:input.reason,recordIds:input.recordIds??[],activeRequestId:to.activeRequestId,activeFailureId:to.activeFailureId},input.workItemId,input.source.executionId);
    return to;
+  });
+  return run.immediate();
+ }
+ present(input:PresentationInput,mutations?:()=>void) {
+  const run=this.store.db.transaction(()=>{
+   const from=this.get(input.workItemId);
+   if (from.revision!==input.expectedRevision) throw new Error(`Workflow revision changed: expected ${input.expectedRevision}, found ${from.revision}`);
+   mutations?.();
+   const next=from.presentationRevision+1;
+   const updated=this.store.db.prepare("UPDATE work_items SET presentation_revision=? WHERE id=? AND revision=? AND presentation_revision=?")
+    .run(next,input.workItemId,from.revision,from.presentationRevision);
+   if(updated.changes!==1)throw new Error("Workflow presentation changed concurrently");
+   this.store.event("workflow.presentation",{schemaVersion:1,workItemId:input.workItemId,occurredAt:new Date().toISOString(),actor:input.actor,source:input.source,reason:input.reason,recordIds:input.recordIds??[],from:from.presentationRevision,to:next},input.workItemId,input.source.executionId);
+   return {...from,presentationRevision:next};
   });
   return run.immediate();
  }
