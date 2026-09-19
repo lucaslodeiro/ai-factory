@@ -39,8 +39,17 @@ finish_update() {
     if [[ -z ${AI_FACTORY_UPDATE_STATE_FILE:-} ]] || ! node -e 'const fs=require("fs");try{process.exit(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).status==="failed"?0:1)}catch{process.exit(1)}' "$AI_FACTORY_UPDATE_STATE_FILE"; then
       write_update_state failed "Update failed. Inspect .factory/service-logs/update.log."
     fi
+    # A failed update must not change the operator's service state. Reinstall
+    # launchd definitions in case the checkout changed before the failure, then
+    # restore every service that was loaded when this update began.
+    set +e
+    if "$restore_daemon"; then
+      AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install daemon
+      if ! bash scripts/services.sh status daemon 2>/dev/null | grep -q '^daemon: loaded'; then
+        AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start daemon
+      fi
+    fi
     if "$restore_dashboard" && ! bash scripts/services.sh status dashboard 2>/dev/null | grep -q '^dashboard: loaded'; then
-      set +e
       AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install dashboard
       AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start dashboard
     fi
@@ -61,6 +70,10 @@ if ( "$restart_services" || "$start_services" ) && [[ ${AI_FACTORY_SKIP_SERVICES
     done
   fi
   bash scripts/services.sh stop daemon
+  # launchctl can return before the daemon finishes its graceful shutdown and
+  # releases the SQLite lock. Tell update.mjs to wait for that specific case;
+  # direct updates against an independently running daemon still fail fast.
+  if "$restore_daemon"; then export AI_FACTORY_WAIT_FOR_DAEMON_STOP=1; fi
 fi
 
 write_update_state updating "Downloading, building and validating…"

@@ -27,13 +27,26 @@ function run(command, args, capture = false, timeout = 600000) {
 }
 const git = (...args) => run(config.gitCommand, args, true);
 let store, release, backup, before;
+async function acquireUpdateLock() {
+  const deadline=Date.now()+60000;
+  while (true) {
+    store?.db.close();
+    store=new Store();
+    try { return acquireLock(store); }
+    catch (error) {
+      const daemonStopping=process.env.AI_FACTORY_WAIT_FOR_DAEMON_STOP==='1' && /Daemon already running/.test(error.message);
+      if (!daemonStopping || Date.now()>=deadline) throw error;
+      progress('Waiting for the daemon to finish stopping…');
+      await new Promise(resolve=>setTimeout(resolve,500));
+    }
+  }
+}
 try {
   step='checking the local checkout'; progress('Checking the local checkout…');
   if (git('status','--porcelain')) throw new Error('Local changes found. Commit or move them before updating.');
   const branch = git('symbolic-ref','--quiet','--short','HEAD');
   before = git('rev-parse','HEAD');
-  store = new Store();
-  release = acquireLock(store);
+  release = await acquireUpdateLock();
   // Fetch only; refuse local commits/divergence before touching the checkout.
   step='downloading the latest source'; progress('Downloading the latest source…');
   run(config.gitCommand,['fetch','origin',`refs/heads/${branch}`],false,120000);
@@ -62,7 +75,7 @@ try {
   const message=`Update failed while ${step}: ${error.message}`;
   progress(message,'failed');
   console.error(message);
-  if (backup) console.error(`Backup: ${backup}\nPrevious revision: ${before}\nNo automatic rollback or daemon restart was performed.`);
+  if (backup) console.error(`Backup: ${backup}\nPrevious revision: ${before}\nNo automatic checkout rollback was performed.`);
   process.exitCode = 1;
 } finally {
   try { release?.(); } finally { store?.db.close(); }
