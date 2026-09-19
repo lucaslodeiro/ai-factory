@@ -110,6 +110,11 @@ export class WorkflowRecords {
   this.store.db.prepare("UPDATE records SET status='cancelled',updated_at=? WHERE id=?").run(new Date().toISOString(),id);
   return this.activeRequest(record.workItemId);
  }
+ updateRequest(id:string,changes:Partial<Extract<WorkflowRecordPayload,{kind:"request"}>>) {
+  const record=this.get(id);if(!record||record.payload.kind!=="request"||record.status!=="open")throw new Error("Only an open request can be updated");
+  const payload={...record.payload,...changes,kind:"request" as const};
+  this.store.db.prepare("UPDATE records SET payload=?,updated_at=? WHERE id=?").run(JSON.stringify(payload),new Date().toISOString(),id);return this.get(id)!;
+ }
  supersedeSpec(workItemId:string,specVersion:number) {
   return this.store.db.prepare("UPDATE records SET status='superseded',updated_at=? WHERE work_item_id=? AND scope='spec' AND spec_version=? AND status IN ('active','open')")
    .run(new Date().toISOString(),workItemId,specVersion).changes;
