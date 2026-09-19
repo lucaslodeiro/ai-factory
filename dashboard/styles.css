@@ -1,12 +1,13 @@
 :root {
   color-scheme: dark; --bg:#0b0d10; --panel:#13171c; --surface:#0d1115; --input:#0b0e12;
   --line:#252c34; --text:#f1f5f9; --muted:#8b98a7; --accent:#79e0b5; --warn:#f3c969;
-  --danger:#ff7b83; --blue:#73a7ff; font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --danger:#ff7b83; --blue:#73a7ff; --input-line:#35404b; --input-hover:#526170;
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;
 }
 html[data-theme="light"] {
   color-scheme:light; --bg:#f3f6f2; --panel:#fff; --surface:#f7faf7; --input:#fff;
   --line:#d8e0da; --text:#16201b; --muted:#607069; --accent:#087f5b; --warn:#986f0b;
-  --danger:#bd2c39; --blue:#2463b5;
+  --danger:#bd2c39; --blue:#2463b5; --input-line:#c7d2ca; --input-hover:#91a298;
 }
 * { box-sizing:border-box }
 body { margin:0; background:radial-gradient(circle at 85% -10%,#183126 0,transparent 35%),var(--bg); color:var(--text); min-height:100vh }
@@ -125,15 +126,20 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .setting-label b { color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,transparent) }
 .setting-label i { color:var(--blue); background:color-mix(in srgb,var(--blue) 10%,transparent); font-style:normal }
 .setting-card>small { min-height:2.5em; line-height:1.35 }
-.setting-card input,.setting-card select { width:100%; min-width:0; background:var(--input); border:1px solid var(--line); border-radius:8px; color:var(--text); padding:.65rem .7rem; font:inherit }
-.setting-card input:focus,.setting-card select:focus { outline:2px solid color-mix(in srgb,var(--accent) 45%,transparent); border-color:var(--accent) }
-.setting-card select { appearance:auto }
+.setting-card input:not([type="checkbox"]),.setting-card select { width:100%; min-width:0; min-height:2.75rem; background-color:var(--input); border:1px solid var(--input-line); border-radius:10px; color:var(--text); padding:.72rem .8rem; font:600 .8rem/1.2 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif; box-shadow:0 1px 0 color-mix(in srgb,var(--text) 4%,transparent),inset 0 1px 2px color-mix(in srgb,var(--bg) 35%,transparent); transition:border-color .16s ease,box-shadow .16s ease,background-color .16s ease }
+.setting-card input:not([type="checkbox"]):hover,.setting-card select:hover { border-color:var(--input-hover) }
+.setting-card input:not([type="checkbox"]):focus,.setting-card select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent),inset 0 1px 2px color-mix(in srgb,var(--bg) 28%,transparent) }
+.setting-card input::placeholder { color:color-mix(in srgb,var(--muted) 75%,transparent); font-weight:500 }
+.setting-card input:not([type="checkbox"]):disabled,.setting-card select:disabled { cursor:not-allowed; background-color:color-mix(in srgb,var(--input) 72%,var(--surface)); color:var(--muted) }
+.setting-card select { appearance:none; cursor:pointer; padding-right:2.65rem; background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%); background-position:calc(100% - 1.05rem) calc(50% - 2px),calc(100% - .72rem) calc(50% - 2px); background-size:.34rem .34rem,.34rem .34rem; background-repeat:no-repeat }
+.setting-card select:focus { background-image:linear-gradient(45deg,transparent 50%,var(--accent) 50%),linear-gradient(135deg,var(--accent) 50%,transparent 50%) }
+.setting-card select option { color:var(--text); background:var(--panel) }
 .input-wrap { position:relative }
 .input-wrap:has(span) input { padding-right:6.8rem }
 .input-wrap>span { position:absolute; top:50%; right:.65rem; transform:translateY(-50%); color:var(--muted); font-size:.65rem; pointer-events:none }
 .setting-card code { color:var(--muted); font-size:.64rem; overflow-wrap:anywhere }
 .setting-card em { display:flex; align-items:center; gap:.4rem; color:var(--danger); font-size:.72rem; font-style:normal; font-weight:500 }
-.setting-card em input { width:auto }
+.setting-card em input[type="checkbox"] { width:1rem; height:1rem; margin:0; padding:0; accent-color:var(--accent); cursor:pointer }
 .settings-actions { display:flex; align-items:center; gap:1rem; margin-top:1.25rem; padding-top:1.25rem; border-top:1px solid var(--line) }
 .settings-actions[hidden] { display:none }
 .settings-actions .changed { color:var(--warn); font-weight:700 }

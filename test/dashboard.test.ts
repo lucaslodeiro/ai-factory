@@ -108,6 +108,11 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8"),/restart daemon/);
     const perServiceUpdate = await fetch(`http://127.0.0.1:${port}/api/services`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({service:"daemon",action:"update"})});
     assert.equal(perServiceUpdate.status,400);
+    fs.mkdirSync(path.join(settingsRoot,".factory"),{recursive:true});
+    fs.writeFileSync(path.join(settingsRoot,".factory","update-state.json"),JSON.stringify({status:"updating",phase:"stale",pid:process.pid,startedAt:"2026-01-01T00:00:00.000Z"}));
+    const staleUpdate = await fetch(`http://127.0.0.1:${port}/api/services`).then(response => response.json()) as any;
+    assert.equal(staleUpdate.update.status,"failed");
+    assert.match(staleUpdate.update.phase,/stopped unexpectedly/);
     const checked = await fetch(`http://127.0.0.1:${port}/api/update/check`,{method:"POST"}).then(response => response.json()) as any;
     assert.equal(checked.available,true); assert.equal(checked.latest,"def5678");
     const updating = await fetch(`http://127.0.0.1:${port}/api/update`,{method:"POST"});

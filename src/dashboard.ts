@@ -111,14 +111,19 @@ function writeUpdateState(root: string, state: UpdateState) {
 }
 function processAlive(pid?: number) {
   if (!pid) return false;
-  try { process.kill(pid,0); return true; } catch { return false; }
+  try {
+    process.kill(pid,0);
+    const command = spawnSync("ps",["-p",String(pid),"-o","command="],{encoding:"utf8",timeout:3000});
+    return command.status === 0 && /(?:scripts\/update(?:-job)?\.sh|factory-dashboard-update)/.test(command.stdout);
+  } catch { return false; }
 }
 function updateState(root: string): UpdateState {
   const file = updateStateFile(root);
   if (!fs.existsSync(file)) return { status:"idle" };
   try {
     const state = JSON.parse(fs.readFileSync(file,"utf8")) as UpdateState;
-    if (state.status === "updating" && !processAlive(state.pid)) {
+    const awaitingPid = state.status === "updating" && !state.pid && Date.now()-new Date(state.startedAt ?? 0).getTime() < 30000;
+    if (state.status === "updating" && !awaitingPid && !processAlive(state.pid)) {
       const failed = { ...state,status:"failed" as const,phase:"Update process stopped unexpectedly. Inspect update.log.",finishedAt:new Date().toISOString() };
       writeUpdateState(root,failed); return failed;
     }
@@ -141,14 +146,25 @@ function runUpdate(root: string) {
   if (current.status === "updating") throw new Error("A factory update is already running");
   const logs = path.join(root,".factory","service-logs");
   fs.mkdirSync(logs,{recursive:true});
-  const output = fs.openSync(path.join(logs,"update.log"),"a");
+  const logFile = path.join(logs,"update.log");
   const stateFile = updateStateFile(root);
-  const child = spawn("/bin/bash",["-c",'sleep 0.75; exec bash "$1" --restart-services',"factory-dashboard-update",path.join(root,"scripts/update.sh")],{
-    cwd:root,detached:true,stdio:["ignore",output,output],env:{...process.env,AI_FACTORY_UPDATE_STATE_FILE:stateFile}
-  });
-  fs.closeSync(output);
-  writeUpdateState(root,{status:"updating",phase:"Preparing update…",pid:child.pid,startedAt:new Date().toISOString()});
-  child.unref();
+  writeUpdateState(root,{status:"updating",phase:"Preparing update…",startedAt:new Date().toISOString()});
+  if (process.platform === "darwin" && serviceStatus(root,"dashboard").loaded) {
+    const label = `com.ai-factory.update.${Date.now()}`;
+    const submitted = spawnSync("launchctl",["submit","-l",label,"-o",logFile,"-e",logFile,"--","/bin/bash",path.join(root,"scripts/update-job.sh"),stateFile,path.join(root,"scripts/update.sh")],{cwd:root,encoding:"utf8",timeout:10000});
+    if (submitted.status !== 0) {
+      writeUpdateState(root,{status:"failed",phase:"Could not start the independent update job.",finishedAt:new Date().toISOString()});
+      throw new Error((submitted.stderr || submitted.stdout || "Could not start the independent update job").trim());
+    }
+  } else {
+    const output = fs.openSync(logFile,"a");
+    const child = spawn("/bin/bash",["-c",'sleep 0.75; exec bash "$1" --restart-services',"factory-dashboard-update",path.join(root,"scripts/update.sh")],{
+      cwd:root,detached:true,stdio:["ignore",output,output],env:{...process.env,AI_FACTORY_UPDATE_STATE_FILE:stateFile}
+    });
+    fs.closeSync(output);
+    writeUpdateState(root,{status:"updating",phase:"Preparing update…",pid:child.pid,startedAt:new Date().toISOString()});
+    child.unref();
+  }
   return { accepted:true,message:"Factory update started. Services will stop, update, and reconnect when ready.",update:updateState(root) };
 }
 function slackStatus(root: string, store: Store) {
