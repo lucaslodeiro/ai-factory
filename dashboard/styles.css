@@ -347,4 +347,21 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 
 .diagnosis-dialog{width:min(44rem,calc(100vw - 2rem));max-height:85vh;overflow:auto}.diagnosis-dialog h4{margin:1rem 0 .4rem}.diagnosis-dialog p{line-height:1.55;margin:.5rem 0;overflow-wrap:anywhere}.diagnosis-dialog pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:18rem;overflow:auto;padding:1rem;background:var(--bg);border:1px solid var(--line);border-radius:10px}.diagnosis-dialog .actions{margin-top:1rem}
 
-.work-next-step{margin:.8rem 0;padding:1rem;border:1px solid var(--line);border-radius:10px;background:var(--panel)}.work-next-step p{max-width:65ch;overflow-wrap:anywhere}.work-next-step .actions{margin:.6rem 0;flex-wrap:wrap}.next-step-link{display:inline-block;padding:.55rem .8rem;border:1px solid var(--accent);border-radius:8px;color:var(--accent);font-weight:700}.work-next-step code{white-space:normal}
+/* Issue cards keep controls with the heading and the next action on its own row. */
+.local-item{align-items:start;column-gap:1rem;row-gap:.75rem}
+.work-item-heading{min-width:0}
+.work-item-heading .brand-link{line-height:1.4}
+.work-item-id{font-family:ui-monospace,monospace;font-size:.72rem}
+.local-item>.state{margin-top:.2rem}
+.work-item-actions{flex-wrap:wrap;justify-content:flex-end}
+.work-next-step{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:.65rem 1rem;padding-top:.8rem;border-top:1px solid var(--line)}
+.next-step-copy strong{font-size:.88rem;font-weight:600}
+.item .next-step-link{display:inline-flex;align-items:center;justify-content:center;gap:.6rem;padding:.55rem .8rem;background:var(--accent);color:var(--bg);border:1px solid var(--accent);border-radius:8px;font-size:.82rem;white-space:nowrap}
+.item .next-step-link:hover{filter:brightness(.94);color:var(--bg)}
+.next-step-help{grid-column:1/-1;font-size:.8rem;color:var(--muted)}
+.next-step-help summary{cursor:pointer;width:fit-content}
+.next-step-help p{max-width:70ch;line-height:1.5;margin-top:.65rem}
+.next-step-help code{display:block;white-space:pre-wrap;overflow-wrap:anywhere;margin:.6rem 0}
+.next-step-help a{display:inline-block;margin-top:.25rem}
+.local-item>.work-details{grid-column:1/-1;font-size:.8rem}
+@media(max-width:760px){.local-item{grid-template-columns:1fr}.work-item-actions{justify-content:flex-start}.work-next-step{grid-template-columns:1fr}.item .next-step-link{justify-self:start}.work-item-id{display:none}}
