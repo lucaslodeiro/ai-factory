@@ -1,3 +1,4 @@
+import {workActions,validateWorkControl} from "./workflow-controls.js";
 import {reconcileUpdateMaintenance} from "./update-maintenance.js";
 import fs from "node:fs";
 import http from "node:http";
@@ -91,6 +92,8 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
     if (type === "control.applied") {
       if (value.kind === "refresh-list") return { title:"Issue list refresh completed",details:value.result ? `${value.result.found ?? 0} found · ${value.result.added ?? 0} added · ${value.result.updated ?? 0} updated` : "GitHub issues are synchronized.",severity:"success",category:"Control" };
       if (value.kind === "start-issue") return { title:value.result?.created ? `Issue #${value.result.issue} started` : `Issue #${value.result?.issue ?? "?"} already tracked`,details:value.result?.created ? `Work item ${value.result.id} was created and Architect will begin Design.` : `Existing work item ${value.result?.id ?? "unknown"} remains ${stateLabel(value.result?.stage)} · ${stateLabel(value.result?.status)}.`,severity:"success",category:"Control" };
+      if (value.kind === "pause") return {title:"Work paused",details:"Stage and context were preserved.",severity:"warning",category:"Control"};
+      if (value.kind === "resume") return {title:"Work resumed",details:"The workflow resumed from its saved stage.",severity:"success",category:"Control"};
       if (value.kind === "retry") return { title:"Retry started",details:"The workflow resumed from its saved stage.",severity:"success",category:"Control" };
       if (value.kind === "cancel") return { title:"Cancellation completed",details:"The active workflow was stopped and can be retried later.",severity:"warning",category:"Control" };
       if (value.kind === "stop") return { title:"Daemon stop completed",details:"Active work was paused safely.",severity:"warning",category:"Control" };
@@ -105,7 +108,7 @@ function snapshot(store: Store) {
   const visibleItems=storedItems.filter(item=>!item.archived_at);
   const items = visibleItems.slice().reverse().map(item => ({
     id:item.id,issue:item.issue_number,repo:item.repo,stage:item.stage,status:item.status,attempt:item.attempt,revision:item.revision,title:item.context.title,
-    url:item.context.url,pr:item.context.pr??null,updatedAt:item.updated_at,
+    actions:workActions(item.status),url:item.context.url,pr:item.context.pr??null,updatedAt:item.updated_at,
   }));
   const executionRows=(store.db.prepare("SELECT id,work_item_id,role,stage,status,pid,started_at,finished_at,exit_code,input_tokens,output_tokens,cached_tokens,total_tokens,interruption_reason,maintenance_id FROM executions ORDER BY started_at DESC LIMIT 30").all() as any[]).filter(run=>!itemById.get(run.work_item_id)?.archived_at);
   const runMetadata=new Map((store.db.prepare("SELECT e.run_id,e.payload FROM events e JOIN executions x ON x.id=e.run_id WHERE e.type='execution.started' ORDER BY e.id DESC LIMIT 30").all() as Array<{run_id:string;payload:string}>).map(row=>{
@@ -538,10 +541,11 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if(req.method==="POST"&&url.pathname==="/api/settings/validate") {const body=await readBody(req) as {values?:Record<string,unknown>;clearSecrets?:string[]};if(!body.values||typeof body.values!=="object"||Array.isArray(body.values))return json(res,400,{error:"Settings are required"});const plan=validateDashboardSettings(settingsRoot,expandSetupProvider(body.values),Array.isArray(body.clearSecrets)?body.clearSecrets:[]),daemon=serviceStatus(settingsRoot,"daemon"),active=daemonState(store).running||daemon.running;return json(res,200,{changedKeys:plan.changedKeys,restartServices:plan.restartServices,requiresDaemonRestart:active&&plan.restartServices.includes("daemon")});}
       if (req.method === "POST" && url.pathname === "/api/control") {
         const body = await readBody(req) as { kind?: string; target?: string };
-        if (!["stop","cancel","retry","refresh-list","start-issue"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});
+        if (!["stop","cancel","retry","pause","resume","refresh-list","start-issue"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});
         if (!["stop","refresh-list"].includes(body.kind ?? "") && !body.target) return json(res,400,{error:body.kind === "start-issue" ? "An issue number or URL is required" : "A work item or run id is required"});
-        if (["refresh-list","start-issue","retry","cancel"].includes(body.kind ?? "")&&["standby","expired","uncertain","fenced"].includes(cachedControllerState(store).state))return json(res,409,{error:"This installation is in controller standby; use the active controller or take over explicitly."});
+        if (["refresh-list","start-issue","retry","cancel","pause","resume"].includes(body.kind ?? "")&&["standby","expired","uncertain","fenced"].includes(cachedControllerState(store).state))return json(res,409,{error:"This installation is in controller standby; use the active controller or take over explicitly."});
         if (["refresh-list","start-issue"].includes(body.kind ?? "") && !daemonState(store).running) return json(res,409,{error:"Start the daemon before synchronizing GitHub issues."});
+        if (["pause","resume","retry","cancel"].includes(body.kind??"")) {try{validateWorkControl(store,body.kind!,body.target!);}catch(error){return json(res,409,{error:(error as Error).message});}}
         store.request(body.kind!,body.target ?? "");
         return json(res,202,{ok:true,message:body.kind === "refresh-list" ? "GitHub issue refresh queued." : body.kind === "start-issue" ? "Issue start queued." : `${body.kind} queued`});
       }

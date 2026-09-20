@@ -322,6 +322,15 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(changedStoppedDashboard.status,200);
     assert.equal((await changedStoppedDashboard.json() as any).dashboardRestarting,false);
     assert.equal(fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8"),actionsBeforeStoppedDashboardChange);
+    const workControl=(kind:string)=>fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind,target:"owner-demo-7"})});
+    assert.equal((await workControl("pause")).status,409);
+    store.db.prepare("UPDATE work_items SET status='QUEUED' WHERE id='owner-demo-7'").run();
+    assert.equal((await workControl("pause")).status,202);
+    assert.equal((await workControl("resume")).status,409);
+    store.db.prepare("UPDATE work_items SET status='PAUSED' WHERE id='owner-demo-7'").run();
+    assert.equal((await workControl("resume")).status,202);
+    assert.equal((await workControl("retry")).status,409);
+    store.db.prepare("UPDATE work_items SET status='FAILED' WHERE id='owner-demo-7'").run();
     const response = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"retry",target:"owner-demo-7"})});
     assert.equal(response.status,202);
     assert.deepEqual(store.db.prepare("SELECT kind,target FROM controls WHERE kind='retry'").get(),{kind:"retry",target:"owner-demo-7"});

@@ -1,3 +1,4 @@
+import {applyWorkControl} from "./workflow-controls.js";
 import {reconcileUpdateMaintenanceFile} from "./update-maintenance.js";
 import {factoryHome} from "./home.js";
 import fs from "node:fs";
@@ -113,17 +114,12 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
     let result: unknown;
     if (r.kind === "stop") result=await stop();
     else if(controllerState.state!=="active")throw new Error("This installation is in controller standby; workflow controls are read-only");
-    else if (r.kind === "retry") {const specVersion=(store.db.prepare("SELECT COALESCE(MAX(version),0) version FROM specs WHERE work_item_id=?").get(r.target) as {version:number}).version;result=commands.apply({kind:"retry",guidance:"",scope:"spec",appliesTo:[]},{workItemId:r.target,login:"dashboard",commentId:r.id,specVersion});}
+    else if (["pause","resume","retry","cancel"].includes(r.kind)) result=applyWorkControl(store,commands,executions,r);
     else if (r.kind === "start-issue") result = o.startIssue(r.target);
     else if (r.kind === "refresh-list") result = o.refreshIssueList();
     else if(r.kind==="maintenance-confirm")result=await maintenance.confirm(r.target);
     else if(r.kind==="maintenance-resume")result=maintenance.resume(r.target);
-    else if (r.kind === "cancel") {
-     const run = store.db.prepare("SELECT id,work_item_id FROM executions WHERE (id=? OR work_item_id=?) AND status='running'").get(r.target, r.target) as { id: string; work_item_id: string } | undefined;
-     const workItemId=run?.work_item_id??r.target,row=store.db.prepare("SELECT id FROM work_items WHERE id=?").get(workItemId);
-     if(!row)throw new Error("Unknown work item or run");const specVersion=(store.db.prepare("SELECT COALESCE(MAX(version),0) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number}).version;
-     result=commands.apply({kind:"cancel",reason:""},{workItemId,login:"dashboard",commentId:r.id,specVersion});if(run)executions.cancel(run.id);
-    } else throw new Error(`Unknown control: ${r.kind}`);
+    else throw new Error(`Unknown control: ${r.kind}`);
     store.event("control.applied",{id:r.id,kind:r.kind,target:r.target,result});
    } catch (e) { store.event("control.failed",{id:r.id,kind:r.kind,target:r.target,error:String(e)}); }
    store.db.prepare("UPDATE controls SET handled=1 WHERE id=?").run(r.id);
