@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc && node scripts/copy-assets.mjs",
+    "preconfigure": "npm run build",
     "configure": "bash scripts/configure.sh",
     "dashboard": "tsx src/cli.ts dashboard",
     "uninstall": "node scripts/uninstall.mjs",

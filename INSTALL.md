@@ -99,7 +99,7 @@ Installation opens `http://127.0.0.1:4173/?setup=1` by default, or the effective
 
 Connect GitHub and the selected agent provider from **Configuration → Credentials**. Once GitHub reports Connected, the dashboard fills editable defaults for the target repository, clone and authorized approver when those fields are empty. Factory-created clones default to `<home>/repos/<repository-name>`. A real project normally points `FACTORY_REPO_DIR` at an existing clone outside the factory home; custom absolute paths remain supported. The clone must have its `origin`, default branch, and Git author configured. Then save; the first-time setup flow starts the daemon automatically after validation succeeds.
 
-`ai-factory configure` remains a supported terminal recovery path when the dashboard cannot start or its address is misconfigured. It is not called by installation or update.
+`ai-factory configure` remains a supported terminal recovery path when the dashboard cannot start or its address is misconfigured. It is not called by installation or update. In a developer checkout, `npm run configure` builds the required runtime automatically before starting the terminal configurator.
 
 | Setting | Meaning | Example |
 |---|---|---|
