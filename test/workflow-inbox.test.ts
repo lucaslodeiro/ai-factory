@@ -93,8 +93,26 @@ test("factory comments do not revise presentation while approver observations ar
   assert.deepEqual(inbox.poll(started.id),{seen:2,applied:0,rejected:0,observed:2,cursor:3});
   assert.equal(projections.get(started.id).presentationRevision,1);
   const context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(started.id) as {context:string}).context);
-  assert.equal(context.observedApproverComments,1);
+  assert.deepEqual(context.observedComments,[{id:3,updatedAt:"2026-09-20T00:00:03Z"}]);
  } finally {store.db.close();}
+});
+
+test("an observed typo can be edited into a command on the same comment id",()=>{
+ const store=new Store(":memory:"),comments=[comment(2,"/fatcory note use WebKit")];
+ try {const started=new WorkflowIntake(store).start(issue,{actor:"owner",commentId:1,source:"github-comment"}),inbox=new WorkflowInbox(store,{comments:()=>comments},["owner"]);let result=inbox.poll(started.id);assert.deepEqual({observed:result.observed,applied:result.applied},{observed:1,applied:0});assert.match(workflowStatusMarkdown(store,started.id),/Unrecognized command `\/fatcory note`.*did you mean `\/factory note`/);comments[0]=comment(2,"/factory note use WebKit","owner","User","2026-09-20T00:01:00Z");result=inbox.poll(started.id);assert.equal(result.applied,1);assert.equal((store.db.prepare("SELECT json_extract(payload,'$.text') text FROM records WHERE kind='instruction'").get() as {text:string}).text,"use WebKit");assert.match(workflowStatusMarkdown(store,started.id),/`note` by @owner — applied/);}
+ finally {store.db.close();}
+});
+
+test("an applied command is frozen when its comment is edited",()=>{
+ const store=new Store(":memory:"),comments=[comment(11,"/factory approve v1")];
+ try {const started=new WorkflowIntake(store).start(issue,{actor:"dashboard",source:"control"}),records=new WorkflowRecords(store),projections=new WorkflowProjections(store);store.db.prepare("INSERT INTO specs(work_item_id,version,body) VALUES(?,?,?)").run(started.id,1,"SPEC");records.create({workItemId:started.id,specVersion:1,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:1},sourceType:"agent-result",sourceId:"run",actor:"product-architect"});projections.transition({workItemId:started.id,expectedRevision:0,stage:"DESIGN",status:"WAITING",actor:{type:"agent",id:"product-architect"},source:{executionId:"run"},reason:{code:"spec",summary:"SPEC proposed"}});const inbox=new WorkflowInbox(store,{comments:()=>comments},["owner"]);assert.equal(inbox.poll(started.id).applied,1);comments[0]=comment(11,"/factory cancel","owner","User","2026-09-20T00:02:00Z");assert.equal(inbox.poll(started.id).seen,0);assert.equal(projections.get(started.id).status,"QUEUED");}
+ finally {store.db.close();}
+});
+
+test("a later applied command freezes earlier observed prose edits",()=>{
+ const store=new Store(":memory:"),comments=[comment(2,"Maybe use WebKit")];
+ try {const started=new WorkflowIntake(store).start(issue,{actor:"owner",commentId:1,source:"github-comment"}),inbox=new WorkflowInbox(store,{comments:()=>comments},["owner"]);inbox.poll(started.id);comments.push(comment(3,"/factory note Confirm WebKit"));assert.equal(inbox.poll(started.id).applied,1);comments[0]=comment(2,"/factory cancel","owner","User","2026-09-20T00:03:00Z");assert.equal(inbox.poll(started.id).seen,0);assert.notEqual(new WorkflowProjections(store).get(started.id).status,"CANCELLED");}
+ finally {store.db.close();}
 });
 
 test("pause preserves a waiting request and retry restores the human gate without a new attempt",()=>{

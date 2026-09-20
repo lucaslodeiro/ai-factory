@@ -15,6 +15,10 @@ export type FactoryCommand=
 
 const roles:Record<string,AgentRole>={architect:"product-architect",builder:"developer",tester:"qa",reviewer:"reviewer"};
 
+function distance(a:string,b:string){const row=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){let previous=row[0];row[0]=i;for(let j=1;j<=b.length;j++){const saved=row[j];row[j]=Math.min(row[j]+1,row[j-1]+1,previous+(a[i-1]===b[j-1]?0:1));previous=saved;}}return row[b.length];}
+
+export function factoryCommandTypo(body:string){const lines=body.trim().split(/\r?\n/).map(line=>line.trim()).filter(Boolean),candidates=[lines[0],lines.at(-1)].filter((line,index,array):line is string=>Boolean(line)&&array.indexOf(line)===index);for(const line of candidates){const match=line.match(/^\/([^\s/]+)(?:\s+([^\s]+))?/);if(!match||match[1]==="factory"||distance(match[1].toLowerCase(),"factory")>2)continue;const attempt=`/${match[1]}${match[2]?` ${match[2]}`:""}`;return {attempt,suggestion:attempt.replace(`/${match[1]}`,"/factory")};}return null;}
+
 function scoped(rest:string) {
   let scope:RecordScope="spec",appliesTo:AgentRole[]=[];
   let remaining=rest.trim();

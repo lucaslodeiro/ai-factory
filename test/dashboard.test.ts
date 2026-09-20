@@ -38,6 +38,7 @@ if [[ $1 == auth && $2 == login ]]; then touch "$PWD/gh-authenticated"; exit; fi
 if [[ $1 == auth && $2 == refresh ]]; then touch "$PWD/gh-refreshed"; exit; fi
 if [[ $1 == auth && $2 == setup-git ]]; then exit; fi
 if [[ $1 == api && $2 == user ]]; then echo demo-user; exit; fi
+if [[ $1 == api && $2 == repos/owner/demo ]]; then echo '{"id":1,"node_id":"R_1","full_name":"owner/demo","default_branch":"main"}'; exit; fi
 exit 1
 `,{mode:0o755});
   fs.writeFileSync(fakeCodex,`#!/usr/bin/env bash
