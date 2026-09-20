@@ -69,6 +69,9 @@ bash /tmp/ai-factory-install-macos.sh --dir "$HOME/ai-factory"
 
 The installer prints these same recovery commands with the resolved paths. It
 does not remove or overwrite an unrecognized directory automatically.
+The validation suite runs with the destination `AI_FACTORY_HOME` active. If a
+validation fails, installation stops before writing `data/install.json`, keeps
+the incomplete engine and prints a retry command that preserves its logs.
 
 The service launcher exposes the same operation and flags: `ai-factory service uninstall [--purge] [--yes] [--force]`. Shared Node, Git, `gh`, Codex and Claude installations are never removed.
 

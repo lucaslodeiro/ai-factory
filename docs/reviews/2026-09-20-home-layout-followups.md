@@ -104,4 +104,10 @@ No test was retried to turn a flaky result green. One initial sandboxed invocati
 
 ## Limitations
 
-The branch was intentionally not pushed, merged, tagged or used to create a pull request. The lifecycle did not contact GitHub for the unpushed branch; it cloned the local repository and kept all generated state under a temporary home.
+The lifecycle did not contact GitHub for the then-unpushed review branch; it cloned the local repository and kept all generated state under a temporary home. The completed review was subsequently published to `main` and `develop` at `2fbae63`.
+
+## Post-publication installer validation fix
+
+An installation from `main` exposed an environment-dependent test failure after the review: the installer correctly exported its destination as `AI_FACTORY_HOME`, but `test/dashboard.test.ts` wrote daemon-log fixtures under its own temporary settings root without overriding that inherited home. The dashboard endpoint therefore read the installation home's logs and returned an empty fixture result. This affected only the test harness; installed dashboard path resolution was correct.
+
+Commit `0a99e8a` (`fix: isolate dashboard test factory home`) makes the dashboard test set `AI_FACTORY_HOME` to its temporary root and restore the caller's value in `finally`. The failure was reproduced before the change with an external temporary `AI_FACTORY_HOME`, then the isolated test passed `1/1` and the complete suite passed `149/149` under the same inherited-variable condition. `INSTALL.md` now states that installer validation runs with the destination home active and that a failure preserves the incomplete engine and logs for the printed retry flow.
