@@ -12,6 +12,7 @@
     "dev": "tsx src/cli.ts",
     "factory": "tsx src/cli.ts",
     "test": "node --import tsx --test test/*.test.ts",
+    "pretest:scripts": "npm run build",
     "test:scripts": "bash scripts/test-macos-installer.sh && node scripts/test-maintenance.mjs && node scripts/test-uninstall.mjs && node scripts/test-configure.mjs && node scripts/test-dashboard-config.mjs",
     "test:all": "npm test && npm run test:scripts"
   },
