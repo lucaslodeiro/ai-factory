@@ -23,3 +23,14 @@ test("maintenance confirmation expires when affected work revisions change",asyn
  const second=f.maintenance.request("update","owner");const queued=f.maintenance.resume(request.id);assert.deepEqual(queued,["w"]);await assert.rejects(f.maintenance.confirm(second.id),/Active work changed/);}finally{f.store.db.close();}});
 
 test("signal maintenance completes its barrier and stale signal barriers are reconciled on restart",async()=>{const f=fixture(true);try{const stopped=await f.maintenance.pauseForSignal("SIGTERM");assert.equal(stopped.status,"completed");assert.equal((f.store.db.prepare("SELECT status FROM maintenance_operations WHERE id=?").get(stopped.id) as any).status,"completed");f.store.db.prepare("INSERT INTO maintenance_operations(id,operation,actor,status,requested_at) VALUES('stale','signal','os:SIGINT','ready','now')").run();assert.equal(f.maintenance.reconcileSignalsAfterRestart(),1);assert.equal((f.store.db.prepare("SELECT status FROM maintenance_operations WHERE id='stale'").get() as any).status,"completed");}finally{f.store.db.close();}});
+
+test('duplicate maintenance cannot confirm even with no affected work, but shutdown signals can',async()=>{
+ const store=new Store(':memory:');try{
+  const maintenance=new WorkflowMaintenance(store,{isRunning:()=>false} as any);
+  const first=maintenance.request('update','dashboard'),second=maintenance.request('update','dashboard');
+  await maintenance.confirm(first.id);await assert.rejects(maintenance.confirm(second.id),/already active/);
+  assert.equal((store.db.prepare('SELECT status FROM maintenance_operations WHERE id=?').get(second.id) as any).status,'failed');
+  assert.equal((await maintenance.pauseForSignal('SIGTERM')).status,'completed');
+  assert.equal((store.db.prepare('SELECT status FROM maintenance_operations WHERE id=?').get(first.id) as any).status,'ready');
+ }finally{store.db.close();}
+});

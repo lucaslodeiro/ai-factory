@@ -1,3 +1,5 @@
+import {reconcileUpdateMaintenanceFile} from "./update-maintenance.js";
+import {factoryHome} from "./home.js";
 import fs from "node:fs";
 import {StartupError} from "./startup-error.js";
 import {prepareRepository} from "./repository-setup.js";
@@ -96,6 +98,7 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
  const controls = async () => {
   if(controlsBusy)return;controlsBusy=true;
   try {
+  reconcileUpdateMaintenanceFile(store,path.join(factoryHome(),"data","update-state.json"));
   const rows = store.db.prepare("SELECT * FROM controls WHERE handled=0 ORDER BY id").all() as { id: number; kind: string; target: string }[];
   for (const r of rows) {
    try {

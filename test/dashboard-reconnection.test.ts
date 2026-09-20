@@ -28,3 +28,14 @@ test('interrupted response bodies reconnect and subsequent polls recover',async(
  const ui=dashboard(true,async()=>({ok:true,json:async()=>{if(disconnected)throw new TypeError('Load failed');return {credentials:[]}}}));
  await ui.run('loadSettings');assert.deepEqual(ui.toasts,[]);disconnected=false;let renders=0;ui.context.renderSettings=()=>renders++;await ui.run('loadSettings');assert.equal(renders,1);
 });
+
+test('repeated update clicks during asynchronous preparation submit only once',async()=>{
+ let release!:(value:string)=>void,preparations=0,submissions=0;
+ const pending=new Promise<string>(resolve=>{release=resolve;});
+ const ui=dashboard(false,async()=>{submissions++;return {ok:true,json:async()=>({message:'Started',update:{status:'updating'}})}});
+ ui.context.prepareMaintenance=()=>{preparations++;return pending;};
+ vm.runInContext("let updatePreparing=false;updateCheck={available:true};",ui.context);
+ vm.runInContext(source.split('\n').find(line=>line.startsWith('async function updateFactory('))!,ui.context);
+ const first=ui.run('updateFactory');await ui.run('updateFactory');assert.equal(preparations,1);assert.equal(submissions,0);
+ release('maintenance-id');await first;assert.equal(submissions,1);
+});

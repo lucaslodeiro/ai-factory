@@ -24,7 +24,13 @@ export class WorkflowMaintenance {
   const meta=this.metadata(operation.error);if(meta.expiresAt&&Date.parse(meta.expiresAt)<Date.now())return this.fail(id,"Confirmation expired");
   const expected=this.items(id),actual=this.affected();
   if(expected.length!==actual.length||expected.some(item=>!actual.some(current=>current.id===item.work_item_id&&current.revision===item.confirmed_revision)))return this.fail(id,"Active work changed; run preflight again");
-  this.store.db.prepare("UPDATE maintenance_operations SET status='confirmed',confirmed_at=?,error=NULL WHERE id=?").run(new Date().toISOString(),id);
+  const blocking=this.store.db.transaction(()=>{
+   const active=this.store.db.prepare("SELECT id FROM maintenance_operations WHERE id<>? AND status IN ('confirmed','pausing','ready','running') LIMIT 1").get(id) as {id:string}|undefined;
+   // Shutdown signals must still be able to stop a daemon during an update.
+   if(active&&operation.operation!=="signal")return active.id;
+   this.store.db.prepare("UPDATE maintenance_operations SET status='confirmed',confirmed_at=?,error=NULL WHERE id=?").run(new Date().toISOString(),id);
+  }).immediate();
+  if(blocking)return this.fail(id,`Maintenance ${blocking} is already active`);
   this.store.event("maintenance.confirmed",{maintenanceId:id,operation:operation.operation,actor:operation.actor,affected:expected.map(item=>item.work_item_id)});
   this.store.db.prepare("UPDATE maintenance_operations SET status='pausing' WHERE id=?").run(id);
   for(const item of expected){

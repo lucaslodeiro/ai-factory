@@ -1,3 +1,4 @@
+import {reconcileUpdateMaintenance} from "./update-maintenance.js";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -337,7 +338,6 @@ function runUpdate(root: string,maintenanceId?:string) {
   }
   return { accepted:true,message:"Factory update started. Services will stop, update, and reconnect when ready.",update:updateState(root) };
 }
-function reconcileUpdateMaintenance(store:Store,state:UpdateState){if(!state.maintenanceId||!["completed","failed"].includes(state.status))return;const row=store.db.prepare("SELECT status FROM maintenance_operations WHERE id=?").get(state.maintenanceId) as {status:string}|undefined;if(!row||["completed","failed"].includes(row.status))return;store.db.prepare("UPDATE maintenance_operations SET status=?,finished_at=?,error=? WHERE id=?").run(state.status,new Date().toISOString(),state.status==="failed"?state.phase??"Update failed":null,state.maintenanceId);store.event(state.status==="completed"?"maintenance.completed":"maintenance.failed",{maintenanceId:state.maintenanceId,operation:"update",error:state.status==="failed"?state.phase:undefined});}
 function slackStatus(root: string, store: Store) {
   const configured = Boolean(readDashboardSetting(root,"SLACK_WEBHOOK_URL"));
   const counts = store.db.prepare("SELECT COUNT(*) AS total,SUM(CASE WHEN sent=0 THEN 1 ELSE 0 END) AS pending,SUM(CASE WHEN sent=0 AND attempts>0 THEN 1 ELSE 0 END) AS failed,SUM(CASE WHEN sent=1 THEN 1 ELSE 0 END) AS sent FROM notifications").get() as { total:number; pending:number | null; failed:number | null; sent:number | null };
