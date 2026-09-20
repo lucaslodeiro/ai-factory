@@ -11,7 +11,9 @@
     "service": "bash scripts/services.sh",
     "dev": "tsx src/cli.ts",
     "factory": "tsx src/cli.ts",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:scripts": "bash scripts/test-macos-installer.sh && node scripts/test-maintenance.mjs && node scripts/test-uninstall.mjs && node scripts/test-configure.mjs && node scripts/test-dashboard-config.mjs",
+    "test:all": "npm test && npm run test:scripts"
   },
   "engines": {
     "node": ">=22"

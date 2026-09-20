@@ -2,7 +2,9 @@
 
 ## Automated checks
 
-`npm run build` and `npm test` pass on macOS with Node 26.4.0. The current suite has 96 passing tests, zero failures and zero skips. Shell syntax validation passes for every `scripts/*.sh`; the isolated configuration, dashboard-address, maintenance/update, no-Homebrew installer and uninstall scenarios also pass. `shellcheck` was not installed on the validation host.
+`npm run build` and `npm test` pass on macOS with Node 26.4.0. The current suite has 125 passing tests, zero failures and zero skips. Shell syntax validation passes for every `scripts/*.sh`; the isolated configuration, dashboard-address, maintenance/update, macOS installer and uninstall scenarios also pass. `shellcheck` was not installed on the validation host.
+
+The release gate is `npm run test:all`. It runs the runtime suite followed by all five script fixtures: macOS installer, maintenance/update, uninstall, terminal configuration and dashboard-address selection. Installation and update intentionally keep using the faster `npm test` runtime gate so they do not depend on launchd or repeat installer fixtures on an operator machine.
 
 A Node 22/Linux GitHub Actions template is provided in `docs/ci.example.yml`. It is not activated: the current GitHub OAuth credential lacks the workflow scope, and GitHub rejected a push containing `.github/workflows/ci.yml`. Copy the template there using a credential permitted to manage workflows when ready.
 
