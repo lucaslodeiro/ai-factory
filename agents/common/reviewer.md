@@ -22,3 +22,6 @@ Approve for human merge or return explicit findings with evidence and routing re
 
 ## Required evidence
 Use the complete execution-result schema. Report criterion IDs and evidence, executed commands with exit codes, changed files and dependency changes with rationale. Do not return PASS with missing coverage or blocking findings. An empty dependency list means none reported.
+
+## Large review artifacts
+The provided diff file can include large generated reports and binary patches. Use the changed-file list and diff statistics to plan the review; read focused sections and inspect source files and verification evidence directly. Do not load the entire diff into the prompt or skip required review dimensions merely because the artifact is large.

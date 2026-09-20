@@ -89,3 +89,20 @@ test("review succeeds before deterministic Delivery publication and retry does n
   assert.equal(await runner.run("work-review"),true);assert.deepEqual({stage:new WorkflowProjections(store).get("work-review").stage,status:new WorkflowProjections(store).get("work-review").status},{stage:"DELIVERY",status:"WAITING"});assert.equal(reviewerRuns,1);assert.equal(prAttempts,2);assert.equal(workspace.publishCalls,2);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM executions WHERE work_item_id='work-review'").get() as {count:number}).count,1);
  } finally {store.db.close();}
 });
+
+test('review preparation errors fail the preserved stage once instead of remaining queued forever',async()=>{
+ for(const step of ['changeSummary','prepareReviewerContext'] as const){
+  const store=new Store(':memory:'),item=new WorkflowIntake(store).start(runnerIssue,{actor:'dashboard',source:'control'}),workspace=new Workspace();
+  const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return value;}});
+  let reviewerCalls=0;
+  const runner=new WorkflowRunner(store,{'product-architect':adapter(result('spec')),developer:adapter(result('pass')),qa:adapter(result('pass')),reviewer:{async run(){reviewerCalls++;return result('pass')}}},workspace,{ensurePR(){return ''}});
+  try{
+   await runner.run(item.id);new WorkflowCommands(store).apply({kind:'approve',version:1,guidance:''},{workItemId:item.id,login:'owner',commentId:1,specVersion:1});await runner.run(item.id);await runner.run(item.id);
+   assert.equal(new WorkflowProjections(store).get(item.id).stage,'REVIEW');
+   workspace[step]=()=>{throw new Error('spawnSync git ENOBUFS')};
+   assert.equal(await runner.run(item.id),true);const state=new WorkflowProjections(store).get(item.id);assert.equal(state.stage,'REVIEW');assert.equal(state.status,'FAILED');assert.equal(reviewerCalls,0);
+   const event=store.db.prepare("SELECT payload FROM events WHERE type='workflow.transition' ORDER BY id DESC LIMIT 1").get() as {payload:string};assert.match(event.payload,/Could not prepare workflow execution: spawnSync git ENOBUFS/);
+   assert.equal(await runner.run(item.id),false);
+  }finally{store.db.close();}
+ }
+});

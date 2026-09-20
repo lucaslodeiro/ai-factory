@@ -29,29 +29,28 @@ export class WorkflowRunner {
   const projection=new (await import("./workflow-projection.js")).WorkflowProjections(this.store).get(workItemId);if(projection.status!=="QUEUED")return false;
   if(projection.stage==="DELIVERY")return this.publish(workItemId);
   const role=this.scheduler.role(workItemId),adapter=this.agents[role];if(!adapter)throw new Error(`No adapter configured for ${role}`);
+  let started:ReturnType<WorkflowScheduler["begin"]>|undefined,preparing=true;
+  let reviewerContext:ReturnType<WorkspacePort["prepareReviewerContext"]>|undefined,cwd:string|undefined;
+  try {
   const row=this.store.db.prepare("SELECT issue_number,branch,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;context:string};
   const context=JSON.parse(row.context||"{}") as {title?:string;body?:string;url?:string;cwd?:string};
-  const cwd=context.cwd??this.workspaces.ensure(workItemId,row.branch);if(!context.cwd)this.updateContext(workItemId,{cwd});
+  cwd=context.cwd??this.workspaces.ensure(workItemId,row.branch);if(!context.cwd)this.updateContext(workItemId,{cwd});
   this.workspaces.assertBranch(cwd,row.branch);
   const specVersion=this.specVersion(workItemId),assessment=this.assessment(workItemId,specVersion),active=this.records.activeRequest(workItemId);
   const consultation=active?.payload.kind==="request"&&active.payload.owner==="architect";
   const selection=selectModel(role,assessment,projection.correctionCycles,consultation),budget=resolveContextBudget(role,selection);
   const route=consultation&&active?.payload.kind==="request"?this.route(active.payload.originatingStage,active.payload.allowedReturnStages):undefined;
-  let baseline;
-  try{baseline=this.workspaces.capture?.(cwd);}catch(error){this.scheduler.rejectQueued(workItemId,error,"execution");return true;}
+  const baseline=this.workspaces.capture?.(cwd);
   const policyText=role==="qa"&&baseline?`\n\nVerification write policy for this execution: ${JSON.stringify(baseline.policy)}. Evidence directories allow regular, non-executable JSON, Markdown, text, CSV and raster images only. Production, dependency, credential and policy changes are forbidden.`:"";
   const contract=promptContract(role,selection.provider,{tacticalRoute:route})+policyText,contractBytes=Buffer.byteLength(contract);
   const summary=["qa","reviewer"].includes(role)?this.workspaces.changeSummary(cwd):undefined;
-  const reviewerContext=role==="reviewer"?this.workspaces.prepareReviewerContext(cwd,workItemId):undefined;
-  let assembled;
-  try {
+  reviewerContext=role==="reviewer"?this.workspaces.prepareReviewerContext(cwd,workItemId):undefined;
+
    if(contractBytes+2>=budget.bytes)throw new InvalidContextError(`Protected prompt contract requires ${contractBytes} bytes but the budget is ${budget.bytes}`);
-   assembled=this.assembler.assemble({workItemId,role,specVersion,budgetBytes:budget.bytes-contractBytes-2,budgetSource:budget.source,issue:{title:context.title??`Issue #${row.issue_number}`,body:context.body??""},changedFiles:(reviewerContext??summary)?.files,diffStat:(reviewerContext??summary)?.stat,diffPath:reviewerContext?.path,qaEvidence:role==="reviewer"?this.latestResult(workItemId,"qa"):undefined});
-  } catch(error){if(reviewerContext)this.workspaces.cleanupReviewerContext(cwd,workItemId);if(error instanceof InvalidContextError){this.scheduler.rejectQueued(workItemId,error,"invalid-context");return true;}throw error;}
+   const assembled=this.assembler.assemble({workItemId,role,specVersion,budgetBytes:budget.bytes-contractBytes-2,budgetSource:budget.source,issue:{title:context.title??`Issue #${row.issue_number}`,body:context.body??""},changedFiles:(reviewerContext??summary)?.files,diffStat:(reviewerContext??summary)?.stat,diffPath:reviewerContext?.path,qaEvidence:role==="reviewer"?this.latestResult(workItemId,"qa"):undefined});
+
   const instructions=`${contract}\n\n${assembled.markdown}`,before=baseline?.head??this.workspaces.head(cwd);
-  let started:ReturnType<WorkflowScheduler["begin"]>|undefined;
-  try {
-   started=this.scheduler.begin(workItemId);
+   preparing=false;started=this.scheduler.begin(workItemId);
    this.store.event("model.selected",{role,specVersion,selection,budget},workItemId,started.executionId);
    const result=await adapter.run({workItemId,role,cwd,instructions,selection,executionId:started.executionId,promptMetadata:{...assembled.manifest,budgetBytes:budget.bytes,budgetSource:budget.source,sectionBytes:{Contract:contractBytes,...assembled.manifest.sectionBytes}},allowedNextRoles:route?.allowedNextRoles,consultationFrom:route?.from});
    const current=new (await import("./workflow-projection.js")).WorkflowProjections(this.store).get(workItemId);if(current.status!=="RUNNING"||current.activeRunId!==started.executionId){this.store.event("execution.discarded",{executionId:started.executionId,reason:"Workflow changed before worktree validation"},workItemId,started.executionId);return true;}
@@ -61,8 +60,8 @@ export class WorkflowRunner {
    if(disposition==="hold"){this.held.set(started.executionId,{workItemId,role,result});this.store.event("agent.result.held",{role},workItemId,started.executionId);return true;}
    if(disposition==="discard"){this.store.event("execution.discarded",{reason:"controller-lost"},workItemId,started.executionId);return true;}
    this.results.apply({workItemId,executionId:started.executionId,role,result});return true;
-  } catch(error){if(!started)throw error;this.store.event("workflow.result_failed",{error:error instanceof Error?error.message:String(error)},workItemId,started.executionId);this.scheduler.fail(workItemId,started.executionId,error,error instanceof InvalidContextError?"invalid-context":error instanceof InvalidResultError?"invalid-result":"execution");return true;}
-  finally{if(reviewerContext)this.workspaces.cleanupReviewerContext(cwd,workItemId);}
+  } catch(error){if(!started){if(!preparing)throw error;this.scheduler.rejectQueued(workItemId,new Error(`Could not prepare workflow execution: ${error instanceof Error?error.message:String(error)}`),error instanceof InvalidContextError?"invalid-context":"execution");return true;}this.store.event("workflow.result_failed",{error:error instanceof Error?error.message:String(error)},workItemId,started.executionId);this.scheduler.fail(workItemId,started.executionId,error,error instanceof InvalidContextError?"invalid-context":error instanceof InvalidResultError?"invalid-result":"execution");return true;}
+  finally{if(reviewerContext&&cwd)try{this.workspaces.cleanupReviewerContext(cwd,workItemId);}catch(error){this.store.event("workflow.context_cleanup_failed",{error:error instanceof Error?error.message:String(error)},workItemId,started?.executionId);}}
  }
  applyHeld(){for(const [executionId,entry] of this.held){try{this.results.apply({workItemId:entry.workItemId,executionId,role:entry.role,result:entry.result});this.store.event("agent.result.held_applied",{role:entry.role},entry.workItemId,executionId);}catch(error){this.scheduler.fail(entry.workItemId,executionId,error,"invalid-result");}finally{this.held.delete(executionId);}}}
  discardHeld(){for(const [executionId,entry] of this.held)this.store.event("agent.result.held_discarded",{role:entry.role,reason:"controller-lost"},entry.workItemId,executionId);this.held.clear();}
