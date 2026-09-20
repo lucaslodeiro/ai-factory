@@ -5,7 +5,6 @@ import { WorkflowInbox,WorkflowIntake } from "../src/workflow-inbox.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
 import type { Comment } from "../src/adapters/github.js";
-import { config } from "../src/config.js";
 import { workflowStatusMarkdown } from "../src/workflow-status.js";
 import { ContextAssembler } from "../src/context-assembly.js";
 
@@ -147,8 +146,8 @@ test("retry waits for a paused execution to exit without consuming the comment",
  } finally {store.db.close();}
 });
 
-test("retry deferral expires instead of pinning the comment cursor forever",()=>{
- const store=new Store(":memory:"),previous=config.timeoutMs;config.timeoutMs=1;
+test("retry deferral expires after its fixed internal window",()=>{
+ const store=new Store(":memory:");
  try {
   const started=new WorkflowIntake(store).start(issue,{actor:"owner",commentId:1,source:"github-comment"}),projections=new WorkflowProjections(store);
   store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at) VALUES('run-stuck',?,'product-architect','DESIGN','running','now')").run(started.id);
@@ -157,8 +156,8 @@ test("retry deferral expires instead of pinning the comment cursor forever",()=>
   const result=new WorkflowInbox(store,{comments:()=>[comment(2,"/factory retry")]},["owner"]).poll(started.id);
   assert.deepEqual({cursor:result.cursor,rejected:result.rejected,status:projections.get(started.id).status},{cursor:2,rejected:1,status:"PAUSED"});
   const rejection=JSON.parse((store.db.prepare("SELECT payload FROM events WHERE type='command.rejected' ORDER BY id DESC LIMIT 1").get() as {payload:string}).payload);
-  assert.match(rejection.error,/deferral exceeded 1ms/);
- } finally {config.timeoutMs=previous;store.db.close();}
+  assert.match(rejection.error,/deferral exceeded 1800000ms/);
+ } finally {store.db.close();}
 });
 
 function pausedRunningScenario(followups:Comment[]) {

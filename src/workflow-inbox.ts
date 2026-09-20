@@ -5,9 +5,9 @@ import type { Store } from "./storage.js";
 import { WorkflowCommands } from "./workflow-commands.js";
 import { WorkflowProjections } from "./workflow-projection.js";
 import {workflowNotificationText} from "./notifications.js";
-import { config } from "./config.js";
 import { ExecutionNotStoppedError } from "./execution-manager.js";
 import { WorkflowRecords } from "./workflow-records.js";
+const RETRY_DEFERRAL_MS=30*60*1000;
 
 export interface LastCommandOutcome {commentId:number;login:string;kind:string;outcome:"applied"|"rejected"|"stale"|"deferred"|"expired"|"unrecognized";reason?:string;at:string;}
 export interface ObservedComment {id:number;updatedAt:string}
@@ -75,8 +75,8 @@ export class WorkflowInbox {
      if(error instanceof ExecutionNotStoppedError){
       const prior=this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='command.deferred' AND json_extract(payload,'$.commentId')=? ORDER BY id LIMIT 1").get(workItemId,comment.id) as {payload:string}|undefined;
       let deferredAt:string;if(prior)deferredAt=(JSON.parse(prior.payload) as {deferredAt:string}).deferredAt;else{deferredAt=new Date().toISOString();this.store.event("command.deferred",{commentId:comment.id,login:comment.user.login,command:command.kind,error:error.message,deferredAt},workItemId);this.setLastCommand(workItemId,comment,this.commandLabel(command),"deferred","waiting for the interrupted execution to exit",true);}
-      if(Date.now()-Date.parse(deferredAt)<config.timeoutMs){this.setCursorExact(workItemId,latest.cursor);return "deferred";}
-      const reason=`Retry deferral exceeded ${config.timeoutMs}ms while waiting for the execution to stop`;this.store.event("command.rejected",{commentId:comment.id,login:comment.user.login,command:command.kind,error:reason},workItemId);this.setLastCommand(workItemId,comment,this.commandLabel(command),"expired",reason,true);return "rejected";
+      if(Date.now()-Date.parse(deferredAt)<RETRY_DEFERRAL_MS){this.setCursorExact(workItemId,latest.cursor);return "deferred";}
+      const reason=`Retry deferral exceeded ${RETRY_DEFERRAL_MS}ms while waiting for the execution to stop`;this.store.event("command.rejected",{commentId:comment.id,login:comment.user.login,command:command.kind,error:reason},workItemId);this.setLastCommand(workItemId,comment,this.commandLabel(command),"expired",reason,true);return "rejected";
      }
      const reason=this.errorMessage(error),stale=/stale/i.test(reason);this.store.event(stale?"command.stale":"command.rejected",{commentId:comment.id,login:comment.user.login,command:command.kind,error:reason},workItemId);this.setLastCommand(workItemId,comment,this.commandLabel(command),stale?"stale":"rejected",reason,true);return "rejected";
     }
