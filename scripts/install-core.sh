@@ -95,7 +95,8 @@ install_step="installing npm dependencies"
 CI=1 npm ci --no-audit --no-fund
 install_step="building the factory"
 npm run build
-if [[ ${AI_FACTORY_INSTALL_TESTS:-1} != 0 ]]; then install_step="running the validation suite"; npm test; fi
+install_step="validating the installation"
+node scripts/validate-installation.mjs
 install_step="installing the launcher"
 mkdir -p "$HOME/.local/bin"
 launcher="$HOME/.local/bin/ai-factory"

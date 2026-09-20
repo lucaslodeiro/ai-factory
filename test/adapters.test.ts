@@ -38,14 +38,14 @@ if(codex) {
 `,{mode:0o755});
  config.codexCommand=script;config.claudeCommand=script;
  const s=new Store(":memory:"), m=new ExecutionManager(s);
- assert.equal((await new ClaudeAdapter(m).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'prompt from orchestrator',selection:{...selectModel('product-architect'),model:'test-claude'}})).outcome,'spec');
- assert.equal((await new CodexAdapter(m).run({workItemId:'w',role:'developer',cwd:root,instructions:'prompt from orchestrator',selection:{...selectModel('developer'),model:'test-codex'}})).outcome,'pass');
+ assert.equal((await new ClaudeAdapter(m).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'prompt from orchestrator',selection:{...selectModel('product-architect'),provider:'claude',model:'test-claude'}})).outcome,'spec');
+ assert.equal((await new CodexAdapter(m).run({workItemId:'w',role:'developer',cwd:root,instructions:'prompt from orchestrator',selection:{...selectModel('developer'),provider:'codex',model:'test-codex'}})).outcome,'pass');
  assert.equal((await new ClaudeAdapter(m).run({workItemId:'w',role:'developer',cwd:root,instructions:'prompt from orchestrator',selection:{...selectModel('developer'),provider:'claude',model:'test-claude'}})).outcome,'pass');
- assert.equal((await new CodexAdapter(m).run({workItemId:'w',role:'developer',cwd:root,instructions:'prompt from orchestrator auto',selection:{...selectModel('developer'),model:'auto'}})).outcome,'pass');
- assert.equal((await new ClaudeAdapter(m).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'prompt from orchestrator auto',selection:{...selectModel('product-architect'),model:'auto'}})).outcome,'spec');
+ assert.equal((await new CodexAdapter(m).run({workItemId:'w',role:'developer',cwd:root,instructions:'prompt from orchestrator auto',selection:{...selectModel('developer'),provider:'codex',model:'auto'}})).outcome,'pass');
+ assert.equal((await new ClaudeAdapter(m).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'prompt from orchestrator auto',selection:{...selectModel('product-architect'),provider:'claude',model:'auto'}})).outcome,'spec');
  s.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at) VALUES('precreated','w2','product-architect','DESIGN','running','now')").run();
- assert.equal((await new ClaudeAdapter(m).run({workItemId:'w2',role:'product-architect',cwd:root,instructions:'prompt from orchestrator',selection:{...selectModel('product-architect'),model:'test-claude'},executionId:'precreated'})).outcome,'spec');
- await assert.rejects(new ClaudeAdapter(m).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'unused',selection:selectModel('developer')}), /mismatch/);
+ assert.equal((await new ClaudeAdapter(m).run({workItemId:'w2',role:'product-architect',cwd:root,instructions:'prompt from orchestrator',selection:{...selectModel('product-architect'),provider:'claude',model:'test-claude'},executionId:'precreated'})).outcome,'spec');
+ await assert.rejects(new ClaudeAdapter(m).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'unused',selection:{...selectModel('developer'),provider:'codex'}}), /mismatch/);
  assert.equal((s.db.prepare('SELECT COUNT(*) AS n FROM executions WHERE status=?').get('succeeded') as any).n,6);
  assert.equal((s.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE id='precreated'").get() as any).n,1);
  assert.deepEqual(s.db.prepare("SELECT role,stage,total_tokens FROM executions ORDER BY rowid LIMIT 2").all(),[

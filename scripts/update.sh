@@ -30,6 +30,7 @@ engine=$PWD
 home=${AI_FACTORY_HOME:-$engine}
 [[ ${engine##*/} != engine || -n ${AI_FACTORY_HOME:-} ]] || home=${engine%/engine}
 export AI_FACTORY_HOME="$home"
+export AI_FACTORY_UPDATE_STATE_FILE="${AI_FACTORY_UPDATE_STATE_FILE:-$home/data/update-state.json}"
 node -e 'if(Number(process.versions.node.split(".")[0]) < 22) { console.error("Node 22+ is required"); process.exit(1); }'
 
 update_complete=false
@@ -37,11 +38,11 @@ restore_daemon=false
 restore_dashboard=false
 restore_intent_known=false
 if [[ -n ${AI_FACTORY_UPDATE_STATE_FILE:-} && -f $AI_FACTORY_UPDATE_STATE_FILE ]]; then
-  IFS=' ' read -r restore_intent_known restore_daemon restore_dashboard < <(node -e 'const fs=require("fs");let s={};try{s=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch{}const known=typeof s.restoreDaemon==="boolean"&&typeof s.restoreDashboard==="boolean";console.log(`${known} ${known&&s.restoreDaemon} ${known&&s.restoreDashboard}`)' "$AI_FACTORY_UPDATE_STATE_FILE")
+  IFS=' ' read -r restore_intent_known restore_daemon restore_dashboard < <(node -e 'const fs=require("fs");let s={};try{s=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch{}const known=s.status==="updating"&&typeof s.restoreDaemon==="boolean"&&typeof s.restoreDashboard==="boolean";console.log(`${known} ${known&&s.restoreDaemon} ${known&&s.restoreDashboard}`)' "$AI_FACTORY_UPDATE_STATE_FILE")
 fi
 write_update_state() {
   [[ -n ${AI_FACTORY_UPDATE_STATE_FILE:-} ]] || return 0
-  node -e 'const fs=require("fs"),path=require("path");const [file,status,phase,pid]=process.argv.slice(1);let old={};try{old=JSON.parse(fs.readFileSync(file,"utf8"))}catch{}const now=new Date().toISOString();const next={...old,status,phase,pid:Number(pid),startedAt:old.startedAt||now,updatedAt:now};if(status!=="updating")next.finishedAt=now;fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file+".tmp",JSON.stringify(next,null,2),{mode:0o600});fs.renameSync(file+".tmp",file);' "$AI_FACTORY_UPDATE_STATE_FILE" "$1" "$2" "$$"
+  node -e 'const fs=require("fs"),path=require("path");const [file,status,phase,pid]=process.argv.slice(1);let old={};try{old=JSON.parse(fs.readFileSync(file,"utf8"))}catch{}const now=new Date().toISOString();const next={...old,status,phase,pid:Number(pid),startedAt:old.startedAt||now,updatedAt:now};if(phase.startsWith("Stopping daemon"))next.versionActivated=false;if(status!=="updating")next.finishedAt=now;fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file+".tmp",JSON.stringify(next,null,2),{mode:0o600});fs.renameSync(file+".tmp",file);' "$AI_FACTORY_UPDATE_STATE_FILE" "$1" "$2" "$$"
 }
 finish_update() {
   if "$update_complete"; then
@@ -50,9 +51,13 @@ finish_update() {
     if [[ -z ${AI_FACTORY_UPDATE_STATE_FILE:-} ]] || ! node -e 'const fs=require("fs");try{process.exit(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).status==="failed"?0:1)}catch{process.exit(1)}' "$AI_FACTORY_UPDATE_STATE_FILE"; then
       write_update_state failed "Update failed. Inspect data/service-logs/update.log."
     fi
-    # A failed update must not change the operator's service state. Reinstall
-    # launchd definitions in case the checkout changed before the failure, then
-    # restore every service that was loaded when this update began.
+    # Preparation failures leave the old version intact. An activation/service
+    # failure must not restart the new daemon repeatedly as if recovery succeeded.
+    if [[ -n ${AI_FACTORY_UPDATE_STATE_FILE:-} ]] && node -e 'try{process.exit(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).versionActivated===true?0:1)}catch{process.exit(1)}' "$AI_FACTORY_UPDATE_STATE_FILE"; then
+      AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh stop daemon || true
+      echo "The new version was activated but service recovery failed. Daemon left stopped; inspect the update log and backup." >&2
+      return
+    fi
     set +e
     if "$restore_daemon"; then
       AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install daemon

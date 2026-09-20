@@ -87,7 +87,7 @@ exit 0
 MOCK
 chmod +x "$retry_bin/npm"
 retry_branch=$(git -C "$root" branch --show-current)
-PATH="$retry_bin:/usr/local/Cellar/node/26.4.0/bin:/usr/local/git/bin:/usr/bin:/bin" \
+PATH="$retry_bin:$(dirname "$(command -v node)"):$PATH" \
   HOME="$retry_user" SOURCE_NODE_MODULES="$root/node_modules" SOURCE_DIST="$root/dist" AI_FACTORY_SKIP_SERVICES=1 AI_FACTORY_INSTALL_TESTS=0 \
   bash "$root/scripts/install-core.sh" --repo "$root" --branch "$retry_branch" --dir "$retry_home" > "$fixture/retry.out"
 [[ -d "$retry_home/engine/.git" ]]

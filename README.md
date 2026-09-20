@@ -132,3 +132,9 @@ The V3 workflow starts from a fresh factory data directory. It intentionally pro
 GitHub issues show the workflow through colored stage/condition labels and an updatable status comment. Structured evidence stays in the local audit. The issue remains open until the delivered PR is merged.
 
 Merged PRs reconcile to `DELIVERY/COMPLETED`; a closed unmerged PR remains `DELIVERY/WAITING` with its merge request marked closed until reopened. Run `ai-factory sync` when the daemon is stopped to refresh delivery state without running agents.
+
+### Product tests and installation checks
+
+CI runs `npm run test:all` on macOS for pull requests and pushes to `develop` and `main`. Product tests use controlled configuration and simulated providers; they do not depend on the operator's role settings. Installation and updates never run `npm test` or the functional suite, including when `AI_FACTORY_INSTALL_TESTS` was set by an older installer.
+
+`node scripts/validate-installation.mjs` checks the local Node runtime, compiled assets, writable storage, native SQLite and CLI loading without calling providers or GitHub. During updates it checks database compatibility on a backup copy, not the live database. The updater builds and validates a detached candidate before activating it; preparation failures preserve the installed checkout and dependencies. If service restoration fails after activation, the update remains failed and the daemon is left stopped rather than reporting success or restarting it repeatedly. The backup path remains in the log for recovery.
