@@ -2,7 +2,9 @@ import { spawnSync } from "node:child_process";
 import { config } from "./config.js";
 import { Store } from "./storage.js";
 import { workflowProjectionProblems } from "./workflow-doctor.js";
-export function doctor() {
+import {GitHubAdapter,type GitHubPort} from "./adapters/github.js";
+import {verifyRepositoryIdentity} from "./repository-identity.js";
+export function doctor(existingStore?:Store,github:Pick<GitHubPort,"repository">=new GitHubAdapter()) {
  let ok = true;
  const check = (name: string, pass: boolean) => { ok = ok && pass; console.log(`${pass ? "✓" : "✗"} ${name}`); };
  check("Node >= 22", Number(process.versions.node.split(".")[0]) >= 22);
@@ -21,12 +23,13 @@ export function doctor() {
  const remote = spawnSync(config.gitCommand, ["remote", "get-url", "origin"], { cwd: config.repoDir, encoding: "utf8" });
  check("Target checkout origin matches repository", Boolean(config.repo) && remote.status === 0 && remote.stdout.trim().replace(/\.git$/, "").endsWith(config.repo));
  try {
-  const s = new Store();
+  const s = existingStore??new Store();
   try {
    s.db.prepare("SELECT 1").get();check("SQLite writable",true);
+   try{verifyRepositoryIdentity(s,github);check("GitHub repository identity",true);}catch(error){check("GitHub repository identity",false);console.log(`  - ${error instanceof Error?error.message:String(error)}`);}
    const problems=workflowProjectionProblems(s);check("Workflow projection invariants",problems.length===0);
    for (const problem of problems) console.log(`  - ${problem}`);
-  } finally { s.db.close(); }
+  } finally { if(!existingStore)s.db.close(); }
  } catch (error) {
   check("SQLite writable", false);check("Workflow projection invariants",false);
   console.log(`  - ${error instanceof Error ? error.message : String(error)}`);

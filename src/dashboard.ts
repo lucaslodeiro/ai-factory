@@ -15,6 +15,8 @@ import { publicNaming, roleShortName, stateName } from "./names.js";
 import {WorkflowMaintenance,type MaintenanceOperation} from "./workflow-maintenance.js";
 import type {ExecutionManager} from "./execution-manager.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
+import {GitHubAdapter} from "./adapters/github.js";
+import {verifyRepositoryIdentity} from "./repository-identity.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
 const types: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
@@ -406,6 +408,8 @@ function dashboardSettings(root: string) {
 }
 function saveConfiguration(store: Store, root: string, values: Record<string,unknown>, clearSecrets: string[] = [],maintenanceId?:string,startDaemonWhenReady=false) {
   const plan = validateDashboardSettings(root,values,clearSecrets);
+  const requestedRepository=typeof values.GITHUB_REPOSITORY==="string"?values.GITHUB_REPOSITORY.trim():readDashboardSetting(root,"GITHUB_REPOSITORY").trim();
+  if(requestedRepository)verifyRepositoryIdentity(store,new GitHubAdapter(undefined,requestedRepository),false);
   const daemon = serviceStatus(root,"daemon"), dashboard = serviceStatus(root,"dashboard");
   const before=daemonState(store),daemonActive = before.running || daemon.running;
   const restartDaemon = plan.restartServices.includes("daemon") && daemonActive;

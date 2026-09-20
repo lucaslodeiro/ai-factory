@@ -17,6 +17,7 @@ import { WorkflowOrchestrator } from "./workflow-orchestrator.js";
 import { WorkflowCommands } from "./workflow-commands.js";
 import { WorkflowMaintenance } from "./workflow-maintenance.js";
 import { WorkflowScheduler } from "./workflow-scheduler.js";
+import {verifyRepositoryIdentity} from "./repository-identity.js";
 export function acquireLock(store: Store) {
  fs.mkdirSync(config.dataDir, { recursive: true });
  const file = path.join(config.dataDir, "daemon.lock"), token = randomUUID();
@@ -41,9 +42,10 @@ export function acquireLock(store: Store) {
  };
 }
 export function recoverAbandonedExecutions(store:Store){const scheduler=new WorkflowScheduler(store),abandoned=store.db.prepare("SELECT id,work_item_id FROM executions WHERE status='running'").all() as Array<{id:string;work_item_id:string}>;for(const run of abandoned){store.db.prepare("UPDATE executions SET status='interrupted',recovery_pending=1,finished_at=?,interruption_reason='unexpected-shutdown' WHERE id=?").run(new Date().toISOString(),run.id);scheduler.fail(run.work_item_id,run.id,new Error("Agent execution was interrupted by an unexpected daemon shutdown"),"recovery");store.event("execution.interrupted",{reason:"unexpected-shutdown"},run.work_item_id,run.id);}return abandoned.length;}
-export async function startDaemon(store = new Store()) {
+export async function startDaemon(store = new Store(),github=new GitHubAdapter()) {
  if (!config.repo || !config.approvers.length) throw new Error("Configure GITHUB_REPOSITORY and FACTORY_APPROVERS first");
- if (!doctor()) throw new Error("Preflight failed; fix doctor checks before starting");
+ verifyRepositoryIdentity(store,github);
+ if (!doctor(store,github)) throw new Error("Preflight failed; fix doctor checks before starting");
  daemonLog("info","daemon.starting",{repo:config.repo,pollMs:config.pollMs,dataDir:config.dataDir});
  const release = acquireLock(store), executions = new ExecutionManager(store);
  const codex = new CodexAdapter(executions), claude = new ClaudeAdapter(executions);
@@ -54,7 +56,7 @@ export async function startDaemon(store = new Store()) {
   qa:adapters[config.roles.qa.provider],
   reviewer:adapters[config.roles.reviewer.provider],
  };
- const github=new GitHubAdapter(),runner=new WorkflowRunner(store,agents,new Workspaces(),github),o=new WorkflowOrchestrator(store,github,runner,new SlackAdapter(),executions);
+ const runner=new WorkflowRunner(store,agents,new Workspaces(),github),o=new WorkflowOrchestrator(store,github,runner,new SlackAdapter(),executions);
  const commands=new WorkflowCommands(store),maintenance=new WorkflowMaintenance(store,executions);
  const recoveredSignalMaintenance=maintenance.reconcileSignalsAfterRestart();
  let stopping = false,stopRequested=false,stopReason="unknown",stopPromise:Promise<unknown>|undefined;
