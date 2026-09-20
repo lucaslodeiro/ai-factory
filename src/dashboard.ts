@@ -22,7 +22,7 @@ import type {ExecutionManager} from "./execution-manager.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {GitHubAdapter} from "./adapters/github.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
-import {cachedControllerState,ControllerLease} from "./controller-lease.js";
+import {cachedControllerState,controllerAttribution,ControllerLease} from "./controller-lease.js";
 import {publishTakeoverNotices} from "./workflow-github.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
@@ -105,6 +105,9 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
   return { title,details:details(payload),severity:"info",category:"System" };
 }
 function snapshot(store: Store) {
+  return store.db.transaction(() => buildSnapshot(store))();
+}
+function buildSnapshot(store: Store) {
   const storedItems=(store.db.prepare("SELECT id,issue_number,repo,stage,status,attempt,revision,branch,updated_at,archived_at,context FROM work_items ORDER BY created_at").all() as any[]).map(item=>({...item,context:JSON.parse(item.context||"{}")}));
   const itemById=new Map(storedItems.map(item=>[item.id,item]));
   const visibleItems=storedItems.filter(item=>!item.archived_at);
@@ -159,7 +162,7 @@ function snapshot(store: Store) {
     }
   }
   const maintenance=(store.db.prepare("SELECT id,operation,actor,status,requested_at,confirmed_at,finished_at,error FROM maintenance_operations ORDER BY requested_at DESC LIMIT 10").all() as any[]).map(operation=>({...operation,affected:(store.db.prepare("SELECT work_item_id,paused_at,resumed_at FROM maintenance_items WHERE maintenance_id=?").all(operation.id) as any[])}));
-  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), controller:cachedControllerState(store), issueRefresh, items, executions, usage, events,maintenance };
+  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), controller:{...cachedControllerState(store),...controllerAttribution(store)}, issueRefresh, items, executions, usage, events,maintenance };
 }
 function controllerView(store:Store){
  if(!config.repo)return{state:"unconfigured",issues:[]};
@@ -495,13 +498,21 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
 
 export function createDashboardServer(store: Store, settingsRoot = process.cwd()) {
   const runtimeVersion = versionInfo(settingsRoot);
+  const servicesView = (services=[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")]) => {const update=updateState(settingsRoot);reconcileUpdateMaintenance(store,update);const resumable=store.db.prepare(`SELECT mo.id FROM maintenance_operations mo WHERE mo.status IN ('ready','running','completed','failed') AND EXISTS(SELECT 1 FROM maintenance_items mi JOIN work_items w ON w.id=mi.work_item_id WHERE mi.maintenance_id=mo.id AND mi.resumed_at IS NULL AND w.status='PAUSED') ORDER BY mo.requested_at DESC LIMIT 1`).get() as {id:string}|undefined;return {services,controller:cachedControllerState(store),update,version:runtimeVersion,maintenance:resumable?maintenanceOperation(store,resumable.id):null};};
+  const liveSnapshot = (lines:string|null) => {
+    const services=[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")];
+    return store.db.transaction(() => {
+      const runtime=servicesView(services);
+      return {...snapshot(store),services:runtime,logs:daemonLogs(settingsRoot,lines)};
+    })();
+  };
   return http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
-      if (req.method === "GET" && url.pathname === "/api/snapshot") return json(res,200,snapshot(store));
+      if (req.method === "GET" && url.pathname === "/api/snapshot") return json(res,200,liveSnapshot(url.searchParams.get("lines")));
       if (req.method === "GET" && url.pathname === "/api/stream") {
         res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache, no-transform","connection":"keep-alive"});
-        const send = () => { if (!res.destroyed) res.write(`data: ${JSON.stringify(snapshot(store))}\n\n`); };
+        const send = () => { if (res.destroyed || res.writableLength>1024*1024) return; try { res.write(`data: ${JSON.stringify(liveSnapshot(url.searchParams.get("lines")))}\n\n`); } catch { res.destroy(); } };
         send();
         const timer = setInterval(send,2000);
         timer.unref();
@@ -511,7 +522,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if (req.method === "GET" && url.pathname === "/api/settings") return json(res,200,{...dashboardSettings(settingsRoot),daemonRunning:daemonState(store).running});
       if (req.method === "GET" && url.pathname === "/api/credentials") return json(res,200,credentialStatuses(settingsRoot));
       if (req.method === "GET" && url.pathname === "/api/slack") return json(res,200,slackStatus(settingsRoot,store));
-      if (req.method === "GET" && url.pathname === "/api/services") {const update=updateState(settingsRoot);reconcileUpdateMaintenance(store,update);const resumable=store.db.prepare(`SELECT mo.id FROM maintenance_operations mo WHERE mo.status IN ('ready','running','completed','failed') AND EXISTS(SELECT 1 FROM maintenance_items mi JOIN work_items w ON w.id=mi.work_item_id WHERE mi.maintenance_id=mo.id AND mi.resumed_at IS NULL AND w.status='PAUSED') ORDER BY mo.requested_at DESC LIMIT 1`).get() as {id:string}|undefined;return json(res,200,{services:[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")],controller:cachedControllerState(store),update,version:runtimeVersion,maintenance:resumable?maintenanceOperation(store,resumable.id):null});}
+      if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,servicesView());
       if(req.method==="GET"&&url.pathname==="/api/controller")return json(res,200,controllerView(store));
       if(req.method==="POST"&&url.pathname==="/api/controller"){
         const body=await readBody(req) as {action?:string;force?:boolean;confirmation?:string};if(!config.repo)return json(res,409,{error:"Configure a repository first"});
