@@ -26,6 +26,8 @@ const claudeDelivery=!codex&&args[args.indexOf('--tools')+1].includes('Edit');
 const result=codex||claudeDelivery?${JSON.stringify(result("pass"))}:${JSON.stringify(result("spec"))};
 if(codex) {
  if(!args.includes('--output-schema')||args.includes('--full-auto')) process.exit(9);
+ const schema=JSON.parse(fs.readFileSync(args[args.indexOf('--output-schema')+1],'utf8'));
+ const check=s=>{if(s.properties){if(s.additionalProperties!==false||JSON.stringify([...(s.required??[])].sort())!==JSON.stringify(Object.keys(s.properties).sort()))throw new Error('invalid_json_schema');Object.values(s.properties).forEach(check);}if(s.items)check(s.items);};check(schema);
  fs.writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(result));
  console.log(JSON.stringify({type:'progress'}));
  console.error('tokens used\\n1,234');

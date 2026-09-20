@@ -69,3 +69,18 @@ test("result contract failures use a typed error",()=>{
  assert.throws(()=>parseResult({},"developer"),error=>error instanceof InvalidResultError&&error.failureClass==="invalid-result");
  assert.throws(()=>validateCoverage(result("pass"),[]),error=>error instanceof InvalidResultError);
 });
+
+test("every provider result schema requires all object properties recursively",()=>{
+ const inspect=(schema:ReturnType<typeof resultSchemaFor>,location="result")=>{
+  if(schema.properties){assert.equal(schema.additionalProperties,false,location);assert.deepEqual([...(schema.required??[])].sort(),Object.keys(schema.properties).sort(),location);for(const [key,value] of Object.entries(schema.properties))inspect(value,`${location}.${key}`);}
+  if(schema.items)inspect(schema.items,`${location}[]`);
+ };
+ for(const role of ["product-architect","developer","qa","reviewer"] as const)inspect(resultSchemaFor(role));
+ for(const next of ["developer","qa","reviewer"] as const)inspect(resultSchemaFor("product-architect",[next]));
+});
+test("legacy decisions gain empty supersedes without mutating the saved report",()=>{
+ const raw=result("resolved",{nextRole:"qa",decisions:[{kind:"tactical",decision:"Keep the cache",rationale:"Within scope",conflictsWithHuman:false}]});
+ const parsed=parseResult(raw,"product-architect",["qa"],"TEST");
+ assert.deepEqual(parsed.decisions[0].supersedes,[]);assert.equal(raw.decisions[0].supersedes,undefined);
+ assert.throws(()=>parseResult({...raw,decisions:[{...raw.decisions[0],supersedes:null}]},"product-architect",["qa"],"TEST"),/supersedes/);
+});
