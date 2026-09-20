@@ -22,3 +22,16 @@ test('KPIs and controller share transitions; delayed snapshots and remote respon
  draw('WAITING','2026-09-20T12:00:08.000Z');assert.equal(get('#waiting-count').textContent,1);assert.equal(get('#completed-count').textContent,0);
 
 });
+
+test('unified issue list deduplicates GitHub rows and never replaces live local state',()=>{
+ const nodes=new Map<string,any>(),get=(id:string)=>{if(!nodes.has(id))nodes.set(id,{});return nodes.get(id)};
+ const context=vm.createContext({$:get,document:{querySelectorAll:()=>[]},escapeHtml:(v:any)=>String(v??''),relative:()=> 'just now',brandIcon:()=>'',githubLink:(_url:string,label:string)=>label,statusName:(v:any)=>v,stateClass:()=>''});
+ const start=source.indexOf('function renderIssueList('),end=source.indexOf('\nasync function refresh()',start);
+ vm.runInContext("let remoteIssueData=null,remoteIssueCheckedAt=null,remoteIssueError='',lastSnapshot=null;",context);vm.runInContext(source.slice(start,end),context);vm.runInContext(source.split('\n').find(line=>line.startsWith('function renderController('))!,context);
+ context.local={repository:'owner/demo',controller:{state:'active'},items:[{id:'local',issue:2,title:'Local title',stage:'REVIEW',status:'RUNNING',actions:['pause','cancel']}]};vm.runInContext('lastSnapshot=local;renderIssueList(local)',context);
+ context.remote={repository:'owner/demo',issues:[{number:2,title:'Stale GitHub title',status:'FAILED',stage:'TEST'},{number:7,title:'Remote only',status:'WAITING',stage:'DESIGN',processedBy:'Another factory'}]};vm.runInContext('renderController(remote)',context);
+ assert.match(get('#items').innerHTML,/Local title/);assert.doesNotMatch(get('#items').innerHTML,/Stale GitHub title/);assert.match(get('#items').innerHTML,/REVIEW · RUNNING/);assert.match(get('#items').innerHTML,/Remote only/);assert.match(get('#items').innerHTML,/Not tracked here/);assert.equal((get('#items').innerHTML.match(/factoryControl\(/g)||[]).length,2);
+ context.local.items.push({id:'new',issue:7,title:'Now local',stage:'BUILD',status:'QUEUED',actions:['pause','cancel']});vm.runInContext('renderIssueList(local)',context);assert.doesNotMatch(get('#items').innerHTML,/Remote only|Not tracked here/);assert.match(get('#items').innerHTML,/Now local/);
+ context.local.controller.state='uncertain';vm.runInContext('renderIssueList(local)',context);assert.doesNotMatch(get('#items').innerHTML,/factoryControl\(/);
+ context.local.repository='owner/other';context.local.items=[];vm.runInContext('renderIssueList(local)',context);assert.doesNotMatch(get('#items').innerHTML,/Remote only/);
+});

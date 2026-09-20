@@ -122,7 +122,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.doesNotMatch(html,/Dismiss guide/);
     assert.doesNotMatch(html,/Stop daemon/);
     const client = await fetch(`http://127.0.0.1:${port}/app.js`).then(response => response.text());
-    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/); assert.match(client,/loadDaemonLogs/); assert.match(client,/execCommand\('copy'\)/); assert.match(client,/expandedUsageItems/); assert.match(client,/data-usage-item/); assert.match(client,/data-provider-choice/); assert.match(client,/codex:'openai'/);assert.match(client,/repositoryCard/);assert.match(client,/revealPrompt/); assert.doesNotMatch(client,/refreshIssue/);
+    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/); assert.match(client,/loadDaemonLogs/); assert.match(client,/execCommand\('copy'\)/); assert.match(client,/expandedUsageItems/); assert.match(client,/data-usage-item/); assert.match(client,/data-provider-choice/); assert.match(client,/codex:'openai'/);assert.match(client,/repositoryCard/);assert.match(client,/revealPrompt/); assert.doesNotMatch(client,/function refreshIssue\(/);
     const styles = await fetch(`http://127.0.0.1:${port}/styles.css`).then(response => response.text());
     assert.match(styles,/@media\(max-width:650px\)/); assert.match(styles,/content:attr\(data-label\)/); assert.match(styles,/\.usage-card\[open\]/); assert.match(styles,/\.provider-choice\[aria-pressed="true"\]/);
     for (const asset of ["github","git","openai","claude","slack"]) {
