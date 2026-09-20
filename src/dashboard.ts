@@ -408,6 +408,13 @@ function dashboardSettings(root: string) {
   return {...settings,readiness:setupReadiness(root,credentials)};
 }
 function saveConfiguration(store: Store, root: string, values: Record<string,unknown>, clearSecrets: string[] = [],maintenanceId?:string,startDaemonWhenReady=false) {
+  const candidate={...values};
+  const currentRepository=readDashboardSetting(root,"GITHUB_REPOSITORY").trim(),nextRepository=typeof candidate.GITHUB_REPOSITORY==="string"?candidate.GITHUB_REPOSITORY.trim():currentRepository;
+  if(nextRepository&&nextRepository!==currentRepository){
+    const github=credentialStatuses(root).credentials.find(item=>item.id==="github");
+    if(github?.connected)candidate.GITHUB_DEFAULT_BRANCH=new GitHubAdapter(undefined,nextRepository).repository().defaultBranch;
+  }
+  values=candidate;
   const plan = validateDashboardSettings(root,values,clearSecrets);
   const requestedRepository=typeof values.GITHUB_REPOSITORY==="string"?values.GITHUB_REPOSITORY.trim():readDashboardSetting(root,"GITHUB_REPOSITORY").trim();
   if(requestedRepository)verifyRepositoryIdentity(store,new GitHubAdapter(undefined,requestedRepository),false);

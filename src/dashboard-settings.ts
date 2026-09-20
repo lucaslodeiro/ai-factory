@@ -36,7 +36,7 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   FACTORY_DASHBOARD_HOST:{label:"Listen address",description:"Loopback address used by the administration UI.",group:"dashboard",type:"select",options:["127.0.0.1","localhost","::1"].map(value => ({value,label:value})),required:true,restart:"dashboard"},
   FACTORY_DASHBOARD_PORT:{label:"HTTP port",description:"Local port for the administration UI.",group:"dashboard",type:"number",unit:"port",required:true,restart:"dashboard"},
   GITHUB_REPOSITORY:{label:"Repository",description:"GitHub owner/name used for issues and pull requests.",group:"project",required:true,restart:"daemon",setup:true},
-  GITHUB_DEFAULT_BRANCH:{label:"Default branch",description:"Base branch for worktrees and pull requests.",group:"project",required:true,restart:"daemon"},
+  GITHUB_DEFAULT_BRANCH:{label:"Default branch (auto-filled)",description:"Filled from GitHub when the repository changes; editable later for troubleshooting.",group:"project",required:true,restart:"daemon"},
   FACTORY_APPROVERS:{label:"Authorized approvers",description:"Comma-separated GitHub logins allowed to answer and approve.",group:"access",required:true,restart:"daemon",setup:true},
   SLACK_WEBHOOK_URL:{label:"Slack webhook",description:"Optional HTTPS Incoming Webhook URL. Leave it blank to preserve the configured secret.",group:"notifications",secret:true,restart:"daemon"},
   CODEX_COMMAND:{label:"CLI",description:"Absolute path or command used to start the OpenAI coding agent.",group:"tools",required:true,restart:"all"},

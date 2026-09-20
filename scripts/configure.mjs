@@ -19,6 +19,11 @@ function githubLogin() {
   const login = githubValue('.login');
   return /^[a-zA-Z0-9-]+$/.test(login) ? login : '';
 }
+function repositoryDefaultBranch(repository) {
+  const result=run('gh',['api',`repos/${repository}`,'--jq','.default_branch']);
+  const value=result.status===0?result.stdout.trim():'';
+  return /^[A-Za-z0-9._/-]+$/.test(value)?value:'';
+}
 function git(root, command, args, options = {}) {
   return run(command,['-C',root,...args],options);
 }
@@ -208,6 +213,8 @@ export async function configure(root, useDefaults = false) {
           catch (error) { console.log(error.message); }
         }
       }
+      const defaultBranch=repositoryDefaultBranch(values.GITHUB_REPOSITORY);
+      if(defaultBranch&&values.GITHUB_REPOSITORY!==oldValues.GITHUB_REPOSITORY)values.GITHUB_DEFAULT_BRANCH=defaultBranch;
       const required = ['GITHUB_REPOSITORY','FACTORY_REPO_DIR','FACTORY_APPROVERS'];
       if (required.every(key => values[key])) targetPrepared = await prepareTarget(values,lines,login);
     }

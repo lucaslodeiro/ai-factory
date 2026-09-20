@@ -24,6 +24,8 @@ if [[ $1 == auth && $2 == login ]]; then
 elif [[ $1 == api && $2 == user ]]; then
   [[ -f $GH_AUTH ]] || exit 1
   [[ $4 == .login ]] && echo alice || echo 12345
+elif [[ $1 == api && $2 == repos/* ]]; then
+  echo trunk
 elif [[ $1 == repo && $2 == view ]]; then
   [[ -d $GH_REMOTE ]]
 elif [[ $1 == repo && $2 == create ]]; then

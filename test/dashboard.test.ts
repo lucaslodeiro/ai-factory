@@ -326,7 +326,7 @@ echo "$*" >> "$PWD/update-actions.log"
     fs.writeFileSync(path.join(settingsRoot,"fail-next-daemon-start"),"");
     const failedFirstSetupSave = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({
       startDaemonWhenReady:true,
-      values:{GITHUB_REPOSITORY:"owner/demo",FACTORY_REPO_DIR:settingsRoot,FACTORY_APPROVERS:"demo-user",GIT_COMMAND:fakeGit,FACTORY_POLL_INTERVAL_MS:"8000"},
+      values:{GITHUB_REPOSITORY:"owner/demo",GITHUB_DEFAULT_BRANCH:"wrong",FACTORY_REPO_DIR:settingsRoot,FACTORY_APPROVERS:"demo-user",GIT_COMMAND:fakeGit,FACTORY_POLL_INTERVAL_MS:"8000"},
     })});
     assert.equal(failedFirstSetupSave.status,200);
     const failedFirstSetupResult=await failedFirstSetupSave.json() as any;
@@ -334,6 +334,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.deepEqual(failedFirstSetupResult.startedServices,[]);
     assert.match(failedFirstSetupResult.message,/Configuration saved\. The daemon did not start: simulated daemon start failure\. Fix the cause and start it from the Services panel\./);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^FACTORY_POLL_INTERVAL_MS='8000'$/m);
+    assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^GITHUB_DEFAULT_BRANCH='main'$/m);
     assert.equal(fs.existsSync(path.join(settingsRoot,"daemon-service-state")),false);
     const firstSetupSave = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({
       startDaemonWhenReady:true,
