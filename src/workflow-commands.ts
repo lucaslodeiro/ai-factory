@@ -74,7 +74,8 @@ export class WorkflowCommands {
     for(const id of ids)this.records.cancelRequest(id);
     if(failure)this.failures.resolve(failure.id,`comment:${context.commentId}`);
    });
-   return {projection:result,recordIds:ids,executionAction:current.activeRunId?{kind:"cancel" as const,runId:current.activeRunId}:undefined};
+   const running=current.activeRunId??(this.store.db.prepare("SELECT id FROM executions WHERE work_item_id=? AND status='running' ORDER BY started_at DESC LIMIT 1").get(context.workItemId) as {id:string}|undefined)?.id;
+   return {projection:result,recordIds:ids,executionAction:running?{kind:"cancel" as const,runId:running}:undefined};
   }
   throw new Error(`Unsupported command ${(command as FactoryCommand).kind}`);
  }

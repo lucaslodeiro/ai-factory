@@ -41,6 +41,16 @@ test("planned interruption is distinct from cancellation and preserves its reaso
  const row=s.db.prepare("SELECT status,interruption_reason FROM executions WHERE id=?").get(id) as any;
  assert.deepEqual(row,{status:"interrupted",interruption_reason:"maintenance:update"});assert.equal(m.isRunning(id),false);s.db.close();
 });
+test("explicit cancellation escalates an in-progress interruption", async () => {
+ const s=new Store(":memory:"),m=new ExecutionManager(s);
+ const pending=m.run("w","developer",process.execPath,["-e","process.on('SIGTERM',()=>{});setInterval(()=>{},100)"],os.tmpdir());
+ const id=(s.db.prepare("SELECT id FROM executions").get() as any).id;
+ await new Promise(resolve=>setTimeout(resolve,200));
+ assert.equal(m.interrupt(id,"user-pause"),true);
+ await new Promise(resolve=>setTimeout(resolve,50));
+ assert.equal(m.cancel(id),true);await assert.rejects(pending,/cancelled/);
+ assert.deepEqual(s.db.prepare("SELECT status,interruption_reason FROM executions WHERE id=?").get(id),{status:"cancelled",interruption_reason:"user-cancel"});s.db.close();
+});
 test("only daemon recovery marks abandoned runs failed; database survives reopening", () => {
  const filename = path.join(config.dataDir, "recovery.db"); let s = new Store(filename);
  s.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status,active_run_id) VALUES('w',1,'a/b','now','now','{}','TEST','RUNNING','run')").run();

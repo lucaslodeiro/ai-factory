@@ -37,10 +37,20 @@ export class WorkflowInbox {
  constructor(private store:Store,private github:CommentPort,private approvers:string[],private executions?:ExecutionControl){this.commands=new WorkflowCommands(store);this.projections=new WorkflowProjections(store);}
  poll(workItemId:string) {
   const item=this.row(workItemId),comments=this.github.comments(item.issue_number).slice().sort((a,b)=>a.id-b.id).filter(comment=>comment.id>item.cursor);
-  let applied=0,rejected=0,observed=0;
+  let applied=0,rejected=0,observed=0,deferredRetry:{commentId:number;login:string}|undefined,blockedAfterRetry=0;
   for(const comment of comments) {
    const outcome=this.store.db.transaction(()=>{
     const latest=this.row(workItemId);if(comment.id<=latest.cursor)return "duplicate";
+    if(deferredRetry){
+     if(comment.user.type!=="User"||!this.approvers.includes(comment.user.login))return "blocked";
+     let bypass;try{bypass=parseFactoryCommand(comment.body);}catch{return "blocked";}
+     if(bypass?.kind!=="cancel")return "blocked";
+     const specVersion=(this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;
+     const cancelled=this.commands.apply(bypass,{workItemId,login:comment.user.login,commentId:comment.id,specVersion});
+     this.setCursor(workItemId,comment.id);this.updateObservationCount(workItemId,0,true);
+     if(!this.store.db.prepare("SELECT 1 FROM events WHERE work_item_id=? AND type='command.superseded' AND json_extract(payload,'$.commentId')=?").get(workItemId,deferredRetry.commentId))this.store.event("command.superseded",{commentId:deferredRetry.commentId,login:deferredRetry.login,supersededBy:comment.id},workItemId);
+     return {result:"applied",executionAction:"executionAction" in cancelled?cancelled.executionAction:undefined,supersededDeferred:true};
+    }
     this.setCursor(workItemId,comment.id);
     if(comment.user.type!=="User"||!this.approvers.includes(comment.user.login))return "observed";
     if(comment.body.includes("<!-- ai-factory:"))return "observed";
@@ -67,7 +77,9 @@ export class WorkflowInbox {
    if(typeof outcome!=="string"&&outcome.executionAction?.kind==="cancel")this.executions?.cancel(outcome.executionAction.runId);
    if(typeof outcome!=="string"&&outcome.executionAction?.kind==="interrupt")this.executions?.interrupt(outcome.executionAction.runId,outcome.executionAction.reason);
    if(result==="applied")applied++;else if(result==="rejected")rejected++;else if(result==="observed")observed++;
-   if(result==="deferred")break;
+   if(result==="deferred"){deferredRetry={commentId:comment.id,login:comment.user.login};continue;}
+   if(result==="blocked"){blockedAfterRetry++;continue;}
+   if(typeof outcome!=="string"&&outcome.supersededDeferred){observed+=blockedAfterRetry;blockedAfterRetry=0;deferredRetry=undefined;}
   }
   return {seen:comments.length,applied,rejected,observed,cursor:this.row(workItemId).cursor};
  }

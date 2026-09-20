@@ -11,7 +11,11 @@ const record = (status, code, reason) => {
   fs.renameSync(file + ".tmp", file);
 };
 function terminate(status, reason, escalate) {
-  if (stopping || finished) return;
+  if (finished) return;
+  if (stopping) {
+    if(escalate&&!force&&worker?.pid){stopStatus=status;stopReason=reason;force=setTimeout(()=>{try{process.kill(-worker.pid,"SIGKILL");}catch{}},1000);}
+    return;
+  }
   stopping = true;stopStatus=status;stopReason=reason;
   if (!worker?.pid) {try{record(status,null,reason);}catch{}process.exit(1);return;}
   try { process.kill(-worker.pid, "SIGTERM"); } catch {}

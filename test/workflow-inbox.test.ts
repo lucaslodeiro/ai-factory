@@ -122,3 +122,43 @@ test("retry deferral expires instead of pinning the comment cursor forever",()=>
   assert.match(rejection.error,/deferral exceeded 1ms/);
  } finally {config.timeoutMs=previous;store.db.close();}
 });
+
+function pausedRunningScenario(followups:Comment[]) {
+ const store=new Store(":memory:"),started=new WorkflowIntake(store).start(issue,{actor:"owner",commentId:1,source:"github-comment"}),projections=new WorkflowProjections(store),comments=[comment(2,"/factory pause")];
+ store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at) VALUES('run-bypass',?,'product-architect','DESIGN','running','now')").run(started.id);
+ projections.transition({workItemId:started.id,expectedRevision:0,stage:"DESIGN",status:"RUNNING",activeRunId:"run-bypass",actor:{type:"orchestrator",id:"scheduler"},source:{executionId:"run-bypass"},reason:{code:"start",summary:"Architect started"}});
+ let cancelled:string|undefined;
+ const inbox=new WorkflowInbox(store,{comments:()=>comments},["owner"],{cancel(id){cancelled=id;return true;},interrupt(){return true;}});
+ inbox.poll(started.id);comments.push(...followups);
+ return {store,started,projections,inbox,cancelled:()=>cancelled};
+}
+
+test("cancel bypasses a deferred retry and supersedes it atomically",()=>{
+ const s=pausedRunningScenario([comment(3,"/factory retry"),comment(4,"/factory cancel")]);
+ try {
+  const result=s.inbox.poll(s.started.id);
+  assert.equal(s.projections.get(s.started.id).status,"CANCELLED");assert.equal(s.cancelled(),"run-bypass");assert.equal(result.cursor,4);
+  assert.equal((s.store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='command.deferred'").get() as {count:number}).count,1);
+  const superseded=JSON.parse((s.store.db.prepare("SELECT payload FROM events WHERE type='command.superseded'").get() as {payload:string}).payload);
+  assert.deepEqual({commentId:superseded.commentId,login:superseded.login,supersededBy:superseded.supersededBy},{commentId:3,login:"owner",supersededBy:4});
+  assert.equal((s.store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='command.rejected'").get() as {count:number}).count,0);
+ } finally {s.store.db.close();}
+});
+
+test("comments between deferred retry and cancel are consumed only as observed",()=>{
+ const s=pausedRunningScenario([comment(3,"/factory retry"),comment(4,"/factory note Do not persist"),comment(5,"/factory cancel")]);
+ try {
+  const result=s.inbox.poll(s.started.id);
+  assert.deepEqual({status:s.projections.get(s.started.id).status,cursor:result.cursor,observed:result.observed,cancelled:s.cancelled()},{status:"CANCELLED",cursor:5,observed:1,cancelled:"run-bypass"});
+  assert.equal((s.store.db.prepare("SELECT COUNT(*) count FROM records WHERE kind='instruction'").get() as {count:number}).count,0);
+ } finally {s.store.db.close();}
+});
+
+test("non-cancel commands remain blocked behind a deferred retry",()=>{
+ const s=pausedRunningScenario([comment(3,"/factory retry"),comment(4,"/factory approve v1")]);
+ try {
+  const result=s.inbox.poll(s.started.id);
+  assert.deepEqual({status:s.projections.get(s.started.id).status,cursor:result.cursor,applied:result.applied,rejected:result.rejected},{status:"PAUSED",cursor:2,applied:0,rejected:0});
+  assert.equal(s.cancelled(),undefined);
+ } finally {s.store.db.close();}
+});

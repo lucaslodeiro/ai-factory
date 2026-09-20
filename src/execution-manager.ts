@@ -53,7 +53,7 @@ export class ExecutionManager {
       fs.closeSync(out); fs.closeSync(err);
       this.store.db.prepare("UPDATE executions SET pid=? WHERE id=?").run(child.pid ?? null, id);
       const send = (message:{type:"cancel"}|{type:"interrupt";reason:string}) => { if(child.connected) try{child.send(message);}catch{} };
-      const cancel = () => { if (cancelled || interrupted) return; cancelled = true; send({type:"cancel"}); };
+      const cancel = () => { if (cancelled) return; cancelled = true; send({type:"cancel"}); };
       const interrupt = (reason:string) => { if(cancelled||interrupted)return;interrupted=true;interruptionReason=reason;send({type:"interrupt",reason}); };
       this.running.set(id, { child, cancel, interrupt });
       const timeout = setTimeout(() => { timedOut = true; cancel(); }, timeoutMs);
@@ -70,8 +70,8 @@ export class ExecutionManager {
           if (saved.runId === id && (saved.code === null || Number.isInteger(saved.code))) completion = saved;
         } catch {}
         const providerExitCode = completion?.code ?? code;
-        interruptionReason=completion?.reason??interruptionReason;
-        const status = timedOut ? "timed_out" : interrupted||completion?.status==="interrupted" ? "interrupted" : cancelled||completion?.status==="cancelled" ? "cancelled" : code === 0 && !spawnError && completion?.status === "succeeded" ? "succeeded" : "failed";
+        interruptionReason=!timedOut&&cancelled?"user-cancel":completion?.reason??interruptionReason;
+        const status = timedOut ? "timed_out" : cancelled||completion?.status==="cancelled" ? "cancelled" : interrupted||completion?.status==="interrupted" ? "interrupted" : code === 0 && !spawnError && completion?.status === "succeeded" ? "succeeded" : "failed";
         const stdoutFile=path.join(logDir,"stdout.log"),stderrFile=path.join(logDir,"stderr.log");
         const stdout=readOutput(stdoutFile,10_000_000),stderr=readOutput(stderrFile,512*1024,true);
         const usage=extractTokenUsage(selection?.provider,stdout.text,stderr.text);
