@@ -115,3 +115,9 @@ test("factory-authored comments cannot start an untracked issue",async()=>{
  try {await orchestrator.tick();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,0);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type LIKE 'start.%' OR type='command.rejected'").get() as {count:number}).count,0);}
  finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
 });
+
+test("comment discovery caches issue identity within one tick",()=>{
+ const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");const store=new Store(":memory:"),github=new GitHub(),base={user:{login:"owner",type:"User"},issueUrl:"https://api.github.com/repos/owner/demo/issues/1",issue_url:"https://api.github.com/repos/owner/demo/issues/1"};github.repositoryCommentRows=[{...base,id:60,body:"ordinary context",updatedAt:"2026-09-20T00:01:00Z",createdAt:"2026-09-20T00:01:00Z",created_at:"2026-09-20T00:01:00Z",updated_at:"2026-09-20T00:01:00Z"},{...base,id:61,body:"/factory start",updatedAt:"2026-09-20T00:01:01Z",createdAt:"2026-09-20T00:01:01Z",created_at:"2026-09-20T00:01:01Z",updated_at:"2026-09-20T00:01:01Z"}] as RepositoryComment[];const orchestrator=new WorkflowOrchestrator(store,github,new WorkflowRunner(store,{},new Workspace(),github),{enabled:false,async notify(){}});
+ try {github.issueCalls=0;(orchestrator as any).discoverStartCommands();assert.equal(github.issueCalls,1);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,1);}
+ finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
+});
