@@ -213,7 +213,8 @@ test("command outcomes are persisted and visible in the status comment",()=>{
   assert.equal(projections.get(started.id).presentationRevision,before+1);
   assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `approve v1` by @owner — rejected: Approval is for v1; active specification is v2/);
   comments.push(comment(12,"/factory aprove v2"));inbox.poll(started.id);
-  assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `unparsed` by @owner — rejected: Unknown or malformed \/factory command/);
+  assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `unparsed` by @owner — rejected: Unknown or malformed \/factory command\. Post a new comment; edits to this one are not re-read\./);
+  assert.equal(JSON.parse((store.db.prepare("SELECT payload FROM events WHERE type='command.rejected' ORDER BY id DESC LIMIT 1").get() as {payload:string}).payload).error,"Unknown or malformed /factory command. Post a new comment; edits to this one are not re-read.");
   comments.push(comment(13,"/factory revoke"));inbox.poll(started.id);
   assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `unparsed` by @owner — rejected/);
   comments.push(comment(14,"/factory replace missing replacement"));inbox.poll(started.id);
