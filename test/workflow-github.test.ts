@@ -68,8 +68,8 @@ test("every public workflow status has readable state, labels and one authoritat
  const cases=[
   {stage:"DESIGN",status:"QUEUED",actor:"Architect",labels:["factory:design"],action:/next agent is queued/i},
   {stage:"DESIGN",status:"RUNNING",actor:"Architect",labels:["factory:design"],action:/current agent is running/i},
-  {stage:"BUILD",status:"PAUSED",actor:"None",labels:["factory:build","factory:paused"],action:/\/factory retry/},
-  {stage:"TEST",status:"CANCELLED",actor:"None",labels:["factory:test","factory:cancelled"],action:/\/factory retry/},
+  {stage:"BUILD",status:"PAUSED",actor:"Human",labels:["factory:build","factory:paused"],action:/\/factory retry/},
+  {stage:"TEST",status:"CANCELLED",actor:"Human",labels:["factory:test","factory:cancelled"],action:/\/factory retry/},
   {stage:"DELIVERY",status:"COMPLETED",actor:"None",labels:["factory:done"],action:/Delivery is complete/},
  ] as const;
  for(const entry of cases){

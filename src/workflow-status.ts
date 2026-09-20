@@ -38,15 +38,24 @@ function nextAction(store:Store,workItemId:string) {
  return box(`${projection.status==="RUNNING"?"The current agent is running":"The next agent is queued"}. No human action is required. You can pause or cancel the workflow.${command("/factory pause [reason]")}${command("/factory cancel [reason]")}`);
 }
 
+function requestLabel(request:ReturnType<WorkflowRecords["activeRequest"]>) {
+ if(!request||request.payload.kind!=="request")return "";
+ if(request.payload.type==="clarification")return "Waiting for your answer";
+ if(request.payload.type==="spec-approval")return `Waiting for approval of SPEC v${request.specVersion}`;
+ if(request.payload.type==="tactical-decision")return "Architect is deciding";
+ if(request.payload.type==="correction-limit")return "Waiting for your correction guidance";
+ return "Waiting for merge";
+}
+
 export function workflowStatusMarkdown(store:Store,workItemId:string) {
  const item=store.db.prepare("SELECT issue_number,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;context:string}|undefined;
  if(!item)throw new Error("Unknown work item");
  const context=JSON.parse(item.context||"{}") as {title?:string;pr?:string;observedComments?:Array<{id:number;updatedAt:string}>;lastCommand?:LastCommandOutcome};
  const projection=new WorkflowProjections(store).get(workItemId),records=new WorkflowRecords(store),request=records.activeRequest(workItemId),failure=new WorkflowFailures(store).active(workItemId);
  const spec=(store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;
- const actor=request?.payload.kind==="request"?(request.payload.owner==="human"?"Human":"Architect"):projection.status==="RUNNING"||projection.status==="QUEUED"?stageActors[projection.stage]:"None";
+ const actor=request?.payload.kind==="request"?(request.payload.owner==="human"?"Human":"Architect"):["FAILED","PAUSED","CANCELLED"].includes(projection.status)?"Human":projection.status==="RUNNING"||projection.status==="QUEUED"?stageActors[projection.stage]:"None";
  const rows=[["Stage",stages[projection.stage]],["Status",statuses[projection.status]],["Current actor",actor],["SPEC version",spec?`v${spec}`:"Not proposed"],["Attempt",String(projection.attempt)]];
- if(request?.payload.kind==="request")rows.push(["Open request",request.payload.type]);
+ if(request?.payload.kind==="request")rows.push(["Open request",requestLabel(request)]);
  if(failure)rows.push(["Failure",sanitizeFailureEvidence(failure.message,240)]);
  if(context.pr)rows.push(["Pull request",context.pr]);
  if(context.observedComments?.length)rows.push(["Approver comments since last command",`${context.observedComments.length} — use \`/factory note\` to make guidance actionable`]);
