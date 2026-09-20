@@ -11,7 +11,7 @@ import { deliverNotifications,type NotificationPort } from "./notifications.js";
 import {pruneExecutionArtifacts} from "./artifact-retention.js";
 
 type GitHub=GitHubPort&WorkflowGitHubPort;
-type ItemRow={id:string;issue_number:number;repo:string;stage:string;status:string;revision:number;archived_at:string|null;context:string};
+type ItemRow={id:string;issue_number:number;issue_id:number|null;issue_created_at:string|null;repo:string;stage:string;status:string;revision:number;archived_at:string|null;context:string};
 
 export class WorkflowOrchestrator {
  private intake:WorkflowIntake;private inbox:WorkflowInbox;private publisher:WorkflowGitHubPublisher;private projections:WorkflowProjections;private records:WorkflowRecords;
@@ -25,9 +25,11 @@ export class WorkflowOrchestrator {
   const last=this.store.metadata<number>("artifact-retention:last")??0;if(Date.now()-last>3_600_000){pruneExecutionArtifacts(this.store);this.store.setMetadata("artifact-retention:last",Date.now());}
  }
  startIssue(reference:string,requestedBy="Dashboard or CLI",origin?:{source:"comment";commentId:number;login:string;guidance?:string}){
-  const number=this.issueNumber(reference),existing=this.rows().find(item=>item.repo===config.repo&&item.issue_number===number);
+  const number=this.issueNumber(reference),issue=this.github.issue(number),candidate=this.rows().find(item=>item.repo===config.repo&&item.issue_number===number&&!item.archived_at);
+  if(candidate&&this.replaced(candidate,issue))this.reconcileIssue(candidate,issue);
+  const existing=this.rows().find(item=>item.repo===config.repo&&item.issue_number===number&&!item.archived_at&&item.issue_id===issue.id);
   if(existing)return {issue:number,id:existing.id,created:false,stage:existing.stage,status:existing.status};
-  const issue=this.github.issue(number),initialCursor=origin?.commentId??Math.max(0,...this.github.comments(number).map(comment=>comment.id)),started=this.intake.start(issue,{actor:origin?.login??requestedBy,commentId:origin?.commentId,initialCursor,guidance:origin?.guidance,source:origin?"github-comment":"control"});
+  const initialCursor=origin?.commentId??Math.max(0,...this.github.comments(number).map(comment=>comment.id)),started=this.intake.start(issue,{actor:origin?.login??requestedBy,commentId:origin?.commentId,initialCursor,guidance:origin?.guidance,source:origin?"github-comment":"control"});
   return {issue:number,...started,stage:"DESIGN",status:"QUEUED"};
  }
  refreshIssueList(){
@@ -55,13 +57,15 @@ export class WorkflowOrchestrator {
  private startComment(comment:RepositoryComment){let command;try{command=parseFactoryCommand(comment.body);}catch(error){this.store.event("command.rejected",{commentId:comment.id,login:comment.user.login,error:String(error)});return;}if(command?.kind!=="start")return;const issue=Number(comment.issue_url.split("/").at(-1));if(comment.created_at!==comment.updated_at||comment.user.type!=="User"||!config.approvers.includes(comment.user.login)||!Number.isSafeInteger(issue)){this.store.event("start.command_rejected",{commentId:comment.id,issueNumber:issue,login:comment.user.login,reason:"Only a new standalone comment from an authorized human can start work"});return;}try{this.startIssue(String(issue),comment.user.login,{source:"comment",commentId:comment.id,login:comment.user.login,guidance:command.guidance});}catch(error){this.store.event("start.command_rejected",{commentId:comment.id,issueNumber:issue,login:comment.user.login,reason:String(error)});}}
  private reconcileIssueVisibility(){for(const item of this.rows())try{this.reconcileIssue(item,this.github.issue(item.issue_number));}catch(error){this.store.event("github.issue_state_failed",{issue:item.issue_number,error:String(error)},item.id);}}
  private reconcileIssue(item:ItemRow,remote:Issue){
+  if(this.replaced(item,remote)){const current=this.projections.get(item.id);this.store.db.transaction(()=>{if(!["PAUSED","COMPLETED","CANCELLED"].includes(current.status))this.projections.transition({workItemId:item.id,expectedRevision:current.revision,stage:current.stage,status:"PAUSED",actor:{type:"github",id:"issue"},source:{},reason:{code:"issue-replaced",summary:"GitHub issue was deleted and recreated"}});this.store.db.prepare("UPDATE work_items SET archived_at=? WHERE id=?").run(new Date().toISOString(),item.id);this.store.db.prepare("UPDATE notifications SET sent=1,last_error=? WHERE work_item_id=? AND sent=0").run("Suppressed because the GitHub issue was replaced",item.id);this.store.event("github.issue_replaced",{issue:item.issue_number,previousIssueId:item.issue_id,currentIssueId:remote.id},item.id);}).immediate();return;}
   if(remote.state==="CLOSED"&&!item.archived_at){const current=this.projections.get(item.id);this.store.db.transaction(()=>{if(!["PAUSED","COMPLETED","CANCELLED"].includes(current.status))this.projections.transition({workItemId:item.id,expectedRevision:current.revision,stage:current.stage,status:"PAUSED",actor:{type:"github",id:"issue"},source:{},reason:{code:"issue-closed",summary:"GitHub issue closed manually"}});this.store.db.prepare("UPDATE work_items SET archived_at=? WHERE id=?").run(new Date().toISOString(),item.id);this.store.db.prepare("UPDATE notifications SET sent=1,last_error=? WHERE work_item_id=? AND sent=0").run("Suppressed because the GitHub issue is closed",item.id);this.store.event("github.issue_closed",{issue:item.issue_number,visibility:"archived"},item.id);}).immediate();return;}
   if(remote.state==="OPEN"&&item.archived_at){const current=this.projections.get(item.id),comments=this.github.comments(item.issue_number),cursor=Math.max(this.cursor(item),...comments.map(comment=>comment.id),0);this.store.db.transaction(()=>{this.updateContext(item.id,{cursor});this.store.db.prepare("UPDATE work_items SET archived_at=NULL WHERE id=?").run(item.id);this.projections.present({workItemId:item.id,expectedRevision:current.revision,actor:{type:"github",id:"issue"},source:{},reason:{code:"issue-reopened",summary:"GitHub issue reopened; explicit retry required"}});this.store.event("github.issue_reopened",{issue:item.issue_number,status:"PAUSED"},item.id);}).immediate();}
  }
+ private replaced(item:ItemRow,remote:Issue){return item.issue_id!==null?item.issue_id!==remote.id:Boolean(item.issue_created_at&&Date.parse(remote.createdAt)>Date.parse(item.issue_created_at));}
  private updateIssueContext(id:string,issue:Issue){this.updateContext(id,{title:issue.title,body:issue.body,url:issue.url});}
  private updateContext(id:string,values:Record<string,unknown>){const item=this.row(id),context=JSON.parse(item.context||"{}");this.store.db.prepare("UPDATE work_items SET context=?,updated_at=? WHERE id=?").run(JSON.stringify({...context,...values}),new Date().toISOString(),id);}
  private cursor(item:ItemRow){return (JSON.parse(item.context||"{}") as {cursor?:number}).cursor??0;}
- private rows(){return this.store.db.prepare("SELECT id,issue_number,repo,stage,status,revision,archived_at,context FROM work_items ORDER BY created_at").all() as ItemRow[];}
- private row(id:string){const row=this.store.db.prepare("SELECT id,issue_number,repo,stage,status,revision,archived_at,context FROM work_items WHERE id=?").get(id) as ItemRow|undefined;if(!row)throw new Error("Unknown work item");return row;}
+ private rows(){return this.store.db.prepare("SELECT id,issue_number,issue_id,issue_created_at,repo,stage,status,revision,archived_at,context FROM work_items ORDER BY created_at").all() as ItemRow[];}
+ private row(id:string){const row=this.store.db.prepare("SELECT id,issue_number,issue_id,issue_created_at,repo,stage,status,revision,archived_at,context FROM work_items WHERE id=?").get(id) as ItemRow|undefined;if(!row)throw new Error("Unknown work item");return row;}
  private issueNumber(reference:string){const value=reference.trim(),direct=value.match(/^#?(\d+)$/)?.[1];if(direct)return Number(direct);const escaped=config.repo.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),url=value.match(new RegExp(`^https://github\\.com/${escaped}/issues/(\\d+)/?`));if(url)return Number(url[1]);throw new Error(`Use an issue number or a URL from ${config.repo}`);}
 }
