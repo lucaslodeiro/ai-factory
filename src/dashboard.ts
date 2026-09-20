@@ -417,7 +417,7 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
   if (plan.restartServices.includes("daemon") && daemonActive && !daemon.loaded) throw new Error("The daemon is running outside the service manager. Stop it, then save again.");
   if(restartDaemon)requireMaintenance(store,maintenanceId,["configuration-apply"]);
   const environmentFile=path.join(root,".env"),originalEnvironment=fs.existsSync(environmentFile) ? fs.readFileSync(environmentFile,"utf8") : null;
-  let daemonStopped = false,saved = false,initialDaemonStartAttempted=false,initialDaemonStarted=false;
+  let daemonStopped = false,saved = false,initialDaemonStartAttempted=false,initialDaemonStarted=false,initialDaemonStartError:string|undefined;
   try {
     if(maintenanceId)maintenanceCoordinator(store).markStarted(maintenanceId);
     if (restartDaemon) {
@@ -435,14 +435,18 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
     const ready=dashboardSettings(root).readiness.ready;
     if(startDaemonWhenReady&&!daemonActive&&ready){
       initialDaemonStartAttempted=true;
-      runService(root,"daemon","start");
-      if(!waitForDaemonStarted(root)){
-        const error=tailLog(path.join(root,".factory","service-logs","daemon.error.log"),25).content;
-        throw new Error(`The daemon did not become ready after initial setup.${error ? ` Last error: ${error.split(/\r?\n/).at(-1)}` : ""}`);
+      try {
+        runService(root,"daemon","start");
+        if(!waitForDaemonStarted(root))throw new Error("The daemon did not become ready after initial setup");
+        initialDaemonStarted=true;
+      } catch(error) {
+        const currentError=error instanceof Error?error.message:String(error),logged=tailLog(path.join(root,".factory","service-logs","daemon.error.log"),25).content.split(/\r?\n/).filter(Boolean).at(-1),message=currentError==="The daemon did not become ready after initial setup"&&logged?logged:currentError;
+        initialDaemonStartError=message.replace(/[.\s]+$/g,"")||"Unknown daemon start failure";
+        try{if(serviceStatus(root,"daemon").loaded)runService(root,"daemon","stop");}catch(stopError){initialDaemonStartError+=`; failed to stop the daemon service: ${stopError instanceof Error?stopError.message:String(stopError)}`;}
+        if(maintenanceId){store.db.prepare("UPDATE maintenance_operations SET status='failed',finished_at=?,error=? WHERE id=?").run(new Date().toISOString(),initialDaemonStartError,maintenanceId);store.event("maintenance.failed",{maintenanceId,operation:"configuration-apply",error:initialDaemonStartError});}
       }
-      initialDaemonStarted=true;
     }
-    if(maintenanceId)maintenanceCoordinator(store).complete(maintenanceId);
+    if(maintenanceId&&!initialDaemonStartError)maintenanceCoordinator(store).complete(maintenanceId);
   } catch (error) {
     if(maintenanceId){store.db.prepare("UPDATE maintenance_operations SET status='failed',finished_at=?,error=? WHERE id=?").run(new Date().toISOString(),String(error),maintenanceId);store.event("maintenance.failed",{maintenanceId,operation:"configuration-apply",error:String(error)});}
     let recovery="";
@@ -460,10 +464,12 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
   if (restartDashboard) { runService(root,"dashboard","restart"); restartedServices.push("dashboard"); }
   const message = initialDaemonStarted
     ? "Configuration saved. Daemon started and verified."
+    : initialDaemonStartError
+    ? `Configuration saved. The daemon did not start: ${initialDaemonStartError}. Fix the cause and start it from the Services panel.`
     : restartedServices.length
     ? `Configuration saved. ${restartDaemon ? "Daemon restarted and verified." : ""}${restartDashboard ? `${restartDaemon ? " " : ""}Dashboard restart scheduled.` : ""}`
     : plan.changedKeys.length ? "Configuration saved. Stopped services were left stopped." : "Configuration is already up to date.";
-  return {...dashboardSettings(root),daemonRunning:daemonState(store).running,restartedServices,startedServices:initialDaemonStarted?["daemon"]:[],dashboardRestarting:restartDashboard,message};
+  return {...dashboardSettings(root),daemonRunning:daemonState(store).running,restartedServices,startedServices:initialDaemonStarted?["daemon"]:[],dashboardRestarting:restartDashboard,message,...(initialDaemonStartError?{daemonStartError:initialDaemonStartError}:{})};
 }
 
 export function createDashboardServer(store: Store, settingsRoot = process.cwd()) {

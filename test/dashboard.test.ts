@@ -322,6 +322,18 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(response.status,202);
     assert.deepEqual(store.db.prepare("SELECT kind,target FROM controls WHERE kind='retry'").get(),{kind:"retry",target:"owner-demo-7"});
     fs.rmSync(path.join(settingsRoot,"daemon-service-state"),{force:true});
+    fs.writeFileSync(path.join(settingsRoot,"fail-next-daemon-start"),"");
+    const failedFirstSetupSave = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({
+      startDaemonWhenReady:true,
+      values:{GITHUB_REPOSITORY:"owner/demo",FACTORY_REPO_DIR:settingsRoot,FACTORY_APPROVERS:"demo-user",GIT_COMMAND:fakeGit,FACTORY_POLL_INTERVAL_MS:"8000"},
+    })});
+    assert.equal(failedFirstSetupSave.status,200);
+    const failedFirstSetupResult=await failedFirstSetupSave.json() as any;
+    assert.match(failedFirstSetupResult.daemonStartError,/simulated daemon start failure/);
+    assert.deepEqual(failedFirstSetupResult.startedServices,[]);
+    assert.match(failedFirstSetupResult.message,/Configuration saved\. The daemon did not start: simulated daemon start failure\. Fix the cause and start it from the Services panel\./);
+    assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^FACTORY_POLL_INTERVAL_MS='8000'$/m);
+    assert.equal(fs.existsSync(path.join(settingsRoot,"daemon-service-state")),false);
     const firstSetupSave = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({
       startDaemonWhenReady:true,
       values:{GITHUB_REPOSITORY:"owner/demo",FACTORY_REPO_DIR:settingsRoot,FACTORY_APPROVERS:"demo-user",GIT_COMMAND:fakeGit},
