@@ -42,12 +42,18 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .panel-title { display:flex; align-items:end; justify-content:space-between; gap:1rem; margin-bottom:1rem }
 .panel-description { margin-top:.35rem; color:var(--muted); font-size:.75rem; line-height:1.4 }
 .live-meta { display:flex; align-items:center; gap:.75rem }
-.issue-toolbar { display:flex; align-items:end; justify-content:space-between; gap:1rem; margin-bottom:1rem; padding:1rem; background:color-mix(in srgb,var(--surface) 60%,transparent); border:1px solid var(--line); border-radius:12px }
-.issue-toolbar form { display:grid; grid-template-columns:minmax(12rem,28rem) auto; gap:.45rem; align-items:end }
-.issue-toolbar label { grid-column:1/-1; color:var(--muted); font-size:.68rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase }
-.issue-toolbar .form-help { grid-column:1/-1; color:var(--muted); font-size:.76rem; line-height:1.4 }
-.issue-toolbar input { min-height:2.45rem; padding:.55rem .75rem; color:var(--text); background:var(--input); border:1px solid var(--input-line); border-radius:8px; font:600 .78rem Inter,ui-sans-serif,system-ui,sans-serif }
-.issue-toolbar input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent) }
+.issue-toolbar{display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem}
+.add-issue-dialog{width:min(30rem,92vw);padding:1.5rem;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--text)}
+.add-issue-dialog::backdrop{background:#0008}
+.add-issue-dialog>p{margin:.5rem 0 1rem;font-size:.8rem;line-height:1.5}
+.add-issue-dialog form{display:grid;gap:.65rem}
+.add-issue-dialog label{font-size:.8rem;font-weight:600}
+.add-issue-dialog input{width:100%;min-width:0;padding:.7rem .8rem;color:var(--text);background:var(--input);border:1px solid var(--input-line);border-radius:8px;font:inherit}
+.add-issue-dialog input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.add-issue-dialog .actions{justify-content:flex-end}
+#add-issue-error{color:var(--danger);font-size:.8rem;overflow-wrap:anywhere}
+#add-issue-error:empty{display:none}
+
 .live-badge { display:inline-flex; align-items:center; gap:.4rem; color:var(--warn); font:700 .68rem ui-monospace,SFMono-Regular,monospace; text-transform:uppercase }
 .live-badge::before { content:""; width:.45rem; height:.45rem; border-radius:50%; background:currentColor }
 .live-badge.connected { color:var(--accent) }
@@ -251,7 +257,7 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
   .credentials-intro,.credential-card,.slack-status { align-items:flex-start; flex-direction:column }
   .setup-guide { grid-template-columns:1fr; align-items:start }
   .slack-status dl { width:100% }
-  .issue-toolbar { align-items:stretch; flex-direction:column }
+
   .usage-head { grid-template-columns:1fr auto; align-items:start }
   .usage-head dl { grid-column:1/-1; grid-row:2; width:100% }
   .usage-toggle { grid-column:2; grid-row:1 }
@@ -279,7 +285,7 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
   .service-card { align-items:flex-start; flex-direction:column }
   .update-controls { align-items:flex-start; flex-direction:column }
   .log-toolbar,.log-meta { align-items:flex-start; flex-direction:column }
-  .issue-toolbar form { grid-template-columns:minmax(0,1fr) auto }
+
 }
 @media(prefers-reduced-motion:reduce) { .live-badge.connected::before { animation:none } }
 
