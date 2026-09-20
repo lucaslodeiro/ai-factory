@@ -12,8 +12,8 @@ import type { Comment,Issue,PullRequestState,RepositoryComment } from "../src/ad
 
 class Workspace implements WorkspacePort {ensure(){return "/tmp/v3-work";}assertBranch(){}head(){return "head";}diff(){return "";}check(){}commit(){}publish(){}changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/v3-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){}}
 class GitHub {
- commentsByIssue=new Map<number,Comment[]>();statusBodies:string[]=[];resultBodies:string[]=[];labels:string[][]=[];lastPrBody="";state:"OPEN"|"CLOSED"="OPEN";issueId=100;pr:PullRequestState={state:"OPEN",mergedAt:null,mergeCommit:null};
- issue(n:number):Issue{return {id:this.issueId,nodeId:`I_${this.issueId}`,number:n,title:"Ship V3",body:"Complete the workflow",url:`https://github.com/owner/demo/issues/${n}`,state:this.state,createdAt:"2026-09-20T00:00:00Z",updatedAt:"2026-09-20T00:00:00Z",author:{login:"owner",type:"User"}};}
+ commentsByIssue=new Map<number,Comment[]>();statusBodies:string[]=[];resultBodies:string[]=[];labels:string[][]=[];lastPrBody="";state:"OPEN"|"CLOSED"="OPEN";issueId=100;title="Ship V3";body="Complete the workflow";pr:PullRequestState={state:"OPEN",mergedAt:null,mergeCommit:null};
+ issue(n:number):Issue{return {id:this.issueId,nodeId:`I_${this.issueId}`,number:n,title:this.title,body:this.body,url:`https://github.com/owner/demo/issues/${n}`,state:this.state,createdAt:"2026-09-20T00:00:00Z",updatedAt:"2026-09-20T00:00:00Z",author:{login:"owner",type:"User"}};}
  comments(n:number){return this.commentsByIssue.get(n)??[];}repositoryComments(_since:string):RepositoryComment[]{return [];}
  listManaged(){return [];}commentOnce(){}syncState(){}ensurePR(_branch:string,_title:string,body:string){this.lastPrBody=body;return "https://github.com/owner/demo/pull/1";}pullRequestState(){return this.pr;}
  repository(){return{id:1,nodeId:"R_1",fullName:"owner/demo",defaultBranch:"main"};}
@@ -72,4 +72,14 @@ test("a replaced GitHub issue archives stale work without publishing and can sta
   const replacement=orchestrator.startIssue("1");assert.equal(replacement.created,true);assert.notEqual(replacement.id,old.id);
   assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE issue_number=1").get() as {count:number}).count,2);
  } finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
+});
+
+test("visibility reconciliation refreshes issue content and presents only title changes",()=>{
+ const previousRepo=config.repo;config.repo="owner/demo";const store=new Store(":memory:"),github=new GitHub(),orchestrator=new WorkflowOrchestrator(store,github,new WorkflowRunner(store,{},new Workspace(),github),{enabled:false,async notify(){}});
+ try {
+  const started=orchestrator.startIssue("1"),before=new WorkflowProjections(store).get(started.id).presentationRevision;
+  github.body="Updated body";orchestrator.refreshIssueList();let context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(started.id) as {context:string}).context);assert.equal(context.body,"Updated body");assert.equal(new WorkflowProjections(store).get(started.id).presentationRevision,before);
+  github.title="Updated title";orchestrator.refreshIssueList();context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(started.id) as {context:string}).context);assert.equal(context.title,"Updated title");assert.equal(new WorkflowProjections(store).get(started.id).presentationRevision,before+1);
+  const writes=(store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='workflow.presentation'").get() as {count:number}).count;orchestrator.refreshIssueList();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='workflow.presentation'").get() as {count:number}).count,writes);
+ } finally {store.db.close();config.repo=previousRepo;}
 });
