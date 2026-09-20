@@ -23,6 +23,8 @@ import { WorkflowMaintenance } from "./workflow-maintenance.js";
 import { WorkflowScheduler } from "./workflow-scheduler.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {ControllerLease,CONTROLLER_HEARTBEAT_MS,type LeaseObservation} from "./controller-lease.js";
+import type {ControllerFence} from "./controller-fence.js";
+import {WorkflowProjections} from "./workflow-projection.js";
 export function acquireLock(store: Store) {
  fs.mkdirSync(config.dataDir, { recursive: true });
  const file = path.join(config.dataDir, "daemon.lock"), token = randomUUID();
@@ -57,6 +59,9 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
   if (!doctor(store,github)) throw new Error("Preflight failed; fix doctor checks before starting");
  } catch(error) {throw new StartupError(error instanceof Error?error.message:String(error));}
  const controller=options.controller??new ControllerLease(repository,store),initialController=controller.acquire();
+ let controllerState:LeaseObservation=initialController,controllerMode:"active"|"standby"|"uncertain"|"fenced"=initialController.state==="active"?"active":"standby",lastControllerSuccess=performance.now();
+ const generation=initialController.state==="absent"?0:initialController.record.generation;
+ const fence:ControllerFence={assertController(){if(controllerMode!=="active")throw new Error(`Repository controller is ${controllerMode}`);controllerState=controller.assertController(generation);},resultDisposition(){return controllerMode==="uncertain"?"hold":controllerMode==="fenced"||controllerMode==="standby"?"discard":"apply";}};
  daemonLog("info","daemon.starting",{repo:config.repo,pollMs:config.pollMs,dataDir:config.dataDir});
  const release = acquireLock(store), executions = new ExecutionManager(store);
  const codex = new CodexAdapter(executions), claude = new ClaudeAdapter(executions);
@@ -67,8 +72,8 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
   qa:adapters[config.roles.qa.provider],
   reviewer:adapters[config.roles.reviewer.provider],
  };
- const runner=new WorkflowRunner(store,agents,new Workspaces(),github),o=new WorkflowOrchestrator(store,github,runner,new SlackAdapter(),executions);
- const commands=new WorkflowCommands(store),maintenance=new WorkflowMaintenance(store,executions);
+ const runner=new WorkflowRunner(store,agents,new Workspaces(),github,fence),o=new WorkflowOrchestrator(store,github,runner,new SlackAdapter(),executions,fence);
+ const commands=new WorkflowCommands(store,fence),maintenance=new WorkflowMaintenance(store,executions);
  const recoveredSignalMaintenance=maintenance.reconcileSignalsAfterRestart();
  let stopping = false,stopRequested=false,stopReason="unknown",stopPromise:Promise<unknown>|undefined;
  const stop = async (reason="control") => {
@@ -129,19 +134,20 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
  };
  const sigint=()=>void stop("SIGINT").catch(()=>{}),sigterm=()=>void stop("SIGTERM").catch(()=>{});
  process.on("SIGINT",sigint); process.on("SIGTERM",sigterm);
- let timer: NodeJS.Timeout | undefined,controllerState:LeaseObservation=initialController,lastControllerCheck=Date.now();
+ let timer: NodeJS.Timeout | undefined,controllerTimer:NodeJS.Timeout|undefined;
  try {
   const recovered=controllerState.state==="active"?recoverAbandonedExecutions(store):0;
-  audit(); await controls(); timer = setInterval(()=>void controls(), 200);
+  const loseController=()=>{if(controllerMode==="standby"||controllerMode==="fenced")return;controllerMode="fenced";controller.markLocalState("fenced","Ownership changed");runner.discardHeld();for(const row of store.db.prepare("SELECT id,active_run_id FROM work_items WHERE archived_at IS NULL AND status='RUNNING'").all() as Array<{id:string;active_run_id:string}>){executions.interrupt(row.active_run_id,"controller-lost");const projections=new WorkflowProjections(store),current=projections.get(row.id);projections.transition({workItemId:row.id,expectedRevision:current.revision,stage:current.stage,status:"PAUSED",actor:{type:"orchestrator",id:"controller"},source:{executionId:row.active_run_id},reason:{code:"controller-lost",summary:"Repository control moved to another installation"}});}store.event("controller.lost",{generation});controllerMode="standby";controller.markLocalState("standby");};
+  const renewController=()=>{try{if(controllerMode==="active"||controllerMode==="uncertain"){const verified=controller.assertController(generation);controllerState=controller.renew(verified);lastControllerSuccess=performance.now();if(controllerMode==="uncertain"){controllerMode="active";runner.applyHeld();store.event("controller.ownership_restored",{generation});}}else controllerState=controller.readLease();}catch{try{const observed=controller.readLease();if(observed.state!=="absent"&&(observed.record.instanceId!==controller.instance.instanceId||observed.record.generation!==generation)){loseController();return;}}catch{}if(performance.now()-lastControllerSuccess>=600_000&&controllerMode==="active"){controllerMode="uncertain";controller.markLocalState("uncertain","Renewal could not be verified");store.event("controller.ownership_uncertain",{generation});}}};
+  audit(); await controls(); timer = setInterval(()=>void controls(), 200);controllerTimer=setInterval(renewController,CONTROLLER_HEARTBEAT_MS);
   daemonLog("info","daemon.ready",{items:(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL").get() as {count:number}).count,recoveredExecutions:recovered,recoveredSignalMaintenance,controller:controllerState.state});
   while (!stopping) {
-   if(Date.now()-lastControllerCheck>=CONTROLLER_HEARTBEAT_MS){try{controllerState=controllerState.state==="active"?controller.renew(controllerState):controller.readLease();}catch(e){daemonLog("warn","controller_check_failed",{error:String(e)});}lastControllerCheck=Date.now();}
-   try {if(await runControllerCycle(controllerState,o))audit();} catch (e) { daemonLog("error","daemon.tick_failed",{error:String(e)}); }
+   try {if(controllerMode==="active"&&await runControllerCycle(controllerState,o))audit();} catch (e) { daemonLog("error","daemon.tick_failed",{error:String(e)}); }
    const until = Date.now() + config.pollMs;
    while (!stopping && Date.now() < until) await new Promise(r => setTimeout(r, 100));
   }
  } finally {
-  if (timer) clearInterval(timer); process.off("SIGINT",sigint); process.off("SIGTERM",sigterm);if(stopPromise)await stopPromise;
+  if (timer) clearInterval(timer);if(controllerTimer)clearInterval(controllerTimer); process.off("SIGINT",sigint); process.off("SIGTERM",sigterm);if(stopPromise)await stopPromise;
   if(controllerState.state==="active")try { await o.flush(); audit(); } catch (e) { daemonLog("error","daemon.final_sync_failed",{error:String(e)}); }
   release();
   daemonLog("info","daemon.stopped",{reason:stopReason});

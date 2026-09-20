@@ -10,19 +10,20 @@ import { WorkflowRecords } from "./workflow-records.js";
 import { deliverNotifications,type NotificationPort } from "./notifications.js";
 import {pruneExecutionArtifacts} from "./artifact-retention.js";
 import {createHash} from "node:crypto";
+import type {ControllerFence} from "./controller-fence.js";
 
 type GitHub=GitHubPort&WorkflowGitHubPort;
 type ItemRow={id:string;issue_number:number;issue_id:number|null;issue_created_at:string|null;repo:string;stage:string;status:string;revision:number;archived_at:string|null;context:string};
 
 export class WorkflowOrchestrator {
  private intake:WorkflowIntake;private inbox:WorkflowInbox;private publisher:WorkflowGitHubPublisher;private projections:WorkflowProjections;private records:WorkflowRecords;
- constructor(readonly store:Store,private github:GitHub,private runner:WorkflowRunner,private notifications:NotificationPort,executions?:ExecutionControl){this.intake=new WorkflowIntake(store);this.inbox=new WorkflowInbox(store,github,config.approvers,executions);this.publisher=new WorkflowGitHubPublisher(store,github);this.projections=new WorkflowProjections(store);this.records=new WorkflowRecords(store);}
+ constructor(readonly store:Store,private github:GitHub,private runner:WorkflowRunner,private notifications:NotificationPort,executions?:ExecutionControl,private fence?:ControllerFence){this.intake=new WorkflowIntake(store);this.inbox=new WorkflowInbox(store,github,config.approvers,executions,fence);this.publisher=new WorkflowGitHubPublisher(store,github);this.projections=new WorkflowProjections(store);this.records=new WorkflowRecords(store);}
  async tick(){
   this.discoverStartIssues();this.discoverStartCommands();this.reconcileIssueVisibility();this.reconcilePullRequests();
   for(const item of this.rows())if(!item.archived_at)this.inbox.poll(item.id);
   await this.flush();
-  for(const item of this.rows())if(!item.archived_at&&item.status==="QUEUED")await this.runner.run(item.id);
-  for(const item of this.rows())if(!item.archived_at&&item.stage==="DELIVERY"&&item.status==="QUEUED")await this.runner.run(item.id);
+  for(const item of this.rows())if(!item.archived_at&&item.status==="QUEUED"){this.fence?.assertController();await this.runner.run(item.id);}
+  for(const item of this.rows())if(!item.archived_at&&item.stage==="DELIVERY"&&item.status==="QUEUED"){this.fence?.assertController();await this.runner.run(item.id);}
   await this.flush();
   const last=this.store.metadata<number>("artifact-retention:last")??0;if(Date.now()-last>3_600_000){pruneExecutionArtifacts(this.store);this.store.setMetadata("artifact-retention:last",Date.now());}
  }
@@ -48,6 +49,7 @@ export class WorkflowOrchestrator {
   }
  }
  async flush(){
+  this.fence?.assertController();
   try{this.publisher.publishHelp();this.publisher.publishResults();this.publisher.publishChanged();}catch(error){this.store.event("github.projection_failed",{error:String(error)});}
   await deliverNotifications(this.store,this.notifications);
  }

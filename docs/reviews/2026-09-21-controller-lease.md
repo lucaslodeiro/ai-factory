@@ -32,3 +32,12 @@ recovery and orchestration. A standby daemon remains healthy but does not run an
 orchestrator cycle. The dashboard reads repository issues directly from GitHub
 and labels them as tracked or untracked locally; this is visibility, not state
 synchronization.
+
+## P4 — Fencing, uncertainty and held results
+
+**Decision: agree, with an in-memory held-result buffer.** A held result exists
+only while the daemon remains alive during a temporary verification outage. The
+event log stores only its execution id and role, never the result body. Commands,
+execution starts and publication each verify the acquired generation. A changed
+owner interrupts active executions with `controller-lost`, pauses their work
+items and discards held results.

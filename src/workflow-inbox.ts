@@ -7,6 +7,7 @@ import { WorkflowProjections } from "./workflow-projection.js";
 import {workflowNotificationText} from "./notifications.js";
 import { ExecutionNotStoppedError } from "./execution-manager.js";
 import { WorkflowRecords } from "./workflow-records.js";
+import type {ControllerFence} from "./controller-fence.js";
 const RETRY_DEFERRAL_MS=30*60*1000;
 
 export interface LastCommandOutcome {commentId:number;login:string;kind:string;outcome:"applied"|"rejected"|"stale"|"deferred"|"expired"|"unrecognized";reason?:string;at:string;}
@@ -40,7 +41,7 @@ export class WorkflowIntake {
 
 export class WorkflowInbox {
  private commands:WorkflowCommands;private projections:WorkflowProjections;
- constructor(private store:Store,private github:CommentPort,private approvers:string[],private executions?:ExecutionControl){this.commands=new WorkflowCommands(store);this.projections=new WorkflowProjections(store);}
+ constructor(private store:Store,private github:CommentPort,private approvers:string[],private executions?:ExecutionControl,fence?:ControllerFence){this.commands=new WorkflowCommands(store,fence);this.projections=new WorkflowProjections(store);}
  poll(workItemId:string) {
   const item=this.row(workItemId),fetched=this.github.comments(item.issue_number).slice().sort((a,b)=>a.id-b.id),observedById=new Map(item.context.observedComments.map(comment=>[comment.id,comment.updatedAt])),changed=fetched.filter(comment=>observedById.has(comment.id)&&observedById.get(comment.id)!==comment.updatedAt),fresh=fetched.filter(comment=>comment.id>item.cursor),comments=[...changed,...fresh.filter(comment=>!changed.some(candidate=>candidate.id===comment.id))],rechecks=new Set(changed.map(comment=>comment.id));
   let applied=0,rejected=0,observed=0,deferredRetry:{commentId:number;login:string}|undefined,blockedAfterRetry=0;

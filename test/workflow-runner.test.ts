@@ -33,6 +33,14 @@ test("runner assembles bounded context and drives Architect then Builder through
  } finally {store.db.close();}
 });
 
+test("uncertain controller holds a completed result and applies it after ownership recovery",async()=>{
+ const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace=new Workspace();let disposition:"hold"|"apply"="hold";
+ try{const runner=new WorkflowRunner(store,{"product-architect":{async run(request){store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return result("spec");}}},workspace,{ensurePR(){return "unused";}},{assertController(){},resultDisposition(){return disposition;}});
+  await runner.run(started.id);assert.equal(new WorkflowProjections(store).get(started.id).status,"RUNNING");assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='agent.result.held'").get() as any).count,1);
+  disposition="apply";runner.applyHeld();assert.equal(new WorkflowProjections(store).get(started.id).status,"WAITING");assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='agent.result.held_applied'").get() as any).count,1);
+ }finally{store.db.close();}
+});
+
 test("protected context overflow fails before invoking a provider",async()=>{
  const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace=new Workspace();
  let invoked=false;const previous=config.contextBudget.defaultBytes;config.contextBudget.defaultBytes=10;
