@@ -40,37 +40,58 @@ export function failureLogTail(file: string, maxLines = 30) {
   } catch { return ""; }
 }
 
-export function failureDiagnosis(reason: string, stderr: string, run?: {status:string;exit_code:number|null}) {
+export function failureDiagnosis(reason: string, stderr: string, run?: {status:string;exit_code:number|null},failureClass?:WorkflowFailure["class"]) {
   const evidence=`${reason}\n${stderr}`;
-  if (/^\[invalid-context\]/i.test(reason)) return [
+  const kind=failureClass??reason.match(/^\[([^\]]+)\]/)?.[1] as WorkflowFailure["class"]|undefined;
+  if (kind==="invalid-context") return [
     "**Summary:** The required specification, decisions, instructions and request chain do not fit within the configured context budget.",
     "**Evidence:** Context assembly stopped before invoking a provider rather than silently dropping protected information.",
     "**Recommended action:** Remove or replace obsolete guidance, or increase the matching context budget in Configuration → Runtime, then retry.",
   ].join("\n\n");
-  if (/^\[invalid-result\]/i.test(reason)) return [
+  if (kind==="invalid-result") return [
     "**Summary:** The agent returned output that did not satisfy the workflow contract for this role or stage.",
     "**Evidence:** The provider completed, but schema, acceptance-coverage or stage-transition validation rejected its result.",
     "**Recommended action:** Review the exact validation message and retry with clarifying guidance if the intended behavior is ambiguous.",
   ].join("\n\n");
-  if (/^\[recovery\]/i.test(reason)) return [
+  if (kind==="recovery") return [
     "**Summary:** The daemon stopped before it could record a safe completion for this execution.",
     "**Evidence:** Startup recovery found an execution that was still marked running and preserved its stage and worktree.",
     "**Recommended action:** Inspect the preserved changes and daemon logs, then retry the saved stage.",
   ].join("\n\n");
-  if (/(?:pull request create failed|Base ref must be a branch|Head sha can't be blank)/i.test(evidence)) return [
+  if (kind==="integration"&&/(?:pull request create failed|Base ref must be a branch|Head sha can't be blank)/i.test(evidence)) return [
     "**Summary:** Delivery could not create the pull request because the configured base branch is unavailable or invalid on GitHub.",
     `**Evidence:** ${reason.replace(/^Error:\s*/,"")}`,
     "**Recommended action:** Run Doctor, create and push the configured base branch or select the repository's real default branch, then retry. Delivery will reuse the successful review.",
   ].join("\n\n");
-  if (/No commits between/i.test(evidence)) return [
+  if (kind==="integration"&&/No commits between/i.test(evidence)) return [
     "**Summary:** Delivery could not create a pull request because GitHub found no commits between the configured base and factory branches.",
     `**Evidence:** ${reason.replace(/^Error:\s*/,"")}`,
     "**Recommended action:** Inspect the preserved factory branch and base history, correct the branch relationship, then retry Delivery.",
   ].join("\n\n");
-  if (/^\[(?:integration|configuration)\]/i.test(reason)) return [
+  if (kind==="integration"||kind==="configuration") return [
     "**Summary:** A required factory setting or external integration prevented the stage from running safely.",
     "**Evidence:** The orchestrator stopped at its configuration or integration boundary before advancing the workflow.",
     "**Recommended action:** Run Doctor, repair the named credential or setting, and retry after validation passes.",
+  ].join("\n\n");
+  if(kind==="execution"&&run?.status==="timed_out")return [
+    "**Summary:** The agent execution exceeded its configured time limit.",
+    "**Evidence:** The execution supervisor recorded the process as timed out before the stage completed.",
+    "**Recommended action:** Inspect the last command in the evidence below, correct a stalled dependency or increase the execution timeout when the work is expected to take longer, then retry.",
+  ].join("\n\n");
+  if(kind==="execution"&&run?.status==="cancelled")return [
+    "**Summary:** The agent execution was cancelled before the stage completed.",
+    "**Evidence:** The execution supervisor recorded a final cancelled status.",
+    "**Recommended action:** Confirm why cancellation was requested, then retry the preserved stage only when the work should continue.",
+  ].join("\n\n");
+  if(kind==="execution"&&run?.status==="interrupted")return [
+    "**Summary:** The agent execution was interrupted before the stage completed.",
+    "**Evidence:** The execution supervisor recorded a final interrupted status and preserved the workflow stage.",
+    "**Recommended action:** Confirm the daemon and host are stable, inspect the preserved worktree, then retry the stage.",
+  ].join("\n\n");
+  if(kind==="execution"&&run&&run.status!=="failed")return [
+    "**Summary:** The agent execution ended before the workflow stage completed.",
+    `**Evidence:** The execution supervisor recorded the final process status as ${run.status}.`,
+    "**Recommended action:** Inspect the evidence below and retry the preserved stage after correcting the recorded process failure.",
   ].join("\n\n");
   if (/Tactical resolution selected nextRole=/i.test(reason)) return [
     "**Summary:** Architect selected a return role that would skip an unfinished delivery gate.",
@@ -148,10 +169,11 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
 }
 
 export function workflowFailureEvidence(store:Store,failure:WorkflowFailure) {
-  const run=failure.executionId ? store.db.prepare("SELECT id,role,status,exit_code FROM executions WHERE id=? AND work_item_id=?").get(failure.executionId,failure.workItemId) as {id:string;role:AgentRole;status:string;exit_code:number|null}|undefined : undefined;
+  const storedRun=failure.executionId ? store.db.prepare("SELECT id,role,status,exit_code,finished_at FROM executions WHERE id=? AND work_item_id=?").get(failure.executionId,failure.workItemId) as {id:string;role:AgentRole;status:string;exit_code:number|null;finished_at:string|null}|undefined : undefined;
+  const run=storedRun?{...storedRun,status:storedRun.status==="running"&&storedRun.finished_at?"failed":storedRun.status}:undefined;
   const stderr=run && path.basename(run.id)===run.id ? failureLogTail(path.join(config.dataDir,"runs",run.id,"stderr.log"),25) : "";
   const reason=sanitizeFailureEvidence(failure.message,1600)||"The workflow stopped without an error message.";
-  const analysis=failureDiagnosis(`[${failure.class}] ${reason}`,stderr,run);
+  const analysis=failureDiagnosis(reason,stderr,run,failure.class);
   const facts=[`- **Failure class:** ${failure.class}`,`- **Stage:** ${failure.stage}`,`- **Attempt:** ${failure.attempt}`];
   if(run)facts.push(`- **Agent:** ${roleShortName(run.role)}`,`- **Execution:** \`${run.id}\``,`- **Process result:** ${run.status}${run.exit_code===null?"":` · exit ${run.exit_code}`}`);
   const output=stderr?`\n\n<details><summary>Last ${Math.min(25,stderr.split("\n").length)} stderr lines</summary>\n\n\`\`\`text\n${stderr}\n\`\`\`\n\n</details>`:`\n\n_No stderr output was available. Use **Daemon logs** in the dashboard for additional context._`;
