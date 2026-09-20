@@ -57,7 +57,7 @@ fi
   const provisionedValues = parse(fs.readFileSync(file));
   assert.equal(provisionedValues.GITHUB_REPOSITORY,'alice/ai-factory-demo');
   assert.equal(provisionedValues.FACTORY_APPROVERS,'alice');
-  assert.equal(provisionedValues.FACTORY_REPO_DIR,path.join(home,'Source','ai-factory-demo'));
+  assert.equal(provisionedValues.FACTORY_REPO_DIR,path.join(fs.realpathSync(root),'repos','ai-factory-demo'));
   assert.match(provisioned.stdout,/Required target settings now have usable defaults/);
   assert.equal(spawnSync('git',['-C',provisionedValues.FACTORY_REPO_DIR,'log','-1','--format=%s'],{encoding:'utf8'}).stdout.trim(),'chore: initialize demo');
   assert.doesNotMatch(fs.readFileSync(ghLog,'utf8'),/label create factory:queued/);

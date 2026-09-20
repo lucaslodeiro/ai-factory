@@ -402,7 +402,7 @@ function dashboardSettings(root: string) {
   const login = github?.connected ? github.account : undefined;
   const settings = readDashboardSettings(root,login ? {
     GITHUB_REPOSITORY:`${login}/ai-factory-demo`,
-    FACTORY_REPO_DIR:path.join(os.homedir(),"Source","ai-factory-demo"),
+    FACTORY_REPO_DIR:path.join(factoryHome(root),"repos","ai-factory-demo"),
     FACTORY_APPROVERS:login,
   } : {});
   return {...settings,readiness:setupReadiness(root,credentials)};

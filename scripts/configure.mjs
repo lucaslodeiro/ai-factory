@@ -180,7 +180,7 @@ export async function configure(root, useDefaults = false) {
       if (!values.FACTORY_APPROVERS) values.FACTORY_APPROVERS = login;
       if (!values.FACTORY_REPO_DIR) {
         const repositoryName = values.GITHUB_REPOSITORY.split('/').at(-1) || 'ai-factory-demo';
-        values.FACTORY_REPO_DIR = path.join(process.env.HOME || process.cwd(),'Source',repositoryName);
+        values.FACTORY_REPO_DIR = path.join(installationHome(root),'repos',repositoryName);
       }
       console.log('Configure factory: Enter keeps [default]; "-" clears an optional value. Ctrl+C cancels without saving.');
       console.log(`GitHub account: ${login}. Required target settings now have usable defaults.`);
