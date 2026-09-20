@@ -64,7 +64,17 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .state-development,.state-qa,.state-review,.state-spec,.state-queued,.state-running { color:var(--blue) }
 .state-ready-to-merge,.state-merged,.state-completed,.state-succeeded { color:var(--accent) }
 .state-failed,.state-pr-closed,.state-cancelled,.state-timed-out { color:var(--danger) }
-.repository-maintenance{margin-top:24px;padding:22px;border:1px solid var(--line);border-radius:16px;background:var(--panel);display:grid;gap:16px}.repository-maintenance h4{margin:3px 0 6px}.repository-maintenance p{margin:0;color:var(--muted)}.repository-maintenance pre{margin:0;max-height:260px;overflow:auto;padding:14px;border-radius:12px;background:var(--surface);white-space:pre-wrap;word-break:break-word}.repository-actions,.repository-publish{display:flex;gap:10px;flex-wrap:wrap}.repository-publish input{min-width:260px;flex:1}
+.repository-maintenance{margin-top:1rem;display:grid;gap:.85rem;min-width:0}
+.repository-maintenance h4{margin:0;font-size:1rem}
+.repository-maintenance p{margin:.35rem 0 0;color:var(--muted);font-size:.78rem;line-height:1.5}
+.repository-maintenance .eyebrow{margin:0 0 .25rem;font-size:.65rem}
+.repository-card-heading{display:flex;align-items:center;flex-wrap:wrap;gap:.65rem}
+.repository-maintenance pre{margin:0;max-height:260px;overflow:auto;padding:.85rem;border:1px solid var(--line);border-radius:10px;background:var(--input);font-size:.72rem;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.repository-actions,.repository-publish{display:flex;gap:.5rem;flex-wrap:wrap}
+.repository-publish{align-items:flex-end;padding-top:.85rem;border-top:1px solid var(--line)}
+.repository-publish label{display:grid;gap:.55rem;flex:1;min-width:min(100%,16rem);font-size:.82rem}
+.repository-publish button{min-height:2.75rem}
+
 .execution-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}.prompt-dialog{width:min(960px,92vw);max-height:88vh;padding:22px;border:1px solid var(--line);border-radius:16px;background:var(--panel);color:var(--text)}.prompt-dialog::backdrop{background:#000a}.prompt-dialog form{float:right}.prompt-dialog pre{clear:both;max-height:65vh;overflow:auto;white-space:pre-wrap;word-break:break-word;background:var(--surface);padding:16px;border-radius:12px}
 .actions { display:flex; gap:.4rem }
 .service-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem }
@@ -201,11 +211,11 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .setting-label b { color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,transparent) }
 .setting-label i { color:var(--blue); background:color-mix(in srgb,var(--blue) 10%,transparent); font-style:normal }
 .setting-card>small { min-height:2.5em; line-height:1.35 }
-.setting-card input:not([type="checkbox"]),.setting-card select { width:100%; min-width:0; min-height:2.75rem; background-color:var(--input); border:1px solid var(--input-line); border-radius:10px; color:var(--text); padding:.72rem .8rem; font:600 .8rem/1.2 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif; box-shadow:0 1px 0 color-mix(in srgb,var(--text) 4%,transparent),inset 0 1px 2px color-mix(in srgb,var(--bg) 35%,transparent); transition:border-color .16s ease,box-shadow .16s ease,background-color .16s ease }
-.setting-card input:not([type="checkbox"]):hover,.setting-card select:hover { border-color:var(--input-hover) }
-.setting-card input:not([type="checkbox"]):focus,.setting-card select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent),inset 0 1px 2px color-mix(in srgb,var(--bg) 28%,transparent) }
-.setting-card input::placeholder { color:color-mix(in srgb,var(--muted) 75%,transparent); font-weight:500 }
-.setting-card input:not([type="checkbox"]):disabled,.setting-card select:disabled { cursor:not-allowed; background-color:color-mix(in srgb,var(--input) 72%,var(--surface)); color:var(--muted) }
+:is(.setting-card,.repository-publish) input:not([type="checkbox"]),.setting-card select { width:100%; min-width:0; min-height:2.75rem; background-color:var(--input); border:1px solid var(--input-line); border-radius:10px; color:var(--text); padding:.72rem .8rem; font:600 .8rem/1.2 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif; box-shadow:0 1px 0 color-mix(in srgb,var(--text) 4%,transparent),inset 0 1px 2px color-mix(in srgb,var(--bg) 35%,transparent); transition:border-color .16s ease,box-shadow .16s ease,background-color .16s ease }
+:is(.setting-card,.repository-publish) input:not([type="checkbox"]):hover,.setting-card select:hover { border-color:var(--input-hover) }
+:is(.setting-card,.repository-publish) input:not([type="checkbox"]):focus,.setting-card select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent),inset 0 1px 2px color-mix(in srgb,var(--bg) 28%,transparent) }
+:is(.setting-card,.repository-publish) input::placeholder { color:color-mix(in srgb,var(--muted) 75%,transparent); font-weight:500 }
+:is(.setting-card,.repository-publish) input:not([type="checkbox"]):disabled,.setting-card select:disabled { cursor:not-allowed; background-color:color-mix(in srgb,var(--input) 72%,var(--surface)); color:var(--muted) }
 .setting-card select { appearance:none; cursor:pointer; padding-right:2.65rem; background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%); background-position:calc(100% - 1.05rem) calc(50% - 2px),calc(100% - .72rem) calc(50% - 2px); background-size:.34rem .34rem,.34rem .34rem; background-repeat:no-repeat }
 .setting-card select:focus { background-image:linear-gradient(45deg,transparent 50%,var(--accent) 50%),linear-gradient(135deg,var(--accent) 50%,transparent 50%) }
 .setting-card select option { color:var(--text); background:var(--panel) }
