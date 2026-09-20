@@ -39,3 +39,19 @@ test('repeated update clicks during asynchronous preparation submit only once',a
  const first=ui.run('updateFactory');await ui.run('updateFactory');assert.equal(preparations,1);assert.equal(submissions,0);
  release('maintenance-id');await first;assert.equal(submissions,1);
 });
+
+test('update diagnostics stay outside the status badge and clear after recovery',()=>{
+ const ui=dashboard(false,async()=>({}));
+ vm.runInContext('let updatePreparing=false;let serviceBusy=false;let daemonStartAttention=false;',ui.context);
+ vm.runInContext(source.split('\n').find(line=>line.startsWith('function renderServices('))!,ui.context);
+ const detail='Update failed while validating the candidate installation: /very/long/path/'.repeat(30);
+ ui.context.data={services:[],update:{status:'failed',phase:detail}};
+ vm.runInContext('renderServices(data)',ui.context);
+ assert.equal(ui.elements.get('#update-status').textContent,'Update failed');
+ assert.equal(ui.elements.get('#update-detail-text').textContent,detail);
+ assert.equal(ui.elements.get('#update-details').hidden,false);
+ ui.context.data={services:[],update:{status:'completed'}};
+ vm.runInContext('renderServices(data)',ui.context);
+ assert.equal(ui.elements.get('#update-details').hidden,true);
+ assert.equal(ui.elements.get('#update-detail-text').textContent,'');
+});

@@ -18,5 +18,11 @@ try{
  assert.notEqual(incompatible.status,0);assert.match(incompatible.stderr,/Unsupported AI Factory database schema/);
  assert.deepEqual(fs.readFileSync(database),before);
  assert.deepEqual(fs.readdirSync(root),['live.db']);
+ const v5=path.join(root,'v5.db'),previous=new Database(v5);
+ previous.exec(fs.readFileSync(new URL('../test/fixtures/schema-v5.sql',import.meta.url),'utf8'));previous.close();
+ const v5Before=fs.readFileSync(v5);
+ const upgraded=spawnSync(process.execPath,[script,v5],{env,encoding:'utf8'});
+ assert.equal(upgraded.status,0,upgraded.stdout+upgraded.stderr);
+ assert.deepEqual(fs.readFileSync(v5),v5Before,'validation must migrate only its disposable copy');
  console.log('PASS: installation checks use disposable storage and preserve an incompatible live database.');
 }finally{fs.rmSync(root,{recursive:true,force:true});}

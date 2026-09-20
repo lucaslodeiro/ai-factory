@@ -1,25 +1,5 @@
-import fs from "node:fs";
-import path from "node:path";
-import Database from "better-sqlite3";
-import { config } from "./config.js";
-export const schemaVersion=6;
-export class Store {
-  db: Database.Database;
-  constructor(filename = path.join(config.dataDir, "factory.db")) {
-    if (filename !== ":memory:") fs.mkdirSync(path.dirname(filename), { recursive: true });
-    this.db = new Database(filename);
-    this.db.pragma("busy_timeout = 5000");
-    this.db.pragma("journal_mode = WAL");
-    this.db.pragma("foreign_keys = ON");
-    // CLI and daemon can open a fresh database together: serialize schema creation.
-    try { this.db.transaction(() => {
-    const tables=(this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as Array<{name:string}>).map(row=>row.name);
-    const metadataExists=tables.includes("metadata");
-    const stored=metadataExists ? this.db.prepare("SELECT value FROM metadata WHERE key='schema_version'").get() as {value:string}|undefined : undefined;
-    let version:unknown;
-    try { version=stored ? JSON.parse(stored.value) : undefined; } catch { version=undefined; }
-    if (tables.length && version !== schemaVersion && version !== 5) throw new Error("Unsupported AI Factory database schema. The completed V3 runtime requires a fresh data directory. Stop services and run the supported uninstaller, or select an empty FACTORY_DATA_DIR. Existing data was not changed.");
-    this.db.exec(`CREATE TABLE IF NOT EXISTS work_items(
+-- Schema shipped in 1172ad3. Keep independent of current schema creation.
+CREATE TABLE IF NOT EXISTS work_items(
         id TEXT PRIMARY KEY,issue_number INTEGER NOT NULL,issue_id INTEGER,issue_node_id TEXT,issue_created_at TEXT,repo TEXT NOT NULL,branch TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
         context TEXT NOT NULL DEFAULT '{}',stage TEXT,status TEXT,attempt INTEGER NOT NULL DEFAULT 0,revision INTEGER NOT NULL DEFAULT 0,
         presentation_revision INTEGER NOT NULL DEFAULT 0,published_presentation_revision INTEGER,active_run_id TEXT,active_request_id TEXT,
@@ -35,8 +15,8 @@ export class Store {
       CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,body TEXT NOT NULL,work_item_id TEXT,sent INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,next_at INTEGER NOT NULL DEFAULT 0,last_error TEXT);
       CREATE TABLE IF NOT EXISTS controls(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,target TEXT,handled INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-      CREATE UNIQUE INDEX IF NOT EXISTS issue_identity ON work_items(repo,issue_number) WHERE archived_at IS NULL;`);
-    this.db.exec(`CREATE TABLE IF NOT EXISTS records(
+      CREATE UNIQUE INDEX IF NOT EXISTS issue_identity ON work_items(repo,issue_number) WHERE archived_at IS NULL;
+CREATE TABLE IF NOT EXISTS records(
         id TEXT PRIMARY KEY,
         work_item_id TEXT NOT NULL REFERENCES work_items(id),
         sequence INTEGER NOT NULL,
@@ -88,32 +68,4 @@ export class Store {
         resumed_at TEXT,
         PRIMARY KEY(maintenance_id,work_item_id)
       );
-      CREATE TABLE IF NOT EXISTS repository_controller(
-        repository_id INTEGER PRIMARY KEY,
-        instance_id TEXT NOT NULL,
-        generation INTEGER,
-        remote_sha TEXT,
-        state TEXT NOT NULL,
-        last_verified_at TEXT,
-        last_error TEXT
-      );`);
-    // Version 6 only adds repository_controller; all version 5 data stays intact.
-    if (version === 5) this.db.prepare("UPDATE metadata SET value=? WHERE key='schema_version'").run(JSON.stringify(schemaVersion));
-    if (!stored) this.db.prepare("INSERT INTO metadata(key,value) VALUES('schema_version',?)").run(JSON.stringify(schemaVersion));
-    }).immediate(); }
-    catch (error) { this.db.close();throw error; }
-  }
-  event(type: string, payload: unknown, workItemId?: string, runId?: string) {
-    this.db.prepare("INSERT INTO events(ts,work_item_id,run_id,type,payload) VALUES(?,?,?,?,?)")
-      .run(new Date().toISOString(), workItemId ?? null, runId ?? null, type, JSON.stringify(payload));
-  }
-  request(kind: string, target = "") { this.db.prepare("INSERT INTO controls(kind,target) VALUES(?,?)").run(kind, target); }
-  metadata<T>(key: string): T | undefined {
-    const row=this.db.prepare("SELECT value FROM metadata WHERE key=?").get(key) as {value:string} | undefined;
-    if (!row) return undefined;
-    try { return JSON.parse(row.value) as T; } catch { return undefined; }
-  }
-  setMetadata(key: string,value: unknown) {
-    this.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,JSON.stringify(value));
-  }
-}
+INSERT INTO metadata(key,value) VALUES('schema_version','5');
