@@ -4,14 +4,16 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import Database from "better-sqlite3";
 
 const args = process.argv.slice(2);
 if (args.includes("--help")) {
   console.log("Usage: npm run uninstall -- [--yes]\nRemoves AI Factory services, configuration, local runtime data and this installation. Target repositories, shared tools and provider credentials are preserved.");
   process.exit(0);
 }
-if (args.some(arg => arg !== "--yes")) throw new Error("Unknown option. Use --help.");
+if (args.some(arg => !["--yes","--force"].includes(arg))) throw new Error("Unknown option. Use --help.");
 const confirmed = args.includes("--yes");
+const forced = args.includes("--force");
 const root = path.resolve(fileURLToPath(new URL("..",import.meta.url)));
 const manifest = JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));
 if (manifest.name !== "ai-factory") throw new Error(`Refusing to remove an unrecognized directory: ${root}`);
@@ -39,12 +41,43 @@ console.log(`  Installation: ${root}`);
 if (externalData) console.log(`  Runtime data: ${dataDir}`);
 console.log("  Preserved:    target repository, GitHub/Codex/Claude credentials, Node, Git, gh, Codex and Claude CLIs");
 
+let unpublished=[];
+const databaseFile=path.join(dataDir,"factory.db");
+if (!fs.existsSync(databaseFile)) {
+  console.log("  Work preflight: no factory database was found; continuing without workflow inspection.");
+} else {
+  try {
+    const db=new Database(databaseFile,{readonly:true,fileMustExist:true});
+    let active=[];
+    try {
+      active=db.prepare("SELECT issue_number,stage,status,branch FROM work_items WHERE status IN ('QUEUED','RUNNING','WAITING','PAUSED') ORDER BY issue_number").all();
+    } finally { db.close(); }
+    const gitCommand=envValue("GIT_COMMAND") || "git";
+    unpublished=active.map(item=>{
+      if (!item.branch || !targetDir || !fs.existsSync(targetDir)) return {...item,published:false,publication:"unverifiable"};
+      const remote=spawnSync(gitCommand,["ls-remote","--heads","origin",item.branch],{cwd:targetDir,encoding:"utf8",timeout:10000});
+      const published=remote.status===0 && Boolean(remote.stdout.trim());
+      return {...item,published,publication:remote.status===0 ? (published ? "published" : "unpublished") : "unverifiable"};
+    }).filter(item=>!item.published);
+    console.log(`  Work preflight: ${active.length} active item${active.length===1?"":"s"}; ${unpublished.length} with an unpublished or unverifiable branch.`);
+    for (const item of unpublished) console.log(`    #${item.issue_number} ${item.stage}/${item.status} — ${item.branch || "no branch"} (${item.publication})`);
+  } catch (error) {
+    console.log(`  Work preflight: factory.db could not be inspected (${error.message}); continuing without workflow inspection.`);
+  }
+}
+
+if (confirmed && unpublished.length && !forced) throw new Error("Unpublished active work would be removed. Re-run with --yes --force after reviewing the list above.");
+
 if (!confirmed) {
   if (!process.stdin.isTTY) throw new Error("Interactive confirmation unavailable. Re-run with --yes after reviewing the paths above.");
   const prompt = readline.createInterface({input:process.stdin,output:process.stdout});
   const answer = await prompt.question('Type "uninstall" to permanently remove this factory installation: ');
+  if (answer !== "uninstall") { prompt.close(); console.log("Uninstall cancelled."); process.exit(0); }
+  if (unpublished.length && !forced) {
+    const forceAnswer=await prompt.question('Unpublished active work may be lost. Type "force" to continue: ');
+    if (forceAnswer !== "force") { prompt.close(); console.log("Uninstall cancelled."); process.exit(0); }
+  }
   prompt.close();
-  if (answer !== "uninstall") { console.log("Uninstall cancelled."); process.exit(0); }
 }
 
 if (process.platform === "darwin" && process.env.AI_FACTORY_UNINSTALL_SKIP_LAUNCHCTL !== "1") {
