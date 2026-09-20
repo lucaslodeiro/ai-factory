@@ -2,14 +2,15 @@
 
 ## Installation and updates from GitHub
 
-Download the installer and run it on the destination Mac (Homebrew is needed if Git, Node or gh are missing):
+Download and run the single supported macOS installer. It does not require, install or use Homebrew:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install.sh -o /tmp/ai-factory-install.sh
-bash /tmp/ai-factory-install.sh --dir "$HOME/ai-factory"
+curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install-macos.sh \
+  -o /tmp/ai-factory-install-macos.sh
+bash /tmp/ai-factory-install-macos.sh --dir "$HOME/ai-factory"
 ```
 
-The installer defaults to the stable `main` branch. The repository has only two long-lived branches: `develop` for ongoing work and `main` for stable releases. Pass `--branch develop` only when intentionally testing unreleased factory changes. The installer installs missing tools, clones the engine, installs locked npm dependencies, builds and tests. It creates a private `.env` from safe defaults, installs both user services, starts the dashboard, waits for its health check and opens the first-time setup page in the default browser. Credentials and environment settings are completed there. The daemon stays stopped, so no agent runs before setup is complete. Existing destinations are rejected. `--skip-tools` skips machine tool installation; Node 22+, npm and Git must already work. Automatic tool installation is macOS-only. Provider installers: [Codex](https://developers.openai.com/codex/cli), [Claude](https://code.claude.com/docs/en/setup).
+The installer defaults to the stable `main` branch. The repository has only two long-lived branches: `develop` for ongoing work and `main` for stable releases. Pass `--branch develop` only when intentionally testing unreleased factory changes. It installs missing user-local tools, clones the engine without credential prompts, installs locked npm dependencies in CI mode, builds and tests. It creates a private `.env` from safe defaults, installs both user services, starts the dashboard, waits for its health check and opens the first-time setup page in the default browser. Credentials and environment settings are completed there. The daemon stays stopped, so no agent runs before setup is complete. Existing destinations are rejected. Provider installers run with non-interactive input: Codex receives `CODEX_NON_INTERACTIVE=1`; Claude receives CI-safe environment settings and closed stdin. Provider installers: [Codex](https://developers.openai.com/codex/cli), [Claude](https://code.claude.com/docs/en/setup).
 
 The opened dashboard expands **Configuration** and displays a first-time guide. Every setting with a safe universal value starts with an installation default. After GitHub connects, empty target fields receive editable suggestions for `<login>/ai-factory-demo`, `$HOME/Source/ai-factory-demo`, and the same login as approver. Optional secrets and allowlists remain empty intentionally. Review and save the configuration, then start the daemon from **Services**. The guide can be dismissed without changing configuration.
 
@@ -22,28 +23,17 @@ Installer options:
 | `--branch NAME` | `main` | Engine branch to install (`develop` opts into unreleased changes) |
 | `--dashboard-host LOOPBACK` | `127.0.0.1` | Initial dashboard address: `127.0.0.1`, `localhost` or `::1` |
 | `--dashboard-port PORT` | `4173` | Initial dashboard port |
-| `--skip-tools` | off | Require existing tools instead of installing missing ones |
-
-`--defaults` is accepted temporarily as a deprecated no-op so older automated install commands do not break.
 If the selected port is already occupied, installation chooses the next available port, saves it in `.env`, prints the change and opens the effective URL. For example:
 
 ```sh
-bash /tmp/ai-factory-install.sh --dashboard-host localhost --dashboard-port 5173
+bash /tmp/ai-factory-install-macos.sh --dashboard-host localhost --dashboard-port 5173
 ```
 
-## Alternative macOS installation without Homebrew
+## Tool installation behavior
 
-This installer keeps user-managed binaries under `~/.local` and never installs Homebrew:
+The installer supports Apple Silicon and Intel Macs. It downloads the latest Node 22 archive from Node.js and the latest GitHub CLI macOS archive from GitHub Releases, verifies both SHA-256 checksums published by their projects, and links their executables into `~/.local/bin`. Codex and Claude are installed with their official native installers in non-interactive mode. It then invokes the private installation stage and forwards options such as `--dir` and `--branch`. There is no Homebrew installer or compatibility entry point.
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install-macos-no-brew.sh \
-  -o /tmp/ai-factory-install-no-brew.sh
-bash /tmp/ai-factory-install-no-brew.sh --dir "$HOME/ai-factory"
-```
-
-It supports Apple Silicon and Intel Macs. It downloads the latest Node 22 archive from Node.js and the latest GitHub CLI macOS archive from GitHub Releases, verifies both SHA-256 checksums published by their projects, and links their executables into `~/.local/bin`. Codex and Claude are installed with their official native installers. It then invokes the standard factory installer with `--skip-tools`, forwarding options such as `--dir` and `--branch`.
-
-Git comes from Apple's Command Line Tools. If they are absent, the script runs `xcode-select --install`, exits, and asks you to rerun it after completing Apple's graphical installation. It does not accept an Xcode license or request administrator credentials itself. Existing regular files in `~/.local/bin` are never overwritten. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile for later terminals.
+Git comes from Apple's Command Line Tools. Installing those tools is an operating-system action that can require an administrator and a graphical confirmation, so the factory installer never launches it automatically. If they are absent, installation stops before downloading anything and prints the one-time `xcode-select --install` prerequisite; rerun the same factory command afterward. Existing regular files in `~/.local/bin` are never overwritten. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile for later terminals.
 
 ## Uninstall and clean reinstall
 
@@ -72,7 +62,7 @@ exists`, preserve that directory and retry from a clean destination:
 ```sh
 cd "$HOME"
 mv "$HOME/ai-factory" "$HOME/ai-factory.incomplete-$(date +%Y%m%d-%H%M%S)"
-bash /tmp/ai-factory-install-no-brew.sh --dir "$HOME/ai-factory"
+bash /tmp/ai-factory-install-macos.sh --dir "$HOME/ai-factory"
 ```
 
 The installer prints these same recovery commands with the resolved paths. It

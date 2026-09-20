@@ -25,7 +25,7 @@ assert.match(run('bash',[path.join(source,'scripts/update.sh'),'--help']).stdout
 run('git',['init','--bare',remote]);run('git',['clone',remote,seed]);
 run('git',['config','user.email','test@example.com'],seed);run('git',['config','user.name','Test'],seed);
 fs.mkdirSync(path.join(seed,'scripts'));
-for(const f of ['install.sh','update.sh','update.mjs','configure.sh','configure.mjs','dashboard-url.mjs','prepare-dashboard-config.mjs']) fs.copyFileSync(path.join(source,'scripts',f),path.join(seed,'scripts',f));
+for(const f of ['install-core.sh','update.sh','update.mjs','configure.sh','configure.mjs','dashboard-url.mjs','prepare-dashboard-config.mjs']) fs.copyFileSync(path.join(source,'scripts',f),path.join(seed,'scripts',f));
 fs.writeFileSync(path.join(seed,'scripts','services.sh'),`#!/bin/sh\nprintf '%s %s\\n' \"$1\" \"$2\" >> \"$AI_FACTORY_SERVICE_LOG\"\n`,{mode:0o755});
 fs.writeFileSync(path.join(seed,'scripts','service-summary.mjs'),`console.log('Dashboard: http://127.0.0.1:4173');\n`);
 for(const f of ['.gitignore','.env.example','package.json']) fs.copyFileSync(path.join(source,f),path.join(seed,f));
@@ -34,7 +34,7 @@ env.AI_FACTORY_SKIP_SERVICES='0';
 env.AI_FACTORY_SERVICE_LOG=path.join(temp,'install-services.log');
 env.AI_FACTORY_OPEN_LOG=path.join(temp,'open.log');
 env.AI_FACTORY_LAUNCHCTL_LOG=path.join(temp,'launchctl.log');
-const installation = run('bash',[path.join(source,'scripts/install.sh'),'--skip-tools','--defaults','--repo',remote,'--dir',dest]);
+const installation = run('bash',[path.join(source,'scripts/install-core.sh'),'--repo',remote,'--dir',dest,'--dashboard-port','64173']);
 assert.match(installation.stdout,/installation completed successfully/);
 assert.equal(fs.readlinkSync(path.join(home,'.local','bin','ai-factory')),path.join(dest,'scripts','ai-factory'));
 assert.match(installation.stdout,/continue in the dashboard/);
@@ -43,7 +43,7 @@ assert.doesNotMatch(installation.stdout,/Configure factory/);
 assert.match(fs.readFileSync(path.join(dest,'.env'),'utf8'),/^GITHUB_REPOSITORY=$/m);
 assert.equal(fs.statSync(path.join(dest,'.env')).mode & 0o777,0o600);
 assert.match(fs.readFileSync(env.AI_FACTORY_SERVICE_LOG,'utf8'),/install all\nstart dashboard/);
-assert.equal(fs.readFileSync(env.AI_FACTORY_OPEN_LOG,'utf8').trim(),'http://127.0.0.1:4173/?setup=1');
+assert.equal(fs.readFileSync(env.AI_FACTORY_OPEN_LOG,'utf8').trim(),'http://127.0.0.1:64173/?setup=1');
 const oneShotState=path.join(temp,'one-shot-state.json'),oneShotUpdate=path.join(temp,'one-shot-update.sh'),oneShotRuns=path.join(temp,'one-shot-runs');
 fs.writeFileSync(oneShotState,JSON.stringify({status:'updating'}));
 fs.writeFileSync(oneShotUpdate,`#!/bin/sh\necho run >> '${oneShotRuns}'\nnode -e 'const fs=require("fs");fs.writeFileSync(process.env.AI_FACTORY_UPDATE_STATE_FILE,JSON.stringify({status:"completed"}))'\n`,{mode:0o755});
@@ -58,7 +58,7 @@ const legacy=spawnSync('/bin/bash',[path.join(source,'scripts/update-job.sh'),le
 assert.equal(legacy.status,0,legacy.stderr+legacy.stdout);
 assert.equal(fs.readFileSync(legacyRuns,'utf8').trim(),'run');
 env.AI_FACTORY_SKIP_SERVICES='1';
-run('bash',[path.join(source,'scripts/install.sh'),'--skip-tools','--defaults','--repo',remote,'--dir',dest],temp,false);
+run('bash',[path.join(source,'scripts/install-core.sh'),'--repo',remote,'--dir',dest],temp,false);
 
 fs.symlinkSync(path.join(source,'dist'),path.join(dest,'dist'),'dir');
 fs.appendFileSync(path.join(dest,'.git','info','exclude'),'\n/dist\n/node_modules\n');

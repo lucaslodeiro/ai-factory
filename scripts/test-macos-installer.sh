@@ -37,9 +37,9 @@ MOCK
 chmod +x "$fixture/bin/uname" "$fixture/bin/xcode-select" "$fixture/bin/curl"
 
 PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/args" \
-  bash "$root/scripts/install-macos-no-brew.sh" --dir "/tmp/path with spaces" --defaults >/dev/null
+  bash "$root/scripts/install-macos.sh" --dir "/tmp/path with spaces" >/dev/null
 
-printf '%s\n' --skip-tools --dir "/tmp/path with spaces" --defaults > "$fixture/expected"
+printf '%s\n' --dir "/tmp/path with spaces" > "$fixture/expected"
 cmp "$fixture/expected" "$fixture/args"
 
 # Exercise verified Node/GitHub CLI installation with deterministic archives.
@@ -66,7 +66,7 @@ case "$arguments" in
   *"https://github.com/cli/cli/releases/latest"*) printf 'https://github.com/cli/cli/releases/tag/v2.101.0' ;;
   *"gh_2.101.0_checksums.txt"*) printf 'bbb  gh_2.101.0_macOS_arm64.zip\n' > "$output" ;;
   *"gh_2.101.0_macOS_arm64.zip"*) : > "$output" ;;
-  *"https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install.sh"*)
+  *"https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install-core.sh"*)
     cat > "$output" <<'PRIVATE_INSTALLER'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$MOCK_ARGS"
@@ -109,9 +109,86 @@ chmod +x "$fixture/bin/curl" "$fixture/bin/shasum" "$fixture/bin/tar" "$fixture/
 
 rm -rf "$fixture/home/.local" "$fixture/args"
 PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/args" \
-  bash "$root/scripts/install-macos-no-brew.sh" --defaults >/dev/null
+  bash "$root/scripts/install-macos.sh" >/dev/null
 [[ -L "$fixture/home/.local/bin/node" && -L "$fixture/home/.local/bin/gh" ]]
-printf '%s\n' --skip-tools --defaults > "$fixture/expected"
+printf '%s\n' > "$fixture/expected"
 cmp "$fixture/expected" "$fixture/args"
 
-echo "PASS: no-Homebrew preflight, verified local tool installation and argument forwarding"
+# Provider installers must never open their console or read from the terminal.
+for executable in codex claude; do
+  cat > "$fixture/bin/$executable" <<'MOCK'
+#!/usr/bin/env bash
+exit 1
+MOCK
+  chmod +x "$fixture/bin/$executable"
+done
+cat > "$fixture/bin/curl" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+arguments=" $* "
+output=
+previous=
+for argument in "$@"; do
+  if [[ $previous == -o ]]; then output=$argument; break; fi
+  previous=$argument
+done
+case "$arguments" in
+  *"https://chatgpt.com/codex/install.sh"*)
+    cat > "$output" <<'PROVIDER'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ ${CODEX_NON_INTERACTIVE:-} == 1 && ${CI:-} == 1 && ${NO_COLOR:-} == 1 ]]
+if IFS= read -r _; then echo 'Codex installer received interactive input' >&2; exit 31; fi
+printf 'codex noninteractive\n' >> "$PROVIDER_LOG"
+printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/codex"
+chmod +x "$HOME/.local/bin/codex"
+PROVIDER
+    ;;
+  *"https://claude.ai/install.sh"*)
+    cat > "$output" <<'PROVIDER'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ ${CI:-} == 1 && ${NO_COLOR:-} == 1 && ${TERM:-} == dumb && ${1:-} == stable ]]
+if IFS= read -r _; then echo 'Claude installer received interactive input' >&2; exit 32; fi
+printf 'claude noninteractive\n' >> "$PROVIDER_LOG"
+printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/claude"
+chmod +x "$HOME/.local/bin/claude"
+PROVIDER
+    ;;
+  *"https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install-core.sh"*)
+    cat > "$output" <<'PRIVATE_INSTALLER'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$MOCK_ARGS"
+PRIVATE_INSTALLER
+    ;;
+  *) echo "Unexpected curl invocation: $*" >&2; exit 1 ;;
+esac
+MOCK
+chmod +x "$fixture/bin/curl"
+rm -f "$fixture/home/.local/bin/codex" "$fixture/home/.local/bin/claude" "$fixture/provider.log"
+PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/args" PROVIDER_LOG="$fixture/provider.log" \
+  bash "$root/scripts/install-macos.sh" >/dev/null
+printf 'codex noninteractive\nclaude noninteractive\n' > "$fixture/providers-expected"
+cmp "$fixture/providers-expected" "$fixture/provider.log"
+
+# A missing Apple toolchain stops cleanly instead of opening the macOS GUI.
+cat > "$fixture/bin/xcode-select" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$XCODE_LOG"
+exit 1
+MOCK
+cat > "$fixture/bin/git" <<'MOCK'
+#!/usr/bin/env bash
+exit 1
+MOCK
+chmod +x "$fixture/bin/xcode-select" "$fixture/bin/git"
+set +e
+PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" XCODE_LOG="$fixture/xcode.log" \
+  bash "$root/scripts/install-macos.sh" >"$fixture/clt.out" 2>&1
+status=$?
+set -e
+[[ $status -eq 2 ]]
+grep -q "xcode-select --install" "$fixture/clt.out"
+grep -qx -- '-p' "$fixture/xcode.log"
+
+echo "PASS: user-local preflight, verified tool installation, non-interactive providers and argument forwarding"

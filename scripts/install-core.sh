@@ -10,7 +10,6 @@ fi
 repo=https://github.com/lucaslodeiro/ai-factory.git
 branch=main
 dest="$HOME/ai-factory"
-skip_tools=false
 dashboard_host=
 dashboard_port=
 while (($#)); do
@@ -19,9 +18,7 @@ while (($#)); do
       (($# >= 2)) || { echo "Missing value for $1" >&2; exit 1; }
       case "$1" in --dir) dest=$2;; --branch) branch=$2;; --repo) repo=$2;; --dashboard-host) dashboard_host=$2;; --dashboard-port) dashboard_port=$2;; esac
       shift 2;;
-    --defaults) shift;;
-    --skip-tools) skip_tools=true; shift;;
-    --help) echo 'Usage: bash install.sh [--dir PATH] [--branch BRANCH] [--repo URL] [--dashboard-host LOOPBACK] [--dashboard-port PORT] [--skip-tools]'; echo 'If the selected/default port is occupied, the installer saves and opens the next available port. --defaults is accepted as a deprecated no-op.'; exit 0;;
+    --help) echo 'Internal usage: bash install-core.sh [--dir PATH] [--branch BRANCH] [--repo URL] [--dashboard-host LOOPBACK] [--dashboard-port PORT]'; echo 'Use install-macos.sh as the public installer. If the selected/default port is occupied, it saves and opens the next available port.'; exit 0;;
     *) echo "Unknown option: $1" >&2; exit 1;;
   esac
 done
@@ -38,46 +35,18 @@ if [[ -e "$dest" ]]; then
     echo "Preserve it and retry with:" >&2
     echo "  cd \"$HOME\"" >&2
     echo "  mv \"$dest\" \"$backup_destination\"" >&2
-    echo "  bash /tmp/ai-factory-install-no-brew.sh --dir \"$dest\"" >&2
+    echo "  bash /tmp/ai-factory-install-macos.sh --dir \"$dest\"" >&2
   fi
   exit 1
 fi
 export PATH="$HOME/.local/bin:$PATH"
 node_ok() { command -v node >/dev/null && node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)'; }
-if ! "$skip_tools"; then
-  [[ $(uname -s) == Darwin ]] || { echo 'Automatic tool installation supports macOS. Install Node 22+, npm, Git, gh, Codex and Claude yourself, then use --skip-tools.' >&2; exit 1; }
-  brew_cmd=$(command -v brew || true)
-  for candidate in /opt/homebrew/bin/brew /usr/local/bin/brew; do
-    if [[ -z "$brew_cmd" && -x "$candidate" ]]; then brew_cmd=$candidate; fi
-  done
-  brew_install() {
-    [[ -n "$brew_cmd" ]] || { echo 'Install Homebrew from https://brew.sh, then retry.' >&2; exit 1; }
-    "$brew_cmd" install "$1"
-    export PATH="$("$brew_cmd" --prefix "$1")/bin:$PATH"
-  }
-  node_ok || brew_install node@22
-  git --version >/dev/null 2>&1 || brew_install git
-  gh --version >/dev/null 2>&1 || brew_install gh
-  tmp=$(mktemp -d)
-  trap 'rm -rf "$tmp"' EXIT
-  if ! codex --version >/dev/null 2>&1; then
-    curl -fsSL https://chatgpt.com/codex/install.sh -o "$tmp/codex.sh"
-    sh "$tmp/codex.sh"
-  fi
-  if ! claude --version >/dev/null 2>&1; then
-    curl -fsSL https://claude.ai/install.sh -o "$tmp/claude.sh"
-    bash "$tmp/claude.sh" stable
-  fi
-  hash -r
-  codex --version
-  claude --version
-fi
 node_ok || { echo 'Node 22+ is required.' >&2; exit 1; }
 npm --version >/dev/null
 git --version >/dev/null
-git clone --branch "$branch" -- "$repo" "$dest"
+GIT_TERMINAL_PROMPT=0 git clone --branch "$branch" -- "$repo" "$dest"
 cd "$dest"
-npm ci
+CI=1 npm ci --no-audit --no-fund
 npm run build
 npm test
 mkdir -p "$HOME/.local/bin"
@@ -112,7 +81,7 @@ printf 'Daemon:        not started\n'
 if "$dashboard_ready"; then printf 'Dashboard:     running at %s\n' "$dashboard_url"; else printf 'Dashboard:     started; health check pending at %s (see .factory/service-logs/dashboard.error.log)\n' "$dashboard_url"; fi
 printf 'Services:      daemon and dashboard definitions installed\n'
 printf 'Launcher:      %s\n' "$HOME/.local/bin/ai-factory"
-if [[ ${AI_FACTORY_INSTALL_MODE:-} == no-brew ]]; then
+if [[ ${AI_FACTORY_INSTALL_MODE:-} == user-local ]]; then
   printf 'Toolchain:     %s (no Homebrew)\n' "$HOME/.local"
   cat <<'PATH_NEXT'
 

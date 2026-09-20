@@ -38,19 +38,12 @@ The implemented [context and workflow specification](docs/CONTEXT_AND_WORKFLOW_D
 
 ## Install and run the MVP
 
-On a new Mac, download the installer from the current MVP branch:
+On a new Mac, use the single supported installer. It never installs or uses Homebrew. It places Node 22 and GitHub CLI under `~/.local`, uses Apple's Command Line Tools for Git, installs the provider CLIs non-interactively through their native installers, verifies downloaded Node/GitHub CLI checksums, and then installs the factory:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install.sh -o /tmp/ai-factory-install.sh
-bash /tmp/ai-factory-install.sh --dir "$HOME/ai-factory"
-```
-
-On a Mac without Homebrew, use the alternative installer. It places Node 22 and GitHub CLI under `~/.local`, uses Apple's Command Line Tools for Git, installs the provider CLIs through their native installers, verifies downloaded Node/GitHub CLI checksums, and then runs the standard installer:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install-macos-no-brew.sh \
-  -o /tmp/ai-factory-install-no-brew.sh
-bash /tmp/ai-factory-install-no-brew.sh --dir "$HOME/ai-factory"
+curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install-macos.sh \
+  -o /tmp/ai-factory-install-macos.sh
+bash /tmp/ai-factory-install-macos.sh --dir "$HOME/ai-factory"
 ```
 
 The installer prepares the engine, installs both macOS services, starts the local dashboard and opens its first-time setup page. Credentials and environment settings are completed in the browser. The daemon remains stopped until you start it from Services after configuring the target. In an existing source checkout:

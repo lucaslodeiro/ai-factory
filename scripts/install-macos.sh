@@ -39,7 +39,7 @@ if [[ -e "$factory_destination" ]]; then
     echo "Preserve it and retry with:" >&2
     echo "  cd \"$HOME\"" >&2
     echo "  mv \"$factory_destination\" \"$backup_destination\"" >&2
-    echo "  bash /tmp/ai-factory-install-no-brew.sh --dir \"$factory_destination\"" >&2
+    echo "  bash /tmp/ai-factory-install-macos.sh --dir \"$factory_destination\"" >&2
   fi
   exit 1
 fi
@@ -137,8 +137,8 @@ install_gh() {
 
 if ! xcode-select -p >/dev/null 2>&1 || ! git --version >/dev/null 2>&1; then
   echo "Apple Command Line Tools are required for Git and native npm dependencies."
-  echo "macOS will open its installer. Finish it, then run this script again."
-  xcode-select --install >/dev/null 2>&1 || true
+  echo "AI Factory will not open an interactive macOS installer during unattended setup."
+  echo "Install the Command Line Tools once with 'xcode-select --install', then rerun this command."
   exit 2
 fi
 
@@ -155,15 +155,15 @@ if ! gh --version >/dev/null 2>&1; then
 fi
 
 if ! codex --version >/dev/null 2>&1; then
-  echo "Installing Codex CLI with its official native installer..."
+  echo "Installing Codex CLI non-interactively with its official native installer..."
   curl -fsSL https://chatgpt.com/codex/install.sh -o "$temporary_dir/codex-install.sh"
-  sh "$temporary_dir/codex-install.sh"
+  CODEX_NON_INTERACTIVE=1 CI=1 NO_COLOR=1 sh "$temporary_dir/codex-install.sh" </dev/null
 fi
 
 if ! claude --version >/dev/null 2>&1; then
-  echo "Installing Claude Code stable with its official native installer..."
+  echo "Installing Claude Code stable non-interactively with its official native installer..."
   curl -fsSL https://claude.ai/install.sh -o "$temporary_dir/claude-install.sh"
-  bash "$temporary_dir/claude-install.sh" stable
+  CI=1 NO_COLOR=1 TERM=dumb bash "$temporary_dir/claude-install.sh" stable </dev/null
 fi
 
 hash -r
@@ -174,6 +174,6 @@ gh --version
 codex --version
 claude --version
 
-curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install.sh \
-  -o "$temporary_dir/ai-factory-install.sh"
-AI_FACTORY_INSTALL_MODE=no-brew bash "$temporary_dir/ai-factory-install.sh" --skip-tools "$@"
+curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install-core.sh \
+  -o "$temporary_dir/ai-factory-install-core.sh"
+AI_FACTORY_INSTALL_MODE=user-local bash "$temporary_dir/ai-factory-install-core.sh" "$@"
