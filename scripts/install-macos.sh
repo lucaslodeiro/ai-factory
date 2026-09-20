@@ -66,7 +66,7 @@ fi
 # Fail before downloading toolchains when this is already installed. The
 # standard installer repeats this guard to cover direct invocations.
 if [[ -e "$factory_destination" ]]; then
-  if [[ -d "$factory_destination/.git" && -f "$factory_destination/package.json" ]]; then
+  if [[ -f "$factory_destination/.factory/install.json" ]]; then
     echo "AI Factory is already installed at $factory_destination" >&2
     echo "Update it with: cd \"$factory_destination\" && bash scripts/update.sh --restart-services" >&2
     echo "For a clean reinstall: cd \"$HOME\" && npm --prefix \"$factory_destination\" run uninstall" >&2

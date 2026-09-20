@@ -12,6 +12,18 @@ branch=main
 dest="$HOME/ai-factory"
 dashboard_host=
 dashboard_port=
+install_step="validating installer arguments"
+cloned_destination=false
+report_install_failure() {
+  status=$?
+  if "$cloned_destination"; then
+    backup_destination="${dest}.incomplete-$(date +%Y%m%d-%H%M%S)"
+    printf 'Installation failed while %s. The incomplete directory was preserved.\n' "$install_step" >&2
+    printf 'Retry with:\n  cd %q\n  mv %q %q\n  bash /tmp/ai-factory-install-macos.sh --dir %q --branch %q --repo %q\n' "$HOME" "$dest" "$backup_destination" "$dest" "$branch" "$repo" >&2
+  fi
+  return "$status"
+}
+trap report_install_failure ERR
 while (($#)); do
   case "$1" in
     --dir|--branch|--repo|--dashboard-host|--dashboard-port)
@@ -25,7 +37,7 @@ done
 [[ -z $dashboard_host || $dashboard_host == 127.0.0.1 || $dashboard_host == localhost || $dashboard_host == ::1 ]] || { echo 'Dashboard host must be 127.0.0.1, localhost or ::1.' >&2; exit 1; }
 [[ -z $dashboard_port || ( $dashboard_port =~ ^[0-9]+$ && $dashboard_port -ge 1 && $dashboard_port -le 65535 ) ]] || { echo 'Dashboard port must be from 1 to 65535.' >&2; exit 1; }
 if [[ -e "$dest" ]]; then
-  if [[ -d "$dest/.git" && -f "$dest/package.json" ]]; then
+  if [[ -f "$dest/.factory/install.json" ]]; then
     echo "AI Factory is already installed at $dest" >&2
     echo "Update it with: cd \"$dest\" && bash scripts/update.sh --restart-services" >&2
     echo "For a clean reinstall: cd \"$HOME\" && npm --prefix \"$dest\" run uninstall" >&2
@@ -44,11 +56,16 @@ node_ok() { command -v node >/dev/null && node -e 'process.exit(Number(process.v
 node_ok || { echo 'Node 22+ is required.' >&2; exit 1; }
 npm --version >/dev/null
 git --version >/dev/null
+install_step="cloning the factory repository"
 GIT_TERMINAL_PROMPT=0 git clone --branch "$branch" -- "$repo" "$dest"
+cloned_destination=true
 cd "$dest"
+install_step="installing npm dependencies"
 CI=1 npm ci --no-audit --no-fund
+install_step="building the factory"
 npm run build
-npm test
+if [[ ${AI_FACTORY_INSTALL_TESTS:-1} != 0 ]]; then install_step="running the validation suite"; npm test; fi
+install_step="installing the launcher"
 mkdir -p "$HOME/.local/bin"
 launcher="$HOME/.local/bin/ai-factory"
 if [[ -e $launcher && ! -L $launcher ]]; then
@@ -57,10 +74,12 @@ if [[ -e $launcher && ! -L $launcher ]]; then
 fi
 ln -sfn "$dest/scripts/ai-factory" "$launcher"
 umask 077
+install_step="creating the initial configuration"
 cp .env.example .env
 dashboard_url=$(node scripts/prepare-dashboard-config.mjs "$dashboard_host" "$dashboard_port")
 dashboard_ready=false
 if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
+  install_step="installing and starting services"
   AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install all
   AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start dashboard
   for _ in {1..40}; do
@@ -102,3 +121,6 @@ First-run checklist:
 Until setup is valid, only the local dashboard runs and no agent can start.
 NEXT
 if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then node scripts/service-summary.mjs; fi
+install_step="writing the installation marker"
+mkdir -p .factory
+node -e 'const fs=require("fs"),cp=require("child_process"),manifest=require("./package.json");const run=args=>cp.execFileSync("git",args,{encoding:"utf8"}).trim();const marker={version:manifest.version,branch:run(["symbolic-ref","--quiet","--short","HEAD"]),revision:run(["rev-parse","HEAD"]),installedAt:new Date().toISOString()};fs.writeFileSync(".factory/install.json",JSON.stringify(marker,null,2)+"\n",{mode:0o600});'

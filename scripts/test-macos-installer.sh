@@ -12,6 +12,11 @@ printf '%s\n' "$*" >> "$CURL_LOG"
 exit 99
 MOCK
 chmod +x "$fixture/bin/curl"
+cat > "$fixture/bin/uname" <<'MOCK'
+#!/usr/bin/env bash
+if [[ ${1:-} == -m ]]; then echo arm64; else echo Darwin; fi
+MOCK
+chmod +x "$fixture/bin/uname"
 PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" CURL_LOG="$fixture/help-curl.log" \
   bash "$root/scripts/install-macos.sh" --help > "$fixture/help.out"
 grep -q -- '--dashboard-port PORT' "$fixture/help.out"
@@ -26,6 +31,16 @@ set -e
 [[ $bogus_status -eq 1 ]]
 grep -q 'Unknown option: --bogus. Run with --help.' "$fixture/bogus.out"
 [[ ! -e "$fixture/bogus-curl.log" ]]
+mkdir -p "$fixture/home/incomplete/.git"
+printf '{}\n' > "$fixture/home/incomplete/package.json"
+set +e
+PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" CURL_LOG="$fixture/incomplete-curl.log" \
+  bash "$root/scripts/install-macos.sh" --dir "$fixture/home/incomplete" > "$fixture/incomplete.out" 2>&1
+incomplete_status=$?
+set -e
+[[ $incomplete_status -eq 1 ]]
+grep -q 'incomplete or unrelated destination' "$fixture/incomplete.out"
+[[ ! -e "$fixture/incomplete-curl.log" ]]
 
 for executable in node npm git gh codex claude; do
   cat > "$fixture/bin/$executable" <<'MOCK'

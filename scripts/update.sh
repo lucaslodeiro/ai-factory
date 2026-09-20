@@ -100,4 +100,6 @@ if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
   fi
   node scripts/service-summary.mjs
 fi
+mkdir -p .factory
+node -e 'const fs=require("fs"),cp=require("child_process"),manifest=require("./package.json");const run=args=>cp.execFileSync("git",args,{encoding:"utf8"}).trim();const marker={version:manifest.version,branch:run(["symbolic-ref","--quiet","--short","HEAD"]),revision:run(["rev-parse","HEAD"]),installedAt:new Date().toISOString()};fs.writeFileSync(".factory/install.json",JSON.stringify(marker,null,2)+"\n",{mode:0o600});'
 update_complete=true
