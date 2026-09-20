@@ -31,7 +31,7 @@ p.command("models").argument("[id]").description("Show model policy or preview r
  } finally { s.db.close(); }
 });
 p.command("sync").description("Reconcile PR lifecycle and publish pending status/reports without running agents").action(async () => {
- const s = new Store(); try { const release = acquireLock(s); try { const github=new GitHubAdapter(),o=new WorkflowOrchestrator(s,github,new WorkflowRunner(s,{},new Workspaces(),github),new SlackAdapter());o.reconcilePullRequests();await o.flush(); } finally { release(); } } finally { s.db.close(); }
+ const s = new Store(); try { const release = acquireLock(s); try { const github=new GitHubAdapter(),repository=verifyRepositoryIdentity(s,github),lease=new ControllerLease(repository,s),ownership=lease.acquire();if(ownership.state!=="active")throw new Error(`Repository is controlled by ${ownership.state==="absent"?"another installation":ownership.record.displayName}`);const generation=ownership.record.generation,fence={assertController(){lease.assertController(generation);},resultDisposition(){return"apply" as const;}},runner=new WorkflowRunner(s,{},new Workspaces(),github,fence),o=new WorkflowOrchestrator(s,github,runner,new SlackAdapter(),undefined,fence);o.reconcilePullRequests();await o.flush(); } finally { release(); } } finally { s.db.close(); }
 });
 p.command("doctor").action(() => { process.exitCode = doctor() ? 0 : 1; });
 p.command("status").argument("[id]").action(id => {
