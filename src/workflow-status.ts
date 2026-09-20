@@ -14,6 +14,7 @@ const palette={DESIGN:["5319e7","Architect is designing the specification"],BUIL
 const box=(body:string)=>`## Next action\n\n> ${body.replaceAll("\n","\n> ")}`;
 const command=(value:string)=>`\n\n\`\`\`text\n${value}\n\`\`\``;
 const clipSummary=(value:string,max=1450)=>value.length<=max?{text:value,clipped:false}:{text:`${value.slice(0,max-1).trimEnd()}…`,clipped:true};
+const utcMinute=(value:string)=>{const date=new Date(value);return Number.isNaN(date.getTime())?value:`${date.toISOString().slice(0,16).replace("T"," ")} UTC`;};
 
 function humanRequestAction(store:Store,request:NonNullable<ReturnType<WorkflowRecords["activeRequest"]>>) {
  if(request.payload.kind!=="request"||request.payload.owner!=="human")return "";
@@ -67,7 +68,7 @@ export function workflowStatusMarkdown(store:Store,workItemId:string) {
  if(context.lastCommand){const last=context.lastCommand,reason=last.outcome==="deferred"?"waiting for the interrupted execution to exit":last.reason;rows.push(["Last command",`\`${last.kind}\` by @${last.login} — ${last.outcome}${reason?`: ${reason}`:""}`]);}
  const allHumanGuidance=records.humanGuidance(workItemId,false),ordinals=new Map(allHumanGuidance.map((record,index)=>[record.id,index+1])),humanGuidance=allHumanGuidance.filter(record=>record.status==="active");
  const guidance=humanGuidance.length?`\n\n### Active human guidance\n\n${humanGuidance.map(record=>`- **#${ordinals.get(record.id)}** · \`${record.id.slice(0,8)}\` — ${record.payload.kind==="instruction"?record.payload.text:record.payload.kind==="decision"?record.payload.decision:""}`).join("\n")}${humanGuidance.length>3?`\n\nConsider \`/factory replace\` or \`/factory revoke\` to keep guidance current.`:""}`:"";
- const transitions=(store.db.prepare("SELECT ts,payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 10").all(workItemId) as Array<{ts:string;payload:string}>).map(row=>{const event=JSON.parse(row.payload) as {to:{stage:string;status:string};reason:{summary:string}};return `- ${row.ts} — ${event.to.stage}/${event.to.status}: ${event.reason.summary}`;});
+ const transitions=(store.db.prepare("SELECT ts,payload FROM events WHERE work_item_id=? AND type='workflow.transition' AND json_extract(payload,'$.to.status')!='RUNNING' ORDER BY id DESC LIMIT 10").all(workItemId) as Array<{ts:string;payload:string}>).map(row=>{const event=JSON.parse(row.payload) as {to:{stage:string;status:string};reason:{summary:string}};return `- ${utcMinute(row.ts)} — ${stages[event.to.stage as keyof typeof stages]}/${statuses[event.to.status as keyof typeof statuses]}: ${event.reason.summary}`;});
  const history=transitions.length?`\n\n<details><summary>Last ${transitions.length} workflow transitions</summary>\n\n${transitions.join("\n")}\n\n</details>`:"";
  const failureDetails=failure?`\n\n${workflowFailureEvidence(store,failure)}`:"";
  const latest=store.db.prepare("SELECT payload,run_id FROM events WHERE work_item_id=? AND type='agent.result' AND (json_extract(payload,'$.role')!='product-architect' OR json_extract(payload,'$.result.outcome')='resolved') ORDER BY id DESC LIMIT 1").get(workItemId) as {payload:string;run_id:string}|undefined;

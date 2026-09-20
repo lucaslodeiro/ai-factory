@@ -4,6 +4,7 @@ import type { AgentRole } from "./types.js";
 import { WorkflowFailures,type FailureClass } from "./workflow-failures.js";
 import { WorkflowProjections } from "./workflow-projection.js";
 import type { V3Stage } from "./workflow-records.js";
+import {roleShortName} from "./names.js";
 
 const roles:Record<V3Stage,AgentRole>={DESIGN:"product-architect",BUILD:"developer",TEST:"qa",REVIEW:"reviewer",DELIVERY:"reviewer"};
 
@@ -19,7 +20,7 @@ export class WorkflowScheduler {
    if(!spec?.approved_by)throw new Error("Cannot schedule delivery without an approved current specification");
   }
   const id=randomUUID(),startedAt=new Date().toISOString();
-  const projection=this.projections.transition({workItemId,expectedRevision:current.revision,stage:current.stage,status:"RUNNING",activeRunId:id,actor:{type:"orchestrator",id:"scheduler"},source:{executionId:id},reason:{code:"execution-started",summary:`${role} execution started`}},()=>{
+  const projection=this.projections.transition({workItemId,expectedRevision:current.revision,stage:current.stage,status:"RUNNING",activeRunId:id,actor:{type:"orchestrator",id:"scheduler"},source:{executionId:id},reason:{code:"execution-started",summary:`${roleShortName(role)} execution started`}},()=>{
    const blocked=this.store.db.prepare(`SELECT 1 FROM maintenance_operations WHERE status IN ('confirmed','pausing','ready','running') LIMIT 1`).get();
    if(blocked)throw new Error("Confirmed maintenance prevents new agent execution");
    this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at) VALUES(?,?,?,?,?,?)").run(id,workItemId,role,current.stage,"running",startedAt);

@@ -4,6 +4,7 @@ import type { Store } from "./storage.js";
 import type { AgentResult,AgentRole } from "./types.js";
 import { WorkflowProjections } from "./workflow-projection.js";
 import { WorkflowRecords,type V3Stage,type WorkflowRecord } from "./workflow-records.js";
+import {roleShortName} from "./names.js";
 
 const roleStage:Record<AgentRole,V3Stage>={"product-architect":"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"};
 const nextRoleStage={developer:"BUILD",qa:"TEST",reviewer:"REVIEW"} as const;
@@ -41,7 +42,8 @@ export class WorkflowResults {
   }
   if(result.outcome!=="resolved"||!active||active.payload.kind!=="request"||active.payload.type!=="tactical-decision"||active.payload.owner!=="architect")throw new InvalidResultError("Architect resolution requires an active tactical request");
   const requestPayload=active.payload,target=result.nextRole?nextRoleStage[result.nextRole]:undefined;if(!target||!requestPayload.allowedReturnStages.includes(target))throw new InvalidResultError(`Tactical result cannot return to ${target??"an unknown stage"}`);
-  const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status:"QUEUED",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"tactical-resolved",summary:`Architect resolved the decision for ${target}`},recordIds:ids},()=>{
+  const continuing=target==="BUILD"?"developer":target==="TEST"?"qa":"reviewer";
+  const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status:"QUEUED",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"tactical-resolved",summary:`Architect resolved the decision; ${roleShortName(continuing)} continues`},recordIds:ids},()=>{
    this.resultEvent(input);
    for(const decision of result.decisions)ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"decision",category:"tactical",decision:decision.decision,rationale:decision.rationale,supersedes:decision.supersedes??[]},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
    const findingIds=requestPayload.findingIds??[];if(findingIds.length)this.records.settleFindings(findingIds,"resolved",input.executionId);
@@ -58,7 +60,7 @@ export class WorkflowResults {
   const result=input.result,stage=roleStage[input.role];
   const createFindings=()=>{for(const finding of result.findings)ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"finding",classification:finding.classification,originRole:input.role,criterionId:result.coverage.find(coverage=>coverage.status==="failed")?.criterionId,evidence:finding.evidence},sourceType:"agent-result",sourceId:input.executionId,actor:input.role}).id);};
   if(result.outcome==="decision") {
-   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:"DESIGN",status:"QUEUED",actor:{type:"agent",id:input.role},source:{executionId:input.executionId},reason:{code:"decision-required",summary:`${input.role} requested an architectural decision`},recordIds:ids},()=>{this.resultEvent(input);createFindings();const findingIds=ids.slice();ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"tactical-decision",owner:"architect",originatingStage:stage,allowedReturnStages:this.returnStages(stage),openedAfterCommentId:this.cursor(input.workItemId),findingIds},sourceType:"agent-result",sourceId:input.executionId,actor:input.role}).id);});
+   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:"DESIGN",status:"QUEUED",actor:{type:"agent",id:input.role},source:{executionId:input.executionId},reason:{code:"decision-required",summary:`${roleShortName(input.role)} requested an architectural decision`},recordIds:ids},()=>{this.resultEvent(input);createFindings();const findingIds=ids.slice();ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"tactical-decision",owner:"architect",originatingStage:stage,allowedReturnStages:this.returnStages(stage),openedAfterCommentId:this.cursor(input.workItemId),findingIds},sourceType:"agent-result",sourceId:input.executionId,actor:input.role}).id);});
    return {discarded:false,projection,recordIds:ids};
   }
   if(result.outcome==="changes") {
@@ -68,7 +70,7 @@ export class WorkflowResults {
   }
   if(result.outcome!=="pass")throw new InvalidResultError(`Unsupported ${input.role} outcome ${result.outcome}`);
   const target=input.role==="developer"?"TEST":input.role==="qa"?"REVIEW":"DELIVERY";
-  const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status:"QUEUED",actor:{type:"agent",id:input.role},source:{executionId:input.executionId},reason:{code:"pass",summary:`${input.role} passed`},recordIds:ids},()=>{
+  const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status:"QUEUED",actor:{type:"agent",id:input.role},source:{executionId:input.executionId},reason:{code:"pass",summary:`${roleShortName(input.role)} passed`},recordIds:ids},()=>{
    this.resultEvent(input);
    createFindings();this.settlePass(input.workItemId,input.role,input.executionId);
   });return {discarded:false,projection,recordIds:ids};
