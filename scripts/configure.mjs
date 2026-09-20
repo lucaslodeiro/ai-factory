@@ -6,6 +6,7 @@ import readline from 'node:readline';
 import {Writable} from 'node:stream';
 import {parse} from 'dotenv';
 import Database from 'better-sqlite3';
+import {validateSetting} from '../dist/src/dashboard-settings.js';
 function installationHome(root){return process.env.AI_FACTORY_HOME?.trim()?path.resolve(process.env.AI_FACTORY_HOME):path.basename(path.resolve(root))==='engine'?path.dirname(path.resolve(root)):path.resolve(root);}
 
 function run(command, args, options = {}) {
@@ -90,33 +91,6 @@ export function encode(value) {
   }
   throw new Error('Value contains an unsupported combination of quotes.');
 }
-export function validate(key, value) {
-  encode(value);
-  if (/_MS$/.test(key) || ['FACTORY_MAX_FIX_CYCLES','FACTORY_CONTEXT_BUDGET_BYTES'].includes(key)) {
-    if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1) throw new Error('Enter a positive integer.');
-  }
-  if (key === 'FACTORY_CONTEXT_BUDGET_OVERRIDES') {
-    let parsed; try { parsed=JSON.parse(value); } catch { throw new Error('Enter a JSON object.'); }
-    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error('Enter a JSON object.');
-    const roles=new Set(['product-architect','developer','qa','reviewer']);
-    for (const [name,budget] of Object.entries(parsed)) {
-      if (!roles.has(name) && !/^(codex|claude)\/[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(name)) throw new Error(`Invalid override key: ${name}.`);
-      if (!Number.isSafeInteger(budget) || Number(budget)<1) throw new Error(`${name} must be a positive integer.`);
-    }
-  }
-  if (key === 'FACTORY_DASHBOARD_PORT' && (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 65535)) throw new Error('Enter a port from 1 to 65535.');
-  if (key === 'FACTORY_DASHBOARD_HOST' && !['127.0.0.1','localhost','::1'].includes(value)) throw new Error('Use a loopback address: 127.0.0.1, localhost or ::1.');
-  if (key === 'GITHUB_REPOSITORY' && value && !/^[\w.-]+\/[\w.-]+$/.test(value)) throw new Error('Use owner/repository.');
-  if (key === 'FACTORY_APPROVERS' && value && !value.split(',').every(v => /^[a-zA-Z0-9-]+$/.test(v.trim()))) throw new Error('Use comma-separated GitHub usernames.');
-  if (key === 'AGENT_SECRET_ALLOWLIST' && value && !value.split(',').every(v => /^[A-Za-z_][A-Za-z0-9_]*$/.test(v.trim()))) throw new Error('Use comma-separated environment variable names.');
-  if (key.includes('_MODEL') && !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(value)) throw new Error('Enter a model identifier.');
-  if (key.endsWith('_PROVIDER') && !['codex','claude'].includes(value)) throw new Error('Choose codex or claude.');
-  if (['FACTORY_DATA_DIR','GITHUB_DEFAULT_BRANCH','CODEX_COMMAND','CLAUDE_COMMAND','GIT_COMMAND'].includes(key) && !value.trim()) throw new Error('This value cannot be empty.');
-  if (key === 'SLACK_WEBHOOK_URL' && value) {
-    let url; try { url = new URL(value); } catch { throw new Error('Enter an HTTPS URL.'); }
-    if (url.protocol !== 'https:') throw new Error('Enter an HTTPS URL.');
-  }
-}
 export function saveConfig(root, template, values, original) {
   // Preserve unrecognized settings as well as every known setting.
   let output = template.replace(/^([A-Z_][A-Z0-9_]*)=.*$/gm, (_, key) => `${key}=${encode(values[key])}`);
@@ -155,10 +129,6 @@ export async function configure(root, useDefaults = false) {
   const original = fs.existsSync(file) ? fs.readFileSync(file,'utf8') : null;
   const saved = parse(original ?? '');
   const defaults = parse(template);
-  for (const [key, command] of Object.entries({CODEX_COMMAND:'codex',CLAUDE_COMMAND:'claude',GIT_COMMAND:'git'})) {
-    const found = run('which',[command]);
-    if (found.status === 0) defaults[key] = found.stdout.trim();
-  }
   const values = {...defaults,...saved};
   assertStopped(root, values);
   const oldValues = {...values};
@@ -201,7 +171,7 @@ export async function configure(root, useDefaults = false) {
           if (answer.done) throw new Error('Configuration cancelled; no changes saved.');
           const value = answer.value === '' ? values[key] : answer.value === '-' ? '' : answer.value.trim();
           try {
-            validate(key,value);
+            validateSetting(key,value);
             const previous = values[key];
             values[key] = value;
             if (key.endsWith('_PROVIDER') && value !== previous) {
@@ -218,7 +188,7 @@ export async function configure(root, useDefaults = false) {
       const required = ['GITHUB_REPOSITORY','FACTORY_REPO_DIR','FACTORY_APPROVERS'];
       if (required.every(key => values[key])) targetPrepared = await prepareTarget(values,lines,login);
     }
-    for (const key of Object.keys(defaults)) validate(key,values[key]);
+    for (const key of Object.keys(defaults)) validateSetting(key,values[key]);
     assertStopped(root, oldValues);
     assertStopped(root, values);
     saveConfig(root,template,values,original);

@@ -40,6 +40,7 @@ fi
   for (const file of ['configure.sh','configure.mjs']) fs.copyFileSync(path.join(source,'scripts',file),path.join(root,'scripts',file));
   fs.copyFileSync(path.join(source,'.env.example'),path.join(root,'.env.example'));
   fs.symlinkSync(path.join(source,'node_modules'),path.join(root,'node_modules'),'dir');
+  fs.symlinkSync(path.join(source,'dist'),path.join(root,'dist'),'dir');
   const template = fs.readFileSync(path.join(root,'.env.example'),'utf8');
   const keys = Object.keys(parse(template));
   const file = path.join(root,'.env');
@@ -66,7 +67,7 @@ fi
   fs.writeFileSync(file,"GITHUB_REPOSITORY=example/existing\nFACTORY_APPROVERS=alice\nFACTORY_DATA_DIR=.factory\nSLACK_WEBHOOK_URL=https://hooks.example.com/private-secret\nDEVELOPER_MODEL=custom-balanced\nQA_MODEL=custom-balanced\nCUSTOM_VALUE='keep # $HOME'\n");
   const saved = fs.readFileSync(file,'utf8');
   const target = path.join(root,'my target #1');
-  const answers = keys.map(key => ({FACTORY_REPO_DIR:target,FACTORY_POLL_INTERVAL_MS:'0\n5000',GITHUB_REPOSITORY:'invalid\nexample/new',FACTORY_APPROVERS:'-',REVIEWER_PROVIDER:'codex'}[key] ?? '')).join('\n') + '\n';
+  const answers = keys.map(key => ({FACTORY_REPO_DIR:target,FACTORY_POLL_INTERVAL_MS:'0\n5000',FACTORY_ARTIFACT_RETENTION_DAYS:'-1\n7',GITHUB_REPOSITORY:'invalid\nexample/new',FACTORY_APPROVERS:'-',REVIEWER_PROVIDER:'codex'}[key] ?? '')).join('\n') + '\n';
   const result = run([],answers);
   assert.ok(!result.stdout.includes('private-secret'));
   const values = parse(fs.readFileSync(file));
@@ -74,6 +75,8 @@ fi
   assert.equal(values.GITHUB_REPOSITORY,'example/new');
   assert.equal(values.FACTORY_APPROVERS,'');
   assert.equal(values.FACTORY_POLL_INTERVAL_MS,'5000');
+  assert.equal(values.FACTORY_ARTIFACT_RETENTION_DAYS,'7');
+  assert.equal(values.GIT_COMMAND,'git');
   assert.equal(values.CUSTOM_VALUE,'keep # $HOME');
   assert.equal(values.PRODUCT_ARCHITECT_MODEL,'auto');
   assert.equal(values.DEVELOPER_MODEL,'custom-balanced');

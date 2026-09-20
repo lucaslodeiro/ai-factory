@@ -58,7 +58,7 @@ function encode(value: string) {
   for (const quote of ["'", "`", '"']) if (!value.includes(quote) && !(quote === '"' && /\\[nr]/.test(value))) return quote + value + quote;
   throw new Error("Value contains an unsupported combination of quotes");
 }
-function validate(key: string, value: string) {
+export function validateSetting(key: string, value: string) {
   encode(value);
   if (/_MS$/.test(key) || ["FACTORY_MAX_FIX_CYCLES","FACTORY_CONTEXT_BUDGET_BYTES"].includes(key)) {
     if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1) throw new Error(`${key}: enter a positive integer`);
@@ -106,7 +106,7 @@ function prepareDashboardSettings(root: string, changes: Record<string,unknown>,
     if (!descriptions[key]?.secret) throw new Error(`Cannot clear non-secret setting: ${key}`);
     values[key] = "";
   }
-  for (const key of Object.keys(defaults)) validate(key,values[key] ?? "");
+  for (const key of Object.keys(defaults)) validateSetting(key,values[key] ?? "");
   let output = template.replace(/^([A-Z_][A-Z0-9_]*)=.*$/gm,(_,key) => `${key}=${encode(values[key] ?? "")}`);
   for (const [key,value] of Object.entries(saved)) if (!(key in defaults)) output += `\n${key}=${encode(value)}`;
   const changedKeys = Object.keys(defaults).filter(key => values[key] !== previous[key]);
