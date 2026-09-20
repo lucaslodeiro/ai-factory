@@ -50,7 +50,7 @@ export class ControllerLease{
   for(let attempt=0;attempt<2;attempt++){
    const observed=this.readLease();
    if(observed.state!=="absent"&&observed.record.instanceId!==this.instance.instanceId){this.store?.event("controller.standby",{repository:this.repository.fullName,owner:observed.record.displayName,generation:observed.record.generation});return observed;}
-   if(observed.state!=="absent")return this.renew(observed);
+   if(observed.state!=="absent"){const renewed=this.renew(observed);this.store?.event("controller.renewed",{repository:this.repository.fullName,displayName:this.instance.displayName,generation:observed.record.generation});return renewed;}
    const now=this.nowIso(),record=this.newRecord(1,now,now);
    if(this.updateRemoteRef(this.commit(record),"")){const acquired=this.readLease();this.store?.event("controller.acquired",{repository:this.repository.fullName,displayName:this.instance.displayName,generation:1});return acquired;}
   }
