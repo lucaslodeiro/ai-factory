@@ -75,3 +75,16 @@ test("factory comments do not revise presentation while approver observations ar
   assert.equal(context.observedApproverComments,1);
  } finally {store.db.close();}
 });
+
+test("pause preserves a waiting request and retry restores the human gate without a new attempt",()=>{
+ const store=new Store(":memory:");
+ try {
+  const started=new WorkflowIntake(store).start(issue,{actor:"owner",commentId:1,source:"github-comment"}),records=new WorkflowRecords(store),projections=new WorkflowProjections(store);
+  records.create({workItemId:started.id,specVersion:0,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:1},sourceType:"agent-result",sourceId:"run",actor:"product-architect"});
+  projections.transition({workItemId:started.id,expectedRevision:0,stage:"DESIGN",status:"WAITING",actor:{type:"agent",id:"product-architect"},source:{executionId:"run"},reason:{code:"spec",summary:"SPEC proposed"}});
+  const comments=[comment(2,"/factory pause")],inbox=new WorkflowInbox(store,{comments:()=>comments},["owner"]);
+  inbox.poll(started.id);assert.equal(projections.get(started.id).status,"PAUSED");assert.equal(records.activeRequest(started.id)?.payload.kind,"request");
+  comments.push(comment(3,"/factory retry"));inbox.poll(started.id);
+  assert.deepEqual({status:projections.get(started.id).status,attempt:projections.get(started.id).attempt},{status:"WAITING",attempt:0});
+ } finally {store.db.close();}
+});

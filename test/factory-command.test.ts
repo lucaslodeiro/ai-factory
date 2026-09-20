@@ -6,6 +6,7 @@ test("parses lifecycle commands strictly",()=>{
  assert.deepEqual(parseFactoryCommand("/factory start"),{kind:"start"});
  assert.deepEqual(parseFactoryCommand("/factory approve v12"),{kind:"approve",version:12});
  assert.deepEqual(parseFactoryCommand("/factory cancel"),{kind:"cancel"});
+ assert.deepEqual(parseFactoryCommand("/factory pause"),{kind:"pause"});
  assert.deepEqual(parseFactoryCommand("/factory revoke abc-123"),{kind:"revoke",recordId:"abc-123"});
  assert.equal(parseFactoryCommand("Please /factory start"),null);
  assert.equal(parseFactoryCommand("> /factory retry"),null);

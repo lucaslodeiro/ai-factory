@@ -55,6 +55,7 @@ export class WorkflowInbox {
     catch(error){const stale=/stale/i.test(String(error));this.store.event(stale?"command.stale":"command.rejected",{commentId:comment.id,login:comment.user.login,command:command.kind,error:String(error)},workItemId);return "rejected";}
    }).immediate(),result=typeof outcome==="string"?outcome:outcome.result;
    if(typeof outcome!=="string"&&outcome.executionAction?.kind==="cancel")this.executions?.cancel(outcome.executionAction.runId);
+   if(typeof outcome!=="string"&&outcome.executionAction?.kind==="interrupt")this.executions?.interrupt(outcome.executionAction.runId,outcome.executionAction.reason);
    if(result==="applied")applied++;else if(result==="rejected")rejected++;else if(result==="observed")observed++;
   }
   return {seen:comments.length,applied,rejected,observed,cursor:this.row(workItemId).cursor};

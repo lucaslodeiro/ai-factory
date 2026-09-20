@@ -61,6 +61,11 @@ export class WorkflowCommands {
    });
    return {projection:result,recordIds:ids};
   }
+  if(command.kind==="pause") {
+   if(!["QUEUED","RUNNING","WAITING"].includes(current.status))throw new Error(`Cannot pause while workflow is ${current.status}`);
+   const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:current.stage,status:"PAUSED",actor,source,reason:{code:"user-pause",summary:"Human paused work"}});
+   return {projection:result,recordIds:[],executionAction:current.activeRunId?{kind:"interrupt" as const,runId:current.activeRunId,reason:"user-pause"}:undefined};
+  }
   if(command.kind==="cancel") {
    if(["COMPLETED","CANCELLED"].includes(current.status))throw new Error(`Cannot cancel while workflow is ${current.status}`);
    const ids=this.records.openRequests(context.workItemId).map(record=>record.id).reverse();

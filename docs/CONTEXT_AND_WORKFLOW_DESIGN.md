@@ -242,7 +242,7 @@ Comment edits never change a record; a new comment creates a new record. Open re
 
 Two values only. `spec` dies with the next SPEC version; `issue` survives until explicitly superseded or revoked. v1's `attempt` and `stage` scopes are removed: a hint like "rerun the failing test" carried with `spec` scope is harmless because the role contract already says "when compatible with the approved specification".
 
-Defaults: `/factory answer` → decision `category: human`, `scope: spec`. `/factory retry <text>` → a new instruction, `scope: spec`, `applies_to: []`; it does not replace prior instructions. `/factory note <text>` behaves the same. `--issue` sets `scope: issue`; `--for builder,tester` sets `applies_to`. Replacement is explicit through `/factory replace <record-id> <text>` and removal through `/factory revoke <record-id>`. The status comment lists short record ids for active human instructions so these commands are usable, and warns when more than three are active (§5.6).
+Defaults: `/factory answer` → decision `category: human`, `scope: spec`. `/factory retry <text>` → a new instruction, `scope: spec`, `applies_to: []`; it does not replace prior instructions. `/factory note <text>` behaves the same. `/factory pause` pauses `QUEUED`, `RUNNING` or `WAITING` work in place, preserves open requests and interrupts a live execution with reason `user-pause`; `/factory retry` restores the derived queued or waiting status. `--issue` sets `scope: issue`; `--for builder,tester` sets `applies_to`. Replacement is explicit through `/factory replace <record-id> <text>` and removal through `/factory revoke <record-id>`. The status comment lists short record ids for active human instructions so these commands are usable, and warns when more than three are active (§5.6).
 
 ### 5.5 Tester and human instructions
 
@@ -376,7 +376,7 @@ interface Projection { stage: Stage; status: Status; attempt: number; revision: 
 | any/QUEUED or RUNNING | confirmed disruptive maintenance | same stage/PAUSED | maintenance item linked; running execution becomes `interrupted/planned-maintenance` | Maintenance pause with Resume CTA |
 | any/PAUSED by maintenance | individual or batch Resume | same stage/`resumeStatus`; attempt + 1 only if QUEUED | maintenance item marked resumed | Resume acknowledged or original human CTA restored |
 | FAILED/PAUSED/CANCELLED | `/factory retry [text]` | same stage/`resumeStatus`; attempt + 1 only if QUEUED | active failure resolved if present; instruction created if text | Retry accepted or original human CTA restored |
-| any active | `/factory pause` | same stage/PAUSED | open requests preserved; implicit `user-pause` maintenance operation | Paused milestone |
+| QUEUED, RUNNING or WAITING | `/factory pause` | same stage/PAUSED | open requests preserved; running execution becomes `interrupted/user-pause` | Paused milestone |
 | any | `/factory cancel` | same stage/CANCELLED | open requests → cancelled | Cancelled milestone |
 | DELIVERY/WAITING | PR merged | DELIVERY/COMPLETED | merge request resolved | Merged milestone |
 | DELIVERY/WAITING | PR closed | DELIVERY/WAITING | merge request flagged `prClosed` | PR-closed milestone |
@@ -481,7 +481,7 @@ CREATE TABLE maintenance_items(
 );
 ```
 
-`executions` adds nullable `interruption_reason` and `maintenance_id`. A SIGTERM/SIGINT handler with no confirmed operation creates an implicit `signal` operation with actor `os` before pausing work, so batch resume remains available after a direct service stop. `/factory pause` creates `user-pause` with the requesting actor. Batch resume selects only unresolved `maintenance_items` whose work item is still `PAUSED`; it never captures an item that was already paused before confirmation. The dashboard can therefore recover the “Resume paused tasks” action after updating itself.
+`executions` adds nullable `interruption_reason` and `maintenance_id`. A SIGTERM/SIGINT handler with no confirmed operation creates an implicit `signal` operation with actor `os` before pausing work, so batch resume remains available after a direct service stop. `/factory pause` is an issue-local transition and records `user-pause` directly as the live execution's interruption reason. Batch resume selects only unresolved `maintenance_items` whose work item is still `PAUSED`; it never captures an item that was already paused before confirmation. The dashboard can therefore recover the “Resume paused tasks” action after updating itself.
 
 ### 7.7 Repository maintenance and extreme recovery
 

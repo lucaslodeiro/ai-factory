@@ -9,6 +9,7 @@ export type FactoryCommand=
  | {kind:"note";text:string;scope:RecordScope;appliesTo:AgentRole[]}
  | {kind:"replace";recordId:string;text:string;scope:RecordScope;appliesTo:AgentRole[]}
  | {kind:"revoke";recordId:string}
+ | {kind:"pause"}
  | {kind:"cancel"};
 
 const roles:Record<string,AgentRole>={architect:"product-architect",builder:"developer",tester:"qa",reviewer:"reviewer"};
@@ -47,6 +48,7 @@ export function parseFactoryCommand(body:string):FactoryCommand|null {
  if (retry!==undefined) return {kind:"retry",guidance:retry};
  if (!trimmed.startsWith("/factory ")) return null;
  if (trimmed==="/factory start") return {kind:"start"};
+ if (trimmed==="/factory pause") return {kind:"pause"};
  if (trimmed==="/factory cancel") return {kind:"cancel"};
  const approve=trimmed.match(/^\/factory approve v(\d+)$/);
  if (approve) return {kind:"approve",version:Number(approve[1])};
