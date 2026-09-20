@@ -89,3 +89,9 @@ export function formatControllerStatus(observation:LeaseObservation,repositoryNa
  if(observation.state==="absent")return [...lines,"Controller: none","The repository is available for acquisition."].join("\n");
  const seconds=Math.floor(observation.heartbeatAgeMs/1000);lines.push(`Controller: ${observation.record.displayName}`,`Contact: ${observation.record.contact||"not provided"}`,`State: ${observation.state}`,`Generation: ${observation.record.generation}`,`Heartbeat age: ${seconds}s`,`Expires: ${observation.expiresAt}`,`Active work: ${observation.record.activeWorkCount}`);return lines.join("\n");
 }
+
+export type CachedControllerState={state:"unconfigured"|"absent"|"active"|"standby"|"expired"|"uncertain"|"fenced";instanceId:string|null;generation:number|null;remoteSha:string|null;lastVerifiedAt:string|null;lastError:string|null};
+export function cachedControllerState(store:Store):CachedControllerState{
+ const row=store.db.prepare("SELECT instance_id instanceId,generation,remote_sha remoteSha,state,last_verified_at lastVerifiedAt,last_error lastError FROM repository_controller ORDER BY last_verified_at DESC LIMIT 1").get() as Omit<CachedControllerState,"state">&{state:CachedControllerState["state"]}|undefined;
+ return row??{state:"unconfigured",instanceId:null,generation:null,remoteSha:null,lastVerifiedAt:null,lastError:null};
+}

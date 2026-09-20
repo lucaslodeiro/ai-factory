@@ -24,3 +24,11 @@ minimum observable foundation for all later controller behavior.
 **Decision: agree.** Acquire, renew, release and takeover require one shared CAS
 writer with an explicit expected SHA. Local bare-origin races are sufficient to
 prove the Git invariant without making tests depend on GitHub.
+
+## P3 — Startup gate, standby and remote visibility
+
+**Decision: agree.** The lease must be acquired before abandoned execution
+recovery and orchestration. A standby daemon remains healthy but does not run an
+orchestrator cycle. The dashboard reads repository issues directly from GitHub
+and labels them as tracked or untracked locally; this is visibility, not state
+synchronization.

@@ -19,6 +19,7 @@ import type {ExecutionManager} from "./execution-manager.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {GitHubAdapter} from "./adapters/github.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
+import {cachedControllerState,ControllerLease} from "./controller-lease.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
 const types: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
@@ -152,7 +153,14 @@ function snapshot(store: Store) {
     }
   }
   const maintenance=(store.db.prepare("SELECT id,operation,actor,status,requested_at,confirmed_at,finished_at,error FROM maintenance_operations ORDER BY requested_at DESC LIMIT 10").all() as any[]).map(operation=>({...operation,affected:(store.db.prepare("SELECT work_item_id,paused_at,resumed_at FROM maintenance_items WHERE maintenance_id=?").all(operation.id) as any[])}));
-  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), issueRefresh, items, executions, usage, events,maintenance };
+  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), controller:cachedControllerState(store), issueRefresh, items, executions, usage, events,maintenance };
+}
+function controllerView(store:Store){
+ if(!config.repo)return{state:"unconfigured",issues:[]};
+ const github=new GitHubAdapter(),repository=verifyRepositoryIdentity(store,github,false),lease=new ControllerLease(repository,store),observation=lease.readLease(),owner=observation.state==="absent"?null:observation.record;
+ const tracked=new Set((store.db.prepare("SELECT issue_id FROM work_items WHERE archived_at IS NULL AND issue_id IS NOT NULL").all() as Array<{issue_id:number}>).map(row=>row.issue_id));
+ const issues=github.listManaged().map(issue=>{const labels=(issue.labels??[]).map(label=>label.name),stage=labels.find(label=>["factory:design","factory:build","factory:test","factory:review","factory:delivery","factory:done"].includes(label)),status=labels.find(label=>["factory:waiting","factory:failed","factory:paused","factory:cancelled"].includes(label));return{id:issue.id,number:issue.number,title:issue.title,url:issue.url,stage:stage?.slice(8)??"unknown",status:status?.slice(8)??"active",processedBy:owner?.displayName??"No controller",trackedHere:tracked.has(issue.id)};});
+ return{...observation,repository:repository.fullName,issues};
 }
 async function readBody(req: http.IncomingMessage) {
   let body = "";
@@ -498,7 +506,14 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if (req.method === "GET" && url.pathname === "/api/settings") return json(res,200,{...dashboardSettings(settingsRoot),daemonRunning:daemonState(store).running});
       if (req.method === "GET" && url.pathname === "/api/credentials") return json(res,200,credentialStatuses(settingsRoot));
       if (req.method === "GET" && url.pathname === "/api/slack") return json(res,200,slackStatus(settingsRoot,store));
-      if (req.method === "GET" && url.pathname === "/api/services") {const update=updateState(settingsRoot);reconcileUpdateMaintenance(store,update);const resumable=store.db.prepare(`SELECT mo.id FROM maintenance_operations mo WHERE mo.status IN ('ready','running','completed','failed') AND EXISTS(SELECT 1 FROM maintenance_items mi JOIN work_items w ON w.id=mi.work_item_id WHERE mi.maintenance_id=mo.id AND mi.resumed_at IS NULL AND w.status='PAUSED') ORDER BY mo.requested_at DESC LIMIT 1`).get() as {id:string}|undefined;return json(res,200,{services:[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")],update,version:runtimeVersion,maintenance:resumable?maintenanceOperation(store,resumable.id):null});}
+      if (req.method === "GET" && url.pathname === "/api/services") {const update=updateState(settingsRoot);reconcileUpdateMaintenance(store,update);const resumable=store.db.prepare(`SELECT mo.id FROM maintenance_operations mo WHERE mo.status IN ('ready','running','completed','failed') AND EXISTS(SELECT 1 FROM maintenance_items mi JOIN work_items w ON w.id=mi.work_item_id WHERE mi.maintenance_id=mo.id AND mi.resumed_at IS NULL AND w.status='PAUSED') ORDER BY mo.requested_at DESC LIMIT 1`).get() as {id:string}|undefined;return json(res,200,{services:[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")],controller:cachedControllerState(store),update,version:runtimeVersion,maintenance:resumable?maintenanceOperation(store,resumable.id):null});}
+      if(req.method==="GET"&&url.pathname==="/api/controller")return json(res,200,controllerView(store));
+      if(req.method==="POST"&&url.pathname==="/api/controller"){
+        const body=await readBody(req) as {action?:string;force?:boolean;confirmation?:string};if(!config.repo)return json(res,409,{error:"Configure a repository first"});
+        const github=new GitHubAdapter(),repository=verifyRepositoryIdentity(store,github,false),lease=new ControllerLease(repository,store);let result;
+        if(body.action==="refresh")result=lease.readLease();else if(body.action==="release")result=lease.release(false);else if(body.action==="takeover"){if(body.force&&body.confirmation!==repository.fullName)return json(res,400,{error:`Type ${repository.fullName} to confirm force takeover`});result=lease.takeover(Boolean(body.force));}else return json(res,400,{error:"Unknown controller action"});
+        return json(res,200,{...result,repository:repository.fullName});
+      }
       if(req.method==="GET"&&url.pathname.startsWith("/api/maintenance/"))return json(res,200,maintenanceOperation(store,url.pathname.split("/").at(-1)!));
       if(req.method==="POST"&&url.pathname==="/api/maintenance"){
         const body=await readBody(req) as {operation?:MaintenanceOperation};const allowed:MaintenanceOperation[]=["update","daemon-stop","daemon-restart","uninstall","configuration-apply","user-pause"];

@@ -17,7 +17,7 @@ import {WorkflowOrchestrator} from "./workflow-orchestrator.js";
 import {WorkflowRecords} from "./workflow-records.js";
 import type {TaskAssessment} from "./types.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
-import {ControllerLease,formatControllerStatus} from "./controller-lease.js";
+import {cachedControllerState,ControllerLease,formatControllerStatus} from "./controller-lease.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
 const p = new Command().name("factory").description("Local AI Software Factory").version("0.2.0");
 p.command("models").argument("[id]").description("Show model policy or preview role selections for a work item").action(id => {
@@ -73,6 +73,7 @@ repo.command("publish").argument("<work-item-id>").description("Commit and push 
 repo.command("clear").requiredOption("--confirm <absolute-path>").requiredOption("--repeat <absolute-path>").description("Remove all contents of the configured local checkout").action(options=>{const s=new Store();try{console.log(JSON.stringify(new RepositoryMaintenance(s).clear(options.confirm,options.repeat),null,2));}finally{s.db.close();}});
 repo.command("restore").description("Clone the configured repository into an empty checkout directory").action(()=>{const s=new Store();try{console.log(JSON.stringify(new RepositoryMaintenance(s).restore(),null,2));}finally{s.db.close();}});
 const controller=p.command("controller").description("Inspect repository controller ownership");
+controller.command("cached").description("Show the last locally verified controller state").action(()=>{const s=new Store();try{console.log(cachedControllerState(s).state);}finally{s.db.close();}});
 controller.command("status").description("Read the remote repository controller lease").action(()=>{const s=new Store();try{if(!config.repo)throw new Error("Configure GITHUB_REPOSITORY first");const repository=verifyRepositoryIdentity(s,new GitHubAdapter());console.log(formatControllerStatus(new ControllerLease(repository,s).readLease(),repository.fullName));}finally{s.db.close();}});
 const controllerClient=()=>{const store=new Store(),repository=verifyRepositoryIdentity(store,new GitHubAdapter());return{store,repository,lease:new ControllerLease(repository,store)};};
 controller.command("acquire").description("Acquire or reclaim repository control").action(()=>{const {store,repository,lease}=controllerClient();try{console.log(formatControllerStatus(lease.acquire(),repository.fullName));}finally{store.db.close();}});

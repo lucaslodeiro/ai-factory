@@ -22,6 +22,7 @@ import { WorkflowCommands } from "./workflow-commands.js";
 import { WorkflowMaintenance } from "./workflow-maintenance.js";
 import { WorkflowScheduler } from "./workflow-scheduler.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
+import {ControllerLease,CONTROLLER_HEARTBEAT_MS,type LeaseObservation} from "./controller-lease.js";
 export function acquireLock(store: Store) {
  fs.mkdirSync(config.dataDir, { recursive: true });
  const file = path.join(config.dataDir, "daemon.lock"), token = randomUUID();
@@ -46,13 +47,16 @@ export function acquireLock(store: Store) {
  };
 }
 export function recoverAbandonedExecutions(store:Store){const scheduler=new WorkflowScheduler(store),abandoned=store.db.prepare("SELECT id,work_item_id FROM executions WHERE status='running'").all() as Array<{id:string;work_item_id:string}>;for(const run of abandoned){store.db.prepare("UPDATE executions SET status='interrupted',recovery_pending=1,finished_at=?,interruption_reason='unexpected-shutdown' WHERE id=?").run(new Date().toISOString(),run.id);scheduler.fail(run.work_item_id,run.id,new Error("Agent execution was interrupted by an unexpected daemon shutdown"),"recovery");store.event("execution.interrupted",{reason:"unexpected-shutdown"},run.work_item_id,run.id);}return abandoned.length;}
-export async function startDaemon(store = new Store(),github=new GitHubAdapter()) {
+export async function runControllerCycle(controller:LeaseObservation,orchestrator:Pick<WorkflowOrchestrator,"tick">){if(controller.state!=="active")return false;await orchestrator.tick();return true;}
+export async function startDaemon(store = new Store(),github=new GitHubAdapter(),options:{controller?:ControllerLease}={}) {
+ let repository:ReturnType<GitHubAdapter["repository"]>;
  try {
   if (!config.repo || !config.approvers.length) throw new Error("Configure GITHUB_REPOSITORY and FACTORY_APPROVERS first");
-  verifyRepositoryIdentity(store,github);
+  repository=verifyRepositoryIdentity(store,github);
   prepareRepository(config);
   if (!doctor(store,github)) throw new Error("Preflight failed; fix doctor checks before starting");
  } catch(error) {throw new StartupError(error instanceof Error?error.message:String(error));}
+ const controller=options.controller??new ControllerLease(repository,store),initialController=controller.acquire();
  daemonLog("info","daemon.starting",{repo:config.repo,pollMs:config.pollMs,dataDir:config.dataDir});
  const release = acquireLock(store), executions = new ExecutionManager(store);
  const codex = new CodexAdapter(executions), claude = new ClaudeAdapter(executions);
@@ -104,6 +108,7 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
    try {
     let result: unknown;
     if (r.kind === "stop") result=await stop();
+    else if(controllerState.state!=="active")throw new Error("This installation is in controller standby; workflow controls are read-only");
     else if (r.kind === "retry") {const specVersion=(store.db.prepare("SELECT COALESCE(MAX(version),0) version FROM specs WHERE work_item_id=?").get(r.target) as {version:number}).version;result=commands.apply({kind:"retry",guidance:"",scope:"spec",appliesTo:[]},{workItemId:r.target,login:"dashboard",commentId:r.id,specVersion});}
     else if (r.kind === "start-issue") result = o.startIssue(r.target);
     else if (r.kind === "refresh-list") result = o.refreshIssueList();
@@ -124,19 +129,20 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
  };
  const sigint=()=>void stop("SIGINT").catch(()=>{}),sigterm=()=>void stop("SIGTERM").catch(()=>{});
  process.on("SIGINT",sigint); process.on("SIGTERM",sigterm);
- let timer: NodeJS.Timeout | undefined;
+ let timer: NodeJS.Timeout | undefined,controllerState:LeaseObservation=initialController,lastControllerCheck=Date.now();
  try {
-  const recovered=recoverAbandonedExecutions(store);
+  const recovered=controllerState.state==="active"?recoverAbandonedExecutions(store):0;
   audit(); await controls(); timer = setInterval(()=>void controls(), 200);
-  daemonLog("info","daemon.ready",{items:(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL").get() as {count:number}).count,recoveredExecutions:recovered,recoveredSignalMaintenance});
+  daemonLog("info","daemon.ready",{items:(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL").get() as {count:number}).count,recoveredExecutions:recovered,recoveredSignalMaintenance,controller:controllerState.state});
   while (!stopping) {
-   try { await o.tick(); audit(); } catch (e) { daemonLog("error","daemon.tick_failed",{error:String(e)}); }
+   if(Date.now()-lastControllerCheck>=CONTROLLER_HEARTBEAT_MS){try{controllerState=controllerState.state==="active"?controller.renew(controllerState):controller.readLease();}catch(e){daemonLog("warn","controller_check_failed",{error:String(e)});}lastControllerCheck=Date.now();}
+   try {if(await runControllerCycle(controllerState,o))audit();} catch (e) { daemonLog("error","daemon.tick_failed",{error:String(e)}); }
    const until = Date.now() + config.pollMs;
    while (!stopping && Date.now() < until) await new Promise(r => setTimeout(r, 100));
   }
  } finally {
   if (timer) clearInterval(timer); process.off("SIGINT",sigint); process.off("SIGTERM",sigterm);if(stopPromise)await stopPromise;
-  try { await o.flush(); audit(); } catch (e) { daemonLog("error","daemon.final_sync_failed",{error:String(e)}); }
+  if(controllerState.state==="active")try { await o.flush(); audit(); } catch (e) { daemonLog("error","daemon.final_sync_failed",{error:String(e)}); }
   release();
   daemonLog("info","daemon.stopped",{reason:stopReason});
  }
