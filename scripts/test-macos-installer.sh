@@ -180,7 +180,7 @@ case "$arguments" in
     cat > "$output" <<'PROVIDER'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ ${CODEX_NON_INTERACTIVE:-} == 1 && ${CI:-} == 1 && ${NO_COLOR:-} == 1 ]]
+[[ ${CODEX_NON_INTERACTIVE:-} == 1 && ${CI:-} == outer && ${NO_COLOR:-} == outer ]]
 if IFS= read -r _; then echo 'Codex installer received interactive input' >&2; exit 31; fi
 printf 'codex noninteractive\n' >> "$PROVIDER_LOG"
 printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/codex"
@@ -191,7 +191,7 @@ PROVIDER
     cat > "$output" <<'PROVIDER'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ ${CI:-} == 1 && ${NO_COLOR:-} == 1 && ${TERM:-} == dumb && ${1:-} == stable ]]
+[[ ${CI:-} == outer && ${NO_COLOR:-} == outer && ${TERM:-} == outer && ${1:-} == stable ]]
 if IFS= read -r _; then echo 'Claude installer received interactive input' >&2; exit 32; fi
 printf 'claude noninteractive\n' >> "$PROVIDER_LOG"
 printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/claude"
@@ -209,7 +209,7 @@ esac
 MOCK
 chmod +x "$fixture/bin/curl"
 rm -f "$fixture/home/.local/bin/codex" "$fixture/home/.local/bin/claude" "$fixture/provider.log"
-PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/args" PROVIDER_LOG="$fixture/provider.log" \
+PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/args" PROVIDER_LOG="$fixture/provider.log" CI=outer NO_COLOR=outer TERM=outer \
   bash "$root/scripts/install-macos.sh" >/dev/null
 printf 'codex noninteractive\nclaude noninteractive\n' > "$fixture/providers-expected"
 cmp "$fixture/providers-expected" "$fixture/provider.log"

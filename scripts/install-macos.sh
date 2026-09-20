@@ -194,13 +194,13 @@ fi
 if ! codex --version >/dev/null 2>&1; then
   echo "Installing Codex CLI non-interactively with its official native installer..."
   curl -fsSL https://chatgpt.com/codex/install.sh -o "$temporary_dir/codex-install.sh"
-  CODEX_NON_INTERACTIVE=1 CI=1 NO_COLOR=1 sh "$temporary_dir/codex-install.sh" </dev/null
+  CODEX_NON_INTERACTIVE=1 sh "$temporary_dir/codex-install.sh" </dev/null
 fi
 
 if ! claude --version >/dev/null 2>&1; then
   echo "Installing Claude Code stable non-interactively with its official native installer..."
   curl -fsSL https://claude.ai/install.sh -o "$temporary_dir/claude-install.sh"
-  CI=1 NO_COLOR=1 TERM=dumb bash "$temporary_dir/claude-install.sh" stable </dev/null
+  bash "$temporary_dir/claude-install.sh" stable </dev/null
 fi
 
 hash -r
