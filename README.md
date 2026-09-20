@@ -146,3 +146,20 @@ For Builder and Tester executions whose root package declares Playwright, Puppet
 The worker receives `FACTORY_BROWSER_STATUS`, `FACTORY_BROWSER_REPORT`, and, on success, `FACTORY_BROWSER_CDP_URL` and `FACTORY_BROWSER_DEBUG_PORT`. Use Playwright `chromium.connectOverCDP(process.env.FACTORY_BROWSER_CDP_URL)` or Puppeteer `connect({browserURL: process.env.FACTORY_BROWSER_CDP_URL})`; pass the debugging port directly to Lighthouse instead of launching another Chrome. Test scripts should support these variables and retain standalone launch as a fallback outside Factory. The supervisor closes the browser and deletes its profile on completion, cancellation, timeout or daemon disconnection. `data/runs/<execution>/browser.json` records readiness or the actual failure. Readiness is not acceptance evidence for the application.
 
 Chrome is discovered in the standard macOS application paths or Linux PATH. Set `FACTORY_BROWSER_EXECUTABLE` to an absolute executable path for a custom installation. No browser installation or permissions change is performed automatically. Missing or unusable browsers are reported to the worker; required browser checks must produce `environment-blocked` rather than an architectural consultation. Projects that add browser dependencies during their first run, or declare them only in nested workspace packages, need a subsequent execution with a root dependency declaration for automatic provisioning. This is a browser capability, not an unrestricted host command runner.
+
+### Tester writes and verification evidence
+
+Factory captures file contents, modes and index state before each agent execution. Restricted-role checks compare that baseline with the final workspace, and Tester commits include only its validated changes. The Builder retains ownership of the complete pending implementation across retries, with credential checks covering every file it commits. Existing files are preserved; an unchanged artifact from an earlier attempt is not attributed to the new agent. Pre-existing uncommitted code/configuration that has not been reviewed blocks acceptance with a separate diagnostic rather than being silently committed or treated as new Tester edits.
+
+The Tester may modify test paths (`test/`, `tests/`, `__tests__/`, `spec/`, `specs/`, or `*.test.*` / `*.spec.*`) and write passive artifacts under the default `evidence/` directory. Artifacts are limited to JSON, Markdown, text, CSV and raster screenshots. Executables, links, hidden paths, manifests, lockfiles, credentials and policy changes are rejected, with the offending filenames included in the error.
+
+Projects can declare other artifact directories and additional test entrypoints in `.factory/verification.json`, before the Tester runs:
+
+```json
+{
+  "evidenceDirectories": ["evidence", "reports/qa"],
+  "testFiles": ["scripts/verify.mjs", "scripts/performance.mjs"]
+}
+```
+
+Paths are explicit repository-relative names, without glob patterns or parent/hidden segments. The policy is pinned at execution start; the Tester cannot expand its own permissions. Review this file as part of project configuration. Artifact directories must be dedicated to verification, not application assets or configuration. Evidence from prior executions is not proof that the current execution passed its acceptance criteria.

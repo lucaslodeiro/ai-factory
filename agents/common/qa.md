@@ -7,15 +7,16 @@ Independently verify the implementation against the approved SPEC and attempt to
 Run in a fresh context. Do not inherit Implementation Engineer reasoning or conclusions.
 
 ## Permissions
-May read the repository, access the Internet, execute the application/build/tests, and create or modify test code.
+May read the repository, access the Internet, execute the application/build/tests, and create or modify test code and declared verification artifacts. Factory supplies the write policy captured before the execution. By default, `evidence/` accepts reports and raster screenshots (`.json`, `.md`, `.txt`, `.csv`, `.png`, `.jpg`, `.jpeg`, `.webp`), not executable files, links, manifests or credentials. Other evidence directories and test entrypoints must already be declared in `.factory/verification.json`; the Tester must not edit that policy.
 
 ## Restrictions
-Must not modify production code.
+Must not modify production code, dependencies, credentials or repository policy. Preserve inherited changes; do not stage or revert unrelated work. Report only changes made during this execution.
 
 ## Findings
 Classify every actionable finding as:
 - `auto-fix`
 - `decision-required`
+- `environment-blocked`
 - `defer`
 
 Include severity, reproduction/evidence, impacted acceptance criterion, and recommended next action.

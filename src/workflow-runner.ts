@@ -37,7 +37,10 @@ export class WorkflowRunner {
   const consultation=active?.payload.kind==="request"&&active.payload.owner==="architect";
   const selection=selectModel(role,assessment,projection.correctionCycles,consultation),budget=resolveContextBudget(role,selection);
   const route=consultation&&active?.payload.kind==="request"?this.route(active.payload.originatingStage,active.payload.allowedReturnStages):undefined;
-  const contract=promptContract(role,selection.provider,{tacticalRoute:route}),contractBytes=Buffer.byteLength(contract);
+  let baseline;
+  try{baseline=this.workspaces.capture?.(cwd);}catch(error){this.scheduler.rejectQueued(workItemId,error,"execution");return true;}
+  const policyText=role==="qa"&&baseline?`\n\nVerification write policy for this execution: ${JSON.stringify(baseline.policy)}. Evidence directories allow regular, non-executable JSON, Markdown, text, CSV and raster images only. Production, dependency, credential and policy changes are forbidden.`:"";
+  const contract=promptContract(role,selection.provider,{tacticalRoute:route})+policyText,contractBytes=Buffer.byteLength(contract);
   const summary=["qa","reviewer"].includes(role)?this.workspaces.changeSummary(cwd):undefined;
   const reviewerContext=role==="reviewer"?this.workspaces.prepareReviewerContext(cwd,workItemId):undefined;
   let assembled;
@@ -45,15 +48,15 @@ export class WorkflowRunner {
    if(contractBytes+2>=budget.bytes)throw new InvalidContextError(`Protected prompt contract requires ${contractBytes} bytes but the budget is ${budget.bytes}`);
    assembled=this.assembler.assemble({workItemId,role,specVersion,budgetBytes:budget.bytes-contractBytes-2,budgetSource:budget.source,issue:{title:context.title??`Issue #${row.issue_number}`,body:context.body??""},changedFiles:(reviewerContext??summary)?.files,diffStat:(reviewerContext??summary)?.stat,diffPath:reviewerContext?.path,qaEvidence:role==="reviewer"?this.latestResult(workItemId,"qa"):undefined});
   } catch(error){if(reviewerContext)this.workspaces.cleanupReviewerContext(cwd,workItemId);if(error instanceof InvalidContextError){this.scheduler.rejectQueued(workItemId,error,"invalid-context");return true;}throw error;}
-  const instructions=`${contract}\n\n${assembled.markdown}`,before=this.workspaces.head(cwd);
+  const instructions=`${contract}\n\n${assembled.markdown}`,before=baseline?.head??this.workspaces.head(cwd);
   let started:ReturnType<WorkflowScheduler["begin"]>|undefined;
   try {
    started=this.scheduler.begin(workItemId);
    this.store.event("model.selected",{role,specVersion,selection,budget},workItemId,started.executionId);
    const result=await adapter.run({workItemId,role,cwd,instructions,selection,executionId:started.executionId,promptMetadata:{...assembled.manifest,budgetBytes:budget.bytes,budgetSource:budget.source,sectionBytes:{Contract:contractBytes,...assembled.manifest.sectionBytes}},allowedNextRoles:route?.allowedNextRoles,consultationFrom:route?.from});
    const current=new (await import("./workflow-projection.js")).WorkflowProjections(this.store).get(workItemId);if(current.status!=="RUNNING"||current.activeRunId!==started.executionId){this.store.event("execution.discarded",{executionId:started.executionId,reason:"Workflow changed before worktree validation"},workItemId,started.executionId);return true;}
-   this.workspaces.check(cwd,role,before,row.branch);
-   if(role==="developer"||role==="qa")this.workspaces.commit(cwd,`factory: ${role} for #${row.issue_number}`,row.branch);
+   const changed=this.workspaces.check(cwd,role,before,row.branch,baseline);
+   if(role==="developer"||role==="qa")this.workspaces.commit(cwd,`factory: ${role} for #${row.issue_number}`,row.branch,changed??undefined);
    const disposition=this.fence?.resultDisposition()??"apply";
    if(disposition==="hold"){this.held.set(started.executionId,{workItemId,role,result});this.store.event("agent.result.held",{role},workItemId,started.executionId);return true;}
    if(disposition==="discard"){this.store.event("execution.discarded",{reason:"controller-lost"},workItemId,started.executionId);return true;}
