@@ -71,7 +71,7 @@ write_service() {
   <key>Label</key><string>$(xml "$service_label")</string>
   <key>ProgramArguments</key><array><string>$(xml "$node_path")</string><string>$(xml "$root/dist/src/cli.js")</string><string>$command</string></array>
   <key>WorkingDirectory</key><string>$(xml "$root")</string>
-  <key>EnvironmentVariables</key><dict><key>HOME</key><string>$(xml "$HOME")</string><key>PATH</key><string>$(xml "$runtime_path")</string><key>AI_FACTORY_HOME</key><string>$(xml "$home")</string></dict>
+  <key>EnvironmentVariables</key><dict><key>HOME</key><string>$(xml "$HOME")</string><key>PATH</key><string>$(xml "$runtime_path")</string><key>AI_FACTORY_HOME</key><string>$(xml "$home")</string><key>FACTORY_MANAGED_SERVICE</key><string>1</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
   <key>ThrottleInterval</key><integer>10</integer>

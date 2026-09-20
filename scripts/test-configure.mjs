@@ -16,6 +16,7 @@ try {
   const ghAuth = path.join(root,'gh.authenticated');
   fs.mkdirSync(home);
   fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin,'git'),'#!/bin/sh\nexec /usr/bin/git -c "url.file://$GH_REMOTE.insteadOf=https://github.com/alice/ai-factory-demo.git" "$@"\n',{mode:0o755});
   fs.writeFileSync(path.join(bin,'gh'),`#!/usr/bin/env bash
 set -e
 echo "$*" >> "$GH_LOG"
@@ -33,6 +34,7 @@ elif [[ $1 == repo && $2 == create ]]; then
   git init --bare "$GH_REMOTE" >/dev/null
 elif [[ $1 == repo && $2 == clone ]]; then
   git clone "$GH_REMOTE" "$4" >/dev/null 2>&1
+  git -C "$4" remote set-url origin https://github.com/alice/ai-factory-demo.git
 fi
 `,{mode:0o755});
   const env = {...process.env,HOME:home,GH_REMOTE:remote,GH_LOG:ghLog,GH_AUTH:ghAuth,PATH:`${bin}:${process.env.PATH}`};

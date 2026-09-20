@@ -26,7 +26,7 @@ const modelField = (section: string, role: string): Omit<Field,"key"> => ({label
 
 const descriptions: Record<string,Omit<Field,"key">> = {
   FACTORY_DATA_DIR:{label:"Data directory",description:"SQLite database, logs and retained worktrees.",group:"runtime",required:true,restart:"all"},
-  FACTORY_REPO_DIR:{label:"Target checkout",description:"Absolute path to the application clone.",group:"project",required:true,restart:"daemon",setup:true},
+  FACTORY_REPO_DIR:{label:"Target checkout",description:"Path to the application checkout. Startup clones it if missing and initializes an empty remote.",group:"project",required:true,restart:"daemon",setup:true},
   FACTORY_POLL_INTERVAL_MS:{label:"GitHub polling interval",description:"How often the daemon checks issues and comments.",group:"runtime",type:"number",unit:"milliseconds",restart:"daemon"},
   FACTORY_EXECUTION_TIMEOUT_MS:{label:"Agent execution timeout",description:"Maximum duration of one agent process.",group:"runtime",type:"number",unit:"milliseconds",restart:"daemon"},
   FACTORY_MAX_FIX_CYCLES:{label:"Automatic correction cycles",description:"Maximum Builder and Tester correction loops before human input.",group:"runtime",type:"number",unit:"cycles",restart:"daemon"},

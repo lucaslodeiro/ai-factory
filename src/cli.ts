@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {startupExitCode} from "./startup-error.js";
 import { config } from "./config.js";
 import { selectModel, modelPolicyVersion } from "./model-policy.js";
 import type { AgentRole } from "./types.js";
@@ -69,4 +70,4 @@ repo.command("sync").description("Fetch and fast-forward a clean default branch"
 repo.command("publish").argument("<work-item-id>").description("Commit and push one factory branch").action(id=>{const s=new Store();try{console.log(JSON.stringify(new RepositoryMaintenance(s).publish(id),null,2));}finally{s.db.close();}});
 repo.command("clear").requiredOption("--confirm <absolute-path>").requiredOption("--repeat <absolute-path>").description("Remove all contents of the configured local checkout").action(options=>{const s=new Store();try{console.log(JSON.stringify(new RepositoryMaintenance(s).clear(options.confirm,options.repeat),null,2));}finally{s.db.close();}});
 repo.command("restore").description("Clone the configured repository into an empty checkout directory").action(()=>{const s=new Store();try{console.log(JSON.stringify(new RepositoryMaintenance(s).restore(),null,2));}finally{s.db.close();}});
-try { await p.parseAsync(); } catch (e) { console.error(String(e)); process.exitCode = 1; }
+try { await p.parseAsync(); } catch (e) { console.error(String(e)); process.exitCode = startupExitCode(e); }

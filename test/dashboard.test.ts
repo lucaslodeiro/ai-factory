@@ -341,11 +341,13 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(fs.existsSync(path.join(settingsRoot,"daemon-service-state")),false);
     const firstSetupSave = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({
       startDaemonWhenReady:true,
-      values:{GITHUB_REPOSITORY:"owner/demo",FACTORY_REPO_DIR:settingsRoot,FACTORY_APPROVERS:"demo-user",GIT_COMMAND:fakeGit},
+      values:{GITHUB_REPOSITORY:"owner/demo",FACTORY_REPO_DIR:path.join(settingsRoot,"missing-checkout"),FACTORY_APPROVERS:"demo-user",GIT_COMMAND:fakeGit},
     })});
     assert.equal(firstSetupSave.status,200);
     const firstSetupResult=await firstSetupSave.json() as any;
     assert.deepEqual(firstSetupResult.startedServices,["daemon"]);
+    assert.equal(firstSetupResult.readiness.ready,true);
+    assert.equal(fs.existsSync(path.join(settingsRoot,"missing-checkout")),false,"readiness checks do not mutate the checkout");
     assert.match(firstSetupResult.message,/Daemon started and verified/);
     assert.ok(fs.existsSync(path.join(settingsRoot,"daemon-service-state")));
   } finally {

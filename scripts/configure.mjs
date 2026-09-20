@@ -6,6 +6,7 @@ import readline from 'node:readline';
 import {Writable} from 'node:stream';
 import {parse} from 'dotenv';
 import Database from 'better-sqlite3';
+import {prepareRepository} from '../dist/src/repository-setup.js';
 import {validateSetting} from '../dist/src/dashboard-settings.js';
 function installationHome(root){return process.env.AI_FACTORY_HOME?.trim()?path.resolve(process.env.AI_FACTORY_HOME):path.basename(path.resolve(root))==='engine'?path.dirname(path.resolve(root)):path.resolve(root);}
 
@@ -25,9 +26,6 @@ function repositoryDefaultBranch(repository) {
   const value=result.status===0?result.stdout.trim():'';
   return /^[A-Za-z0-9._/-]+$/.test(value)?value:'';
 }
-function git(root, command, args, options = {}) {
-  return run(command,['-C',root,...args],options);
-}
 function requireSuccess(result, action) {
   if (result.status !== 0) throw new Error(`${action} failed.\n${(result.stderr || result.stdout || '').trim()}`);
 }
@@ -42,45 +40,18 @@ async function askYesNo(lines, question) {
     console.log('Answer yes or no.');
   }
 }
-function ensureGitIdentity(repoDir, gitCommand, login) {
-  const name = git(repoDir,gitCommand,['config','user.name']);
-  if (name.status !== 0 || !name.stdout.trim()) requireSuccess(git(repoDir,gitCommand,['config','user.name',login]),'Configuring the repository Git author name');
-  const email = git(repoDir,gitCommand,['config','user.email']);
-  if (email.status !== 0 || !email.stdout.trim()) {
-    const id = githubValue('.id');
-    const address = /^\d+$/.test(id) ? `${id}+${login}@users.noreply.github.com` : `${login}@users.noreply.github.com`;
-    requireSuccess(git(repoDir,gitCommand,['config','user.email',address]),'Configuring the repository Git author email');
-  }
-}
-async function prepareTarget(values, lines, login) {
+async function prepareTarget(root, values, lines, login) {
   if (!values.GITHUB_REPOSITORY || !values.FACTORY_REPO_DIR || !login) return false;
-  const repoDir = path.resolve(values.FACTORY_REPO_DIR);
+  const repoDir = path.resolve(installationHome(root),values.FACTORY_REPO_DIR);
   const exists = fs.existsSync(repoDir);
   const remote = run('gh',['repo','view',values.GITHUB_REPOSITORY,'--json','nameWithOwner']);
   const repoExists = remote.status === 0;
   if (!exists) {
     const action = repoExists ? 'Clone' : 'Create as a private repository and clone';
     if (!await askYesNo(lines,`${action} ${values.GITHUB_REPOSITORY} in ${repoDir}?`)) return false;
-    fs.mkdirSync(path.dirname(repoDir),{recursive:true});
     if (!repoExists) requireSuccess(run('gh',['repo','create',values.GITHUB_REPOSITORY,'--private','--description','Demo application managed by AI Factory']),'Creating the private GitHub repository');
-    requireSuccess(run('gh',['repo','clone',values.GITHUB_REPOSITORY,repoDir],{timeout:120000}),'Cloning the target repository');
   }
-  if (!fs.statSync(repoDir).isDirectory()) throw new Error(`Target checkout is not a directory: ${repoDir}`);
-  const origin = git(repoDir,values.GIT_COMMAND,['remote','get-url','origin']);
-  const normalizedOrigin = origin.stdout.trim().replace(/\.git$/,'');
-  if (origin.status !== 0 || !normalizedOrigin.endsWith(values.GITHUB_REPOSITORY)) {
-    throw new Error(`Target checkout origin does not match ${values.GITHUB_REPOSITORY}: ${repoDir}`);
-  }
-  ensureGitIdentity(repoDir,values.GIT_COMMAND,login);
-  const head = git(repoDir,values.GIT_COMMAND,['rev-parse','--verify','HEAD']);
-  if (head.status !== 0) {
-    requireSuccess(git(repoDir,values.GIT_COMMAND,['symbolic-ref','HEAD',`refs/heads/${values.GITHUB_DEFAULT_BRANCH}`]),'Selecting the initial branch');
-    const readme = path.join(repoDir,'README.md');
-    if (!fs.existsSync(readme)) fs.writeFileSync(readme,`# ai-factory-demo\n\nDemo application managed by AI Factory.\n`);
-    requireSuccess(git(repoDir,values.GIT_COMMAND,['add','README.md']),'Staging the demo README');
-    requireSuccess(git(repoDir,values.GIT_COMMAND,['commit','-m','chore: initialize demo']),'Creating the initial demo commit');
-    requireSuccess(git(repoDir,values.GIT_COMMAND,['push','-u','origin',values.GITHUB_DEFAULT_BRANCH],{timeout:120000}),'Publishing the initial demo branch');
-  }
+  prepareRepository({repoDir,repo:values.GITHUB_REPOSITORY,defaultBranch:values.GITHUB_DEFAULT_BRANCH,gitCommand:values.GIT_COMMAND},()=>({login,id:Number(githubValue('.id'))}));
   return true;
 }
 
@@ -186,7 +157,7 @@ export async function configure(root, useDefaults = false) {
       const defaultBranch=repositoryDefaultBranch(values.GITHUB_REPOSITORY);
       if(defaultBranch&&values.GITHUB_REPOSITORY!==oldValues.GITHUB_REPOSITORY)values.GITHUB_DEFAULT_BRANCH=defaultBranch;
       const required = ['GITHUB_REPOSITORY','FACTORY_REPO_DIR','FACTORY_APPROVERS'];
-      if (required.every(key => values[key])) targetPrepared = await prepareTarget(values,lines,login);
+      if (required.every(key => values[key])) targetPrepared = await prepareTarget(root,values,lines,login);
     }
     for (const key of Object.keys(defaults)) validateSetting(key,values[key]);
     assertStopped(root, oldValues);
@@ -198,7 +169,7 @@ export async function configure(root, useDefaults = false) {
       console.log('The factory engine is installed. Target-project setup was left for later; this is not an installation error.');
       console.log(`Still required before the first start: ${missing.join(', ')}`);
       console.log('Run `npm run configure` to complete GitHub and target-project setup.');
-    } else if (targetPrepared === false) {
+    } else if (targetPrepared !== true) {
       console.log('Target settings were saved, but the local clone was not prepared.');
       console.log('Run `npm run configure` when you are ready to create or clone it.');
     } else {

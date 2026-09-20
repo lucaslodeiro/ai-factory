@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import {StartupError} from "./startup-error.js";
+import {prepareRepository} from "./repository-setup.js";
 import { doctor } from "./doctor.js";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -43,9 +45,12 @@ export function acquireLock(store: Store) {
 }
 export function recoverAbandonedExecutions(store:Store){const scheduler=new WorkflowScheduler(store),abandoned=store.db.prepare("SELECT id,work_item_id FROM executions WHERE status='running'").all() as Array<{id:string;work_item_id:string}>;for(const run of abandoned){store.db.prepare("UPDATE executions SET status='interrupted',recovery_pending=1,finished_at=?,interruption_reason='unexpected-shutdown' WHERE id=?").run(new Date().toISOString(),run.id);scheduler.fail(run.work_item_id,run.id,new Error("Agent execution was interrupted by an unexpected daemon shutdown"),"recovery");store.event("execution.interrupted",{reason:"unexpected-shutdown"},run.work_item_id,run.id);}return abandoned.length;}
 export async function startDaemon(store = new Store(),github=new GitHubAdapter()) {
- if (!config.repo || !config.approvers.length) throw new Error("Configure GITHUB_REPOSITORY and FACTORY_APPROVERS first");
- verifyRepositoryIdentity(store,github);
- if (!doctor(store,github)) throw new Error("Preflight failed; fix doctor checks before starting");
+ try {
+  if (!config.repo || !config.approvers.length) throw new Error("Configure GITHUB_REPOSITORY and FACTORY_APPROVERS first");
+  verifyRepositoryIdentity(store,github);
+  prepareRepository(config);
+  if (!doctor(store,github)) throw new Error("Preflight failed; fix doctor checks before starting");
+ } catch(error) {throw new StartupError(error instanceof Error?error.message:String(error));}
  daemonLog("info","daemon.starting",{repo:config.repo,pollMs:config.pollMs,dataDir:config.dataDir});
  const release = acquireLock(store), executions = new ExecutionManager(store);
  const codex = new CodexAdapter(executions), claude = new ClaudeAdapter(executions);

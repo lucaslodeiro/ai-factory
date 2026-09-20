@@ -374,18 +374,14 @@ function setupReadiness(root: string, credentials: ReturnType<typeof credentialS
   require(/^[\w.-]+\/[\w.-]+$/.test(repository),{id:"repository",label:"Choose the GitHub repository to process.",group:"project"});
   require(Boolean(approvers.length),{id:"approvers",label:"Add at least one authorized approver.",group:"access"});
   const checkoutExists = Boolean(repoDir && fs.existsSync(repoDir) && fs.statSync(repoDir).isDirectory());
-  if (!checkoutExists) {
-    require(false,{id:"checkout",label:"Choose an existing local checkout of the target repository.",group:"project"});
-  } else {
+  if (!repoDir || (fs.existsSync(repoDir) && !checkoutExists)) {
+    require(false,{id:"checkout",label:"Choose a local checkout path; a missing checkout will be cloned at startup.",group:"project"});
+  } else if (checkoutExists && fs.readdirSync(repoDir).length) {
     const runGit = (args: string[]) => spawnSync(gitCommand,args,{cwd:repoDir,encoding:"utf8",timeout:5000});
     const inside = runGit(["rev-parse","--is-inside-work-tree"]);
     if (inside.status !== 0 || inside.stdout.trim() !== "true") {
       require(false,{id:"checkout-git",label:"Use a target checkout that is a Git working tree.",group:"project"});
     } else {
-      const name = runGit(["config","user.name"]), email = runGit(["config","user.email"]);
-      require(name.status === 0 && Boolean(name.stdout.trim()) && email.status === 0 && Boolean(email.stdout.trim()),{
-        id:"git-identity",label:"Configure Git user.name and user.email for the target checkout.",group:"project",
-      });
       if (/^[\w.-]+\/[\w.-]+$/.test(repository)) {
         const origin = runGit(["remote","get-url","origin"]), expected = `https://github.com/${repository}`;
         require(origin.status === 0 && normalizedRepository(origin.stdout) === normalizedRepository(expected),{

@@ -122,3 +122,26 @@ test("comment discovery caches issue identity within one tick",()=>{
  try {github.issueCalls=0;(orchestrator as any).discoverStartCommands();assert.equal(github.issueCalls,1);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,1);}
  finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
 });
+
+test("first discovery includes old issue descriptions and comments, then resumes incrementally",async()=>{
+ const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
+ const store=new Store(":memory:"),github=new GitHub(),queries:string[]=[];
+ github.body="Build the portal\n\n/factory start";github.updatedAt="2020-01-01T00:00:00Z";
+ github.repositoryIssues=(since:string)=>{queries.push(since);return github.updatedAt>=since?[github.issue(1)]:[];};
+ github.repositoryComments=(since:string)=>{queries.push(since);return [];};
+ store.setMetadata(`github.start-issues:${config.repo}`,{since:new Date().toISOString(),evaluated:{}});
+ const orchestrator=new WorkflowOrchestrator(store,github,{run:async()=>{}} as any,{enabled:false,async notify(){}});
+ try{
+  await orchestrator.tick();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as any).count,1);assert.deepEqual(queries,[new Date(0).toISOString(),new Date(0).toISOString()]);
+  queries.length=0;await orchestrator.tick();assert.ok(queries.every(since=>since>github.updatedAt));assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as any).count,1);
+ }finally{store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
+});
+
+test("initial comment scan starts an old authorized issue once after upgrading the cursor",async()=>{
+ const oldRepo=config.repo,oldApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
+ const store=new Store(":memory:"),github=new GitHub(),updated="2020-01-01T00:00:00Z";
+ store.setMetadata(`github.start-comments:${config.repo}`,{since:new Date().toISOString(),evaluated:{}});
+ github.repositoryComments=(since:string)=>since<=updated?[{id:1,body:"/factory start",user:{login:"owner",type:"User"},updatedAt:updated,issueUrl:"https://api.github.com/repos/owner/demo/issues/1",createdAt:updated,issue_url:"https://api.github.com/repos/owner/demo/issues/1",created_at:updated,updated_at:updated}]:[];
+ const orchestrator=new WorkflowOrchestrator(store,github,{run:async()=>{}} as any,{enabled:false,async notify(){}});
+ try{await orchestrator.tick();await orchestrator.tick();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as any).count,1);}finally{store.db.close();config.repo=oldRepo;config.approvers.splice(0,config.approvers.length,...oldApprovers);}
+});

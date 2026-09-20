@@ -16,6 +16,8 @@ test("full daemon and CLI integration with local Git remote and deterministic pr
  git(repo, ["config", "user.name", "Factory Test"]); git(repo, ["config", "user.email", "factory@example.test"]);
  fs.writeFileSync(path.join(repo, "README.md"), "Demo"); git(repo, ["add", "."]); git(repo, ["commit", "-m", "base"]);
  git(repo, ["branch", "-M", "main"]); git(repo, ["remote", "add", "origin", origin]); git(repo, ["push", "-u", "origin", "main"]);
+ git(repo,["remote","set-url","origin","https://github.com/owner/demo.git"]);
+ git(repo,["config",`url.${origin}.insteadOf`,"https://github.com/owner/demo.git"]);
  const stateFile = path.join(root, "github.json"); fs.writeFileSync(stateFile, JSON.stringify({ comments: [], label: "bug", prs: 0 }));
  const executable = (name: string, code: string) => {
   const file = path.join(bin, name); fs.writeFileSync(file, `#!${process.execPath}\n${code}`, { mode: 0o755 }); return file;

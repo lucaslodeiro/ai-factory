@@ -59,6 +59,10 @@ npm run service -- start dashboard
 npm run service -- start daemon
 ```
 
+Starting the daemon prepares the configured target repository: it clones a missing or empty checkout directory, fills missing local Git author settings from the authenticated GitHub account, and creates and pushes an initial README commit only when the remote has no refs and the checkout has no commits or changes. Existing origins, commits and author settings are preserved; mismatched origins and nonempty remotes without the configured base branch fail with a diagnostic. A failed initial push can be retried without creating another commit. `doctor` remains a diagnostic command. Managed startup failures stop instead of repeatedly restarting; fix the reported cause and start the service again.
+
+Initial issue discovery scans the full history for authorized `/factory start` commands, then persists an incremental cursor. Upgrades from the old five-minute discovery window perform this scan once, without duplicating tracked issues.
+
 The `npm run …` examples above are only for a source checkout. In an installed
 factory, `$HOME/ai-factory` is the installation home and has no `package.json`;
 use `ai-factory service …`, `ai-factory update` and `ai-factory uninstall` from
