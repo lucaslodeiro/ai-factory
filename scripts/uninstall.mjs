@@ -16,6 +16,8 @@ const userHome=path.resolve(os.homedir());
 const manifest=JSON.parse(fs.readFileSync(path.join(engine,"package.json"),"utf8"));
 if(manifest.name!=="ai-factory")throw new Error(`Refusing to remove an unrecognized engine: ${engine}`);
 if([path.parse(factoryHome).root,userHome,path.dirname(userHome)].includes(factoryHome))throw new Error(`Unsafe factory home: ${factoryHome}`);
+const actualEngine=fs.realpathSync(engine),actualFactoryHome=fs.realpathSync(factoryHome);
+if(purge&&path.dirname(actualEngine)!==actualFactoryHome&&actualEngine!==actualFactoryHome)throw new Error(`Refusing to purge because engine ${engine} is not inside factory home ${factoryHome}`);
 const environmentFile=path.join(factoryHome,".env"),envText=fs.existsSync(environmentFile)?fs.readFileSync(environmentFile,"utf8"):"";
 const envValue=key=>{const raw=envText.match(new RegExp(`^${key}=(.*)$`,`m`))?.[1]?.trim()??"";return raw.length>=2&&["'",'"',"`"].includes(raw[0])&&raw.at(-1)===raw[0]?raw.slice(1,-1):raw;};
 const configuredData=path.resolve(factoryHome,envValue("FACTORY_DATA_DIR")||"data"),standardData=path.join(factoryHome,"data"),targetDir=envValue("FACTORY_REPO_DIR")?path.resolve(factoryHome,envValue("FACTORY_REPO_DIR")):null,reposDir=path.join(factoryHome,"repos");
