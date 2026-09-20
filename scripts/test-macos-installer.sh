@@ -60,6 +60,7 @@ cat > "$fixture/bin/xcode-select" <<'MOCK'
 MOCK
 cat > "$fixture/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CURL_LOG"
 output=
 while (($#)); do
   if [[ $1 == -o ]]; then output=$2; shift 2; else shift; fi
@@ -72,11 +73,14 @@ PRIVATE_INSTALLER
 MOCK
 chmod +x "$fixture/bin/uname" "$fixture/bin/xcode-select" "$fixture/bin/curl"
 
-PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/args" \
+PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/args" CURL_LOG="$fixture/main-curl.log" \
   bash "$root/scripts/install-macos.sh" --dir "/tmp/path with spaces" >/dev/null
 
 printf '%s\n' --dir "/tmp/path with spaces" > "$fixture/expected"
 cmp "$fixture/expected" "$fixture/args"
+PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/develop-args" CURL_LOG="$fixture/develop-curl.log" \
+  bash "$root/scripts/install-macos.sh" --branch develop --dir "/tmp/develop path" >/dev/null
+grep -q 'raw.githubusercontent.com/lucaslodeiro/ai-factory/develop/scripts/install-core.sh' "$fixture/develop-curl.log"
 
 # Exercise verified Node/GitHub CLI installation with deterministic archives.
 for executable in node npm gh; do

@@ -211,7 +211,20 @@ gh --version
 codex --version
 claude --version
 
-curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install-core.sh \
+core_branch=$factory_branch
+if [[ $factory_repo =~ ^https://github\.com/([^/]+)/([^/]+)(\.git)?$ ]]; then
+  core_owner=${BASH_REMATCH[1]}
+  core_repository=${BASH_REMATCH[2]%.git}
+elif [[ $factory_repo =~ ^git@github\.com:([^/]+)/([^/]+)(\.git)?$ ]]; then
+  core_owner=${BASH_REMATCH[1]}
+  core_repository=${BASH_REMATCH[2]%.git}
+else
+  core_owner=lucaslodeiro
+  core_repository=ai-factory
+  core_branch=main
+  echo "The requested repository is not a GitHub URL; downloading the bootstrap installer from lucaslodeiro/ai-factory main."
+fi
+curl -fsSL "https://raw.githubusercontent.com/$core_owner/$core_repository/$core_branch/scripts/install-core.sh" \
   -o "$temporary_dir/ai-factory-install-core.sh"
 if ((installer_argument_count)); then
   AI_FACTORY_INSTALL_MODE=user-local bash "$temporary_dir/ai-factory-install-core.sh" "${installer_arguments[@]}"
