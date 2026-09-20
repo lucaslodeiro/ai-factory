@@ -8,16 +8,17 @@ test("parses lifecycle commands strictly",()=>{
  assert.deepEqual(parseFactoryCommand("/factory cancel"),{kind:"cancel"});
  assert.deepEqual(parseFactoryCommand("/factory pause"),{kind:"pause"});
  assert.deepEqual(parseFactoryCommand("/factory revoke abc-123"),{kind:"revoke",recordId:"abc-123"});
+ assert.deepEqual(parseFactoryCommand("/factory cancel\nThanks"),{kind:"cancel"});
+ assert.deepEqual(parseFactoryCommand("/factory approve v12\nLooks good"),{kind:"approve",version:12});
  assert.equal(parseFactoryCommand("Please /factory start"),null);
  assert.equal(parseFactoryCommand("> /factory retry"),null);
+ assert.equal(parseFactoryCommand("Please retry this\n/factory retry"),null);
  assert.throws(()=>parseFactoryCommand("/factory approve 12"),/malformed/);
 });
 
-test("answer and retry preserve multiline guidance before or after the command",()=>{
+test("answer and retry accept inline or following multiline guidance",()=>{
  assert.deepEqual(parseFactoryCommand("/factory answer\nUse SQLite.\nKeep it local."),{kind:"answer",text:"Use SQLite.\nKeep it local."});
- assert.deepEqual(parseFactoryCommand("Use SQLite.\n\n/factory answer"),{kind:"answer",text:"Use SQLite."});
  assert.deepEqual(parseFactoryCommand("/factory retry Retry without Chromium"),{kind:"retry",guidance:"Retry without Chromium"});
- assert.deepEqual(parseFactoryCommand("Retry without Chromium\n/factory retry"),{kind:"retry",guidance:"Retry without Chromium"});
  assert.deepEqual(parseFactoryCommand("/factory retry"),{kind:"retry",guidance:""});
 });
 

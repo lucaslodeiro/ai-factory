@@ -27,6 +27,13 @@ Implementation details and commit hashes are recorded below as each item lands.
 - Files: `src/workflow-commands.ts`, `src/workflow-status.ts`, `test/workflow-commands.test.ts`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
 - Change: `/factory answer <feedback>` now resolves an open merge request, creates a human `auto-fix` finding for Builder and returns the item to `BUILD/QUEUED` without incrementing correction cycles. The merge CTA advertises both merge and request-changes paths.
 - Test: `merge feedback returns delivery to Builder as an open human auto-fix finding` verifies the transition, record ownership/content and Builder context.
+- Commit: `7276796`.
+
+### C3 — uniform first-line grammar
+
+- Files: `src/factory-command.ts`, `test/factory-command.test.ts`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
+- Change: all commands are now recognized only on the first non-empty line. Text commands consume inline and following text; no-text commands ignore following prose. Commands after prose and quoted commands remain inert, and the former last-line answer/retry form was removed.
+- Tests: `parses lifecycle commands strictly` covers trailing prose and inert embedded commands; `answer and retry accept inline or following multiline guidance` covers the shared payload rule.
 - Commit: recorded after commit creation.
 
 ## Removed or changed behavior
@@ -42,6 +49,7 @@ To be completed after implementation.
 - Before changes: `npm test` — 113 tests, 112 passed, 1 failed. The pre-existing timing-sensitive test `explicit cancellation escalates an in-progress interruption` observed `interrupted` before its later cancel under concurrent suite load.
 - After C1: `npm test` — 115 tests, 115 passed, 0 failed.
 - After C2: `npm test` — 116 tests, 116 passed, 0 failed.
+- After C3: focused parser tests — 3 passed; `npm test` — 116 tests, 116 passed, 0 failed.
 
 ## Documentation
 
