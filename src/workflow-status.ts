@@ -15,6 +15,14 @@ const box=(body:string)=>`## Next action\n\n> ${body.replaceAll("\n","\n> ")}`;
 const command=(value:string)=>`\n\n\`\`\`text\n${value}\n\`\`\``;
 const clipSummary=(value:string,max=1450)=>value.length<=max?{text:value,clipped:false}:{text:`${value.slice(0,max-1).trimEnd()}…`,clipped:true};
 
+function humanRequestAction(store:Store,request:NonNullable<ReturnType<WorkflowRecords["activeRequest"]>>) {
+ if(request.payload.kind!=="request"||request.payload.owner!=="human")return "";
+ if(request.payload.type==="spec-approval")return `Review the proposed specification and post one new comment.\n\n**Approve**${command(`/factory approve v${request.specVersion} [guidance]`)}\nOptional guidance becomes a spec-scoped instruction.\n\n**Request changes**${command("/factory answer <feedback>")}\nFeedback becomes a human decision for Architect.`;
+ if(request.payload.type==="merge")return `Review and merge the pull request in GitHub when it is ready, or request changes.\n\n**Merge** in GitHub.\n\n**Request changes**${command("/factory answer <changes>")}\nThe text becomes a human auto-fix finding for Builder.`;
+ if(request.payload.type==="correction-limit") {const findings=(request.payload.findingIds??[]).map(id=>new WorkflowRecords(store).get(id)).filter(record=>record?.payload.kind==="finding").slice(0,4);const details=findings.length?`\n\n**Open findings**\n${findings.map(record=>`- ${record!.payload.kind==="finding"?clipSummary(record!.payload.evidence,360).text:""}`).join("\n")}`:"";return `Automatic correction stopped after reaching its configured limit.${details}\n\nTell Architect how to resolve these findings.${command("/factory answer <guidance>")}\nThe text becomes a human decision for Architect.`;}
+ return `Reply with the guidance Architect needs.${command("/factory answer <guidance>")}\nThe text becomes a human decision for Architect.`;
+}
+
 export function workflowLabels(store:Store,workItemId:string) {
  const p=new WorkflowProjections(store).get(workItemId);
  if(p.status==="COMPLETED")return [{name:"factory:done",color:palette.done[0],description:palette.done[1]}];
@@ -25,15 +33,12 @@ export function workflowLabels(store:Store,workItemId:string) {
 
 function nextAction(store:Store,workItemId:string) {
  const projection=new WorkflowProjections(store).get(workItemId),request=new WorkflowRecords(store).activeRequest(workItemId);
+ if(["PAUSED","CANCELLED"].includes(projection.status)){const transition=store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(workItemId) as {payload:string}|undefined;let actor="the operator",reason="";if(transition)try{const payload=JSON.parse(transition.payload) as {actor?:{type?:string;id?:string};reason?:{summary?:string}};if(payload.actor?.id)actor=payload.actor.type==="human"?`@${payload.actor.id}`:payload.actor.id;reason=payload.reason?.summary??"";}catch{}const state=projection.status==="PAUSED"?"Paused":"Cancelled",resume=projection.status==="PAUSED"?"resume":"restore the preserved work",intro=`${state} by ${actor}${reason?` — ${reason}`:""}. Post \`/factory retry\` to ${resume}.`;const preserved=projection.status==="PAUSED"&&request?.payload.kind==="request"&&request.payload.owner==="human"?`\n\n**Preserved request after resuming**\n\n${humanRequestAction(store,request)}`:"";return box(`${intro}${command("/factory retry [--issue] [--for <roles>] [guidance]")}\nOptional guidance stays active for the current SPEC by default.${preserved}`);}
  if(request?.payload.kind==="request"&&request.payload.owner==="human") {
-  if(request.payload.type==="spec-approval")return box(`Review the proposed specification and post one new comment.\n\n**Approve**${command(`/factory approve v${request.specVersion} [guidance]`)}\nOptional guidance becomes a spec-scoped instruction.\n\n**Request changes**${command("/factory answer <feedback>")}\nFeedback becomes a human decision for Architect.`);
-  if(request.payload.type==="merge")return box(`Review and merge the pull request in GitHub when it is ready, or request changes.\n\n**Merge** in GitHub.\n\n**Request changes**${command("/factory answer <changes>")}\nThe text becomes a human auto-fix finding for Builder.`);
-  if(request.payload.type==="correction-limit") {const findings=(request.payload.findingIds??[]).map(id=>new WorkflowRecords(store).get(id)).filter(record=>record?.payload.kind==="finding").slice(0,4);const details=findings.length?`\n\n**Open findings**\n${findings.map(record=>`- ${record!.payload.kind==="finding"?clipSummary(record!.payload.evidence,360).text:""}`).join("\n")}`:"";return box(`Automatic correction stopped after reaching its configured limit.${details}\n\nTell Architect how to resolve these findings.${command("/factory answer <guidance>")}\nThe text becomes a human decision for Architect.`);}
-  return box(`Reply with the guidance Architect needs.${command("/factory answer <guidance>")}\nThe text becomes a human decision for Architect.`);
+  return box(humanRequestAction(store,request));
  }
  if(request?.payload.kind==="request"&&request.payload.owner==="architect")return box(`Architect is next. No human action is required. You can still pause or cancel the workflow.${command("/factory pause [reason]")}${command("/factory cancel [reason]")}`);
  if(projection.status==="FAILED")return box(`Resolve the reported cause, then retry this stage.${command("/factory retry [--issue] [--for <roles>] [guidance]")}\n\nOptional guidance stays active for the current SPEC by default and appears above with its id.`);
- if(["PAUSED","CANCELLED"].includes(projection.status))return box(`Resume the preserved work when ready.${command("/factory retry [--issue] [--for <roles>] [guidance]")}\n\nOptional guidance stays active for the current SPEC by default and appears above with its id.`);
  if(projection.status==="COMPLETED")return box("Delivery is complete. No further factory action is required.");
  return box(`${projection.status==="RUNNING"?"The current agent is running":"The next agent is queued"}. No human action is required. You can pause or cancel the workflow.${command("/factory pause [reason]")}${command("/factory cancel [reason]")}`);
 }
