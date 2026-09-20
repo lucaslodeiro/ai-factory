@@ -19,3 +19,8 @@ section. The temporary ref was deleted and a final `ls-remote` returned no row.
 fresh-schema controller state, CLI status and a separate doctor check are the
 minimum observable foundation for all later controller behavior.
 
+## P2 — Atomic lifecycle
+
+**Decision: agree.** Acquire, renew, release and takeover require one shared CAS
+writer with an explicit expected SHA. Local bare-origin races are sufficient to
+prove the Git invariant without making tests depend on GitHub.
