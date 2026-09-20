@@ -58,3 +58,8 @@ standby and explicit takeover. The end-to-end test uses two isolated homes, one
 bare origin and one shared fake GitHub surface to prove one workflow is created,
 standby stays empty, takeover emits one notice and the prior generation is
 fenced.
+
+The clean macOS gate exposed one integration defect: an identity created before
+a failed validation was rejected by the retry destination guard. The guard now
+accepts the preserved `instance.json`, and the maintenance installer test
+asserts that exact retry layout.

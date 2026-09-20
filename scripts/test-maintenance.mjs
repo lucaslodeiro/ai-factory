@@ -86,6 +86,7 @@ assert.match(failedRetry.stderr,/incomplete engine already exists/);
 const incompleteEngine=path.join(failedDest,'engine.incomplete-test');
 fs.renameSync(path.join(failedDest,'engine'),incompleteEngine);
 fs.mkdirSync(path.join(failedDest,'data','service-logs'),{recursive:true});
+assert.equal(fs.existsSync(path.join(failedDest,'instance.json')),true);
 run('bash',[path.join(source,'scripts/install-core.sh'),'--repo',remote,'--dir',failedDest],temp);
 assert.equal(fs.existsSync(path.join(failedDest,'engine','.git')),true);
 assert.equal(fs.existsSync(path.join(failedDest,'engine.incomplete-test','.git')),true);
