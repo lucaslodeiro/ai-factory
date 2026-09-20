@@ -1,5 +1,18 @@
 # GitHub setup
 
+The authenticated GitHub credential must be able to push the private custom ref
+namespace `refs/ai-factory/*` in addition to reading and editing issues, pull
+requests and repository contents. The normal `repo` scope provides this access.
+The controller ref is not a branch and does not modify the application checkout
+or trigger branch push workflows.
+
+Before enabling repository control on an existing deployment, stop every older
+factory daemon for the repository. Upgrade or reinstall all installations,
+choose one with `ai-factory controller acquire`, then start the remaining
+daemons and verify `ai-factory controller status` reports standby. Expired leases
+still require explicit `ai-factory controller takeover`; use `--force` only when
+the former controller may still be online and after typing the repository name.
+
 Authenticate `gh` with issue, content and pull-request write access to the target repository. Configure `GITHUB_REPOSITORY`, `FACTORY_REPO_DIR`, `GITHUB_DEFAULT_BRANCH` and `FACTORY_APPROVERS` in the dashboard, then validate them with Doctor. The terminal configurator remains available as a recovery path with `npm run configure`.
 
 Create an open issue and put `/factory start [guidance]` on the first or last non-empty line of either its description or a comment. A description start is accepted only when the issue author is listed in `FACTORY_APPROVERS`; a comment start uses the comment author. The daemon validates the approver, fetches the issue and creates the work item exactly once. Every other line becomes guidance. Quoted commands and commands in the middle do not start work. If both boundary lines are commands, the first wins. Bots, closed issues and unauthorized users do not start work. The dashboard and `ai-factory start-issue <number-or-url>` provide equivalent explicit entry points.

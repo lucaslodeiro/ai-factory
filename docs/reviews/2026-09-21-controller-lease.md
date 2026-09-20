@@ -49,3 +49,12 @@ services and refuses local removal on failure unless `--force` was explicit.
 Status comments carry controller name and generation, milestone comments keep
 the controller name, and takeover notices are idempotent by issue id and
 generation for open, labelled issues without local state.
+
+## P6 — Cutover documentation and two-factory proof
+
+**Decision: agree.** The operator documentation now treats the controller lease
+as implemented, explains the one-time legacy-daemon cutover, GitHub permission,
+standby and explicit takeover. The end-to-end test uses two isolated homes, one
+bare origin and one shared fake GitHub surface to prove one workflow is created,
+standby stays empty, takeover emits one notice and the prior generation is
+fenced.
