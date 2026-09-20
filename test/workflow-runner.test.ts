@@ -13,8 +13,8 @@ import type { WorkspacePort } from "../src/worktrees.js";
 import { InvalidResultError } from "../src/results.js";
 
 class Workspace implements WorkspacePort {
- commits:string[]=[];ensure(){return "/tmp/factory-work";}assertBranch(){}head(){return "abc";}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){}
- changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/factory-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){}
+ commits:string[]=[];cleanupCalls=0;ensure(){return "/tmp/factory-work";}assertBranch(){}head(){return "abc";}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){}
+ changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/factory-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){this.cleanupCalls++;}
 }
 
 test("runner assembles bounded context and drives Architect then Builder through V3",async()=>{
@@ -45,4 +45,17 @@ test("runner classifies failures by typed result errors rather than message text
  const run=async(error:Error)=>{const store=new Store(":memory:"),started=new WorkflowIntake(store).start({number:1,title:"Runner",body:"Build it",url:"https://github.com/owner/demo/issues/1",state:"OPEN"},{actor:"dashboard",source:"control"});try{const runner=new WorkflowRunner(store,{"product-architect":{async run(){throw error;}}},new Workspace(),{ensurePR(){throw new Error("unused");}});await runner.run(started.id);return new WorkflowFailures(store).active(started.id)?.class;}finally{store.db.close();}};
  assert.equal(await run(new Error("provider result channel disconnected")),"execution");
  assert.equal(await run(new InvalidResultError("invalid structured output")),"invalid-result");
+});
+
+test("reviewer context is cleaned when maintenance blocks scheduler begin",async()=>{
+ const store=new Store(":memory:"),workspace=new Workspace();
+ try {
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context) VALUES('work-review',1,'owner/demo','factory/review','now','now',?)").run(JSON.stringify({title:"Review",body:"Check it",cwd:"/tmp/factory-work"}));
+  store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment,approved_by) VALUES('work-review',1,'SPEC',?,?, 'owner')").run(JSON.stringify([{id:"AC1",description:"Works"}]),JSON.stringify({complexity:"medium",risk:"low",rationale:"standard"}));
+  new WorkflowProjections(store).initialize("work-review","REVIEW","QUEUED");
+  store.db.prepare("INSERT INTO maintenance_operations(id,operation,actor,status,requested_at,confirmed_at) VALUES('maintenance','update','owner','confirmed','now','now')").run();
+  const runner=new WorkflowRunner(store,{reviewer:{async run(){return result("pass");}}},workspace,{ensurePR(){return "unused";}});
+  await assert.rejects(()=>runner.run("work-review"),/maintenance/);
+  assert.equal(workspace.cleanupCalls,1);assert.equal(new WorkflowProjections(store).get("work-review").status,"QUEUED");
+ } finally {store.db.close();}
 });
