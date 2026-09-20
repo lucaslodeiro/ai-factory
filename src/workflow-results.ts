@@ -11,7 +11,7 @@ const nextRoleStage={developer:"BUILD",qa:"TEST",reviewer:"REVIEW"} as const;
 export class WorkflowResults {
  private projections:WorkflowProjections;private records:WorkflowRecords;
  constructor(private store:Store){this.projections=new WorkflowProjections(store);this.records=new WorkflowRecords(store);}
- apply(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult;pullRequestUrl?:string}) {
+ apply(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult}) {
   const current=this.projections.get(input.workItemId);
   if(current.status!=="RUNNING"||current.activeRunId!==input.executionId||current.stage!==roleStage[input.role]) {
    this.store.event("execution.discarded",{executionId:input.executionId,role:input.role,reason:"Workflow changed before the result was applied",projection:current},input.workItemId,input.executionId);return {discarded:true,projection:current};
@@ -48,7 +48,13 @@ export class WorkflowResults {
    this.records.resolveRequest(active.id,input.executionId);ids.push(active.id);
   });return {discarded:false,projection,recordIds:ids};
  }
- private delivery(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult;pullRequestUrl?:string},revision:number,specVersion:number,ids:string[]) {
+ published(input:{workItemId:string;pullRequestUrl:string}) {
+  const current=this.projections.get(input.workItemId);if(current.stage!=="DELIVERY"||current.status!=="QUEUED")throw new Error(`Cannot publish delivery while it is ${current.stage}/${current.status}`);
+  const ids:string[]=[];const specVersion=this.specVersion(input.workItemId);
+  const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:current.revision,stage:"DELIVERY",status:"WAITING",actor:{type:"orchestrator",id:"delivery"},source:{},reason:{code:"published",summary:"Branch published and pull request ready"},recordIds:ids},()=>{this.updateContext(input.workItemId,{pr:input.pullRequestUrl});ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"merge",owner:"human",originatingStage:"DELIVERY",allowedReturnStages:["DELIVERY"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"orchestrator",sourceId:`delivery:${current.revision}`,actor:"orchestrator"}).id);});
+  return {projection,recordIds:ids};
+ }
+ private delivery(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult},revision:number,specVersion:number,ids:string[]) {
   const result=input.result,stage=roleStage[input.role];
   const createFindings=()=>{for(const finding of result.findings)ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"finding",classification:finding.classification,originRole:input.role,criterionId:result.coverage.find(coverage=>coverage.status==="failed")?.criterionId,evidence:finding.evidence},sourceType:"agent-result",sourceId:input.executionId,actor:input.role}).id);};
   if(result.outcome==="decision") {
@@ -61,11 +67,10 @@ export class WorkflowResults {
    return {discarded:false,projection,recordIds:ids};
   }
   if(result.outcome!=="pass")throw new InvalidResultError(`Unsupported ${input.role} outcome ${result.outcome}`);
-  const target=input.role==="developer"?"TEST":input.role==="qa"?"REVIEW":"DELIVERY",status=input.role==="reviewer"?"WAITING":"QUEUED";
-  const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status,actor:{type:"agent",id:input.role},source:{executionId:input.executionId},reason:{code:"pass",summary:`${input.role} passed`},recordIds:ids},()=>{
+  const target=input.role==="developer"?"TEST":input.role==="qa"?"REVIEW":"DELIVERY";
+  const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status:"QUEUED",actor:{type:"agent",id:input.role},source:{executionId:input.executionId},reason:{code:"pass",summary:`${input.role} passed`},recordIds:ids},()=>{
    this.resultEvent(input);
    createFindings();this.settlePass(input.workItemId,input.role,input.executionId);
-   if(input.role==="reviewer"){if(!input.pullRequestUrl)throw new InvalidResultError("Reviewer pass requires a published pull request");this.updateContext(input.workItemId,{pr:input.pullRequestUrl});ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"merge",owner:"human",originatingStage:"DELIVERY",allowedReturnStages:["DELIVERY"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"orchestrator",sourceId:input.executionId,actor:"orchestrator"}).id);}
   });return {discarded:false,projection,recordIds:ids};
  }
  private settlePass(workItemId:string,role:AgentRole,executionId:string) {

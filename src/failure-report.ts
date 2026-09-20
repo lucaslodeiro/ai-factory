@@ -57,6 +57,16 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
     "**Evidence:** Startup recovery found an execution that was still marked running and preserved its stage and worktree.",
     "**Recommended action:** Inspect the preserved changes and daemon logs, then retry the saved stage.",
   ].join("\n\n");
+  if (/(?:pull request create failed|Base ref must be a branch|Head sha can't be blank)/i.test(evidence)) return [
+    "**Summary:** Delivery could not create the pull request because the configured base branch is unavailable or invalid on GitHub.",
+    `**Evidence:** ${reason.replace(/^Error:\s*/,"")}`,
+    "**Recommended action:** Run Doctor, create and push the configured base branch or select the repository's real default branch, then retry. Delivery will reuse the successful review.",
+  ].join("\n\n");
+  if (/No commits between/i.test(evidence)) return [
+    "**Summary:** Delivery could not create a pull request because GitHub found no commits between the configured base and factory branches.",
+    `**Evidence:** ${reason.replace(/^Error:\s*/,"")}`,
+    "**Recommended action:** Inspect the preserved factory branch and base history, correct the branch relationship, then retry Delivery.",
+  ].join("\n\n");
   if (/^\[(?:integration|configuration)\]/i.test(reason)) return [
     "**Summary:** A required factory setting or external integration prevented the stage from running safely.",
     "**Evidence:** The orchestrator stopped at its configuration or integration boundary before advancing the workflow.",

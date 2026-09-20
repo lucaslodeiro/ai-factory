@@ -4,6 +4,7 @@ import { Store } from "./storage.js";
 import { workflowProjectionProblems } from "./workflow-doctor.js";
 import {GitHubAdapter,type GitHubPort} from "./adapters/github.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
+import {RepositoryMaintenance} from "./repository-maintenance.js";
 export function doctor(existingStore?:Store,github:Pick<GitHubPort,"repository">=new GitHubAdapter()) {
  let ok = true;
  const check = (name: string, pass: boolean) => { ok = ok && pass; console.log(`${pass ? "✓" : "✗"} ${name}`); };
@@ -27,6 +28,8 @@ export function doctor(existingStore?:Store,github:Pick<GitHubPort,"repository">
   try {
    s.db.prepare("SELECT 1").get();check("SQLite writable",true);
    try{verifyRepositoryIdentity(s,github);check("GitHub repository identity",true);}catch(error){check("GitHub repository identity",false);console.log(`  - ${error instanceof Error?error.message:String(error)}`);}
+   try{check("GitHub default branch matches configured base",github.repository().defaultBranch===config.defaultBranch);}catch(error){check("GitHub default branch matches configured base",false);console.log(`  - ${error instanceof Error?error.message:String(error)}`);}
+   try{check(`Remote base branch ${config.defaultBranch} exists`,Boolean(new RepositoryMaintenance(s).check().remoteHead));}catch(error){check(`Remote base branch ${config.defaultBranch} exists`,false);console.log(`  - ${error instanceof Error?error.message:String(error)}`);}
    const problems=workflowProjectionProblems(s);check("Workflow projection invariants",problems.length===0);
    for (const problem of problems) console.log(`  - ${problem}`);
   } finally { if(!existingStore)s.db.close(); }

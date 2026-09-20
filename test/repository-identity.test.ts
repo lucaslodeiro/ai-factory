@@ -31,3 +31,9 @@ test("doctor reports a repository identity mismatch",()=>{
  try {assert.equal(doctor(store,repository(2) as any),false);assert.match(lines.join("\n"),/✗ GitHub repository identity[\s\S]*Data directory belongs to repository owner\/original \(id 1\)/);}
  finally {console.log=original;store.db.close();}
 });
+
+test("doctor reports a configured base that differs from GitHub",()=>{
+ const store=new Store(":memory:"),lines:string[]=[],original=console.log,previous=config.defaultBranch;config.defaultBranch="develop";console.log=(...values:unknown[])=>lines.push(values.join(" "));
+ try {doctor(store,repository(1) as any);assert.match(lines.join("\n"),/✗ GitHub default branch matches configured base/);}
+ finally {config.defaultBranch=previous;console.log=original;store.db.close();}
+});

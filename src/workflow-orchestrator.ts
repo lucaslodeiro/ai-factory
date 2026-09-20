@@ -22,6 +22,7 @@ export class WorkflowOrchestrator {
   for(const item of this.rows())if(!item.archived_at)this.inbox.poll(item.id);
   await this.flush();
   for(const item of this.rows())if(!item.archived_at&&item.status==="QUEUED")await this.runner.run(item.id);
+  for(const item of this.rows())if(!item.archived_at&&item.stage==="DELIVERY"&&item.status==="QUEUED")await this.runner.run(item.id);
   await this.flush();
   const last=this.store.metadata<number>("artifact-retention:last")??0;if(Date.now()-last>3_600_000){pruneExecutionArtifacts(this.store);this.store.setMetadata("artifact-retention:last",Date.now());}
  }

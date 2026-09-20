@@ -22,5 +22,7 @@ test("V3 failure evidence is actionable and redacts local paths, tokens and ANSI
   assert.doesNotMatch(markdown,/secret-value-123456|\u001b\[31m/);assert.match(markdown,/\[REDACTED\]/);
   assert.match(failureDiagnosis("Changes require actionable findings","Playwright chrome-headless-shell MachPortRendezvous Permission denied"),/Do not repeat the same Chromium validation/);
   assert.match(failureDiagnosis("PASS requires successful executed tests with exit codes",""),/returned PASS/);
+  assert.match(failureDiagnosis("[integration] Pull request create failed: Base ref must be a branch",""),/configured base branch is unavailable[\s\S]*reuse the successful review/);
+  assert.match(failureDiagnosis("[integration] GraphQL: No commits between main and factory\/issue-1",""),/no commits between[\s\S]*retry Delivery/i);
  }finally{store.db.close();config.dataDir=previous;fs.rmSync(root,{recursive:true,force:true});}
 });

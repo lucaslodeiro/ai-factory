@@ -8,7 +8,7 @@ import type { LastCommandOutcome } from "./workflow-inbox.js";
 import { factoryCommandReference } from "./factory-help.js";
 
 const stages={DESIGN:"Design",BUILD:"Build",TEST:"Test",REVIEW:"Review",DELIVERY:"Delivery"} as const;
-const stageActors={DESIGN:"Architect",BUILD:"Builder",TEST:"Tester",REVIEW:"Reviewer",DELIVERY:"None"} as const;
+const stageActors={DESIGN:"Architect",BUILD:"Builder",TEST:"Tester",REVIEW:"Reviewer",DELIVERY:"Orchestrator"} as const;
 const statuses={QUEUED:"Queued",RUNNING:"Running",WAITING:"Waiting for you",FAILED:"Failed",PAUSED:"Paused",CANCELLED:"Cancelled",COMPLETED:"Completed"} as const;
 const palette={DESIGN:["5319e7","Architect is designing the specification"],BUILD:["1d76db","Builder is implementing the approved specification"],TEST:["fbca04","Tester is verifying the implementation"],REVIEW:["006b75","Reviewer is inspecting delivery evidence"],DELIVERY:["0e8a16","Delivery is awaiting or recording merge"],done:["0e8a16","Factory delivery completed"],WAITING:["d4c5f9","Human action is required"],FAILED:["b60205","Factory execution failed"],PAUSED:["c5def5","Factory workflow is paused"],CANCELLED:["6a737d","Factory workflow was cancelled"]} as const;
 const box=(body:string)=>`## Next action\n\n> ${body.replaceAll("\n","\n> ")}`;
@@ -28,6 +28,7 @@ function nextAction(store:Store,workItemId:string) {
  if(request?.payload.kind==="request"&&request.payload.owner==="human") {
   if(request.payload.type==="spec-approval")return box(`Review the proposed specification and post one new comment.\n\n**Approve**${command(`/factory approve v${request.specVersion} [guidance]`)}\nOptional guidance becomes a spec-scoped instruction.\n\n**Request changes**${command("/factory answer <feedback>")}\nFeedback becomes a human decision for Architect.`);
   if(request.payload.type==="merge")return box(`Review and merge the pull request in GitHub when it is ready, or request changes.\n\n**Merge** in GitHub.\n\n**Request changes**${command("/factory answer <changes>")}\nThe text becomes a human auto-fix finding for Builder.`);
+  if(request.payload.type==="correction-limit") {const findings=(request.payload.findingIds??[]).map(id=>new WorkflowRecords(store).get(id)).filter(record=>record?.payload.kind==="finding").slice(0,4);const details=findings.length?`\n\n**Open findings**\n${findings.map(record=>`- ${record!.payload.kind==="finding"?clipSummary(record!.payload.evidence,360).text:""}`).join("\n")}`:"";return box(`Automatic correction stopped after reaching its configured limit.${details}\n\nTell Architect how to resolve these findings.${command("/factory answer <guidance>")}\nThe text becomes a human decision for Architect.`);}
   return box(`Reply with the guidance Architect needs.${command("/factory answer <guidance>")}\nThe text becomes a human decision for Architect.`);
  }
  if(request?.payload.kind==="request"&&request.payload.owner==="architect")return box(`Architect is next. No human action is required. You can still pause or cancel the workflow.${command("/factory pause [reason]")}${command("/factory cancel [reason]")}`);

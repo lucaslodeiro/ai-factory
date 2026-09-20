@@ -371,7 +371,10 @@ interface Projection { stage: Stage; status: Status; attempt: number; revision: 
 | TEST/RUNNING | `pass` | REVIEW/QUEUED | commit; open Builder `auto-fix` → resolved | Status update |
 | TEST/RUNNING | `changes` | BUILD/QUEUED | findings `auto-fix` opened; correction_cycles + 1 | Status update with findings |
 | REVIEW/RUNNING | `changes` | BUILD/QUEUED | findings opened; correction_cycles + 1 | Status update |
-| REVIEW/RUNNING | `pass` | DELIVERY/WAITING | publish branch, ensure PR; human-owned request `merge` opened | Ready-to-merge milestone |
+| REVIEW/RUNNING | `pass` | DELIVERY/QUEUED | Reviewer result and evidence stored; no provider work remains | Status shows deterministic Delivery next |
+| DELIVERY/QUEUED | orchestrator publishes successfully | DELIVERY/WAITING | branch pushed, PR ensured; human-owned request `merge` opened | Ready-to-merge milestone |
+| DELIVERY/QUEUED | publication or PR integration error | DELIVERY/FAILED | integration failure opened; successful Reviewer result preserved | Failure milestone explains the repository/PR cause |
+| DELIVERY/FAILED | `/factory retry [guidance]` | DELIVERY/QUEUED | integration failure resolved; no Reviewer execution created | Retry repeats only deterministic publication |
 | DELIVERY/WAITING | `/factory answer <feedback>` | BUILD/QUEUED | merge request resolved; human `auto-fix` finding opened; correction_cycles unchanged | Status shows Builder next |
 | BUILD/TEST/REVIEW RUNNING | `decision` | DESIGN/QUEUED | findings `decision-required` opened; Architect-owned request `tactical-decision` opened with `originatingStage` | Decision-request milestone; no human CTA unless Architect asks a question |
 | BUILD/TEST/REVIEW RUNNING | `changes` and `correction_cycles + 1 >= max` | same stage/WAITING | findings from the result persisted; human-owned request `correction-limit` opened with their ids and originatingStage after storing the incremented counter | Correction-limit milestone |
@@ -495,6 +498,8 @@ CREATE TABLE maintenance_items(
 ### 7.7 Repository maintenance and extreme recovery
 
 The dashboard and CLI expose five simple actions for the configured target repository. Factory source updates remain under the global Update action.
+
+Daemon startup and Doctor also verify that the configured base matches GitHub's default branch and that `refs/heads/<base>` exists on the remote. A missing or mismatched base blocks work before an agent runs; Check reports the same inconsistency and tells the operator to create/push the base or correct the configuration.
 
 | Action | Behavior | Safety boundary |
 | --- | --- | --- |

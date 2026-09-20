@@ -19,6 +19,7 @@ export class WorkflowRunner {
  constructor(private store:Store,private agents:Partial<Record<AgentRole,AgentAdapter>>,private workspaces:WorkspacePort,private delivery:DeliveryPort){this.scheduler=new WorkflowScheduler(store);this.results=new WorkflowResults(store);this.records=new WorkflowRecords(store);this.assembler=new ContextAssembler(store);}
  async run(workItemId:string) {
   const projection=new (await import("./workflow-projection.js")).WorkflowProjections(this.store).get(workItemId);if(projection.status!=="QUEUED")return false;
+  if(projection.stage==="DELIVERY")return this.publish(workItemId);
   const role=this.scheduler.role(workItemId),adapter=this.agents[role];if(!adapter)throw new Error(`No adapter configured for ${role}`);
   const row=this.store.db.prepare("SELECT issue_number,branch,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;context:string};
   const context=JSON.parse(row.context||"{}") as {title?:string;body?:string;url?:string;cwd?:string};
@@ -45,11 +46,14 @@ export class WorkflowRunner {
    const current=new (await import("./workflow-projection.js")).WorkflowProjections(this.store).get(workItemId);if(current.status!=="RUNNING"||current.activeRunId!==started.executionId){this.store.event("execution.discarded",{executionId:started.executionId,reason:"Workflow changed before worktree validation"},workItemId,started.executionId);return true;}
    this.workspaces.check(cwd,role,before,row.branch);
    if(role==="developer"||role==="qa")this.workspaces.commit(cwd,`factory: ${role} for #${row.issue_number}`,row.branch);
-   let pullRequestUrl:string|undefined;
-   if(role==="reviewer"&&result.outcome==="pass"){this.workspaces.publish(cwd,row.branch);pullRequestUrl=this.delivery.ensurePR(row.branch,`#${row.issue_number}: ${context.title??"Factory delivery"}`,this.prBody(workItemId,row.issue_number,result));}
-   this.results.apply({workItemId,executionId:started.executionId,role,result,pullRequestUrl});return true;
+   this.results.apply({workItemId,executionId:started.executionId,role,result});return true;
   } catch(error){if(!started)throw error;this.scheduler.fail(workItemId,started.executionId,error,error instanceof InvalidContextError?"invalid-context":error instanceof InvalidResultError?"invalid-result":"execution");return true;}
   finally{if(reviewerContext)this.workspaces.cleanupReviewerContext(cwd,workItemId);}
+ }
+ private publish(workItemId:string) {
+  const row=this.store.db.prepare("SELECT issue_number,branch,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;context:string};const context=JSON.parse(row.context||"{}") as {title?:string;cwd?:string};
+  try {const cwd=context.cwd;if(!cwd)throw new Error("Delivery has no prepared worktree");this.workspaces.assertBranch(cwd,row.branch);const review=this.latestResult(workItemId,"reviewer");if(!review||review.outcome!=="pass")throw new InvalidResultError("Delivery requires a successful Reviewer result");this.workspaces.publish(cwd,row.branch);const pullRequestUrl=this.delivery.ensurePR(row.branch,`#${row.issue_number}: ${context.title??"Factory delivery"}`,this.prBody(workItemId,row.issue_number,review));this.results.published({workItemId,pullRequestUrl});return true;}
+  catch(error){this.scheduler.rejectQueued(workItemId,error,"integration");return true;}
  }
  private specVersion(workItemId:string){return (this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;}
  private assessment(workItemId:string,version:number){const row=this.store.db.prepare("SELECT assessment FROM specs WHERE work_item_id=? AND version=?").get(workItemId,version) as {assessment:string|null}|undefined;if(!row?.assessment)return undefined;return JSON.parse(row.assessment) as TaskAssessment;}
