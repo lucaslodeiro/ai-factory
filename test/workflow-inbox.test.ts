@@ -35,6 +35,12 @@ test("start guidance exists before the first Architect execution",()=>{
  } finally {store.db.close();}
 });
 
+test("a tracked issue rejects a last-line start as a command instead of observing prose",()=>{
+ const store=new Store(":memory:");
+ try {const started=new WorkflowIntake(store).start(issue,{actor:"dashboard",source:"control"}),result=new WorkflowInbox(store,{comments:()=>[comment(1,"Please begin\n/factory start")]},["owner"]).poll(started.id);assert.deepEqual({rejected:result.rejected,observed:result.observed},{rejected:1,observed:0});assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='command.rejected'").get() as {count:number}).count,1);}
+ finally {store.db.close();}
+});
+
 test("inbox consumes commands once and records explicit human guidance",()=>{
  const store=new Store(":memory:");
  try {

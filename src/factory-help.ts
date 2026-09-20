@@ -9,4 +9,4 @@ export const factoryCommandReference=`- \`/factory start [guidance]\` — start 
 - \`/factory pause [reason]\` — pause active work; the reason is audit evidence only. Example: \`/factory pause Waiting for product review\`.
 - \`/factory cancel [reason]\` — cancel work; the reason is audit evidence only. Example: \`/factory cancel Product direction changed\`.`;
 
-export function factoryHelpMarkdown(){return `# AI Factory commands\n\nThe command must be the first non-empty line. Text may continue on following lines. Roles are \`architect\`, \`builder\`, \`tester\` and \`reviewer\`.\n\n${factoryCommandReference}`;}
+export function factoryHelpMarkdown(){return `# AI Factory commands\n\nPut the command on the first or the last non-empty line. The other lines become its text. If both lines are commands, the first wins and the last is treated as text. Roles are \`architect\`, \`builder\`, \`tester\` and \`reviewer\`.\n\n${factoryCommandReference}`;}

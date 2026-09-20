@@ -67,7 +67,7 @@ If a failed attempt leaves a destination that is not a valid factory checkout, t
 
 The factory engine and target application are separate repositories. `GITHUB_REPOSITORY` selects where issues are read and PRs are created; `FACTORY_REPO_DIR` selects the local clone used for worktrees. Start an open issue from the dashboard, with `factory start-issue <number-or-url>`, or by posting a standalone `/factory start` comment from an authorized approver. The daemon creates and manages workflow labels automatically after ingestion.
 
-Commands must be the first non-empty line of a new comment from an authorized approver. Text may continue on following lines; quoted commands and commands after prose are ignored.
+Commands must be the first or last non-empty line of a comment from an authorized approver. Every other line becomes command text. Quoted commands and commands in the middle are ignored. If both the first and last lines are commands, the first wins and the last is treated as text.
 
 - `/factory start [guidance]` starts an open issue.
 - `/factory help` publishes the complete command reference once.

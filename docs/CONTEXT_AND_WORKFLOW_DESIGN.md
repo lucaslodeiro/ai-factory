@@ -242,7 +242,7 @@ Comment edits never change a record; a new comment creates a new record. Open re
 
 Two values only. `spec` dies with the next SPEC version; `issue` survives until explicitly superseded or revoked. v1's `attempt` and `stage` scopes are removed: a hint like "rerun the failing test" carried with `spec` scope is harmless because the role contract already says "when compatible with the approved specification".
 
-A command is recognized only when `/factory ...` is the first non-empty line of a comment. Text-taking commands combine text on that line with all following lines. Commands embedded in prose, quoted commands and commands placed after prose are inert. Following lines on commands that take no text are ignored.
+A command is recognized when `/factory ...` is the first or last non-empty line. Text-taking commands combine inline text with every other line in its original order. Commands embedded in prose, quoted commands and commands in the middle are inert. If both boundary lines are commands, the first wins and the last becomes payload text.
 
 `/factory help` is state-neutral. It publishes one idempotent immutable command reference per work item. The authoritative status comment always ends with the same reference in a collapsed **All commands** block.
 

@@ -14,8 +14,19 @@ test("parses lifecycle commands strictly",()=>{
  assert.deepEqual(parseFactoryCommand("/factory approve v12\nLooks good"),{kind:"approve",version:12,guidance:"Looks good"});
  assert.equal(parseFactoryCommand("Please /factory start"),null);
  assert.equal(parseFactoryCommand("> /factory retry"),null);
- assert.equal(parseFactoryCommand("Please retry this\n/factory retry"),null);
+ assert.deepEqual(parseFactoryCommand("Please retry this\n/factory retry"),{kind:"retry",guidance:"Please retry this",scope:"spec",appliesTo:[]});
  assert.throws(()=>parseFactoryCommand("/factory approve 12"),/malformed/);
+});
+
+test("commands may be the first or last non-empty line with all other lines as payload",()=>{
+ assert.deepEqual(parseFactoryCommand("Let's go\n/factory start"),{kind:"start",guidance:"Let's go"});
+ assert.deepEqual(parseFactoryCommand("/factory start\nLet's go"),{kind:"start",guidance:"Let's go"});
+ assert.deepEqual(parseFactoryCommand("Looks good\n/factory approve v2"),{kind:"approve",version:2,guidance:"Looks good"});
+ assert.deepEqual(parseFactoryCommand("Here is my answer\n/factory answer"),{kind:"answer",text:"Here is my answer"});
+ assert.deepEqual(parseFactoryCommand("/factory retry\nuse WebKit"),parseFactoryCommand("use WebKit\n/factory retry"));
+ assert.deepEqual(parseFactoryCommand("/factory pause\n/factory cancel"),{kind:"pause",reason:"/factory cancel"});
+ assert.equal(parseFactoryCommand("thanks\n/factory retry\nmore text"),null);
+ assert.equal(parseFactoryCommand("> /factory retry"),null);
 });
 
 test("answer and retry accept inline or following multiline guidance",()=>{

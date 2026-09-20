@@ -34,31 +34,33 @@ function scoped(rest:string) {
 
 export function parseFactoryCommand(body:string):FactoryCommand|null {
  const trimmed=body.trim();if (!trimmed) return null;
- const lines=trimmed.split(/\r?\n/),first=lines[0].trim(),continuation=lines.slice(1).join("\n").trim();
- if (!first.startsWith("/factory ")) return null;
- if (first==="/factory help") return {kind:"help"};
- const answer=first.match(/^\/factory answer(?:\s+(.*))?$/);
- if (answer) {const text=[answer[1]??"",continuation].filter(Boolean).join("\n").trim();if(!text)throw new Error("/factory answer requires guidance");return {kind:"answer",text};}
- const retry=first.match(/^\/factory retry(?:\s+(.*))?$/);
- if (retry) {const parsed=scoped([retry[1]??"",continuation].filter(Boolean).join("\n"));return {kind:"retry",guidance:parsed.text,scope:parsed.scope,appliesTo:parsed.appliesTo};}
- const start=first.match(/^\/factory start(?:\s+(.*))?$/);
- if (start) return {kind:"start",guidance:[start[1]??"",continuation].filter(Boolean).join("\n").trim()};
- const pause=first.match(/^\/factory pause(?:\s+(.*))?$/);
- if (pause) return {kind:"pause",reason:[pause[1]??"",continuation].filter(Boolean).join("\n").trim()};
- const cancel=first.match(/^\/factory cancel(?:\s+(.*))?$/);
- if (cancel) return {kind:"cancel",reason:[cancel[1]??"",continuation].filter(Boolean).join("\n").trim()};
- const approve=first.match(/^\/factory approve v(\d+)(?:\s+(.*))?$/);
- if (approve) return {kind:"approve",version:Number(approve[1]),guidance:[approve[2]??"",continuation].filter(Boolean).join("\n").trim()};
- const revoke=first.match(/^\/factory revoke (#[1-9]\d*|[a-zA-Z0-9-]+)$/);
+ const lines=trimmed.split(/\r?\n/),nonempty=lines.map((line,index)=>({line:line.trim(),index})).filter(value=>value.line),firstEntry=nonempty[0],lastEntry=nonempty.at(-1)!;
+ const selected=firstEntry.line.startsWith("/factory ")?firstEntry:lastEntry.line.startsWith("/factory ")?lastEntry:null;
+ if(!selected)return null;
+ const commandLine=selected.line,payload=lines.filter((_,index)=>index!==selected.index).join("\n").trim();
+ if (commandLine==="/factory help") return {kind:"help"};
+ const answer=commandLine.match(/^\/factory answer(?:\s+(.*))?$/);
+ if (answer) {const text=[answer[1]??"",payload].filter(Boolean).join("\n").trim();if(!text)throw new Error("/factory answer requires guidance");return {kind:"answer",text};}
+ const retry=commandLine.match(/^\/factory retry(?:\s+(.*))?$/);
+ if (retry) {const parsed=scoped([retry[1]??"",payload].filter(Boolean).join("\n"));return {kind:"retry",guidance:parsed.text,scope:parsed.scope,appliesTo:parsed.appliesTo};}
+ const start=commandLine.match(/^\/factory start(?:\s+(.*))?$/);
+ if (start) return {kind:"start",guidance:[start[1]??"",payload].filter(Boolean).join("\n").trim()};
+ const pause=commandLine.match(/^\/factory pause(?:\s+(.*))?$/);
+ if (pause) return {kind:"pause",reason:[pause[1]??"",payload].filter(Boolean).join("\n").trim()};
+ const cancel=commandLine.match(/^\/factory cancel(?:\s+(.*))?$/);
+ if (cancel) return {kind:"cancel",reason:[cancel[1]??"",payload].filter(Boolean).join("\n").trim()};
+ const approve=commandLine.match(/^\/factory approve v(\d+)(?:\s+(.*))?$/);
+ if (approve) return {kind:"approve",version:Number(approve[1]),guidance:[approve[2]??"",payload].filter(Boolean).join("\n").trim()};
+ const revoke=commandLine.match(/^\/factory revoke (#[1-9]\d*|[a-zA-Z0-9-]+)$/);
  if (revoke) return {kind:"revoke",recordId:revoke[1]};
- const note=first.match(/^\/factory note(?:\s+(.*))?$/);
+ const note=commandLine.match(/^\/factory note(?:\s+(.*))?$/);
  if (note) {
-  const parsed=scoped([note[1]??"",continuation].filter(Boolean).join("\n"));
+  const parsed=scoped([note[1]??"",payload].filter(Boolean).join("\n"));
   if(!parsed.text)throw new Error("/factory note requires instruction text");return {kind:"note",...parsed};
  }
- const replace=first.match(/^\/factory replace\s+(#[1-9]\d*|[a-zA-Z0-9-]+)(?:\s+(.*))?$/);
+ const replace=commandLine.match(/^\/factory replace\s+(#[1-9]\d*|[a-zA-Z0-9-]+)(?:\s+(.*))?$/);
  if (replace) {
-  const parsed=scoped([replace[2]??"",continuation].filter(Boolean).join("\n"));
+  const parsed=scoped([replace[2]??"",payload].filter(Boolean).join("\n"));
   if(!parsed.text)throw new Error("/factory replace requires replacement text");return {kind:"replace",recordId:replace[1],...parsed};
  }
  throw new Error("Unknown or malformed /factory command");
