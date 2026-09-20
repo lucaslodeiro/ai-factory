@@ -216,6 +216,8 @@ The engine repository and target application repository are separate. Set `GITHU
 
 For two projects, use two factory installations with separate `.env`, target clones and `FACTORY_DATA_DIR` values. For the same project, every configured daemon may run: one atomically owns `refs/ai-factory/lease` and the others show **Standby**, list remote factory issues read-only, and perform no orchestration or GitHub mutation. Standby never takes over automatically. Use `ai-factory controller status`, `controller release`, or `controller takeover`; add `--force` only after confirming the previous controller is no longer safe to use.
 
+If the controller ref disappears while a daemon is in standby, that daemon stays in standby even though it refreshes the remote lease view every two minutes. Run `ai-factory controller acquire` or restart that daemon to acquire the now-free repository explicitly.
+
 When upgrading installations created before repository control, stop every daemon targeting the repository, upgrade or reinstall each factory, acquire control on the intended owner, then start the others and verify they show standby. Reconcile old labelled issues explicitly with `/factory start`; workflow databases and worktrees are never imported between installations. Uninstall attempts to release control after stopping services. If release fails, it refuses removal unless `--force` was given and prints the takeover command required on another installation.
 
 ## Manual installation

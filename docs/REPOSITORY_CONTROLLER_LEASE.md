@@ -206,6 +206,8 @@ Takeover imports nothing. If the previous owner reported active work, the new co
 - **Uninstall:** release as in §11.1.
 - **Install:** never overwrites an existing lease. A new installation configured for an owned repository starts in standby.
 
+A standby daemon re-reads the lease every two minutes for visibility. If the ref becomes absent, it remains in standby; acquiring control still requires `ai-factory controller acquire` or a daemon restart. Standby never promotes itself automatically.
+
 The local maintenance barrier keeps preserving work-item state. The lease is a repository-wide barrier in front of local scheduling and publication; it does not replace maintenance.
 
 ## 13. Dashboard and CLI
