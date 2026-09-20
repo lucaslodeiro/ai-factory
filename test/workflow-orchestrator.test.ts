@@ -47,3 +47,15 @@ test("closed issues disappear operationally and reopen paused past closed-period
   const context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(started.id) as {context:string}).context);assert.equal(context.cursor,20);assert.equal(github.statusBodies.at(-1)?.match(/^## Next action$/gm)?.length,1);
  } finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
 });
+
+test("dashboard start snapshots historical comments instead of replaying commands",async()=>{
+ const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
+ const store=new Store(":memory:"),github=new GitHub(),runner=new WorkflowRunner(store,{},new Workspace(),github),orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
+ try {
+  github.reply(1,"/factory cancel");
+  const started=orchestrator.startIssue("1","Dashboard");
+  await assert.rejects(orchestrator.tick(),/No adapter configured/);
+  const projection=new WorkflowProjections(store).get(started.id);
+  assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"DESIGN",status:"QUEUED"});
+ } finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
+});

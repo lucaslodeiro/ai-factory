@@ -27,7 +27,7 @@ export class WorkflowOrchestrator {
  startIssue(reference:string,requestedBy="Dashboard or CLI",origin?:{source:"comment";commentId:number;login:string}){
   const number=this.issueNumber(reference),existing=this.rows().find(item=>item.repo===config.repo&&item.issue_number===number);
   if(existing)return {issue:number,id:existing.id,created:false,stage:existing.stage,status:existing.status};
-  const issue=this.github.issue(number),started=this.intake.start(issue,{actor:origin?.login??requestedBy,commentId:origin?.commentId,source:origin?"github-comment":"control"});
+  const issue=this.github.issue(number),initialCursor=origin?.commentId??Math.max(0,...this.github.comments(number).map(comment=>comment.id)),started=this.intake.start(issue,{actor:origin?.login??requestedBy,commentId:origin?.commentId,initialCursor,source:origin?"github-comment":"control"});
   return {issue:number,...started,stage:"DESIGN",status:"QUEUED"};
  }
  refreshIssueList(){

@@ -7,7 +7,7 @@ import { WorkflowProjections } from "./workflow-projection.js";
 import {workflowNotificationText} from "./notifications.js";
 
 export interface CommentPort { comments(issue:number):Comment[]; }
-export interface StartOrigin { actor:string;commentId?:number;source:"github-comment"|"control"; }
+export interface StartOrigin { actor:string;commentId?:number;initialCursor?:number;source:"github-comment"|"control"; }
 
 export class WorkflowIntake {
  constructor(private store:Store) {}
@@ -18,7 +18,7 @@ export class WorkflowIntake {
   if(existing)return {id:existing.id,created:false};
   const id=randomUUID(),now=new Date().toISOString(),repo=issue.url.match(/github\.com\/([^/]+\/[^/]+)/)?.[1];
   if(!repo)throw new Error("Issue URL does not identify a GitHub repository");
-  const eventId=randomUUID(),context={title:issue.title,body:issue.body,url:issue.url,cursor:origin.commentId??0};
+  const eventId=randomUUID(),context={title:issue.title,body:issue.body,url:issue.url,cursor:origin.initialCursor??origin.commentId??0};
   const run=this.store.db.transaction(()=>{
    this.store.db.prepare(`INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context,stage,status,attempt,revision,presentation_revision,correction_cycles)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,issue.number,repo,`factory/issue-${issue.number}-${id.slice(0,8)}`,now,now,JSON.stringify(context),"DESIGN","QUEUED",0,0,0,0);

@@ -556,6 +556,7 @@ No dual-write, importer or compatibility reader is implemented.
 1. A newly created database is initialized atomically with `metadata.schema_version = 4` only after the complete V3 schema exists.
 2. The daemon and mutating CLI commands refuse a database without schema version 4. The error tells the operator to stop services and either run the supported uninstaller or select an empty `FACTORY_DATA_DIR`.
 3. Installation into an empty data directory starts with no work items, records, requests, failures, executions or retained worktrees. The operator starts desired open issues again with `/factory start` or the dashboard.
+   A dashboard/CLI start snapshots the issue's newest existing comment as its initial cursor, so commands from the discarded runtime history are never replayed. A comment-origin `/factory start` uses that command comment as the cursor and processes only later comments.
 4. An existing target application checkout may be reused; factory runtime state may not. Uninstall continues to preserve provider credentials and the target application repository.
 5. There is no rollback or reverse conversion. The previous data directory may be copied aside for manual audit, but V3 never reads it.
 
