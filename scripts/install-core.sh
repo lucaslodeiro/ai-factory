@@ -42,7 +42,18 @@ if [[ -d $engine && -f $marker ]]; then echo "Destination is already installed: 
 if [[ -e $engine ]]; then echo "An incomplete engine already exists: $engine" >&2; exit 1; fi
 if [[ -e $dest ]]; then
   while IFS= read -r entry; do
-    name=${entry##*/}; [[ $name == .env || $name == .env.backup-* || $name == repos ]] || { echo "An unrelated destination entry already exists: $entry" >&2; exit 1; }
+    name=${entry##*/}
+    if [[ $name == .env || $name == .env.backup-* || $name == repos ]]; then
+      continue
+    fi
+    if [[ $name == engine.incomplete-* && -d $entry ]]; then
+      continue
+    fi
+    if [[ $name == data && -d $entry && ! -e $marker ]]; then
+      continue
+    fi
+    echo "An unrelated destination entry already exists: $entry" >&2
+    exit 1
   done < <(find "$dest" -mindepth 1 -maxdepth 1 -print)
 fi
 mkdir -p "$dest"

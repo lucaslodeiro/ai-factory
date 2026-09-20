@@ -48,7 +48,30 @@ incomplete_status=$?
 set -e
 [[ $incomplete_status -eq 1 ]]
 grep -q 'incomplete or unrelated destination' "$fixture/incomplete.out"
+grep -Eq "mv .*incomplete/engine.*incomplete/engine\.incomplete-[0-9-]+" "$fixture/incomplete.out"
+grep -Eq "bash /tmp/ai-factory-install-macos\.sh --dir .*incomplete.*--branch .*main.*--repo .*ai-factory\.git" "$fixture/incomplete.out"
 [[ ! -e "$fixture/incomplete-curl.log" ]]
+
+# The retry layout named by both installer hints is accepted by install-core.
+retry_user="$fixture/retry-user"
+retry_home="$retry_user/ai-factory"
+retry_bin="$fixture/retry-bin"
+mkdir -p "$retry_home/engine.incomplete-x" "$retry_home/data/service-logs" "$retry_home/repos" "$retry_bin"
+cp "$root/.env.example" "$retry_home/.env"
+cat > "$retry_bin/npm" <<'MOCK'
+#!/usr/bin/env bash
+if [[ ${1:-} == ci ]]; then ln -s "$SOURCE_NODE_MODULES" node_modules; fi
+exit 0
+MOCK
+chmod +x "$retry_bin/npm"
+retry_branch=$(git -C "$root" branch --show-current)
+PATH="$retry_bin:/usr/local/Cellar/node/26.4.0/bin:/usr/local/git/bin:/usr/bin:/bin" \
+  HOME="$retry_user" SOURCE_NODE_MODULES="$root/node_modules" AI_FACTORY_SKIP_SERVICES=1 AI_FACTORY_INSTALL_TESTS=0 \
+  bash "$root/scripts/install-core.sh" --repo "$root" --branch "$retry_branch" --dir "$retry_home" > "$fixture/retry.out"
+[[ -d "$retry_home/engine/.git" ]]
+[[ -d "$retry_home/engine.incomplete-x" ]]
+[[ -d "$retry_home/data/service-logs" ]]
+[[ -f "$retry_home/data/install.json" ]]
 
 for executable in node npm git gh codex claude; do
   cat > "$fixture/bin/$executable" <<'MOCK'

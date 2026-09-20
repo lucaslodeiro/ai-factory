@@ -76,7 +76,7 @@ elif [[ -e "$factory_destination/engine" ]]; then
     echo "Preserve it and retry with:" >&2
     echo "  cd \"$factory_destination\"" >&2
     echo "  mv \"$factory_destination/engine\" \"$backup_destination\"" >&2
-    echo "  bash /tmp/ai-factory-install-macos.sh --dir \"$factory_destination\"" >&2
+    echo "  bash /tmp/ai-factory-install-macos.sh --dir \"$factory_destination\" --branch \"$factory_branch\" --repo \"$factory_repo\"" >&2
   exit 1
 fi
 
