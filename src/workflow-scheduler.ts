@@ -18,10 +18,10 @@ export class WorkflowScheduler {
    const spec=this.store.db.prepare("SELECT approved_by FROM specs WHERE work_item_id=? ORDER BY version DESC LIMIT 1").get(workItemId) as {approved_by:string|null}|undefined;
    if(!spec?.approved_by)throw new Error("Cannot schedule delivery without an approved current specification");
   }
-  const blocked=this.store.db.prepare(`SELECT 1 FROM maintenance_operations WHERE status IN ('confirmed','pausing','ready','running') LIMIT 1`).get();
-  if(blocked)throw new Error("Confirmed maintenance prevents new agent execution");
   const id=randomUUID(),startedAt=new Date().toISOString();
   const projection=this.projections.transition({workItemId,expectedRevision:current.revision,stage:current.stage,status:"RUNNING",activeRunId:id,actor:{type:"orchestrator",id:"scheduler"},source:{executionId:id},reason:{code:"execution-started",summary:`${role} execution started`}},()=>{
+   const blocked=this.store.db.prepare(`SELECT 1 FROM maintenance_operations WHERE status IN ('confirmed','pausing','ready','running') LIMIT 1`).get();
+   if(blocked)throw new Error("Confirmed maintenance prevents new agent execution");
    this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at) VALUES(?,?,?,?,?,?)").run(id,workItemId,role,current.stage,"running",startedAt);
   });
   return {executionId:id,role,projection};
