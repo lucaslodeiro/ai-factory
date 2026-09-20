@@ -52,6 +52,12 @@ LaunchAgents from an earlier installation before it validates or replaces the
 engine. The uninstaller performs the same verified shutdown before removing
 files and aborts if launchd still reports a service as loaded.
 
+Service start and restart commands wait for a stable launchd process; daemon
+actions additionally wait for the runtime lock that proves the orchestrator
+finished its preflight. Stop waits for launchd to unload the job. A failed
+verification returns an error instead of reporting a transient service command
+as successful.
+
 The installer places `ai-factory` in `~/.local/bin`, so service, update,
 configuration and factory commands work from any directory. If that directory
 is not yet on the current shell's `PATH`, use

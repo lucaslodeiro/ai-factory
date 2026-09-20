@@ -15,12 +15,13 @@ test("service launcher installs and controls daemon and dashboard independently"
 set -e
 case $1 in
   print) name=\${2##*/}; [[ -f "$SERVICE_STATE/$name" ]] || exit 1; echo 'state = running'; echo 'pid = 42';;
-  bootstrap) name=\$(basename "$3" .plist); touch "$SERVICE_STATE/$name";;
-  bootout) name=\${2##*/}; rm -f "$SERVICE_STATE/$name";;
+  bootstrap) name=\$(basename "$3" .plist); touch "$SERVICE_STATE/$name"; if [[ $name == com.ai-factory.daemon ]]; then mkdir -p "$AI_FACTORY_HOME/data"; echo 42 > "$AI_FACTORY_HOME/data/daemon.lock"; fi;;
+  bootout) name=\${2##*/}; if [[ \${SERVICE_STICKY:-} != "$name" ]]; then rm -f "$SERVICE_STATE/$name"; if [[ $name == com.ai-factory.daemon ]]; then rm -f "$AI_FACTORY_HOME/data/daemon.lock"; fi; fi;;
   kickstart) ;;
 esac
 `,{mode:0o755});
-  const env = {...process.env,HOME:home,SERVICE_STATE:state,PATH:`${bin}:${path.dirname(process.execPath)}:/usr/bin:/bin`};
+  const factoryHome=path.join(root,"factory-home");fs.mkdirSync(factoryHome);fs.writeFileSync(path.join(factoryHome,".env"),"GITHUB_REPOSITORY=owner/repo\nFACTORY_APPROVERS=owner\n");
+  const env = {...process.env,HOME:home,AI_FACTORY_HOME:factoryHome,AI_FACTORY_SERVICE_WAIT_ATTEMPTS:"2",SERVICE_STATE:state,PATH:`${bin}:${path.dirname(process.execPath)}:/usr/bin:/bin`};
   const run = (...args: string[]) => {
     const result = spawnSync("bash",["scripts/services.sh",...args],{cwd:process.cwd(),env,encoding:"utf8"});
     assert.equal(result.status,0,result.stderr + result.stdout);
@@ -35,11 +36,17 @@ esac
     assert.match(daemon,/<string>start<\/string>/);
     assert.match(dashboard,/<string>dashboard<\/string>/);
     assert.match(run("start","daemon"),/Logs:\s+ai-factory service logs daemon/);
-    assert.match(run("status","daemon"),/daemon: loaded/);
+    assert.match(run("status","daemon"),/daemon: loaded[\s\S]*readiness = ready/);
     assert.match(run("status","dashboard"),/dashboard: stopped/);
     run("restart","dashboard");
     run("stop","daemon");
     assert.match(run("status","daemon"),/daemon: stopped/);
     assert.match(run("status","dashboard"),/dashboard: loaded/);
+    fs.writeFileSync(path.join(factoryHome,".env"),"GITHUB_REPOSITORY=\nFACTORY_APPROVERS=\n");
+    const rejected=spawnSync("bash",["scripts/services.sh","start","daemon"],{cwd:process.cwd(),env,encoding:"utf8"});
+    assert.notEqual(rejected.status,0);assert.match(rejected.stderr,/Daemon was not started/);assert.equal(fs.existsSync(path.join(state,"com.ai-factory.daemon")),false);
+    const stickyEnv={...env,SERVICE_STICKY:"com.ai-factory.dashboard"};
+    const sticky=spawnSync("bash",["scripts/services.sh","stop","dashboard"],{cwd:process.cwd(),env:stickyEnv,encoding:"utf8"});
+    assert.notEqual(sticky.status,0);assert.match(sticky.stderr,/launchd still reports it as loaded/);
   } finally { fs.rmSync(root,{recursive:true,force:true}); }
 });
