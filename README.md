@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/script
 bash /tmp/ai-factory-install-macos.sh --dir "$HOME/ai-factory"
 ```
 
-The installer prepares the engine, installs both macOS services, starts the local dashboard and opens its first-time setup page. Credentials and environment settings are completed in the browser. The daemon remains stopped until you start it from Services after configuring the target. In an existing source checkout:
+The installer prepares the engine, installs both macOS services, starts the local dashboard and opens its first-time setup page. Credentials and environment settings are completed in the browser. The daemon remains stopped while required setup is incomplete; the first valid **Save and apply** starts and verifies it automatically. In an existing source checkout:
 
 ```sh
 npm ci
@@ -57,7 +57,7 @@ npm run service -- start dashboard
 npm run service -- start daemon
 ```
 
-Use **Dashboard → Configuration** whenever settings or credentials change. Every option with a safe universal value opens with a default; after GitHub connects, the dashboard suggests the account's demo repository, local clone and approver for any empty required fields. Optional secrets and allowlists remain empty. **Save and apply** validates the full candidate configuration before writing, restarts affected running services automatically and leaves stopped services stopped. The installer accepts `--dashboard-host` and `--dashboard-port`; when the selected port is occupied it saves and opens the next available port automatically. Changing the address later in Configuration shows the new URL and reconnects after restarting the dashboard. `npm run configure` remains a supported terminal recovery path when the dashboard is unavailable; installation and update do not invoke it. Existing settings are preserved during updates.
+Use **Dashboard → Configuration** whenever settings or credentials change. Every option with a safe universal value opens with a default; after GitHub connects, the dashboard suggests the account's demo repository, local clone and approver for any empty required fields. Optional secrets and allowlists remain empty. **Save and apply** validates the full candidate configuration before writing and restarts affected running services automatically. On the installer-opened first-time setup page, a valid save also starts and verifies the stopped daemon; later saves preserve an intentional stopped state. The installer accepts `--dashboard-host` and `--dashboard-port`; when the selected port is occupied it saves and opens the next available port automatically. Changing the address later in Configuration shows the new URL and reconnects after restarting the dashboard. `npm run configure` remains a supported terminal recovery path when the dashboard is unavailable; installation and update do not invoke it. Existing settings are preserved during updates.
 
 For an interrupted update that already unloaded both services, run `AI_FACTORY_UPDATE_STATE_FILE="$PWD/.factory/update-state.json" bash scripts/update.sh --start-services` from the installation directory. This explicit recovery mode starts both services after a successful update. Normal dashboard updates persist each service's original loaded state before the background job begins and restore that recorded intent after success or failure.
 

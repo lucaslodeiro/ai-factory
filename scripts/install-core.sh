@@ -77,7 +77,7 @@ printf 'AI Factory installation completed successfully\n'
 printf '============================================================\n'
 printf 'Engine:        %s\n' "$PWD"
 printf 'Configuration: continue in the dashboard\n'
-printf 'Daemon:        not started\n'
+printf 'Daemon:        starts automatically after valid first-time setup\n'
 if "$dashboard_ready"; then printf 'Dashboard:     running at %s\n' "$dashboard_url"; else printf 'Dashboard:     started; health check pending at %s (see .factory/service-logs/dashboard.error.log)\n' "$dashboard_url"; fi
 printf 'Services:      daemon and dashboard definitions installed\n'
 printf 'Launcher:      %s\n' "$HOME/.local/bin/ai-factory"
@@ -97,8 +97,8 @@ cat <<'NEXT'
 First-run checklist:
   1. Complete Credentials and Configuration in the dashboard opened by the installer.
   2. Save the target repository, local clone and authorized approvers.
-  3. Start the daemon from the dashboard Services section.
+  3. Save and apply. Once all required checks pass, the daemon starts automatically.
 
-The installer starts only the local dashboard. It never starts agents automatically.
+Until setup is valid, only the local dashboard runs and no agent can start.
 NEXT
 if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then node scripts/service-summary.mjs; fi

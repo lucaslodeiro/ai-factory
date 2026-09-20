@@ -17,8 +17,12 @@ test("dashboard serves readable state and queues daemon controls", async () => {
   fs.writeFileSync(fakeGit,`#!/usr/bin/env bash
 case "$*" in
   "rev-parse --short HEAD") echo abc1234;;
+  "rev-parse --is-inside-work-tree") echo true;;
   "symbolic-ref --quiet --short HEAD") echo main;;
   "rev-parse HEAD") echo abc1234abc1234abc1234abc1234abc1234abc1;;
+  "config user.name") echo 'AI Factory Test';;
+  "config user.email") echo 'factory@example.com';;
+  "remote get-url origin") echo 'https://github.com/owner/demo.git';;
   "fetch origin refs/heads/main") ;;
   "rev-parse FETCH_HEAD") if [[ -f "$PWD/up-to-date" ]]; then echo abc1234abc1234abc1234abc1234abc1234abc1; else echo def5678def5678def5678def5678def5678def5; fi;;
   "rev-parse --short FETCH_HEAD") if [[ -f "$PWD/up-to-date" ]]; then echo abc1234; else echo def5678; fi;;
@@ -316,6 +320,16 @@ echo "$*" >> "$PWD/update-actions.log"
     const response = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"retry",target:"owner-demo-7"})});
     assert.equal(response.status,202);
     assert.deepEqual(store.db.prepare("SELECT kind,target FROM controls WHERE kind='retry'").get(),{kind:"retry",target:"owner-demo-7"});
+    fs.rmSync(path.join(settingsRoot,"daemon-service-state"),{force:true});
+    const firstSetupSave = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({
+      startDaemonWhenReady:true,
+      values:{GITHUB_REPOSITORY:"owner/demo",FACTORY_REPO_DIR:settingsRoot,FACTORY_APPROVERS:"demo-user",GIT_COMMAND:fakeGit},
+    })});
+    assert.equal(firstSetupSave.status,200);
+    const firstSetupResult=await firstSetupSave.json() as any;
+    assert.deepEqual(firstSetupResult.startedServices,["daemon"]);
+    assert.match(firstSetupResult.message,/Daemon started and verified/);
+    assert.ok(fs.existsSync(path.join(settingsRoot,"daemon-service-state")));
   } finally {
     globalThis.fetch=originalFetch;
     await new Promise<void>(resolve => server.close(() => resolve()));

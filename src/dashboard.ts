@@ -404,9 +404,8 @@ function dashboardSettings(root: string) {
   } : {});
   return {...settings,readiness:setupReadiness(root,credentials)};
 }
-function saveConfiguration(store: Store, root: string, values: Record<string,unknown>, clearSecrets: string[] = [],maintenanceId?:string) {
+function saveConfiguration(store: Store, root: string, values: Record<string,unknown>, clearSecrets: string[] = [],maintenanceId?:string,startDaemonWhenReady=false) {
   const plan = validateDashboardSettings(root,values,clearSecrets);
-  if (!plan.changedKeys.length) return {...dashboardSettings(root),daemonRunning:daemonState(store).running,restartedServices:[],dashboardRestarting:false,message:"Configuration is already up to date."};
   const daemon = serviceStatus(root,"daemon"), dashboard = serviceStatus(root,"dashboard");
   const before=daemonState(store),daemonActive = before.running || daemon.running;
   const restartDaemon = plan.restartServices.includes("daemon") && daemonActive;
@@ -414,15 +413,14 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
   if (plan.restartServices.includes("daemon") && daemonActive && !daemon.loaded) throw new Error("The daemon is running outside the service manager. Stop it, then save again.");
   if(restartDaemon)requireMaintenance(store,maintenanceId,["configuration-apply"]);
   const environmentFile=path.join(root,".env"),originalEnvironment=fs.existsSync(environmentFile) ? fs.readFileSync(environmentFile,"utf8") : null;
-  let daemonStopped = false,saved = false;
+  let daemonStopped = false,saved = false,initialDaemonStartAttempted=false,initialDaemonStarted=false;
   try {
     if(maintenanceId)maintenanceCoordinator(store).markStarted(maintenanceId);
     if (restartDaemon) {
       runService(root,"daemon","stop"); daemonStopped=true;
       if (!waitForDaemonStopped(root,before.pid)) throw new Error("The daemon did not stop completely before applying configuration.");
     }
-    saveDashboardSettings(root,values,clearSecrets);
-    saved=true;
+    if(plan.changedKeys.length){saveDashboardSettings(root,values,clearSecrets);saved=true;}
     if (restartDaemon) {
       runService(root,"daemon","start");
       if (!waitForDaemonStarted(root)) {
@@ -430,10 +428,21 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
         throw new Error(`The daemon did not become ready after restart.${error ? ` Last error: ${error.split(/\r?\n/).at(-1)}` : ""}`);
       }
     }
+    const ready=dashboardSettings(root).readiness.ready;
+    if(startDaemonWhenReady&&!daemonActive&&ready){
+      initialDaemonStartAttempted=true;
+      runService(root,"daemon","start");
+      if(!waitForDaemonStarted(root)){
+        const error=tailLog(path.join(root,".factory","service-logs","daemon.error.log"),25).content;
+        throw new Error(`The daemon did not become ready after initial setup.${error ? ` Last error: ${error.split(/\r?\n/).at(-1)}` : ""}`);
+      }
+      initialDaemonStarted=true;
+    }
     if(maintenanceId)maintenanceCoordinator(store).complete(maintenanceId);
   } catch (error) {
     if(maintenanceId){store.db.prepare("UPDATE maintenance_operations SET status='failed',finished_at=?,error=? WHERE id=?").run(new Date().toISOString(),String(error),maintenanceId);store.event("maintenance.failed",{maintenanceId,operation:"configuration-apply",error:String(error)});}
     let recovery="";
+    if(initialDaemonStartAttempted)try{if(serviceStatus(root,"daemon").loaded)runService(root,"daemon","stop");}catch(stopError){recovery+=` The failed initial daemon could not be stopped: ${String(stopError)}`;}
     if (saved) try { restoreEnvironment(root,originalEnvironment); } catch (rollbackError) { recovery=` Configuration rollback failed: ${String(rollbackError)}`; }
     if (daemonStopped) try {
       if (serviceStatus(root,"daemon").loaded) runService(root,"daemon","stop");
@@ -445,10 +454,12 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
   const restartedServices: string[] = [];
   if (restartDaemon) restartedServices.push("daemon");
   if (restartDashboard) { runService(root,"dashboard","restart"); restartedServices.push("dashboard"); }
-  const message = restartedServices.length
+  const message = initialDaemonStarted
+    ? "Configuration saved. Daemon started and verified."
+    : restartedServices.length
     ? `Configuration saved. ${restartDaemon ? "Daemon restarted and verified." : ""}${restartDashboard ? `${restartDaemon ? " " : ""}Dashboard restart scheduled.` : ""}`
-    : "Configuration saved. Stopped services were left stopped.";
-  return {...dashboardSettings(root),daemonRunning:daemonState(store).running,restartedServices,dashboardRestarting:restartDashboard,message};
+    : plan.changedKeys.length ? "Configuration saved. Stopped services were left stopped." : "Configuration is already up to date.";
+  return {...dashboardSettings(root),daemonRunning:daemonState(store).running,restartedServices,startedServices:initialDaemonStarted?["daemon"]:[],dashboardRestarting:restartDashboard,message};
 }
 
 export function createDashboardServer(store: Store, settingsRoot = process.cwd()) {
@@ -485,9 +496,9 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if (req.method === "POST" && url.pathname === "/api/update/check") return json(res,200,checkUpdate(settingsRoot));
       if (req.method === "GET" && url.pathname === "/healthz") return json(res,200,{ok:true});
       if (req.method === "PUT" && url.pathname === "/api/settings") {
-        const body = await readBody(req) as { values?: Record<string,unknown>; clearSecrets?: string[];maintenanceId?:string };
+        const body = await readBody(req) as { values?: Record<string,unknown>; clearSecrets?: string[];maintenanceId?:string;startDaemonWhenReady?:boolean };
         if (!body.values || typeof body.values !== "object" || Array.isArray(body.values)) return json(res,400,{error:"Settings are required"});
-        return json(res,200,saveConfiguration(store,settingsRoot,body.values,Array.isArray(body.clearSecrets) ? body.clearSecrets : [],body.maintenanceId));
+        return json(res,200,saveConfiguration(store,settingsRoot,body.values,Array.isArray(body.clearSecrets) ? body.clearSecrets : [],body.maintenanceId,body.startDaemonWhenReady===true));
       }
       if(req.method==="POST"&&url.pathname==="/api/settings/validate") {const body=await readBody(req) as {values?:Record<string,unknown>;clearSecrets?:string[]};if(!body.values||typeof body.values!=="object"||Array.isArray(body.values))return json(res,400,{error:"Settings are required"});const plan=validateDashboardSettings(settingsRoot,body.values,Array.isArray(body.clearSecrets)?body.clearSecrets:[]),daemon=serviceStatus(settingsRoot,"daemon"),active=daemonState(store).running||daemon.running;return json(res,200,{changedKeys:plan.changedKeys,restartServices:plan.restartServices,requiresDaemonRestart:active&&plan.restartServices.includes("daemon")});}
       if (req.method === "POST" && url.pathname === "/api/control") {
