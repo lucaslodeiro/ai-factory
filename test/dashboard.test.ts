@@ -218,6 +218,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.ok(settings.readiness.missing.some((item: any) => item.id === "repository"));
     assert.ok(settings.readiness.missing.some((item: any) => item.id === "approvers"));
     assert.deepEqual(settings.groups.map((group: any) => group.id),["credentials","project","runtime","dashboard","models","tools","access","notifications"]);
+    assert.deepEqual(settings.fields.filter((field:any)=>field.setup).map((field:any)=>field.key).sort(),["FACTORY_APPROVERS","FACTORY_REPO_DIR","GITHUB_REPOSITORY"]);
     const dashboardHost = settings.fields.find((field: any) => field.key === "FACTORY_DASHBOARD_HOST");
     assert.equal(dashboardHost.type,"select"); assert.deepEqual(dashboardHost.options.map((option: any) => option.value),["127.0.0.1","localhost","::1"]);
     const developerProvider = settings.fields.find((field: any) => field.key === "DEVELOPER_PROVIDER");
