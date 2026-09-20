@@ -531,7 +531,7 @@ The Next action block prints the exact valid syntax for the current state and ex
 
 ### 8.3 Milestone comments (immutable)
 
-Only when a human acted or must act, or the contract changed: started, questions, SPEC proposed, SPEC approved, decision request opened, decision resolved, correction limit, failure needing retry, paused, cancelled, ready to merge, PR closed, recovered, merged. Architect question comments are titled as questions, number each question and include a ready-to-copy `/factory answer` template; they never describe nonexistent content as a specification. Role `pass` reports and intermediate `changes` reports go to the status comment (and the PR body for the final ones), not to immutable comments.
+Only when a human acted or must act, or the contract changed: started, questions, SPEC proposed, SPEC approved, decision request opened, decision resolved, correction limit, failure needing retry, paused, cancelled, ready to merge, PR closed, recovered, merged. Architect question comments are titled as questions, number each question and include a ready-to-copy `/factory answer` template; they never describe nonexistent content as a specification. Tactical-resolution comments are titled as Architect decisions, name the role that continues and require no human action; while that result is current, its summary replaces the earlier delivery-role question in the mutable status. Role `pass` reports and intermediate `changes` reports go to the status comment (and the PR body for the final ones), not to immutable comments.
 
 ### 8.4 Labels
 
