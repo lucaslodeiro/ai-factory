@@ -104,14 +104,13 @@ async function loadServices(){try{const response=await pollingFetch('/api/servic
 let daemonLogsData=null,daemonLogSource='all',daemonLogsLoading=false;
 function selectedDaemonLogText(data=daemonLogsData){
   if(!data)return '';
-  const selected=daemonLogSource==='all'?data.logs:data.logs.filter(log=>log.source===daemonLogSource);
-  return selected.filter(log=>log.exists&&log.content).map(log=>daemonLogSource==='all'?`── ${log.source==='errors'?'ERRORS':'STANDARD OUTPUT'} · ${log.path} ──\n${log.content}`:log.content).join('\n\n');
+  return (data.entries||[]).filter(entry=>daemonLogSource==='all'||entry.error).map(entry=>entry.text).join('\n');
 }
 function renderDaemonLogs(data){
   daemonLogsData=data;
   const view=$('#daemon-log-content'),wasNearBottom=view.scrollHeight-view.scrollTop-view.clientHeight<48,first=view.dataset.loaded!=='true';
   const text=selectedDaemonLogText(data),existing=data.logs.filter(log=>log.exists),updated=existing.map(log=>log.updatedAt).filter(Boolean).sort().at(-1);
-  view.textContent=text||'No daemon log output yet.';view.dataset.loaded='true';
+  view.textContent=text||(daemonLogSource==='errors'?'No errors in the loaded logs.':'No daemon log output yet.');view.dataset.loaded='true';
   if(first||wasNearBottom)view.scrollTop=view.scrollHeight;
   $('#daemon-logs-summary').textContent=updated?`Latest output ${relative(updated)}`:'No log files yet';
   $('#daemon-log-paths').textContent=data.logs.map(log=>log.path).join(' · ');

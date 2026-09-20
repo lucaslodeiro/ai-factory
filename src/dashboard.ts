@@ -1,3 +1,4 @@
+import {logEntries} from "./log-entries.js";
 import {workActions,validateWorkControl} from "./workflow-controls.js";
 import {reconcileUpdateMaintenance} from "./update-maintenance.js";
 import fs from "node:fs";
@@ -210,10 +211,8 @@ function daemonLogs(root: string, requestedLines: string | null) {
     {source:"output",filename:"daemon.log"},
     {source:"errors",filename:"daemon.error.log"},
   ];
-  return {
-    generatedAt:new Date().toISOString(),lines,
-    logs:files.map(({source,filename})=>({source,path:`data/service-logs/${filename}`,...tailLog(path.join(directory,filename),lines)})),
-  };
+  const logs=files.map(({source,filename})=>({source,path:`data/service-logs/${filename}`,...tailLog(path.join(directory,filename),lines)}));
+  return {generatedAt:new Date().toISOString(),lines,logs,entries:logEntries(logs)};
 }
 function serviceStatus(root: string, service: "daemon" | "dashboard") {
   const result = spawnSync("bash",[path.join(root,"scripts/services.sh"),"status",service],{cwd:root,encoding:"utf8",timeout:10000});
