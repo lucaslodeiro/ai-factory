@@ -12,6 +12,7 @@ import { WorkflowInbox } from "../src/workflow-inbox.js";
 
 const stagesForTest={DESIGN:"Design",BUILD:"Build",TEST:"Test",REVIEW:"Review",DELIVERY:"Delivery"} as const;
 const statusesForTest={QUEUED:"Queued",RUNNING:"Running",WAITING:"Waiting for you",FAILED:"Failed",PAUSED:"Paused",CANCELLED:"Cancelled",COMPLETED:"Completed"} as const;
+const nextAction=(body:string)=>body.match(/^## Next action\n\n([\s\S]*?)(?=\n\n<details><summary>All commands<\/summary>)/m)?.[0]??"";
 
 function setup() {
  const store=new Store(":memory:");
@@ -145,4 +146,16 @@ test("help publishes one immutable reference and status keeps the same collapsed
   assert.equal(publisher.publishHelp(),0);assert.equal(published.length,1);
   const status=workflowStatusMarkdown(s.store,"work-1");assert.match(status,/<details><summary>All commands<\/summary>/);assert.match(status,/\/factory cancel/);assert.equal(status.match(/^## Next action$/gm)?.length,1);
  } finally {s.store.db.close();}
+});
+
+test("every workflow CTA shows the exact valid commands and text semantics",()=>{
+ const requestCase=(type:"spec-approval"|"clarification"|"correction-limit"|"merge")=>{const s=setup();s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"request",type,owner:"human",originatingStage:type==="merge"?"DELIVERY":"DESIGN",allowedReturnStages:type==="merge"?["DELIVERY"]:["DESIGN","BUILD"],openedAfterCommentId:10},sourceType:"orchestrator",sourceId:type,actor:"orchestrator"});s.projections.initialize("work-1",type==="merge"?"DELIVERY":"DESIGN","WAITING");return s;};
+ for(const [type,patterns] of [
+  ["spec-approval",[/\/factory approve v2 \[guidance\]/,/\/factory answer <feedback>/,/spec-scoped instruction/,/human decision/]],
+  ["clarification",[/\/factory answer <guidance>/,/human decision/]],
+  ["correction-limit",[/\/factory answer <guidance>/,/human decision/]],
+  ["merge",[/Merge.*GitHub/s,/\/factory answer <changes>/,/auto-fix finding for Builder/]],
+ ] as const){const s=requestCase(type);try{const action=nextAction(workflowStatusMarkdown(s.store,"work-1"));for(const pattern of patterns)assert.match(action,pattern);assert.equal(action.match(/^## Next action$/gm)?.length,1);}finally{s.store.db.close();}}
+ for(const status of ["FAILED","PAUSED","CANCELLED"] as const){const s=setup();try{if(status==="FAILED")new WorkflowFailures(s.store).open({workItemId:"work-1",class:"execution",message:"failed",stage:"TEST",attempt:0});s.projections.initialize("work-1",status==="FAILED"?"TEST":"BUILD",status);const action=nextAction(workflowStatusMarkdown(s.store,"work-1"));assert.match(action,/\/factory retry \[--issue\] \[--for <roles>\] \[guidance\]/);assert.match(action,/current SPEC/);assert.equal(action.match(/^## Next action$/gm)?.length,1);}finally{s.store.db.close();}}
+ for(const status of ["QUEUED","RUNNING"] as const){const s=setup();try{s.projections.initialize("work-1","BUILD","QUEUED");if(status==="RUNNING")s.projections.transition({workItemId:"work-1",expectedRevision:0,stage:"BUILD",status:"RUNNING",activeRunId:"run",actor:{type:"orchestrator",id:"scheduler"},source:{executionId:"run"},reason:{code:"start",summary:"Started"}});const action=nextAction(workflowStatusMarkdown(s.store,"work-1"));assert.match(action,/No human action is required/);assert.match(action,/\/factory pause \[reason\]/);assert.match(action,/\/factory cancel \[reason\]/);assert.equal(action.match(/^## Next action$/gm)?.length,1);}finally{s.store.db.close();}}
 });

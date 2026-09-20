@@ -19,7 +19,7 @@ Implementation details and commit hashes are recorded below as each item lands.
 
 - Files: `src/workflow-inbox.ts`, `src/workflow-status.ts`, `test/workflow-inbox.test.ts`, `test/execution.test.ts`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
 - Change: persisted the latest newly observed command outcome in work-item context, advanced presentation for non-applied outcomes and rendered the outcome/reason in the authoritative status table. Comment-origin starts begin with an applied outcome. The pre-existing cancellation fixture now waits for worker readiness instead of a fixed delay so required full-suite runs are deterministic.
-- Tests: `command outcomes are persisted and visible in the status comment` covers wrong-version approval, typo, trailing text and unknown replacement; `applied answers and stale commands render their outcome` covers stale and applied states.
+- Tests: `command outcomes are persisted and visible in the status comment` covers wrong-version approval, typo, malformed syntax and unknown replacement; `applied answers and stale commands render their outcome` covers stale and applied states.
 - Commit: `3f3acaf`.
 
 ### C2 — pull request feedback
@@ -62,15 +62,27 @@ Implementation details and commit hashes are recorded below as each item lands.
 - Files: `src/factory-command.ts`, `src/workflow-commands.ts`, `src/workflow-status.ts`, `src/factory-help.ts`, `test/factory-command.test.ts`, `test/workflow-commands.test.ts`, `README.md`, `docs/GITHUB_SETUP.md`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
 - Change: active guidance displays a stable `#N` creation rank plus its id prefix. Replace/revoke accept either form. Ordinals are resolved across all historical human guidance, including inactive entries, so they never shift or get reused.
 - Test: `stable guidance ordinals address historical entries without reuse` verifies `#1` revocation, `#2` replacement, new `#3`, and the explicit missing-ordinal rejection; parser tests cover both ordinal forms.
-- Commit: recorded after commit creation.
+- Commit: `c71a4d3`.
+
+### C8 — state-specific CTA copy
+
+- Files: `src/workflow-status.ts`, `test/workflow-github.test.ts`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
+- Change: every state now prints the exact commands available there and explains how text is persisted. Spec approval, clarification/correction, merge, retry, queued and running flows each have explicit copy while retaining one authoritative **Next action** block.
+- Test: `every workflow CTA shows the exact valid commands and text semantics` covers spec approval, clarification, correction limit, merge, failed, paused, cancelled, queued and running states.
+- Commit: `HEAD` (`feat: C8 make workflow CTAs explicit`; exact hash printed with the final report).
 
 ## Removed or changed behavior
 
-To be completed after implementation.
+- The old last-line form (`guidance` followed by `/factory answer` or `/factory retry`) was removed. Put the command on the first non-empty line and its text inline or below it.
+- `start`, `approve`, `pause` and `cancel` now accept text rather than rejecting it. Start/approve text is guidance; pause/cancel text is audit-only reason evidence.
+- Status CTAs now include exact optional arguments, storage semantics and pause/cancel alternatives instead of abbreviated commands.
+- The status guidance section is named **Active human guidance**, includes human decisions, and shows stable ordinal references alongside id prefixes.
 
 ## Not changed
 
 - Editing an already consumed GitHub comment remains inert. Post a new comment to receive a command outcome and trigger workflow behavior.
+- Quoted commands, commands after prose, bot comments, edited start comments and unauthorized users remain inert or rejected by the existing authorization boundary.
+- Tactical decisions remain owned by agents and cannot be replaced or revoked through human-guidance commands.
 
 ## Verification
 
@@ -82,11 +94,16 @@ To be completed after implementation.
 - After C5: focused parser/publisher/status tests — 11 passed; `npm test` — 121 tests, 121 passed, 0 failed.
 - After C6: focused workflow tests — 34 passed. First `npm test` run: 123 tests, 122 passed, 1 failed because `daemon.test.ts` read a JSON file while it was being written (`Unexpected end of JSON input`); immediate unchanged rerun: 123 tests, 123 passed, 0 failed.
 - After C7: focused parser/command tests — 15 passed; `npm test` — 124 tests, 124 passed, 0 failed.
+- After C8: focused status/publisher tests — 9 passed; `npm test` — 125 tests, 125 passed, 0 failed.
+- Final `npm run build` — passed (`tsc` and asset copy, exit 0).
+- Final `git diff --check` — passed (exit 0).
 
 ## Documentation
 
-To be completed after implementation.
+- `docs/CONTEXT_AND_WORKFLOW_DESIGN.md` §5.3–5.4 now documents human-decision revocation, uniform first-line grammar, help, guidance/reason semantics and stable ordinals; §7.2 records the new transitions; §8.2 records visible outcomes, help and exact state CTAs.
+- `README.md` now lists the full command surface, grammar, role aliases and revised retry placement.
+- `docs/GITHUB_SETUP.md` now lists every command and explains guidance, decisions, role/scope options, reasons and stable references.
 
 ## Open questions
 
-None at validation time.
+None.

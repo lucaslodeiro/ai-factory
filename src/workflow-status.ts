@@ -26,15 +26,15 @@ export function workflowLabels(store:Store,workItemId:string) {
 function nextAction(store:Store,workItemId:string) {
  const projection=new WorkflowProjections(store).get(workItemId),request=new WorkflowRecords(store).activeRequest(workItemId);
  if(request?.payload.kind==="request"&&request.payload.owner==="human") {
-  if(request.payload.type==="spec-approval")return box(`Review the proposed specification and post one new comment.\n\n**Approve**${command(`/factory approve v${request.specVersion}`)}\n\n**Request changes**${command("/factory answer <feedback>")}`);
-  if(request.payload.type==="merge")return box(`Review and merge the pull request in GitHub when it is ready, or request changes.\n\n**Merge** in GitHub.\n\n**Request changes**${command("/factory answer <changes>")}`);
-  return box(`Reply with the guidance Architect needs.${command("/factory answer <guidance>")}`);
+  if(request.payload.type==="spec-approval")return box(`Review the proposed specification and post one new comment.\n\n**Approve**${command(`/factory approve v${request.specVersion} [guidance]`)}\nOptional guidance becomes a spec-scoped instruction.\n\n**Request changes**${command("/factory answer <feedback>")}\nFeedback becomes a human decision for Architect.`);
+  if(request.payload.type==="merge")return box(`Review and merge the pull request in GitHub when it is ready, or request changes.\n\n**Merge** in GitHub.\n\n**Request changes**${command("/factory answer <changes>")}\nThe text becomes a human auto-fix finding for Builder.`);
+  return box(`Reply with the guidance Architect needs.${command("/factory answer <guidance>")}\nThe text becomes a human decision for Architect.`);
  }
- if(request?.payload.kind==="request"&&request.payload.owner==="architect")return box("Architect is next. No human action is required.");
+ if(request?.payload.kind==="request"&&request.payload.owner==="architect")return box(`Architect is next. No human action is required. You can still pause or cancel the workflow.${command("/factory pause [reason]")}${command("/factory cancel [reason]")}`);
  if(projection.status==="FAILED")return box(`Resolve the reported cause, then retry this stage.${command("/factory retry [--issue] [--for <roles>] [guidance]")}\n\nOptional guidance stays active for the current SPEC by default and appears above with its id.`);
  if(["PAUSED","CANCELLED"].includes(projection.status))return box(`Resume the preserved work when ready.${command("/factory retry [--issue] [--for <roles>] [guidance]")}\n\nOptional guidance stays active for the current SPEC by default and appears above with its id.`);
  if(projection.status==="COMPLETED")return box("Delivery is complete. No further factory action is required.");
- return box(`${projection.status==="RUNNING"?"The current agent is running":"The next agent is queued"}. No human action is required.`);
+ return box(`${projection.status==="RUNNING"?"The current agent is running":"The next agent is queued"}. No human action is required. You can pause or cancel the workflow.${command("/factory pause [reason]")}${command("/factory cancel [reason]")}`);
 }
 
 export function workflowStatusMarkdown(store:Store,workItemId:string) {
