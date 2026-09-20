@@ -27,7 +27,7 @@ esac
     return result.stdout;
   };
   try {
-    assert.match(run("--help"),/npm run service -- uninstall \[--yes\]/);
+    assert.match(run("--help"),/npm run service -- uninstall \[--purge\] \[--yes\] \[--force\]/);
     assert.match(run("install","all"),/Dashboard: http:\/\/127\.0\.0\.1:4173/);
     const agentDir = path.join(home,"Library","LaunchAgents");
     const daemon = fs.readFileSync(path.join(agentDir,"com.ai-factory.daemon.plist"),"utf8");

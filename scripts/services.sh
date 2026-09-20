@@ -13,10 +13,9 @@ usage() {
   cat <<'EOF'
 Usage:
   npm run service -- <install|start|stop|restart|status|logs> <daemon|dashboard|all>
-  npm run service -- uninstall [--yes] [--force]
+  npm run service -- uninstall [--purge] [--yes] [--force]
 
-Uninstall removes both services, this factory installation and its runtime data.
-Target repositories, shared tools and provider credentials are preserved.
+Basic uninstall removes services, engine and runtime data while preserving configuration and repos/. Use --purge to remove the complete factory home.
 Run `ai-factory help` for every command.
 EOF
 }

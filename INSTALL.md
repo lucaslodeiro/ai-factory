@@ -52,7 +52,7 @@ configuration and factory commands work from any directory. If that directory
 is not yet on the current shell's `PATH`, use
 `$HOME/.local/bin/ai-factory uninstall` instead.
 
-The uninstaller prints the exact installation, runtime-data and LaunchAgent paths, then requires typing `uninstall`. It cancels any transient factory update before stopping the two services and removing files. For an automated disposable-machine test, use `ai-factory uninstall --yes`.
+The basic uninstaller removes the services, `engine/` and `data/` after its unpublished-work preflight. It preserves `.env`, `.env.backup-*` and `repos/`, so reinstalling into the same home reuses configuration and managed clones. Use `ai-factory uninstall --purge` to remove the entire home; purge also blocks on dirty or unpushed managed clones unless `--force` is supplied. Provider credentials always remain outside the home. For an automated disposable-machine test, use `--yes`.
 
 If an older uninstall left a terminal pointing at the removed checkout, run
 `cd "$HOME"` before using that terminal again. Both installers now recover
@@ -70,9 +70,7 @@ bash /tmp/ai-factory-install-macos.sh --dir "$HOME/ai-factory"
 The installer prints these same recovery commands with the resolved paths. It
 does not remove or overwrite an unrecognized directory automatically.
 
-The service launcher exposes the same operation: `ai-factory service uninstall` or `ai-factory service uninstall --yes`. Run `ai-factory help` to see every operation and workflow command.
-
-It stops and removes both factory LaunchAgents, the engine checkout, `.env` and backups, SQLite, logs and retained worktrees. A configured external data directory is removed only when it contains the factory database marker; unsafe paths are rejected. The target application repository is preserved, as are global GitHub/Codex/Claude credentials and shared Node, Git, `gh`, Codex and Claude installations. This leaves the Mac ready to exercise the installer again without deleting unrelated development data.
+The service launcher exposes the same operation and flags: `ai-factory service uninstall [--purge] [--yes] [--force]`. Shared Node, Git, `gh`, Codex and Claude installations are never removed.
 
 To update an existing installation, first stop its daemon and wait for it to exit:
 

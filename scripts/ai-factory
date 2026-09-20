@@ -32,7 +32,7 @@ Usage:
   ai-factory service <action> <daemon|dashboard|all>
   ai-factory update [--start-services]
   ai-factory configure
-  ai-factory uninstall [--yes] [--force]
+  ai-factory uninstall [--purge] [--yes] [--force]
   ai-factory version
   ai-factory help
 
