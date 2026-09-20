@@ -53,3 +53,43 @@ No live GitHub or provider execution was performed; validation used the reposito
 ## Open questions
 
 None.
+
+---
+
+## F3 — Cancel bypass for a deferred retry
+
+### Decision
+
+**Agree with a different fix.** The deferred retry did block every later comment, including `/factory cancel`. The proposed inbox bypass was necessary but insufficient: after `/factory pause`, `ExecutionManager.cancel()` ignored cancellation when its run was already marked `interrupted`, the supervisor ignored a second termination request while stopping, and final status preferred `interrupted`. F3 therefore also includes the smallest change that upgrades an in-progress interrupt to forced explicit cancellation.
+
+### Changes — `9c436a0`
+
+- Files: `src/workflow-inbox.ts`, `src/workflow-commands.ts`, `src/execution-manager.ts`, `src/worker-supervisor.mjs`, `test/workflow-inbox.test.ts`, `test/execution.test.ts`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
+- The inbox continues scanning after a deferred retry but permits only an authorized `/factory cancel` to execute.
+- A bypassing cancel uses the normal command path, records `command.superseded` once in the same transaction, advances the cursor to the cancel and counts intervening comments as observed without applying them.
+- Without a later cancel, the deferred cursor behavior is unchanged.
+- Cancel now finds the most recent still-running execution when a pause has cleared `activeRunId`.
+- Explicit cancel upgrades an existing interrupt, arms the supervisor's SIGKILL escalation and records execution status `cancelled` with reason `user-cancel`.
+- Tests:
+  - **cancel bypasses a deferred retry and supersedes it atomically**.
+  - **comments between deferred retry and cancel are consumed only as observed**.
+  - **non-cancel commands remain blocked behind a deferred retry**.
+  - **explicit cancellation escalates an in-progress interruption**.
+
+### Verification
+
+- Baseline: `npm test` — **109 total, 109 pass, 0 fail, 0 skipped**.
+- Red inbox run: `node --import tsx --test test/workflow-inbox.test.ts` — **11 total, 9 pass, 2 fail**. Both cancel-bypass cases remained `PAUSED`; the non-cancel preservation case passed.
+- Red escalation run: `node --import tsx --test test/execution.test.ts` — **6 total, 5 pass, 1 fail**. The execution completed as `interrupted` instead of `cancelled`.
+- Green focused run: `node --import tsx --test test/workflow-inbox.test.ts test/execution.test.ts` — **17 total, 17 pass, 0 fail**.
+- Final `npm test` — **113 total, 113 pass, 0 fail, 0 skipped**.
+- Final `npm run build` — passed (`tsc` and asset copy).
+- Final `git diff --check` — passed.
+
+### Documentation
+
+- **§5.4 Scope:** now states that authorized cancel bypasses and supersedes a deferred retry, consumes intervening comments as observed, cancels the workflow and upgrades the live interruption to forced cancellation.
+
+### Open questions
+
+None.
