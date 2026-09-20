@@ -7,7 +7,8 @@ import { workflowProjectionProblems } from "./workflow-doctor.js";
 import {GitHubAdapter,type GitHubPort} from "./adapters/github.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
-export function doctor(existingStore?:Store,github:Pick<GitHubPort,"repository">=new GitHubAdapter()) {
+import {ControllerLease} from "./controller-lease.js";
+export function doctor(existingStore?:Store,github:Pick<GitHubPort,"repository">=new GitHubAdapter(),controllerFactory=(repository:ReturnType<GitHubPort["repository"]>,store:Store)=>new ControllerLease(repository,store)) {
  let ok = true;
  const check = (name: string, pass: boolean) => { ok = ok && pass; console.log(`${pass ? "✓" : "✗"} ${name}`); };
  check("Node >= 22", Number(process.versions.node.split(".")[0]) >= 22);
@@ -33,7 +34,7 @@ export function doctor(existingStore?:Store,github:Pick<GitHubPort,"repository">
   const s = existingStore??new Store();
   try {
    s.db.prepare("SELECT 1").get();check("SQLite writable",true);
-   try{verifyRepositoryIdentity(s,github);check("GitHub repository identity",true);}catch(error){check("GitHub repository identity",false);console.log(`  - ${error instanceof Error?error.message:String(error)}`);}
+   try{const repository=verifyRepositoryIdentity(s,github);check("GitHub repository identity",true);try{controllerFactory(repository,s).readLease();check("Repository controller",true);}catch(error){check("Repository controller",false);console.log(`  - ${error instanceof Error?error.message:String(error)}`);}}catch(error){check("GitHub repository identity",false);check("Repository controller",false);console.log(`  - ${error instanceof Error?error.message:String(error)}`);}
    try{check("GitHub default branch matches configured base",github.repository().defaultBranch===config.defaultBranch);}catch(error){check("GitHub default branch matches configured base",false);console.log(`  - ${error instanceof Error?error.message:String(error)}`);}
    if(checkoutExists)try{check(`Remote base branch ${config.defaultBranch} exists`,Boolean(new RepositoryMaintenance(s).check().remoteHead));}catch(error){check(`Remote base branch ${config.defaultBranch} exists`,false);console.log(`  - ${error instanceof Error?error.message:String(error)}`);}
    const problems=workflowProjectionProblems(s);check("Workflow projection invariants",problems.length===0);

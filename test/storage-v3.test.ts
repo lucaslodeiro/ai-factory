@@ -16,7 +16,7 @@ test("a fresh completed-V3 database enables foreign keys and creates only projec
  try {
   assert.equal(store.db.pragma("foreign_keys",{simple:true}),1);
   assert.equal(store.metadata<number>("schema_version"),schemaVersion);
-  for (const table of ["records","failures","maintenance_operations","maintenance_items"]) {
+  for (const table of ["records","failures","maintenance_operations","maintenance_items","repository_controller"]) {
    assert.ok(store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table));
   }
   const columns=new Set((store.db.prepare("PRAGMA table_info(work_items)").all() as Array<{name:string}>).map(column=>column.name));

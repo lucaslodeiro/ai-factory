@@ -59,10 +59,10 @@ if(codex){
  console.log(JSON.stringify({is_error:false,structured_output:result}));
 }
 `);
- const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, FACTORY_DATA_DIR: data, FACTORY_REPO_DIR: repo,
+ const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, AI_FACTORY_HOME:root, FACTORY_DATA_DIR: data, FACTORY_REPO_DIR: repo,
   GITHUB_REPOSITORY: "owner/demo", GITHUB_DEFAULT_BRANCH: "main", FACTORY_APPROVERS: "owner", FACTORY_POLL_INTERVAL_MS: "50",
   CODEX_COMMAND: provider, CLAUDE_COMMAND: provider, PRODUCT_ARCHITECT_PROVIDER:"codex", DEVELOPER_PROVIDER:"claude",
-  QA_PROVIDER:"claude", REVIEWER_PROVIDER:"codex", SLACK_WEBHOOK_URL: "" };
+  QA_PROVIDER:"claude", REVIEWER_PROVIDER:"codex", SLACK_WEBHOOK_URL: "", AI_FACTORY_CONTROLLER_REMOTE:origin };
  const cli = path.resolve("src/cli.ts");
  const log = fs.openSync(path.join(root, "daemon.log"), "w");
  const child = spawn(process.execPath, ["--import", "tsx", cli, "start"], { env, stdio: ["ignore", log, log], detached: true }); fs.closeSync(log);
