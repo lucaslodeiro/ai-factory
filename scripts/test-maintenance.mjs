@@ -74,13 +74,13 @@ env.AI_FACTORY_SKIP_SERVICES='1';
 run('bash',[path.join(source,'scripts/install-core.sh'),'--repo',remote,'--dir',dest],temp,false);
 
 const failedDest=path.join(temp,'failed install');
-env.FAIL_NPM_BUILD='1';
+env.FAIL_INSTALL_CHECK='1';
 const failedInstall=run('bash',[path.join(source,'scripts/install-core.sh'),'--repo',remote,'--dir',failedDest],temp,false);
-assert.match(failedInstall.stderr,/Installation failed while building the factory/);
+assert.match(failedInstall.stderr,/Installation failed while validating the installation/);
 assert.match(failedInstall.stderr,new RegExp(`mv .*engine.*engine\\.incomplete-[0-9-]+`));
 assert.ok(failedInstall.stderr.includes(`bash /tmp/ai-factory-install-macos.sh --dir ${failedDest.replaceAll(" ","\\ ")}`));
 assert.equal(fs.existsSync(path.join(failedDest,'data','install.json')),false);
-delete env.FAIL_NPM_BUILD;
+delete env.FAIL_INSTALL_CHECK;
 const failedRetry=run('bash',[path.join(source,'scripts/install-core.sh'),'--repo',remote,'--dir',failedDest],temp,false);
 assert.match(failedRetry.stderr,/incomplete engine already exists/);
 const incompleteEngine=path.join(failedDest,'engine.incomplete-test');
