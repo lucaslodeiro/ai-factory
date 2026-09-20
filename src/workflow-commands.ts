@@ -69,7 +69,7 @@ export class WorkflowCommands {
     for(const id of ids)this.records.cancelRequest(id);
     if(failure)this.failures.resolve(failure.id,`comment:${context.commentId}`);
    });
-   return {projection:result,recordIds:ids};
+   return {projection:result,recordIds:ids,executionAction:current.activeRunId?{kind:"cancel" as const,runId:current.activeRunId}:undefined};
   }
   throw new Error(`Unsupported command ${(command as FactoryCommand).kind}`);
  }

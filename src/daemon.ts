@@ -54,7 +54,7 @@ export async function startDaemon(store = new Store()) {
   qa:adapters[config.roles.qa.provider],
   reviewer:adapters[config.roles.reviewer.provider],
  };
- const github=new GitHubAdapter(),runner=new WorkflowRunner(store,agents,new Workspaces(),github),o=new WorkflowOrchestrator(store,github,runner,new SlackAdapter());
+ const github=new GitHubAdapter(),runner=new WorkflowRunner(store,agents,new Workspaces(),github),o=new WorkflowOrchestrator(store,github,runner,new SlackAdapter(),executions);
  const commands=new WorkflowCommands(store),maintenance=new WorkflowMaintenance(store,executions);
  const recoveredSignalMaintenance=maintenance.reconcileSignalsAfterRestart();
  let stopping = false,stopRequested=false,stopReason="unknown",stopPromise:Promise<unknown>|undefined;

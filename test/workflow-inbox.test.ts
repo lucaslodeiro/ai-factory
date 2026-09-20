@@ -44,3 +44,19 @@ test("stale approval is ignored durably and cannot cross its request boundary",(
   assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='command.stale'").get() as {count:number}).count,1);
  } finally {store.db.close();}
 });
+
+test("GitHub cancel stops the active execution after cancelling the workflow",()=>{
+ const store=new Store(":memory:");
+ try {
+  const started=new WorkflowIntake(store).start(issue,{actor:"owner",commentId:1,source:"github-comment"}),projections=new WorkflowProjections(store);
+  store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at) VALUES('run-cancel',?,'product-architect','DESIGN','running','now')").run(started.id);
+  projections.transition({workItemId:started.id,expectedRevision:0,stage:"DESIGN",status:"RUNNING",activeRunId:"run-cancel",actor:{type:"orchestrator",id:"scheduler"},source:{executionId:"run-cancel"},reason:{code:"start",summary:"Architect started"}});
+  let cancelled=false;
+  const executions={cancel(id:string){cancelled=id==="run-cancel";store.db.prepare("UPDATE executions SET status='cancelled' WHERE id=?").run(id);return true;}};
+  const inbox=new (WorkflowInbox as any)(store,{comments:()=>[comment(2,"/factory cancel")]},["owner"],executions);
+  inbox.poll(started.id);
+  assert.equal(cancelled,true);
+  assert.equal(projections.get(started.id).status,"CANCELLED");
+  assert.equal((store.db.prepare("SELECT status FROM executions WHERE id='run-cancel'").get() as {status:string}).status,"cancelled");
+ } finally {store.db.close();}
+});

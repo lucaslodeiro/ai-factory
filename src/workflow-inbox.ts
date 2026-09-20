@@ -7,6 +7,7 @@ import { WorkflowProjections } from "./workflow-projection.js";
 import {workflowNotificationText} from "./notifications.js";
 
 export interface CommentPort { comments(issue:number):Comment[]; }
+export interface ExecutionControl { cancel(id:string):boolean; interrupt(id:string,reason:string):boolean; }
 export interface StartOrigin { actor:string;commentId?:number;initialCursor?:number;source:"github-comment"|"control"; }
 
 export class WorkflowIntake {
@@ -31,12 +32,12 @@ export class WorkflowIntake {
 
 export class WorkflowInbox {
  private commands:WorkflowCommands;private projections:WorkflowProjections;
- constructor(private store:Store,private github:CommentPort,private approvers:string[]){this.commands=new WorkflowCommands(store);this.projections=new WorkflowProjections(store);}
+ constructor(private store:Store,private github:CommentPort,private approvers:string[],private executions?:ExecutionControl){this.commands=new WorkflowCommands(store);this.projections=new WorkflowProjections(store);}
  poll(workItemId:string) {
   const item=this.row(workItemId),comments=this.github.comments(item.issue_number).slice().sort((a,b)=>a.id-b.id).filter(comment=>comment.id>item.cursor);
   let applied=0,rejected=0,observed=0;
   for(const comment of comments) {
-   const result=this.store.db.transaction(()=>{
+   const outcome=this.store.db.transaction(()=>{
     const latest=this.row(workItemId);if(comment.id<=latest.cursor)return "duplicate";
     this.setCursor(workItemId,comment.id);
     if(comment.user.type!=="User"||!this.approvers.includes(comment.user.login))return "observed";
@@ -48,9 +49,10 @@ export class WorkflowInbox {
      return "observed";
     }
     const specVersion=(this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;
-    try{this.commands.apply(command,{workItemId,login:comment.user.login,commentId:comment.id,specVersion});return "applied";}
+    try{const applied=this.commands.apply(command,{workItemId,login:comment.user.login,commentId:comment.id,specVersion});return {result:"applied",executionAction:"executionAction" in applied?applied.executionAction:undefined};}
     catch(error){const stale=/stale/i.test(String(error));this.store.event(stale?"command.stale":"command.rejected",{commentId:comment.id,login:comment.user.login,command:command.kind,error:String(error)},workItemId);return "rejected";}
-   }).immediate();
+   }).immediate(),result=typeof outcome==="string"?outcome:outcome.result;
+   if(typeof outcome!=="string"&&outcome.executionAction?.kind==="cancel")this.executions?.cancel(outcome.executionAction.runId);
    if(result==="applied")applied++;else if(result==="rejected")rejected++;else if(result==="observed")observed++;
   }
   return {seen:comments.length,applied,rejected,observed,cursor:this.row(workItemId).cursor};

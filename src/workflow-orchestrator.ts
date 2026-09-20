@@ -2,7 +2,7 @@ import { config } from "./config.js";
 import type { Comment,GitHubPort,Issue,RepositoryComment,WorkflowGitHubPort } from "./adapters/github.js";
 import type { Store } from "./storage.js";
 import { parseFactoryCommand } from "./factory-command.js";
-import { WorkflowIntake,WorkflowInbox } from "./workflow-inbox.js";
+import { WorkflowIntake,WorkflowInbox,type ExecutionControl } from "./workflow-inbox.js";
 import { WorkflowGitHubPublisher } from "./workflow-github.js";
 import { WorkflowRunner } from "./workflow-runner.js";
 import { WorkflowProjections } from "./workflow-projection.js";
@@ -15,7 +15,7 @@ type ItemRow={id:string;issue_number:number;repo:string;stage:string;status:stri
 
 export class WorkflowOrchestrator {
  private intake:WorkflowIntake;private inbox:WorkflowInbox;private publisher:WorkflowGitHubPublisher;private projections:WorkflowProjections;private records:WorkflowRecords;
- constructor(readonly store:Store,private github:GitHub,private runner:WorkflowRunner,private notifications:NotificationPort){this.intake=new WorkflowIntake(store);this.inbox=new WorkflowInbox(store,github,config.approvers);this.publisher=new WorkflowGitHubPublisher(store,github);this.projections=new WorkflowProjections(store);this.records=new WorkflowRecords(store);}
+ constructor(readonly store:Store,private github:GitHub,private runner:WorkflowRunner,private notifications:NotificationPort,executions?:ExecutionControl){this.intake=new WorkflowIntake(store);this.inbox=new WorkflowInbox(store,github,config.approvers,executions);this.publisher=new WorkflowGitHubPublisher(store,github);this.projections=new WorkflowProjections(store);this.records=new WorkflowRecords(store);}
  async tick(){
   this.discoverStartCommands();this.reconcileIssueVisibility();this.reconcilePullRequests();
   for(const item of this.rows())if(!item.archived_at)this.inbox.poll(item.id);
