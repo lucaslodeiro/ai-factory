@@ -39,7 +39,13 @@ export class WorkflowGitHubPublisher {
   this.store.db.prepare("UPDATE work_items SET published_presentation_revision=? WHERE id=? AND (published_presentation_revision IS NULL OR published_presentation_revision<?)").run(presentationRevision,workItemId,presentationRevision);
   return true;
  }
- publishChanged() {let count=0;for(const row of this.store.db.prepare("SELECT id FROM work_items WHERE archived_at IS NULL AND presentation_revision>COALESCE(published_presentation_revision,-1)").all() as Array<{id:string}>)if(this.publish(row.id))count++;return count;}
+ publishChanged() {
+  // Re-render existing status comments once when their presentation format changes.
+  if(this.store.metadata<number>("github:status-format")!==2)this.store.db.transaction(()=>{
+   this.store.db.prepare("UPDATE work_items SET presentation_revision=presentation_revision+1 WHERE archived_at IS NULL AND published_presentation_revision IS NOT NULL").run();
+   this.store.setMetadata("github:status-format",2);
+  })();
+  let count=0;for(const row of this.store.db.prepare("SELECT id FROM work_items WHERE archived_at IS NULL AND presentation_revision>COALESCE(published_presentation_revision,-1)").all() as Array<{id:string}>)if(this.publish(row.id))count++;return count;}
  publishHelp() {
   let count=0;const rows=this.store.db.prepare("SELECT DISTINCT e.work_item_id,w.issue_number,w.archived_at FROM events e JOIN work_items w ON w.id=e.work_item_id WHERE e.type='command.help' ORDER BY e.id").all() as Array<{work_item_id:string;issue_number:number;archived_at:string|null}>;
   for(const row of rows){const key=`github:help:${row.work_item_id}`;if(row.archived_at||this.store.metadata<boolean>(key))continue;this.github.publishWorkflowComment(row.issue_number,"help",factoryHelpMarkdown());this.store.setMetadata(key,true);count++;}

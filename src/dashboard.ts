@@ -1,3 +1,4 @@
+import {workflowNextStep} from "./workflow-next-step.js";
 import {diagnoseWorkItem,diagnoseOperation} from "./failure-diagnostics.js";
 import {workflowActivity} from "./workflow-activity.js";
 import {logEntries} from "./log-entries.js";
@@ -114,7 +115,7 @@ function buildSnapshot(store: Store) {
   const visibleItems=storedItems.filter(item=>!item.archived_at);
   const items = visibleItems.slice().reverse().map(item => ({
     id:item.id,issue:item.issue_number,repo:item.repo,stage:item.stage,status:item.status,attempt:item.attempt,revision:item.revision,title:item.context.title,
-    activity:workflowActivity(store,item.id,item.status),actions:workActions(item.status),url:item.context.url,pr:item.context.pr??null,updatedAt:item.updated_at,
+    nextStep:workflowNextStep(store,item.id,item.status,item.context.pr),activity:workflowActivity(store,item.id,item.status),actions:workActions(item.status),url:item.context.url,pr:item.context.pr??null,updatedAt:item.updated_at,
   }));
   const executionRows=(store.db.prepare("SELECT id,work_item_id,role,stage,status,pid,started_at,finished_at,exit_code,input_tokens,output_tokens,cached_tokens,total_tokens,interruption_reason,maintenance_id FROM executions ORDER BY started_at DESC LIMIT 30").all() as any[]).filter(run=>!itemById.get(run.work_item_id)?.archived_at);
   const runMetadata=new Map((store.db.prepare("SELECT e.run_id,e.payload FROM events e JOIN executions x ON x.id=e.run_id WHERE e.type='execution.started' ORDER BY e.id DESC LIMIT 30").all() as Array<{run_id:string;payload:string}>).map(row=>{

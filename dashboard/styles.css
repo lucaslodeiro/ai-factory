@@ -346,3 +346,5 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 @media(max-width:760px){.remote-item{grid-template-columns:1fr}.queue-heading .issue-toolbar{justify-content:flex-start}.controller-details-label{display:inline-block;margin-left:.35rem}}
 
 .diagnosis-dialog{width:min(44rem,calc(100vw - 2rem));max-height:85vh;overflow:auto}.diagnosis-dialog h4{margin:1rem 0 .4rem}.diagnosis-dialog p{line-height:1.55;margin:.5rem 0;overflow-wrap:anywhere}.diagnosis-dialog pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:18rem;overflow:auto;padding:1rem;background:var(--bg);border:1px solid var(--line);border-radius:10px}.diagnosis-dialog .actions{margin-top:1rem}
+
+.work-next-step{margin:.8rem 0;padding:1rem;border:1px solid var(--line);border-radius:10px;background:var(--panel)}.work-next-step p{max-width:65ch;overflow-wrap:anywhere}.work-next-step .actions{margin:.6rem 0;flex-wrap:wrap}.next-step-link{display:inline-block;padding:.55rem .8rem;border:1px solid var(--accent);border-radius:8px;color:var(--accent);font-weight:700}.work-next-step code{white-space:normal}
