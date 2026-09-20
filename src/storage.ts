@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { config } from "./config.js";
-export const schemaVersion=4;
+export const schemaVersion=5;
 export class Store {
   db: Database.Database;
   constructor(filename = path.join(config.dataDir, "factory.db")) {
@@ -20,7 +20,7 @@ export class Store {
     try { version=stored ? JSON.parse(stored.value) : undefined; } catch { version=undefined; }
     if (tables.length && version !== schemaVersion) throw new Error("Unsupported AI Factory database schema. The completed V3 runtime requires a fresh data directory. Stop services and run the supported uninstaller, or select an empty FACTORY_DATA_DIR. Existing data was not changed.");
     this.db.exec(`CREATE TABLE IF NOT EXISTS work_items(
-        id TEXT PRIMARY KEY,issue_number INTEGER NOT NULL,repo TEXT NOT NULL,branch TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
+        id TEXT PRIMARY KEY,issue_number INTEGER NOT NULL,issue_id INTEGER,issue_node_id TEXT,issue_created_at TEXT,repo TEXT NOT NULL,branch TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
         context TEXT NOT NULL DEFAULT '{}',stage TEXT,status TEXT,attempt INTEGER NOT NULL DEFAULT 0,revision INTEGER NOT NULL DEFAULT 0,
         presentation_revision INTEGER NOT NULL DEFAULT 0,published_presentation_revision INTEGER,active_run_id TEXT,active_request_id TEXT,
         active_failure_id TEXT,correction_cycles INTEGER NOT NULL DEFAULT 0,archived_at TEXT
@@ -35,7 +35,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,body TEXT NOT NULL,work_item_id TEXT,sent INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,next_at INTEGER NOT NULL DEFAULT 0,last_error TEXT);
       CREATE TABLE IF NOT EXISTS controls(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,target TEXT,handled INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-      CREATE UNIQUE INDEX IF NOT EXISTS issue_identity ON work_items(repo,issue_number);`);
+      CREATE UNIQUE INDEX IF NOT EXISTS issue_identity ON work_items(repo,issue_number) WHERE archived_at IS NULL;`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS records(
         id TEXT PRIMARY KEY,
         work_item_id TEXT NOT NULL REFERENCES work_items(id),

@@ -21,7 +21,9 @@ test("a fresh completed-V3 database enables foreign keys and creates only projec
   }
   const columns=new Set((store.db.prepare("PRAGMA table_info(work_items)").all() as Array<{name:string}>).map(column=>column.name));
   assert.equal(columns.has("state"),false);
-  for (const column of ["stage","status","attempt","revision","presentation_revision","published_presentation_revision","active_run_id","active_request_id","active_failure_id","correction_cycles","archived_at"]) assert.ok(columns.has(column),column);
+  for (const column of ["issue_id","issue_node_id","issue_created_at","stage","status","attempt","revision","presentation_revision","published_presentation_revision","active_run_id","active_request_id","active_failure_id","correction_cycles","archived_at"]) assert.ok(columns.has(column),column);
+  const identity=store.db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name='issue_identity'").get() as {sql:string};
+  assert.match(identity.sql,/WHERE archived_at IS NULL/i);
   const executionColumns=new Set((store.db.prepare("PRAGMA table_info(executions)").all() as Array<{name:string}>).map(column=>column.name));
   for (const column of ["prompt_bytes","prompt_sha256","interruption_reason","maintenance_id"]) assert.ok(executionColumns.has(column),column);
  } finally { store.db.close(); }

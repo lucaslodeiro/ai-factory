@@ -13,12 +13,13 @@ import type { Comment,Issue,PullRequestState,RepositoryComment } from "../src/ad
 class Workspace implements WorkspacePort {ensure(){return "/tmp/v3-work";}assertBranch(){}head(){return "head";}diff(){return "";}check(){}commit(){}publish(){}changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/v3-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){}}
 class GitHub {
  commentsByIssue=new Map<number,Comment[]>();statusBodies:string[]=[];resultBodies:string[]=[];labels:string[][]=[];lastPrBody="";state:"OPEN"|"CLOSED"="OPEN";pr:PullRequestState={state:"OPEN",mergedAt:null,mergeCommit:null};
- issue(n:number):Issue{return {number:n,title:"Ship V3",body:"Complete the workflow",url:`https://github.com/owner/demo/issues/${n}`,state:this.state};}
+ issue(n:number):Issue{return {id:n*100,nodeId:`I_${n*100}`,number:n,title:"Ship V3",body:"Complete the workflow",url:`https://github.com/owner/demo/issues/${n}`,state:this.state,createdAt:"2026-09-20T00:00:00Z",updatedAt:"2026-09-20T00:00:00Z",author:{login:"owner",type:"User"}};}
  comments(n:number){return this.commentsByIssue.get(n)??[];}repositoryComments(_since:string):RepositoryComment[]{return [];}
  listManaged(){return [];}commentOnce(){}syncState(){}ensurePR(_branch:string,_title:string,body:string){this.lastPrBody=body;return "https://github.com/owner/demo/pull/1";}pullRequestState(){return this.pr;}
+ repository(){return{id:1,nodeId:"R_1",fullName:"owner/demo",defaultBranch:"main"};}
  syncWorkflow(_issue:number,labels:Array<{name:string}>,body:string){this.labels.push(labels.map(label=>label.name));this.statusBodies.push(body);}
  publishWorkflowComment(_issue:number,_key:string,body:string){this.resultBodies.push(body);}
- reply(id:number,body:string){const rows=this.commentsByIssue.get(1)??[];rows.push({id,body,user:{login:"owner",type:"User"}});this.commentsByIssue.set(1,rows);}
+ reply(id:number,body:string){const rows=this.commentsByIssue.get(1)??[];rows.push({id,body,user:{login:"owner",type:"User"},updatedAt:`2026-09-20T00:00:${String(id).padStart(2,"0")}Z`});this.commentsByIssue.set(1,rows);}
 }
 
 test("V3 orchestrator completes Design, Build, Test, Review and merge with one authoritative CTA",async()=>{

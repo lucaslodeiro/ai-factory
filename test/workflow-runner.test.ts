@@ -16,9 +16,10 @@ class Workspace implements WorkspacePort {
  commits:string[]=[];cleanupCalls=0;ensure(){return "/tmp/factory-work";}assertBranch(){}head(){return "abc";}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){}
  changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/factory-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){this.cleanupCalls++;}
 }
+const runnerIssue={id:100,nodeId:"I_100",number:1,title:"Runner",body:"Build it",url:"https://github.com/owner/demo/issues/1",state:"OPEN" as const,createdAt:"2026-09-20T00:00:00Z",updatedAt:"2026-09-20T00:00:00Z",author:{login:"owner",type:"User"}};
 
 test("runner assembles bounded context and drives Architect then Builder through V3",async()=>{
- const store=new Store(":memory:"),started=new WorkflowIntake(store).start({number:1,title:"Runner",body:"Build it",url:"https://github.com/owner/demo/issues/1",state:"OPEN"},{actor:"dashboard",source:"control"});
+ const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"});
  const requests:AgentRunRequest[]=[],workspace=new Workspace();
  const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){requests.push(request);store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return value;}});
  const delivery={ensurePR(){return "https://github.com/owner/demo/pull/2";}};
@@ -33,7 +34,7 @@ test("runner assembles bounded context and drives Architect then Builder through
 });
 
 test("protected context overflow fails before invoking a provider",async()=>{
- const store=new Store(":memory:"),started=new WorkflowIntake(store).start({number:1,title:"Runner",body:"Build it",url:"https://github.com/owner/demo/issues/1",state:"OPEN"},{actor:"dashboard",source:"control"}),workspace=new Workspace();
+ const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace=new Workspace();
  let invoked=false;const previous=config.contextBudget.defaultBytes;config.contextBudget.defaultBytes=10;
  try {
   const runner=new WorkflowRunner(store,{"product-architect":{async run(){invoked=true;return result("spec");}}},workspace,{ensurePR(){throw new Error("unused");}});
@@ -42,7 +43,7 @@ test("protected context overflow fails before invoking a provider",async()=>{
 });
 
 test("runner classifies failures by typed result errors rather than message text",async()=>{
- const run=async(error:Error)=>{const store=new Store(":memory:"),started=new WorkflowIntake(store).start({number:1,title:"Runner",body:"Build it",url:"https://github.com/owner/demo/issues/1",state:"OPEN"},{actor:"dashboard",source:"control"});try{const runner=new WorkflowRunner(store,{"product-architect":{async run(){throw error;}}},new Workspace(),{ensurePR(){throw new Error("unused");}});await runner.run(started.id);return new WorkflowFailures(store).active(started.id)?.class;}finally{store.db.close();}};
+ const run=async(error:Error)=>{const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"});try{const runner=new WorkflowRunner(store,{"product-architect":{async run(){throw error;}}},new Workspace(),{ensurePR(){throw new Error("unused");}});await runner.run(started.id);return new WorkflowFailures(store).active(started.id)?.class;}finally{store.db.close();}};
  assert.equal(await run(new Error("provider result channel disconnected")),"execution");
  assert.equal(await run(new InvalidResultError("invalid structured output")),"invalid-result");
 });

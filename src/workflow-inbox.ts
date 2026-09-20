@@ -20,15 +20,15 @@ export class WorkflowIntake {
  start(issue:Issue,origin:StartOrigin) {
   if(issue.pullRequest)throw new Error(`#${issue.number} is a pull request`);
   if(issue.state==="CLOSED")throw new Error(`#${issue.number} is closed`);
-  const existing=this.store.db.prepare("SELECT id FROM work_items WHERE repo=? AND issue_number=?").get(issue.url.match(/github\.com\/([^/]+\/[^/]+)/)?.[1]??"",issue.number) as {id:string}|undefined;
+  const existing=this.store.db.prepare("SELECT id FROM work_items WHERE repo=? AND issue_number=? AND archived_at IS NULL AND issue_id=?").get(issue.url.match(/github\.com\/([^/]+\/[^/]+)/)?.[1]??"",issue.number,issue.id) as {id:string}|undefined;
   if(existing)return {id:existing.id,created:false};
   const id=randomUUID(),now=new Date().toISOString(),repo=issue.url.match(/github\.com\/([^/]+\/[^/]+)/)?.[1];
   if(!repo)throw new Error("Issue URL does not identify a GitHub repository");
   const eventId=randomUUID(),context={title:issue.title,body:issue.body,url:issue.url,cursor:origin.initialCursor??origin.commentId??0,
    ...(origin.source==="github-comment"&&origin.commentId?{lastCommand:{commentId:origin.commentId,login:origin.actor,kind:"start",outcome:"applied",at:now} satisfies LastCommandOutcome}:{})};
   const run=this.store.db.transaction(()=>{
-   this.store.db.prepare(`INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context,stage,status,attempt,revision,presentation_revision,correction_cycles)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,issue.number,repo,`factory/issue-${issue.number}-${id.slice(0,8)}`,now,now,JSON.stringify(context),"DESIGN","QUEUED",0,0,0,0);
+   this.store.db.prepare(`INSERT INTO work_items(id,issue_number,issue_id,issue_node_id,issue_created_at,repo,branch,created_at,updated_at,context,stage,status,attempt,revision,presentation_revision,correction_cycles)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,issue.number,issue.id,issue.nodeId,issue.createdAt,repo,`factory/issue-${issue.number}-${id.slice(0,8)}`,now,now,JSON.stringify(context),"DESIGN","QUEUED",0,0,0,0);
    const recordIds:string[]=[];if(origin.guidance)recordIds.push(new WorkflowRecords(this.store).create({workItemId:id,specVersion:0,scope:"issue",payload:{kind:"instruction",text:origin.guidance},sourceType:origin.source==="control"?"orchestrator":origin.source,sourceId:String(origin.commentId??"start"),actor:origin.actor}).id);
    const initial=new WorkflowProjections(this.store).get(id),reason={code:"work-started",summary:"Issue accepted into the factory"};this.store.event("workflow.transition",{schemaVersion:1,eventId,type:"workflow.transition",workItemId:id,occurredAt:now,actor:{type:origin.source==="github-comment"?"human":"orchestrator",id:origin.actor},source:{commentId:origin.commentId},from:null,to:initial,reason,recordIds,specVersion:0},id);this.store.db.prepare("INSERT INTO notifications(body,work_item_id) VALUES(?,?)").run(workflowNotificationText(this.store,id,initial,reason),id);
    return {id,created:true};

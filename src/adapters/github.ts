@@ -1,12 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { config } from "../config.js";
-export type Issue = { number: number; title: string; body: string; url: string; state?: "OPEN" | "CLOSED"; pullRequest?: boolean; labels?: Array<{ name: string }> };
-export type Comment = { id: number; body: string; user: { login: string; type: string }; };
-export type RepositoryComment = Comment & { issue_url: string; created_at: string; updated_at: string };
+export type Issue = { id:number;nodeId:string;number: number; title: string; body: string; url: string; state?: "OPEN" | "CLOSED"; pullRequest?: boolean; labels?: Array<{ name: string }>;createdAt:string;updatedAt:string;author:{login:string;type:string} };
+export type Comment = { id: number; body: string; user: { login: string; type: string };updatedAt:string };
+export type RepositoryComment = Comment & { issueUrl: string; createdAt: string;issue_url:string;created_at:string;updated_at:string };
+export type Repository = {id:number;nodeId:string;fullName:string;defaultBranch:string};
 export interface PullRequestState { state: "OPEN" | "CLOSED" | "MERGED"; mergedAt: string | null; mergeCommit: { oid: string } | null; }
 export interface GitHubPort {
  pullRequestState(url: string): PullRequestState;
- listManaged(): Issue[]; issue(n: number): Issue; comments(n: number): Comment[]; repositoryComments?(since: string): RepositoryComment[];
+ listManaged(): Issue[]; issue(n: number): Issue; comments(n: number): Comment[]; repository():Repository;repositoryComments?(since: string): RepositoryComment[];
  ensurePR(branch: string, title: string, body: string): string;
 }
 export interface WorkflowGitHubPort { syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,body:string):void; publishWorkflowComment(n:number,key:string,body:string):void; }
@@ -18,7 +19,7 @@ export class GitHubAdapter implements GitHubPort {
  constructor(private invoke: (args: string[], input?: unknown) => string = gh) {}
  listManaged(): Issue[] {
   const managed = new Set(["factory:design","factory:build","factory:test","factory:review","factory:delivery","factory:done","factory:waiting","factory:failed","factory:paused","factory:cancelled"]);
-  const issues = JSON.parse(this.invoke(["issue","list","--repo",config.repo,"--state","open","--limit","1000","--json","number,title,body,url,labels"])) as Issue[];
+  const issues = (JSON.parse(this.invoke(["api","--paginate","--slurp",`repos/${config.repo}/issues?state=open&per_page=100`])) as unknown[][]).flat().map(value=>this.toIssue(value));
   return issues.filter(issue => issue.labels?.some(label => managed.has(label.name)));
  }
  syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,progress:string) {
@@ -47,17 +48,16 @@ export class GitHubAdapter implements GitHubPort {
  }
  issue(n: number): Issue {
   const value=JSON.parse(this.invoke(["api",`repos/${config.repo}/issues/${n}`]));
-  const state=String(value.state).toUpperCase();
-  if (state !== "OPEN" && state !== "CLOSED") throw new Error(`Invalid issue state: ${value.state}`);
-  return {number:value.number,title:value.title,body:value.body ?? "",url:value.html_url,state,pullRequest:Boolean(value.pull_request)};
+  return this.toIssue(value);
  }
  comments(n: number): Comment[] {
-  return JSON.parse(this.invoke(["api", "--paginate", "--slurp", `repos/${config.repo}/issues/${n}/comments?per_page=100`])).flat();
+  return (JSON.parse(this.invoke(["api", "--paginate", "--slurp", `repos/${config.repo}/issues/${n}/comments?per_page=100`])) as unknown[][]).flat().map(value=>this.toComment(value));
  }
  repositoryComments(since: string): RepositoryComment[] {
   const query=`repos/${config.repo}/issues/comments?per_page=100&sort=created&direction=asc&since=${encodeURIComponent(since)}`;
-  return JSON.parse(this.invoke(["api","--paginate","--slurp",query])).flat();
+  return (JSON.parse(this.invoke(["api","--paginate","--slurp",query])) as unknown[][]).flat().map(value=>{const raw=value as Record<string,any>;return {...this.toComment(raw),issueUrl:String(raw.issue_url),createdAt:String(raw.created_at),issue_url:String(raw.issue_url),created_at:String(raw.created_at),updated_at:String(raw.updated_at)};});
  }
+ repository():Repository {const value=JSON.parse(this.invoke(["api",`repos/${config.repo}`]));return {id:value.id,nodeId:value.node_id,fullName:value.full_name,defaultBranch:value.default_branch};}
  pullRequestState(url: string): PullRequestState {
   const result = JSON.parse(this.invoke(["pr", "view", url, "--repo", config.repo, "--json", "state,mergedAt,mergeCommit"]));
   if (!["OPEN", "CLOSED", "MERGED"].includes(result.state) || (result.state === "MERGED" && !result.mergedAt)) throw new Error("Invalid pull request state from GitHub");
@@ -68,4 +68,6 @@ export class GitHubAdapter implements GitHubPort {
   if (prs.length) return prs[0].url as string;
   return this.invoke(["pr", "create", "--repo", config.repo, "--head", branch, "--base", config.defaultBranch, "--title", title, "--body", body]);
  }
+ private toIssue(value:unknown):Issue {const raw=value as Record<string,any>,state=String(raw.state).toUpperCase();if(state!=="OPEN"&&state!=="CLOSED")throw new Error(`Invalid issue state: ${raw.state}`);return {id:Number(raw.id),nodeId:String(raw.node_id),number:Number(raw.number),title:String(raw.title),body:String(raw.body??""),url:String(raw.html_url),state,pullRequest:Boolean(raw.pull_request),labels:Array.isArray(raw.labels)?raw.labels.map((label:any)=>({name:String(label.name)})):[],createdAt:String(raw.created_at),updatedAt:String(raw.updated_at),author:{login:String(raw.user?.login??""),type:String(raw.user?.type??"")}};}
+ private toComment(value:unknown):Comment {const raw=value as Record<string,any>;return {id:Number(raw.id),body:String(raw.body??""),user:{login:String(raw.user?.login??""),type:String(raw.user?.type??"")},updatedAt:String(raw.updated_at)};}
 }

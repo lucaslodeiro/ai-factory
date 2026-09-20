@@ -135,14 +135,14 @@ test("status clips a verbose delivery summary and preserves one authoritative ne
 });
 
 test("help publishes one immutable reference and status keeps the same collapsed list",()=>{
- const s=setup(),comments=[{id:11,body:"/factory help",user:{login:"owner",type:"User"}}];
+ const s=setup(),comments=[{id:11,body:"/factory help",user:{login:"owner",type:"User"},updatedAt:"2026-09-20T00:00:11Z"}];
  try {
   s.projections.initialize("work-1","BUILD","QUEUED");
   const inbox=new WorkflowInbox(s.store,{comments:()=>comments},["owner"]);assert.equal(inbox.poll("work-1").applied,1);
   const published:Array<{key:string;body:string}>=[];
   const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){},publishWorkflowComment(_issue,key,body){published.push({key,body});}});
   assert.equal(publisher.publishHelp(),1);assert.equal(published[0].key,"help");assert.match(published[0].body,/\/factory replace/);
-  comments.push({id:12,body:"/factory help",user:{login:"owner",type:"User"}});assert.equal(inbox.poll("work-1").applied,1);
+  comments.push({id:12,body:"/factory help",user:{login:"owner",type:"User"},updatedAt:"2026-09-20T00:00:12Z"});assert.equal(inbox.poll("work-1").applied,1);
   assert.equal(publisher.publishHelp(),0);assert.equal(published.length,1);
   const status=workflowStatusMarkdown(s.store,"work-1");assert.match(status,/<details><summary>All commands<\/summary>/);assert.match(status,/\/factory cancel/);assert.equal(status.match(/^## Next action$/gm)?.length,1);
  } finally {s.store.db.close();}
