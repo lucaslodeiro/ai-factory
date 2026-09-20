@@ -48,7 +48,7 @@ ai-factory uninstall
 The installer places `ai-factory` in `~/.local/bin`, so service, update,
 configuration and factory commands work from any directory. If that directory
 is not yet on the current shell's `PATH`, use
-`npm --prefix "$HOME/ai-factory" run uninstall` instead.
+`$HOME/.local/bin/ai-factory uninstall` instead.
 
 The uninstaller prints the exact installation, runtime-data and LaunchAgent paths, then requires typing `uninstall`. It cancels any transient factory update before stopping the two services and removing files. For an automated disposable-machine test, use `ai-factory uninstall --yes`.
 
@@ -68,19 +68,18 @@ bash /tmp/ai-factory-install-macos.sh --dir "$HOME/ai-factory"
 The installer prints these same recovery commands with the resolved paths. It
 does not remove or overwrite an unrecognized directory automatically.
 
-The service launcher exposes the same operation in its help and can be used as an alias: `npm run service -- uninstall` or `npm run service -- uninstall --yes`. Run `npm run service -- --help` to see every launcher action.
+The service launcher exposes the same operation: `ai-factory service uninstall` or `ai-factory service uninstall --yes`. Run `ai-factory help` to see every operation and workflow command.
 
 It stops and removes both factory LaunchAgents, the engine checkout, `.env` and backups, SQLite, logs and retained worktrees. A configured external data directory is removed only when it contains the factory database marker; unsafe paths are rejected. The target application repository is preserved, as are global GitHub/Codex/Claude credentials and shared Node, Git, `gh`, Codex and Claude installations. This leaves the Mac ready to exercise the installer again without deleting unrelated development data.
 
 To update an existing installation, first stop its daemon and wait for it to exit:
 
 ```sh
-cd "$HOME/ai-factory"
-npm run factory -- stop
+ai-factory stop
 # After the daemon has exited:
-bash scripts/update.sh
-npm run factory -- doctor
-npm run service -- restart all
+ai-factory update
+ai-factory doctor
+ai-factory service restart all
 ```
 
 The updater requires the existing built runtime and dependencies. It adds `~/.local/bin` to `PATH`, uses the current branch on `origin`, refuses local changes/local-only commits and holds the daemon lock throughout the update. It backs up SQLite and `.env` under `FACTORY_DATA_DIR/update-backup-*`, applies a fast-forward, installs locked dependencies, builds and tests, and preserves configuration without prompting. It never opens a terminal wizard, authenticates accounts or provisions a repository. A failed build/test leaves the daemon stopped and prints the backup and previous revision for diagnosis; there is no destructive automatic rollback. Backups contain private data: keep them local.
@@ -88,9 +87,8 @@ The updater requires the existing built runtime and dependencies. It adds `~/.lo
 `--restart-services` preserves the service state it observes when the command starts. If a previous interrupted update already unloaded both services, use the explicit recovery mode so both are started after a successful update:
 
 ```sh
-cd "$HOME/ai-factory"
 AI_FACTORY_UPDATE_STATE_FILE="$PWD/.factory/update-state.json" \
-  bash scripts/update.sh --start-services
+  ai-factory update --start-services
 ```
 
 ## Configuration lifecycle
@@ -99,7 +97,7 @@ Installation opens `http://127.0.0.1:4173/?setup=1` by default, or the effective
 
 Connect GitHub, Claude and Codex from **Configuration → Credentials**. Once GitHub reports Connected, the dashboard fills editable defaults for the target repository, clone and authorized approver when those fields are empty. The clone must already exist and have its `origin`, default branch, and Git author configured. Then save; the first-time setup flow starts the daemon automatically after validation succeeds.
 
-`npm run configure` remains a supported terminal recovery path when the dashboard cannot start or its address is misconfigured. It is not called by installation or update.
+`ai-factory configure` remains a supported terminal recovery path when the dashboard cannot start or its address is misconfigured. It is not called by installation or update.
 
 | Setting | Meaning | Example |
 |---|---|---|
@@ -111,23 +109,23 @@ Connect GitHub, Claude and Codex from **Configuration → Credentials**. Once Gi
 | `FACTORY_DASHBOARD_HOST` | Dashboard bind address; loopback only | `127.0.0.1` |
 | `FACTORY_DASHBOARD_PORT` | Dashboard HTTP port | `4173` |
 
-Run `npm run factory -- doctor` after configuring. It validates the required values, target clone, Git/GitHub access, provider authentication and writable database.
+Run `ai-factory doctor` after configuring. It validates the required values, target clone, Git/GitHub access, provider authentication and writable database.
 
 ## macOS services and dashboard
 
 Installation and update generate two user LaunchAgents under `~/Library/LaunchAgents`: `com.ai-factory.daemon` runs the orchestrator and `com.ai-factory.dashboard` serves the local administration UI. They use the same installation directory and `.env`, but remain independently controllable. No administrator access is required.
 
 ```sh
-npm run service -- start daemon
-npm run service -- start dashboard
-npm run service -- status all
-npm run service -- restart dashboard
-npm run service -- stop daemon
-npm run service -- stop all
-npm run service -- logs daemon
-npm run service -- logs dashboard
-npm run service -- logs all
-npm run service -- uninstall
+ai-factory service start daemon
+ai-factory service start dashboard
+ai-factory service status all
+ai-factory service restart dashboard
+ai-factory service stop daemon
+ai-factory service stop all
+ai-factory service logs daemon
+ai-factory service logs dashboard
+ai-factory service logs all
+ai-factory service uninstall
 ```
 
 The `logs` action prints the last 100 stdout/error lines and continues following both files until `Ctrl+C`. Installation, update, service start and service restart print the configured dashboard URL plus the status, restart, log and stop commands so the next operational step is visible without reopening this document.
@@ -140,7 +138,7 @@ Open **Daemon logs** below Services to inspect recent standard output and errors
 
 The daemon polls comments normally; no manual refresh is needed for `/factory answer`, `/factory approve` or `/factory retry`. It evaluates commands only in the workflow states where they apply and advances past non-actionable comments in other stages so they cannot be replayed later.
 
-**Refresh issue list** is the single manual reconciliation action. It asks the running daemon to fetch open issues carrying a managed workflow-state label and updates the title, body and URL of known items. For every tracked issue it advances the saved position to the newest GitHub comment, skips any older unread comments and evaluates only that newest comment according to the current state: `answer` or `approve` while waiting for a person, and `retry` while failed, paused or cancelled. It never starts an unlabeled issue or reruns completed stages. The dashboard reports when the request is queued and then shows the found, added and updated counts or the concrete GitHub error; if the daemon is stopped, it tells you to start it instead of silently leaving a request pending. If an issue has a managed state label but its local database record is missing, the factory restores it as `PAUSED`, records the latest human answer and evaluates the newest comment. A valid newest retry restarts at Design with Architect because GitHub labels and comments do not contain enough evidence to resume a later agent stage safely. The CLI equivalent is `ai-factory refresh-list` or `npm run factory -- refresh-list`.
+**Refresh issue list** is the single manual reconciliation action. It asks the running daemon to fetch open issues carrying a managed workflow-state label and updates the title, body and URL of known items. For every tracked issue it advances the saved position to the newest GitHub comment, skips any older unread comments and evaluates only that newest comment according to the current state: `answer` or `approve` while waiting for a person, and `retry` while failed, paused or cancelled. It never starts an unlabeled issue or reruns completed stages. The dashboard reports when the request is queued and then shows the found, added and updated counts or the concrete GitHub error; if the daemon is stopped, it tells you to start it instead of silently leaving a request pending. If an issue has a managed state label but its local database record is missing, the factory restores it as `PAUSED`, records the latest human answer and evaluates the newest comment. A valid newest retry restarts at Design with Architect because GitHub labels and comments do not contain enough evidence to resume a later agent stage safely. The CLI equivalent is `ai-factory refresh-list`.
 
 The service cards start, restart and stop the daemon or dashboard independently. Above them, the global update area shows the installed package version and Git revision. It fetches the checked-out branch from `origin` on load and every five minutes; **Update Factory** is offered only when the remote commit is a valid fast-forward. The server repeats that check immediately before starting the update.
 
@@ -155,11 +153,10 @@ The configuration form remains editable while the daemon is running. On save, th
 If broken configuration prevents the dashboard from starting, recover from a terminal:
 
 ```sh
-cd "$HOME/ai-factory"
-npm run service -- stop all
-npm run configure
-npm run factory -- doctor
-npm run service -- start all
+ai-factory service stop all
+ai-factory configure
+ai-factory doctor
+ai-factory service start all
 ```
 
 The terminal configurator also validates before replacing `.env`, creates a private backup, and preserves unknown settings. It intentionally requires services to be stopped because it cannot coordinate a dashboard restart while repairing it.
@@ -275,11 +272,11 @@ The dashboard previews every `QUEUED` or `RUNNING` task before update, daemon st
 Configuration → Project exposes the same bounded repository operations as the CLI:
 
 ```sh
-npm run factory -- repo check
-npm run factory -- repo sync
-npm run factory -- repo publish <work-item-id>
-npm run factory -- repo clear --confirm "$FACTORY_REPO_DIR" --repeat "$FACTORY_REPO_DIR"
-npm run factory -- repo restore
+ai-factory repo check
+ai-factory repo sync
+ai-factory repo publish <work-item-id>
+ai-factory repo clear --confirm "$FACTORY_REPO_DIR" --repeat "$FACTORY_REPO_DIR"
+ai-factory repo restore
 ```
 
 Check is read-only. Sync refuses dirt, divergence and local-only commits. Publish accepts only the selected `factory/*` worktree. Clear is irreversible, refuses protected/symlinked paths and requires the exact configured path twice. Restore requires an empty target directory and never resumes paused work automatically.
@@ -294,7 +291,7 @@ One foreground daemon per target/data directory, sequential work-item execution,
 
 In the dashboard, open **Configuration → Notifications**, paste the Slack Incoming Webhook and choose the global **Save and apply** action. The URL is validated before saving and a running daemon is restarted automatically. **Send test notification** uses the saved value immediately. The same screen shows pending, failed and sent counts plus the most recent delivery error. Slack also appears in **Credentials** as a connection summary.
 
-The terminal alternative is to set `SLACK_WEBHOOK_URL` only in your local `.env` and run `npm run factory -- slack-test`. Use `npm run factory -- notifications` to inspect individual pending/sent deliveries, attempts and retry times. Notifications use Slack Block Kit and identify the project, issue, readable workflow status, relevant evidence and direct GitHub link. Human gates emphasize the required action and exact command; failures include the recorded cause and retry command. The daemon retries pending notifications after restart. If Slack is disabled, messages remain pending until it is configured. Do not put webhook secrets into GitHub issues or tracked files.
+The terminal alternative is to set `SLACK_WEBHOOK_URL` only in your local `.env` and run `ai-factory slack-test`. Use `ai-factory notifications` to inspect individual pending/sent deliveries, attempts and retry times. Notifications use Slack Block Kit and identify the project, issue, readable workflow status, relevant evidence and direct GitHub link. Human gates emphasize the required action and exact command; failures include the recorded cause and retry command. The daemon retries pending notifications after restart. If Slack is disabled, messages remain pending until it is configured. Do not put webhook secrets into GitHub issues or tracked files.
 
 ## Structured reports and upgrades
 
@@ -306,13 +303,13 @@ Delivery roles cannot alter the approved specification. The provider schema requ
 
 ## Models per task
 
-Run `npm run factory -- models` to inspect each role's provider and direct model selection. Use the dashboard or `npm run configure` to choose the eight role settings in `.env` (provider and model for four roles); `.env.example` remains the installation-default template. `npm run factory -- models <work-item-id>` previews the configured selections and workflow assessment without running providers. New specs include a complexity/risk assessment for your approval. See [model policy](docs/MODEL_POLICY.md) for workflow safeguards and audit events. Model availability is checked by the actual provider invocation, not by `doctor`; a rejected model requires configuration correction and explicit retry.
+Run `ai-factory models` to inspect each role's provider and direct model selection. Use the dashboard or `ai-factory configure` to choose the eight role settings in `.env` (provider and model for four roles); `.env.example` remains the installation-default template. `ai-factory models <work-item-id>` previews the configured selections and workflow assessment without running providers. New specs include a complexity/risk assessment for your approval. See [model policy](docs/MODEL_POLICY.md) for workflow safeguards and audit events. Model availability is checked by the actual provider invocation, not by `doctor`; a rejected model requires configuration correction and explicit retry.
 
 Worker prompts include the actual daemon Node executable and configured Git, plus an explicit PATH prefix for shell commands: login-shell startup files may otherwise select an older Node or Xcode Git. Verify the tool versions in run logs. Delivery Reviewer receives Tester commands/results as attributed evidence and does not claim to have executed them personally.
 
 ## After PR delivery
 
-The daemon reconciles `DELIVERY/WAITING` items against GitHub. Merge records `DELIVERY/COMPLETED` with timestamp/commit; closing without merge remains waiting and reopening resumes the same merge request. With the daemon stopped, `npm run factory -- sync` performs one reconciliation and flushes pending GitHub/Slack deliveries without running agents. The shared singleton lock prevents concurrent daemon/sync execution.
+The daemon reconciles `DELIVERY/WAITING` items against GitHub. Merge records `DELIVERY/COMPLETED` with timestamp/commit; closing without merge remains waiting and reopening resumes the same merge request. With the daemon stopped, `ai-factory sync` performs one reconciliation and flushes pending GitHub/Slack deliveries without running agents. The shared singleton lock prevents concurrent daemon/sync execution.
 
 To exercise installer/updater safeguards using temporary local repositories and a stub npm (no CLI installations or agents), run `node scripts/test-maintenance.mjs` after `npm run build`. The regular `npm test` suite validates the actual runtime.
 
@@ -321,15 +318,14 @@ To exercise installer/updater safeguards using temporary local repositories and 
 The dashboard is the normal configuration interface. The terminal wizard remains a supported recovery interface for a headless Mac or a dashboard that cannot start:
 
 ```sh
-npm run configure
-# equivalent: bash scripts/configure.sh
+ai-factory configure
 ```
 
 Installation and update do not invoke this wizard. Dashboard fields cover every option in `.env.example`, including target repository/clone, approvers, data directory, polling, timeouts, correction limits, CLI executables, models and optional Slack. Invalid values are explained when saving; `doctor` must pass before the daemon can operate correctly.
 
 Slack webhook input/defaults are hidden. Unknown existing environment settings are preserved. Saving through the terminal recovery flow or dashboard creates a private `.env.backup-*` and replaces `.env` atomically with owner-only permissions; these files are ignored by Git. The dashboard coordinates affected services automatically; stop all services before using terminal recovery. Changing paths/repositories does not migrate existing data or clone a target repository. Use a separate installation/data directory for a different project.
 
-The fallback supports `npm run configure -- --defaults` to save existing/template values without questions. It never runs during installation or update. Check configuration with `npm run factory -- doctor`.
+The fallback supports `ai-factory configure --defaults` to save existing/template values without questions. It never runs during installation or update. Check configuration with `ai-factory doctor`.
 
 Configuration regression checks: `node scripts/test-configure.mjs`.
 Uninstall regression check: `node scripts/test-uninstall.mjs`.

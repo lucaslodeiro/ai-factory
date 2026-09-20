@@ -22,6 +22,7 @@ try {
 run(process.execPath,[path.join(source,'scripts/test-dashboard-config.mjs')]);
 run(process.execPath,[path.join(source,'scripts/test-uninstall.mjs')]);
 assert.match(run('bash',[path.join(source,'scripts/update.sh'),'--help']).stdout,/--start-services/);
+assert.match(run('bash',[path.join(source,'scripts/update.sh'),'--restart-services','--help']).stdout,/ai-factory help/);
 run('git',['init','--bare',remote]);run('git',['clone',remote,seed]);
 run('git',['config','user.email','test@example.com'],seed);run('git',['config','user.name','Test'],seed);
 fs.mkdirSync(path.join(seed,'scripts'));

@@ -4,12 +4,12 @@ const url = execFileSync(process.execPath,["scripts/dashboard-url.mjs"],{encodin
 console.log(`
 AI Factory service commands
   Dashboard: ${url}
-  Start all: npm run service -- start all
-  Status:    npm run service -- status all
-  Restart:   npm run service -- restart daemon
-             npm run service -- restart dashboard
-  Logs:      npm run service -- logs daemon
-             npm run service -- logs dashboard
-             npm run service -- logs all
-  Stop all:  npm run service -- stop all
+  Start all: ai-factory service start all
+  Status:    ai-factory service status all
+  Restart:   ai-factory service restart daemon
+             ai-factory service restart dashboard
+  Logs:      ai-factory service logs daemon
+             ai-factory service logs dashboard
+             ai-factory service logs all
+  Stop all:  ai-factory service stop all
 `);

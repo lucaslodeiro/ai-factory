@@ -34,7 +34,7 @@ esac
     const dashboard = fs.readFileSync(path.join(agentDir,"com.ai-factory.dashboard.plist"),"utf8");
     assert.match(daemon,/<string>start<\/string>/);
     assert.match(dashboard,/<string>dashboard<\/string>/);
-    assert.match(run("start","daemon"),/Logs:\s+npm run service -- logs daemon/);
+    assert.match(run("start","daemon"),/Logs:\s+ai-factory service logs daemon/);
     assert.match(run("status","daemon"),/daemon: loaded/);
     assert.match(run("status","dashboard"),/dashboard: stopped/);
     run("restart","dashboard");

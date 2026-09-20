@@ -3,14 +3,17 @@ set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 restart_services=false
 start_services=false
-if [[ ${1:-} == --help ]]; then
+for argument in "$@"; do
+if [[ $argument == -h || $argument == --help ]]; then
   echo 'Usage: bash scripts/update.sh [--restart-services|--start-services]'
   echo '  Configuration is preserved and remains editable in the dashboard.'
   echo '  --defaults is accepted as a deprecated no-op.'
   echo '  --restart-services  stop loaded services, update, then restore them'
   echo '  --start-services    recovery mode: stop services, update, then start both'
+  echo 'Run `ai-factory help` for every command.'
   exit 0
 fi
+done
 while (($#)); do
   case $1 in
     --defaults) ;;

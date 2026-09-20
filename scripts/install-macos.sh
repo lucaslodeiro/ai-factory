@@ -68,8 +68,8 @@ fi
 if [[ -e "$factory_destination" ]]; then
   if [[ -f "$factory_destination/.factory/install.json" ]]; then
     echo "AI Factory is already installed at $factory_destination" >&2
-    echo "Update it with: cd \"$factory_destination\" && bash scripts/update.sh --restart-services" >&2
-    echo "For a clean reinstall: cd \"$HOME\" && npm --prefix \"$factory_destination\" run uninstall" >&2
+    echo "Update it with: ai-factory update" >&2
+    echo "For a clean reinstall: cd \"$HOME\" && ai-factory uninstall" >&2
   else
     echo "An incomplete or unrelated destination already exists: $factory_destination" >&2
     backup_destination="${factory_destination}.incomplete-$(date +%Y%m%d-%H%M%S)"

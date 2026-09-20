@@ -6,6 +6,9 @@ fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
 mkdir -p "$fixture/bin" "$fixture/home"
 
+bash "$root/scripts/ai-factory" help > "$fixture/launcher-help.out"
+for command in status doctor repo uninstall; do grep -q "$command" "$fixture/launcher-help.out"; done
+
 cat > "$fixture/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$CURL_LOG"

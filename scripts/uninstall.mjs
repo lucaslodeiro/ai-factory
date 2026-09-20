@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 
 const args = process.argv.slice(2);
-if (args.includes("--help")) {
-  console.log("Usage: npm run uninstall -- [--yes]\nRemoves AI Factory services, configuration, local runtime data and this installation. Target repositories, shared tools and provider credentials are preserved.");
+if (args.some(arg => ["-h","--help"].includes(arg))) {
+  console.log("Usage: ai-factory uninstall [--yes] [--force]\nRemoves AI Factory services, configuration, local runtime data and this installation. Target repositories, shared tools and provider credentials are preserved.\nRun `ai-factory help` for every command.");
   process.exit(0);
 }
 if (args.some(arg => !["--yes","--force"].includes(arg))) throw new Error("Unknown option. Use --help.");

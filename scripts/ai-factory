@@ -13,20 +13,28 @@ command=${1:-help}
 
 case $command in
   uninstall) exec node "$root/scripts/uninstall.mjs" "$@";;
-  update) exec bash "$root/scripts/update.sh" --restart-services "$@";;
+  update)
+    explicit_mode=false
+    for argument in "$@"; do [[ $argument == --restart-services || $argument == --start-services ]] && explicit_mode=true; done
+    if "$explicit_mode"; then exec bash "$root/scripts/update.sh" "$@"; else exec bash "$root/scripts/update.sh" --restart-services "$@"; fi
+    ;;
   service) exec bash "$root/scripts/services.sh" "$@";;
   configure) exec bash "$root/scripts/configure.sh" "$@";;
+  version) exec node "$root/dist/src/cli.js" --version;;
   help|-h|--help)
     cat <<'EOF'
 Usage:
   ai-factory <factory-command> [arguments]
   ai-factory service <action> <daemon|dashboard|all>
-  ai-factory update
+  ai-factory update [--start-services]
   ai-factory configure
-  ai-factory uninstall [--yes]
+  ai-factory uninstall [--yes] [--force]
+  ai-factory version
+  ai-factory help
 
-Runs the installed factory from any working directory.
+Operations work from any directory. Workflow commands follow:
 EOF
+    node "$root/dist/src/cli.js" --help
     ;;
   *) exec node "$root/dist/src/cli.js" "$command" "$@";;
 esac

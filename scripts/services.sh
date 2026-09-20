@@ -14,6 +14,7 @@ Usage:
 
 Uninstall removes both services, this factory installation and its runtime data.
 Target repositories, shared tools and provider credentials are preserved.
+Run `ai-factory help` for every command.
 EOF
 }
 xml() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'; }
@@ -82,8 +83,10 @@ logs_for() {
   exec tail -n 100 -F "$logs/$service.log" "$logs/$service.error.log"
 }
 
+for argument in "$@"; do
+  if [[ $argument == help || $argument == -h || $argument == --help ]]; then usage; exit 0; fi
+done
 case ${1:-} in
-  help|-h|--help) usage; exit 0;;
   uninstall)
     shift
     [[ $# == 0 || ( $# == 1 && $1 == --yes ) ]] || { usage >&2; exit 1; }
