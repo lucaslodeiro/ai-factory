@@ -8,7 +8,12 @@ fi
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 fixture=$(mktemp -d)
-trap 'rm -rf "$fixture"' EXIT
+retry_branch_created=
+cleanup() {
+  if [[ -n $retry_branch_created ]]; then git -C "$root" branch -D "$retry_branch_created" >/dev/null; fi
+  rm -rf "$fixture"
+}
+trap cleanup EXIT
 mkdir -p "$fixture/bin" "$fixture/home"
 
 bash "$root/scripts/ai-factory" help > "$fixture/launcher-help.out"
@@ -86,8 +91,14 @@ if [[ ${1:-} == ci ]]; then ln -s "$SOURCE_NODE_MODULES" node_modules; ln -s "$S
 exit 0
 MOCK
 chmod +x "$retry_bin/npm"
-retry_branch=$(git -C "$root" branch --show-current)
-PATH="$retry_bin:$(dirname "$(command -v node)"):$PATH" \
+retry_branch=${GITHUB_HEAD_REF:-$(git -C "$root" rev-parse --abbrev-ref HEAD)}
+if [[ $retry_branch == HEAD ]]; then
+  retry_branch_created="installer-test-$$"
+  git -C "$root" branch "$retry_branch_created" HEAD
+  retry_branch=$retry_branch_created
+fi
+retry_path="$retry_bin:$(dirname "$(command -v node)"):$(dirname "$(command -v git)"):/usr/bin:/bin"
+PATH="$retry_path" \
   HOME="$retry_user" SOURCE_NODE_MODULES="$root/node_modules" SOURCE_DIST="$root/dist" AI_FACTORY_SKIP_SERVICES=1 AI_FACTORY_INSTALL_TESTS=0 \
   bash "$root/scripts/install-core.sh" --repo "$root" --branch "$retry_branch" --dir "$retry_home" > "$fixture/retry.out"
 [[ -d "$retry_home/engine/.git" ]]
