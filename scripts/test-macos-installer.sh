@@ -81,6 +81,7 @@ PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/args"
 
 printf '%s\n' --dir "/tmp/path with spaces" > "$fixture/expected"
 cmp "$fixture/expected" "$fixture/args"
+grep -q -- '--proto =https --tlsv1.2' "$fixture/main-curl.log"
 PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/develop-args" CURL_LOG="$fixture/develop-curl.log" \
   bash "$root/scripts/install-macos.sh" --branch develop --dir "/tmp/develop path" >/dev/null
 grep -q 'raw.githubusercontent.com/lucaslodeiro/ai-factory/develop/scripts/install-core.sh' "$fixture/develop-curl.log"

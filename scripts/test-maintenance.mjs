@@ -70,6 +70,11 @@ assert.equal(fs.existsSync(path.join(failedDest,'.factory','install.json')),fals
 delete env.FAIL_NPM_TEST;
 const failedRetry=run('bash',[path.join(source,'scripts/install-core.sh'),'--repo',remote,'--dir',failedDest],temp,false);
 assert.match(failedRetry.stderr,/incomplete or unrelated destination/);
+const skippedTestsDest=path.join(temp,'tests skipped install');
+env.AI_FACTORY_INSTALL_TESTS='0';
+const skippedTestsInstall=run('bash',[path.join(source,'scripts/install-core.sh'),'--repo',remote,'--dir',skippedTestsDest],temp);
+assert.equal(fs.existsSync(path.join(skippedTestsDest,'.factory','install.json')),true);
+delete env.AI_FACTORY_INSTALL_TESTS;
 
 fs.symlinkSync(path.join(source,'dist'),path.join(dest,'dist'),'dir');
 fs.appendFileSync(path.join(dest,'.git','info','exclude'),'\n/dist\n/node_modules\n');

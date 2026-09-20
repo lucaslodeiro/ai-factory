@@ -33,6 +33,8 @@ bash /tmp/ai-factory-install-macos.sh --dashboard-host localhost --dashboard-por
 
 The installer supports Apple Silicon and Intel Macs. It downloads the latest Node 22 archive from Node.js and the latest GitHub CLI macOS archive from GitHub Releases, verifies both SHA-256 checksums published by their projects, and links their executables into `~/.local/bin`. Codex and Claude are installed with their official native installers in non-interactive mode. It then invokes the private installation stage and forwards options such as `--dir` and `--branch`. There is no Homebrew installer or compatibility entry point.
 
+The runtime test suite runs during installation by default. Set `AI_FACTORY_INSTALL_TESTS=0` only when deliberately skipping that install-time gate; run `npm test` in the installed checkout before relying on the factory.
+
 Git comes from Apple's Command Line Tools. Installing those tools is an operating-system action that can require an administrator and a graphical confirmation, so the factory installer never launches it automatically. If they are absent, installation stops before downloading anything and prints the one-time `xcode-select --install` prerequisite; rerun the same factory command afterward. Existing regular files in `~/.local/bin` are never overwritten. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile for later terminals.
 
 ## Uninstall and clean reinstall

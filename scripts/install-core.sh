@@ -36,21 +36,7 @@ while (($#)); do
 done
 [[ -z $dashboard_host || $dashboard_host == 127.0.0.1 || $dashboard_host == localhost || $dashboard_host == ::1 ]] || { echo 'Dashboard host must be 127.0.0.1, localhost or ::1.' >&2; exit 1; }
 [[ -z $dashboard_port || ( $dashboard_port =~ ^[0-9]+$ && $dashboard_port -ge 1 && $dashboard_port -le 65535 ) ]] || { echo 'Dashboard port must be from 1 to 65535.' >&2; exit 1; }
-if [[ -e "$dest" ]]; then
-  if [[ -f "$dest/.factory/install.json" ]]; then
-    echo "AI Factory is already installed at $dest" >&2
-    echo "Update it with: ai-factory update" >&2
-    echo "For a clean reinstall: cd \"$HOME\" && ai-factory uninstall" >&2
-  else
-    echo "An incomplete or unrelated destination already exists: $dest" >&2
-    backup_destination="${dest}.incomplete-$(date +%Y%m%d-%H%M%S)"
-    echo "Preserve it and retry with:" >&2
-    echo "  cd \"$HOME\"" >&2
-    echo "  mv \"$dest\" \"$backup_destination\"" >&2
-    echo "  bash /tmp/ai-factory-install-macos.sh --dir \"$dest\"" >&2
-  fi
-  exit 1
-fi
+[[ ! -e "$dest" ]] || { if [[ -f "$dest/.factory/install.json" ]]; then echo "Destination is already installed: $dest" >&2; else echo "An incomplete or unrelated destination already exists: $dest" >&2; fi; exit 1; }
 export PATH="$HOME/.local/bin:$PATH"
 node_ok() { command -v node >/dev/null && node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)'; }
 node_ok || { echo 'Node 22+ is required.' >&2; exit 1; }
@@ -83,7 +69,7 @@ if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
   AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install all
   AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start dashboard
   for _ in {1..40}; do
-    if curl -fsS "$dashboard_url/healthz" >/dev/null 2>&1; then dashboard_ready=true; break; fi
+    if node -e 'fetch(process.argv[1]).then(response=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))' "$dashboard_url/healthz"; then dashboard_ready=true; break; fi
     sleep 0.25
   done
   if [[ $(uname -s) == Darwin && ${AI_FACTORY_NO_OPEN:-0} != 1 ]]; then
@@ -100,17 +86,13 @@ printf 'Daemon:        starts automatically after valid first-time setup\n'
 if "$dashboard_ready"; then printf 'Dashboard:     running at %s\n' "$dashboard_url"; else printf 'Dashboard:     started; health check pending at %s (see .factory/service-logs/dashboard.error.log)\n' "$dashboard_url"; fi
 printf 'Services:      daemon and dashboard definitions installed\n'
 printf 'Launcher:      %s\n' "$HOME/.local/bin/ai-factory"
-if [[ ${AI_FACTORY_INSTALL_MODE:-} == user-local ]]; then
-  printf 'Toolchain:     %s (no Homebrew)\n' "$HOME/.local"
-  cat <<'PATH_NEXT'
+printf 'Toolchain:     %s (no Homebrew)\n' "$HOME/.local"
+cat <<'PATH_NEXT'
 
 Persist the tool path once before opening a new terminal:
   grep -qxF 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.zprofile" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zprofile"
   source "$HOME/.zprofile"
 PATH_NEXT
-else
-  printf 'Tool paths:    %s and %s\n' "$(dirname "$(command -v node)")" "$(dirname "$(command -v git)")"
-fi
 cat <<'NEXT'
 
 First-run checklist:

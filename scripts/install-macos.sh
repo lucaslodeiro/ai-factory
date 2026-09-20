@@ -130,12 +130,12 @@ node_ok() {
 
 install_node() {
   checksums="$temporary_dir/node-SHASUMS256.txt"
-  curl -fsSL https://nodejs.org/download/release/latest-v22.x/SHASUMS256.txt -o "$checksums"
+  curl --proto '=https' --tlsv1.2 -fsSL https://nodejs.org/download/release/latest-v22.x/SHASUMS256.txt -o "$checksums"
   archive=$(awk -v suffix="-darwin-$node_arch.tar.gz" 'index($2,suffix) && substr($2,length($2)-length(suffix)+1)==suffix {print $2; exit}' "$checksums")
   expected=$(awk -v file="$archive" '$2==file {print $1; exit}' "$checksums")
   [[ -n "$archive" && -n "$expected" ]] || { echo "Could not resolve the latest Node 22 macOS archive." >&2; exit 1; }
 
-  curl -fsSL "https://nodejs.org/download/release/latest-v22.x/$archive" -o "$temporary_dir/$archive"
+  curl --proto '=https' --tlsv1.2 -fsSL "https://nodejs.org/download/release/latest-v22.x/$archive" -o "$temporary_dir/$archive"
   verify_checksum "$expected" "$temporary_dir/$archive"
   tar -xzf "$temporary_dir/$archive" -C "$temporary_dir"
   directory=${archive%.tar.gz}
@@ -149,15 +149,15 @@ install_node() {
 }
 
 install_gh() {
-  latest_url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/cli/cli/releases/latest)
+  latest_url=$(curl --proto '=https' --tlsv1.2 -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/cli/cli/releases/latest)
   tag=${latest_url##*/}
   version=${tag#v}
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Could not resolve the latest GitHub CLI release." >&2; exit 1; }
   archive="gh_${version}_macOS_${gh_arch}.zip"
   base="https://github.com/cli/cli/releases/download/v$version"
-  curl -fsSL "$base/gh_${version}_checksums.txt" -o "$temporary_dir/gh-checksums.txt"
+  curl --proto '=https' --tlsv1.2 -fsSL "$base/gh_${version}_checksums.txt" -o "$temporary_dir/gh-checksums.txt"
   expected=$(awk -v file="$archive" '$2==file {print $1; exit}' "$temporary_dir/gh-checksums.txt")
-  curl -fsSL "$base/$archive" -o "$temporary_dir/$archive"
+  curl --proto '=https' --tlsv1.2 -fsSL "$base/$archive" -o "$temporary_dir/$archive"
   verify_checksum "$expected" "$temporary_dir/$archive"
   ditto -x -k "$temporary_dir/$archive" "$temporary_dir/gh"
   gh_binary="$temporary_dir/gh/gh_${version}_macOS_${gh_arch}/bin/gh"
@@ -193,13 +193,13 @@ fi
 
 if ! codex --version >/dev/null 2>&1; then
   echo "Installing Codex CLI non-interactively with its official native installer..."
-  curl -fsSL https://chatgpt.com/codex/install.sh -o "$temporary_dir/codex-install.sh"
+  curl --proto '=https' --tlsv1.2 -fsSL https://chatgpt.com/codex/install.sh -o "$temporary_dir/codex-install.sh"
   CODEX_NON_INTERACTIVE=1 sh "$temporary_dir/codex-install.sh" </dev/null
 fi
 
 if ! claude --version >/dev/null 2>&1; then
   echo "Installing Claude Code stable non-interactively with its official native installer..."
-  curl -fsSL https://claude.ai/install.sh -o "$temporary_dir/claude-install.sh"
+  curl --proto '=https' --tlsv1.2 -fsSL https://claude.ai/install.sh -o "$temporary_dir/claude-install.sh"
   bash "$temporary_dir/claude-install.sh" stable </dev/null
 fi
 
@@ -224,10 +224,10 @@ else
   core_branch=main
   echo "The requested repository is not a GitHub URL; downloading the bootstrap installer from lucaslodeiro/ai-factory main."
 fi
-curl -fsSL "https://raw.githubusercontent.com/$core_owner/$core_repository/$core_branch/scripts/install-core.sh" \
+curl --proto '=https' --tlsv1.2 -fsSL "https://raw.githubusercontent.com/$core_owner/$core_repository/$core_branch/scripts/install-core.sh" \
   -o "$temporary_dir/ai-factory-install-core.sh"
 if ((installer_argument_count)); then
-  AI_FACTORY_INSTALL_MODE=user-local bash "$temporary_dir/ai-factory-install-core.sh" "${installer_arguments[@]}"
+  bash "$temporary_dir/ai-factory-install-core.sh" "${installer_arguments[@]}"
 else
-  AI_FACTORY_INSTALL_MODE=user-local bash "$temporary_dir/ai-factory-install-core.sh"
+  bash "$temporary_dir/ai-factory-install-core.sh"
 fi
