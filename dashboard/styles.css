@@ -320,3 +320,6 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .settings-progress[data-state="error"]{color:var(--danger)}
 @keyframes settings-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.settings-progress[data-state="busy"]::before{animation:none}}
+.work-activity{max-width:65ch;overflow-wrap:anywhere;line-height:1.5}
+.work-blockers{font-size:.78rem;line-height:1.5;margin-top:.5rem;overflow-wrap:anywhere}
+.work-blockers ul{padding-left:1.2rem;max-width:75ch}

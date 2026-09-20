@@ -19,6 +19,10 @@ export class WorkflowRunner {
  private scheduler:WorkflowScheduler;private results:WorkflowResults;private records:WorkflowRecords;private assembler:ContextAssembler;
  private held=new Map<string,{workItemId:string;role:AgentRole;result:AgentResult}>();
  constructor(private store:Store,private agents:Partial<Record<AgentRole,AgentAdapter>>,private workspaces:WorkspacePort,private delivery:DeliveryPort,private fence?:ControllerFence){this.scheduler=new WorkflowScheduler(store);this.results=new WorkflowResults(store);this.records=new WorkflowRecords(store);this.assembler=new ContextAssembler(store);}
+ reconcileFinished(){
+  const rows=this.store.db.prepare("SELECT w.id,e.id execution_id,e.status FROM work_items w JOIN executions e ON e.id=w.active_run_id WHERE w.archived_at IS NULL AND w.status='RUNNING' AND e.status<>'running'").all() as {id:string;execution_id:string;status:string}[];
+  for(const row of rows){if(this.held.has(row.execution_id))continue;this.scheduler.fail(row.id,row.execution_id,new Error(`The agent execution ended (${row.status}), but its result was not applied. Review execution evidence before retrying.`),"recovery");}
+ }
  async run(workItemId:string) {
   const projection=new (await import("./workflow-projection.js")).WorkflowProjections(this.store).get(workItemId);if(projection.status!=="QUEUED")return false;
   if(projection.stage==="DELIVERY")return this.publish(workItemId);
@@ -52,10 +56,10 @@ export class WorkflowRunner {
    if(disposition==="hold"){this.held.set(started.executionId,{workItemId,role,result});this.store.event("agent.result.held",{role},workItemId,started.executionId);return true;}
    if(disposition==="discard"){this.store.event("execution.discarded",{reason:"controller-lost"},workItemId,started.executionId);return true;}
    this.results.apply({workItemId,executionId:started.executionId,role,result});return true;
-  } catch(error){if(!started)throw error;this.scheduler.fail(workItemId,started.executionId,error,error instanceof InvalidContextError?"invalid-context":error instanceof InvalidResultError?"invalid-result":"execution");return true;}
+  } catch(error){if(!started)throw error;this.store.event("workflow.result_failed",{error:error instanceof Error?error.message:String(error)},workItemId,started.executionId);this.scheduler.fail(workItemId,started.executionId,error,error instanceof InvalidContextError?"invalid-context":error instanceof InvalidResultError?"invalid-result":"execution");return true;}
   finally{if(reviewerContext)this.workspaces.cleanupReviewerContext(cwd,workItemId);}
  }
- applyHeld(){for(const [executionId,entry] of this.held){this.results.apply({workItemId:entry.workItemId,executionId,role:entry.role,result:entry.result});this.store.event("agent.result.held_applied",{role:entry.role},entry.workItemId,executionId);this.held.delete(executionId);}}
+ applyHeld(){for(const [executionId,entry] of this.held){try{this.results.apply({workItemId:entry.workItemId,executionId,role:entry.role,result:entry.result});this.store.event("agent.result.held_applied",{role:entry.role},entry.workItemId,executionId);}catch(error){this.scheduler.fail(entry.workItemId,executionId,error,"invalid-result");}finally{this.held.delete(executionId);}}}
  discardHeld(){for(const [executionId,entry] of this.held)this.store.event("agent.result.held_discarded",{role:entry.role,reason:"controller-lost"},entry.workItemId,executionId);this.held.clear();}
  private publish(workItemId:string) {
   const row=this.store.db.prepare("SELECT issue_number,branch,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;context:string};const context=JSON.parse(row.context||"{}") as {title?:string;cwd?:string};

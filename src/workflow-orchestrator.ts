@@ -19,6 +19,7 @@ export class WorkflowOrchestrator {
  private intake:WorkflowIntake;private inbox:WorkflowInbox;private publisher:WorkflowGitHubPublisher;private projections:WorkflowProjections;private records:WorkflowRecords;
  constructor(readonly store:Store,private github:GitHub,private runner:WorkflowRunner,private notifications:NotificationPort,executions?:ExecutionControl,private fence?:ControllerFence){this.intake=new WorkflowIntake(store);this.inbox=new WorkflowInbox(store,github,config.approvers,executions,fence);this.publisher=new WorkflowGitHubPublisher(store,github);this.projections=new WorkflowProjections(store);this.records=new WorkflowRecords(store);}
  async tick(){
+  this.fence?.assertController();this.runner.reconcileFinished();
   this.discoverStartIssues();this.discoverStartCommands();this.reconcileIssueVisibility();this.reconcilePullRequests();
   for(const item of this.rows())if(!item.archived_at)this.inbox.poll(item.id);
   await this.flush();

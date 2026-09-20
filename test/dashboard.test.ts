@@ -115,8 +115,8 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(html,/Time and tokens by issue/);
     assert.match(html,/Configuration/);
     assert.match(html,/settings-navigation/);
-    assert.match(html,/Start tracking issue/);
-    assert.match(html,/Start an open issue by number or URL/);
+    assert.match(html,/Add Issue/);
+    assert.match(html,/Enter the number or URL of an open GitHub issue/);
     assert.match(html,/ACTION REQUIRED/);
     assert.match(html,/Complete the required setup/);
     assert.doesNotMatch(html,/Dismiss guide/);

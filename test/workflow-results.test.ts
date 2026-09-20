@@ -87,3 +87,12 @@ test("late agent results are discarded after a concurrent workflow change",()=>{
   assert.equal((s.store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='execution.discarded'").get() as {count:number}).count,1);
  } finally {s.store.db.close();}
 });
+
+test('mixed tactical findings preserve deferred work and pause unresolved prerequisites',()=>{
+ const s=setup('BUILD',true);try{
+  running(s,'developer','builder');s.results.apply({workItemId:'work-1',executionId:'builder',role:'developer',result:result('decision',{findings:[{classification:'decision-required',evidence:'Chrome cannot start'},{classification:'defer',evidence:'Preview cleanup pending'}]})});
+  const request=s.records.activeRequest('work-1')!;const deferred=s.records.active('work-1',1,'product-architect').find(row=>row.payload.kind==='finding'&&row.payload.classification==='defer')!;
+  running(s,'product-architect','architect');const applied=s.results.apply({workItemId:'work-1',executionId:'architect',role:'product-architect',result:result('resolved',{nextRole:'developer',findings:[{classification:'defer',evidence:'A working browser is still required'}]})});
+  assert.equal(applied.projection.status,'PAUSED');assert.equal(applied.projection.stage,'BUILD');assert.equal(s.records.get(request.id)?.status,'resolved');assert.equal(s.records.get(deferred.id)?.status,'open');
+ }finally{s.store.db.close();}
+});

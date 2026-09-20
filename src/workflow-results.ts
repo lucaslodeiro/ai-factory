@@ -42,11 +42,13 @@ export class WorkflowResults {
   }
   if(result.outcome!=="resolved"||!active||active.payload.kind!=="request"||active.payload.type!=="tactical-decision"||active.payload.owner!=="architect")throw new InvalidResultError("Architect resolution requires an active tactical request");
   const requestPayload=active.payload,target=result.nextRole?nextRoleStage[result.nextRole]:undefined;if(!target||!requestPayload.allowedReturnStages.includes(target))throw new InvalidResultError(`Tactical result cannot return to ${target??"an unknown stage"}`);
+  const blocked=result.findings.some(finding=>finding.classification==="defer"||finding.classification==="decision-required");
   const continuing=target==="BUILD"?"developer":target==="TEST"?"qa":"reviewer";
-  const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status:"QUEUED",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"tactical-resolved",summary:`Architect resolved the decision; ${roleShortName(continuing)} continues`},recordIds:ids},()=>{
+  const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status:blocked?"PAUSED":"QUEUED",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"tactical-resolved",summary:blocked?"Architect reported unresolved prerequisites; work paused for review":`Architect resolved the decision; ${roleShortName(continuing)} continues`},recordIds:ids},()=>{
    this.resultEvent(input);
    for(const decision of result.decisions)ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"decision",category:"tactical",decision:decision.decision,rationale:decision.rationale,supersedes:decision.supersedes??[]},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
-   const findingIds=requestPayload.findingIds??[];if(findingIds.length)this.records.settleFindings(findingIds,"resolved",input.executionId);
+   const findingIds=(requestPayload.findingIds??[]).filter(id=>{const record=this.records.get(id);return record?.payload.kind==="finding"&&record.payload.classification!=="defer";});if(findingIds.length)this.records.settleFindings(findingIds,"resolved",input.executionId);
+   for(const finding of result.findings)ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"finding",classification:finding.classification,originRole:"product-architect",evidence:finding.evidence},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
    this.records.resolveRequest(active.id,input.executionId);ids.push(active.id);
   });return {discarded:false,projection,recordIds:ids};
  }
