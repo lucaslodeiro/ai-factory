@@ -511,7 +511,7 @@ This eliminates unchanged per-item writes and full synchronization. It does **no
 
 ### 8.2 Status comment (mutable, one per issue)
 
-Stage and status, current actor (agent or human), SPEC version, attempt, open request, latest evidence summary, **exactly one** "Next action" block, PR and dashboard links, and a collapsed `<details>` with the last 10 transitions. Old immutable comments keep their historical CTA text but the editable status comment is authoritative; every milestone comment links back to it and states that it contains the current action.
+Stage and status, current actor (agent or human), SPEC version, attempt, open request, latest evidence summary, **exactly one** "Next action" block, PR and dashboard links, and a collapsed `<details>` with the last 10 transitions. It also shows the number of ordinary approver comments observed since the last applied human command and directs the author to `/factory note` when that prose should become agent guidance. Factory-authored comments carrying an `<!-- ai-factory:... -->` marker only advance the comment cursor; they never increment this counter or cause another presentation write. Old immutable comments keep their historical CTA text but the editable status comment is authoritative; every milestone comment links back to it and states that it contains the current action.
 
 ### 8.3 Milestone comments (immutable)
 

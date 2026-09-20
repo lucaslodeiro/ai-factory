@@ -41,15 +41,17 @@ export class WorkflowInbox {
     const latest=this.row(workItemId);if(comment.id<=latest.cursor)return "duplicate";
     this.setCursor(workItemId,comment.id);
     if(comment.user.type!=="User"||!this.approvers.includes(comment.user.login))return "observed";
+    if(comment.body.includes("<!-- ai-factory:"))return "observed";
     let command;
     try{command=parseFactoryCommand(comment.body);}catch(error){this.store.event("command.rejected",{commentId:comment.id,login:comment.user.login,error:String(error)},workItemId);return "rejected";}
     if(!command||command.kind==="start") {
+     this.updateObservationCount(workItemId,1);
      const current=this.projections.get(workItemId);
      this.projections.present({workItemId,expectedRevision:current.revision,actor:{type:"human",id:comment.user.login},source:{commentId:comment.id},reason:{code:"comment-observed",summary:"Authorized comment observed"}});
      return "observed";
     }
     const specVersion=(this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;
-    try{const applied=this.commands.apply(command,{workItemId,login:comment.user.login,commentId:comment.id,specVersion});return {result:"applied",executionAction:"executionAction" in applied?applied.executionAction:undefined};}
+    try{const applied=this.commands.apply(command,{workItemId,login:comment.user.login,commentId:comment.id,specVersion});this.updateObservationCount(workItemId,0,true);return {result:"applied",executionAction:"executionAction" in applied?applied.executionAction:undefined};}
     catch(error){const stale=/stale/i.test(String(error));this.store.event(stale?"command.stale":"command.rejected",{commentId:comment.id,login:comment.user.login,command:command.kind,error:String(error)},workItemId);return "rejected";}
    }).immediate(),result=typeof outcome==="string"?outcome:outcome.result;
    if(typeof outcome!=="string"&&outcome.executionAction?.kind==="cancel")this.executions?.cancel(outcome.executionAction.runId);
@@ -60,9 +62,13 @@ export class WorkflowInbox {
  private row(workItemId:string) {
   const row=this.store.db.prepare("SELECT issue_number,context FROM work_items WHERE id=? AND archived_at IS NULL").get(workItemId) as {issue_number:number;context:string}|undefined;
   if(!row)throw new Error("Unknown or archived work item");
-  const context=JSON.parse(row.context||"{}") as {cursor?:number};return {...row,cursor:context.cursor??0,context};
+  const context=JSON.parse(row.context||"{}") as {cursor?:number;observedApproverComments?:number};return {...row,cursor:context.cursor??0,context};
  }
  private setCursor(workItemId:string,cursor:number) {
   const row=this.row(workItemId);this.store.db.prepare("UPDATE work_items SET context=?,updated_at=? WHERE id=?").run(JSON.stringify({...row.context,cursor}),new Date().toISOString(),workItemId);
+ }
+ private updateObservationCount(workItemId:string,delta:number,reset=false) {
+  const row=this.row(workItemId),current=Number(row.context.observedApproverComments??0);
+  this.store.db.prepare("UPDATE work_items SET context=?,updated_at=? WHERE id=?").run(JSON.stringify({...row.context,observedApproverComments:reset?0:current+delta}),new Date().toISOString(),workItemId);
  }
 }

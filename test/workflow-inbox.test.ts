@@ -60,3 +60,18 @@ test("GitHub cancel stops the active execution after cancelling the workflow",()
   assert.equal((store.db.prepare("SELECT status FROM executions WHERE id='run-cancel'").get() as {status:string}).status,"cancelled");
  } finally {store.db.close();}
 });
+
+test("factory comments do not revise presentation while approver observations are counted",()=>{
+ const store=new Store(":memory:");
+ try {
+  const started=new WorkflowIntake(store).start(issue,{actor:"owner",commentId:1,source:"github-comment"}),projections=new WorkflowProjections(store);
+  const inbox=new WorkflowInbox(store,{comments:()=>[
+   comment(2,"<!-- ai-factory:workflow-status:7 -->\nFactory status"),
+   comment(3,"This may matter later"),
+  ]},["owner"]);
+  assert.deepEqual(inbox.poll(started.id),{seen:2,applied:0,rejected:0,observed:2,cursor:3});
+  assert.equal(projections.get(started.id).presentationRevision,1);
+  const context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(started.id) as {context:string}).context);
+  assert.equal(context.observedApproverComments,1);
+ } finally {store.db.close();}
+});
