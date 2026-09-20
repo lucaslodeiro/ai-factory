@@ -17,19 +17,19 @@ export class WorkflowOrchestrator {
  private intake:WorkflowIntake;private inbox:WorkflowInbox;private publisher:WorkflowGitHubPublisher;private projections:WorkflowProjections;private records:WorkflowRecords;
  constructor(readonly store:Store,private github:GitHub,private runner:WorkflowRunner,private notifications:NotificationPort,executions?:ExecutionControl){this.intake=new WorkflowIntake(store);this.inbox=new WorkflowInbox(store,github,config.approvers,executions);this.publisher=new WorkflowGitHubPublisher(store,github);this.projections=new WorkflowProjections(store);this.records=new WorkflowRecords(store);}
  async tick(){
-  this.discoverStartCommands();this.reconcileIssueVisibility();this.reconcilePullRequests();
+  this.discoverStartIssues();this.discoverStartCommands();this.reconcileIssueVisibility();this.reconcilePullRequests();
   for(const item of this.rows())if(!item.archived_at)this.inbox.poll(item.id);
   await this.flush();
   for(const item of this.rows())if(!item.archived_at&&item.status==="QUEUED")await this.runner.run(item.id);
   await this.flush();
   const last=this.store.metadata<number>("artifact-retention:last")??0;if(Date.now()-last>3_600_000){pruneExecutionArtifacts(this.store);this.store.setMetadata("artifact-retention:last",Date.now());}
  }
- startIssue(reference:string,requestedBy="Dashboard or CLI",origin?:{source:"comment";commentId:number;login:string;guidance?:string}){
+ startIssue(reference:string,requestedBy="Dashboard or CLI",origin?:{source:"comment"|"description";commentId?:number;login:string;guidance?:string}){
   const number=this.issueNumber(reference),issue=this.github.issue(number),candidate=this.rows().find(item=>item.repo===config.repo&&item.issue_number===number&&!item.archived_at);
   if(candidate&&this.replaced(candidate,issue))this.reconcileIssue(candidate,issue);
   const existing=this.rows().find(item=>item.repo===config.repo&&item.issue_number===number&&!item.archived_at&&item.issue_id===issue.id);
   if(existing)return {issue:number,id:existing.id,created:false,stage:existing.stage,status:existing.status};
-  const initialCursor=origin?.commentId??Math.max(0,...this.github.comments(number).map(comment=>comment.id)),started=this.intake.start(issue,{actor:origin?.login??requestedBy,commentId:origin?.commentId,initialCursor,guidance:origin?.guidance,source:origin?"github-comment":"control"});
+  const initialCursor=origin?.commentId??Math.max(0,...this.github.comments(number).map(comment=>comment.id)),started=this.intake.start(issue,{actor:origin?.login??requestedBy,commentId:origin?.commentId,initialCursor,guidance:origin?.guidance,source:origin?.source==="comment"?"github-comment":origin?.source==="description"?"github-description":"control"});
   return {issue:number,...started,stage:"DESIGN",status:"QUEUED"};
  }
  refreshIssueList(){
@@ -53,6 +53,11 @@ export class WorkflowOrchestrator {
   if(!this.github.repositoryComments)return;const key=`github.start-comments:${config.repo}`,now=Date.now(),checkpoint=this.store.metadata<{since:string;id:number}>(key)??{since:new Date(now-300000).toISOString(),id:0};let high=checkpoint.id;
   for(const comment of this.github.repositoryComments(checkpoint.since).slice().sort((a,b)=>a.id-b.id)){if(comment.id<=checkpoint.id)continue;this.startComment(comment);high=Math.max(high,comment.id);}
   this.store.setMetadata(key,{since:new Date(now-5000).toISOString(),id:high});
+ }
+ private discoverStartIssues(){
+  if(!this.github.repositoryIssues)return;const key=`github.start-issues:${config.repo}`,now=Date.now(),checkpoint=this.store.metadata<{since:string;evaluated:Record<string,string>}>(key)??{since:new Date(now-300000).toISOString(),evaluated:{}};const evaluated={...checkpoint.evaluated};
+  for(const issue of this.github.repositoryIssues(checkpoint.since).slice().sort((a,b)=>a.updatedAt.localeCompare(b.updatedAt)||a.id-b.id)){if(issue.pullRequest||issue.state!=="OPEN"||evaluated[String(issue.id)]===issue.updatedAt)continue;evaluated[String(issue.id)]=issue.updatedAt;let command;try{command=parseFactoryCommand(issue.body);}catch(error){this.store.event("command.rejected",{issueId:issue.id,issueNumber:issue.number,login:issue.author.login,error:String(error)});continue;}if(command?.kind!=="start")continue;if(issue.author.type!=="User"||!config.approvers.includes(issue.author.login)){this.store.event("command.rejected",{issueId:issue.id,issueNumber:issue.number,login:issue.author.login,command:"start",error:"Only an authorized human issue author can start work"});continue;}try{this.startIssue(String(issue.number),issue.author.login,{source:"description",login:issue.author.login,guidance:command.guidance});}catch(error){this.store.event("command.rejected",{issueId:issue.id,issueNumber:issue.number,login:issue.author.login,command:"start",error:String(error)});}}
+  const cutoff=now-300000;for(const [id,updatedAt] of Object.entries(evaluated))if(Date.parse(updatedAt)<cutoff)delete evaluated[id];this.store.setMetadata(key,{since:new Date(now-5000).toISOString(),evaluated});
  }
  private startComment(comment:RepositoryComment){let command;try{command=parseFactoryCommand(comment.body);}catch(error){this.store.event("command.rejected",{commentId:comment.id,login:comment.user.login,error:String(error)});return;}if(command?.kind!=="start")return;const issue=Number(comment.issue_url.split("/").at(-1));if(comment.created_at!==comment.updated_at||comment.user.type!=="User"||!config.approvers.includes(comment.user.login)||!Number.isSafeInteger(issue)){this.store.event("start.command_rejected",{commentId:comment.id,issueNumber:issue,login:comment.user.login,reason:"Only a new standalone comment from an authorized human can start work"});return;}try{this.startIssue(String(issue),comment.user.login,{source:"comment",commentId:comment.id,login:comment.user.login,guidance:command.guidance});}catch(error){this.store.event("start.command_rejected",{commentId:comment.id,issueNumber:issue,login:comment.user.login,reason:String(error)});}}
  private reconcileIssueVisibility(){for(const item of this.rows())try{this.reconcileIssue(item,this.github.issue(item.issue_number));}catch(error){this.store.event("github.issue_state_failed",{issue:item.issue_number,error:String(error)},item.id);}}

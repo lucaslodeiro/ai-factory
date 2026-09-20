@@ -12,9 +12,10 @@ import type { Comment,Issue,PullRequestState,RepositoryComment } from "../src/ad
 
 class Workspace implements WorkspacePort {ensure(){return "/tmp/v3-work";}assertBranch(){}head(){return "head";}diff(){return "";}check(){}commit(){}publish(){}changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/v3-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){}}
 class GitHub {
- commentsByIssue=new Map<number,Comment[]>();statusBodies:string[]=[];resultBodies:string[]=[];labels:string[][]=[];lastPrBody="";state:"OPEN"|"CLOSED"="OPEN";issueId=100;title="Ship V3";body="Complete the workflow";pr:PullRequestState={state:"OPEN",mergedAt:null,mergeCommit:null};
- issue(n:number):Issue{return {id:this.issueId,nodeId:`I_${this.issueId}`,number:n,title:this.title,body:this.body,url:`https://github.com/owner/demo/issues/${n}`,state:this.state,createdAt:"2026-09-20T00:00:00Z",updatedAt:"2026-09-20T00:00:00Z",author:{login:"owner",type:"User"}};}
+ commentsByIssue=new Map<number,Comment[]>();statusBodies:string[]=[];resultBodies:string[]=[];labels:string[][]=[];lastPrBody="";state:"OPEN"|"CLOSED"="OPEN";issueId=100;title="Ship V3";body="Complete the workflow";updatedAt="2026-09-20T00:00:00Z";author={login:"owner",type:"User"};discoverIssues=false;pr:PullRequestState={state:"OPEN",mergedAt:null,mergeCommit:null};
+ issue(n:number):Issue{return {id:this.issueId,nodeId:`I_${this.issueId}`,number:n,title:this.title,body:this.body,url:`https://github.com/owner/demo/issues/${n}`,state:this.state,createdAt:"2026-09-20T00:00:00Z",updatedAt:this.updatedAt,author:this.author};}
  comments(n:number){return this.commentsByIssue.get(n)??[];}repositoryComments(_since:string):RepositoryComment[]{return [];}
+ repositoryIssues(_since:string){return this.discoverIssues?[this.issue(1)]:[];}
  listManaged(){return [];}commentOnce(){}syncState(){}ensurePR(_branch:string,_title:string,body:string){this.lastPrBody=body;return "https://github.com/owner/demo/pull/1";}pullRequestState(){return this.pr;}
  repository(){return{id:1,nodeId:"R_1",fullName:"owner/demo",defaultBranch:"main"};}
  syncWorkflow(_issue:number,labels:Array<{name:string}>,body:string){this.labels.push(labels.map(label=>label.name));this.statusBodies.push(body);}
@@ -82,4 +83,16 @@ test("visibility reconciliation refreshes issue content and presents only title 
   github.title="Updated title";orchestrator.refreshIssueList();context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(started.id) as {context:string}).context);assert.equal(context.title,"Updated title");assert.equal(new WorkflowProjections(store).get(started.id).presentationRevision,before+1);
   const writes=(store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='workflow.presentation'").get() as {count:number}).count;orchestrator.refreshIssueList();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='workflow.presentation'").get() as {count:number}).count,writes);
  } finally {store.db.close();config.repo=previousRepo;}
+});
+
+test("an approver-authored description start is discovered once with guidance and a comment snapshot",async()=>{
+ const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");const store=new Store(":memory:"),github=new GitHub();github.discoverIssues=true;github.body="Keep dependencies small\n/factory start";github.reply(9,"historical");const orchestrator=new WorkflowOrchestrator(store,github,new WorkflowRunner(store,{},new Workspace(),github),{enabled:false,async notify(){}});
+ try {await assert.rejects(orchestrator.tick(),/No adapter configured/);const row=store.db.prepare("SELECT id,context FROM work_items").get() as {id:string;context:string},context=JSON.parse(row.context);assert.equal(context.cursor,9);assert.equal((store.db.prepare("SELECT json_extract(payload,'$.text') text FROM records WHERE kind='instruction'").get() as {text:string}).text,"Keep dependencies small");await assert.rejects(orchestrator.tick(),/No adapter configured/);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,1);}
+ finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
+});
+
+test("description discovery audits non-approvers without public feedback and picks up a valid edit",async()=>{
+ const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");const store=new Store(":memory:"),github=new GitHub();github.discoverIssues=true;github.author={login:"outsider",type:"User"};github.body="/factory start";const orchestrator=new WorkflowOrchestrator(store,github,new WorkflowRunner(store,{},new Workspace(),github),{enabled:false,async notify(){}});
+ try {await orchestrator.tick();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,0);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='command.rejected'").get() as {count:number}).count,1);assert.equal(github.resultBodies.length,0);github.author={login:"owner",type:"User"};github.updatedAt="2026-09-20T00:01:00Z";await assert.rejects(orchestrator.tick(),/No adapter configured/);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,1);}
+ finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
 });

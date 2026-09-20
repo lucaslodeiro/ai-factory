@@ -7,7 +7,7 @@ export type Repository = {id:number;nodeId:string;fullName:string;defaultBranch:
 export interface PullRequestState { state: "OPEN" | "CLOSED" | "MERGED"; mergedAt: string | null; mergeCommit: { oid: string } | null; }
 export interface GitHubPort {
  pullRequestState(url: string): PullRequestState;
- listManaged(): Issue[]; issue(n: number): Issue; comments(n: number): Comment[]; repository():Repository;repositoryComments?(since: string): RepositoryComment[];
+ listManaged(): Issue[]; issue(n: number): Issue; comments(n: number): Comment[]; repository():Repository;repositoryComments?(since: string): RepositoryComment[];repositoryIssues?(since:string):Issue[];
  ensurePR(branch: string, title: string, body: string): string;
 }
 export interface WorkflowGitHubPort { syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,body:string):void; publishWorkflowComment(n:number,key:string,body:string):void; }
@@ -57,6 +57,7 @@ export class GitHubAdapter implements GitHubPort {
   const query=`repos/${this.repositoryName}/issues/comments?per_page=100&sort=created&direction=asc&since=${encodeURIComponent(since)}`;
   return (JSON.parse(this.invoke(["api","--paginate","--slurp",query])) as unknown[][]).flat().map(value=>{const raw=value as Record<string,any>;return {...this.toComment(raw),issueUrl:String(raw.issue_url),createdAt:String(raw.created_at),issue_url:String(raw.issue_url),created_at:String(raw.created_at),updated_at:String(raw.updated_at)};});
  }
+ repositoryIssues(since:string):Issue[]{const query=`repos/${this.repositoryName}/issues?state=open&per_page=100&sort=updated&direction=asc&since=${encodeURIComponent(since)}`;return (JSON.parse(this.invoke(["api","--paginate","--slurp",query])) as unknown[][]).flat().map(value=>this.toIssue(value)).filter(issue=>!issue.pullRequest);}
  repository():Repository {const value=JSON.parse(this.invoke(["api",`repos/${this.repositoryName}`]));return {id:value.id,nodeId:value.node_id,fullName:value.full_name,defaultBranch:value.default_branch};}
  pullRequestState(url: string): PullRequestState {
   const result = JSON.parse(this.invoke(["pr", "view", url, "--repo", this.repositoryName, "--json", "state,mergedAt,mergeCommit"]));
