@@ -61,7 +61,7 @@ export class WorkflowInbox {
     if(comment.user.type!=="User"||!this.approvers.includes(comment.user.login))return "observed";
     if(comment.body.includes("<!-- ai-factory:"))return "observed";
     let command;
-    try{command=parseFactoryCommand(comment.body);}catch{const reason="Unknown or malformed /factory command. Post a new comment; edits to this one are not re-read.";this.store.event("command.rejected",{commentId:comment.id,login:comment.user.login,error:reason},workItemId);this.setLastCommand(workItemId,comment,"unparsed","rejected",reason,true);return "rejected";}
+    try{command=parseFactoryCommand(comment.body);}catch(error){const parserReason=this.errorMessage(error).replace(/[.\s]+$/g,"")||"Unknown or malformed /factory command",reason=`${parserReason}. Post a new comment; edits to this one are not re-read.`;this.store.event("command.rejected",{commentId:comment.id,login:comment.user.login,error:reason},workItemId);this.setLastCommand(workItemId,comment,"unparsed","rejected",reason,true);return "rejected";}
     if(command?.kind==="start") {const reason="Issue is already in the factory";this.store.event("command.rejected",{commentId:comment.id,login:comment.user.login,command:"start",error:reason},workItemId);this.setLastCommand(workItemId,comment,"start","rejected",reason,true);return "rejected";}
     if(!command) {
      this.observe(workItemId,comment);
