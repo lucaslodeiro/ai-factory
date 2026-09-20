@@ -10,7 +10,7 @@ export interface GitHubPort {
  listManaged(): Issue[]; issue(n: number): Issue; comments(n: number): Comment[]; repository():Repository;repositoryComments?(since: string): RepositoryComment[];repositoryIssues?(since:string):Issue[];
  ensurePR(branch: string, title: string, body: string): string;
 }
-export interface WorkflowGitHubPort { syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,body:string):void; publishWorkflowComment(n:number,key:string,body:string):void; }
+export interface WorkflowGitHubPort { syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,body:string):void; publishWorkflowComment(n:number,key:string,body:string):void; assignees(n:number):string[];assign(n:number,logins:string[]):void;unassign(n:number,logins:string[]):void; }
 function gh(args: string[], input?: unknown) {
  const r = spawnSync(process.env.GH_COMMAND??"gh", args, { input: input === undefined ? undefined : JSON.stringify(input), encoding: "utf8", timeout: 60000, maxBuffer: 10_000_000 });
  if (r.status !== 0) throw new Error(r.stderr || r.error?.message || "gh failed"); return r.stdout.trim();
@@ -46,6 +46,9 @@ export class GitHubAdapter implements GitHubPort {
   if(this.comments(n).some(comment=>comment.body.includes(marker)))return;
   this.invoke(["issue","comment",String(n),"--repo",this.repositoryName,"--body",`${content}\n\n${marker}`]);
  }
+ assignees(n:number):string[]{return (JSON.parse(this.invoke(["issue","view",String(n),"--repo",this.repositoryName,"--json","assignees"])).assignees as Array<{login:string}>).map(value=>value.login);}
+ assign(n:number,logins:string[]){if(logins.length)this.invoke(["issue","edit",String(n),"--repo",this.repositoryName,"--add-assignee",logins.join(",")]);}
+ unassign(n:number,logins:string[]){if(logins.length)this.invoke(["issue","edit",String(n),"--repo",this.repositoryName,"--remove-assignee",logins.join(",")]);}
  issue(n: number): Issue {
   const value=JSON.parse(this.invoke(["api",`repos/${this.repositoryName}/issues/${n}`]));
   return this.toIssue(value);

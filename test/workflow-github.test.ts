@@ -93,14 +93,14 @@ test("publisher writes only changed presentation revisions and retries after del
  try {
   s.projections.initialize("work-1","BUILD","QUEUED");
   const calls:Array<{issue:number;labels:string[];body:string}>=[];
-  const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(issue,labels,body){calls.push({issue,labels:labels.map(label=>label.name),body});},publishWorkflowComment(){}});
+  const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(issue,labels,body){calls.push({issue,labels:labels.map(label=>label.name),body});},publishWorkflowComment(){},assignees(){return[];},assign(){},unassign(){}});
   assert.equal(publisher.publishChanged(),1);assert.equal(publisher.publishChanged(),0);assert.equal(calls.length,1);
   assert.match(calls[0].body,/workflow-rev:0 · presentation-rev:0/);
   s.projections.present({workItemId:"work-1",expectedRevision:0,actor:{type:"orchestrator",id:"observer"},source:{},reason:{code:"evidence",summary:"Evidence changed"}});
   assert.equal(publisher.publishChanged(),1);assert.equal(calls.length,2);assert.match(calls[1].body,/presentation-rev:1/);
 
   s.projections.transition({workItemId:"work-1",expectedRevision:0,stage:"BUILD",status:"RUNNING",activeRunId:"run",actor:{type:"orchestrator",id:"scheduler"},source:{executionId:"run"},reason:{code:"start",summary:"Builder started"}});
-  const failing=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){throw new Error("GitHub unavailable");},publishWorkflowComment(){throw new Error("GitHub unavailable");}});
+  const failing=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){throw new Error("GitHub unavailable");},publishWorkflowComment(){throw new Error("GitHub unavailable");},assignees(){return[];},assign(){},unassign(){}});
   assert.throws(()=>failing.publishChanged(),/GitHub unavailable/);
   assert.equal(s.projections.get("work-1").publishedPresentationRevision,1);
   assert.equal(publisher.publishChanged(),1);assert.match(calls.at(-1)!.body,/event:[0-9a-f-]{36}/);
@@ -114,7 +114,7 @@ test("publisher keeps intermediate delivery results in status and publishes only
   s.store.event("agent.result",{role:"developer",result:result("pass",{summary:"Builder completed implementation"}),specVersion:2},"work-1","run-builder");
   s.store.event("agent.result",{role:"product-architect",result:result("spec",{summary:"Specification is ready"}),specVersion:3},"work-1","run-architect");
   const comments:Array<{key:string;body:string}>=[];
-  const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){},publishWorkflowComment(_issue,key,body){comments.push({key,body});}});
+  const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){},publishWorkflowComment(_issue,key,body){comments.push({key,body});},assignees(){return[];},assign(){},unassign(){}});
   assert.equal(publisher.publishResults(),1);
   assert.deepEqual(comments.map(comment=>comment.key),["result-run-architect"]);
   assert.equal(publisher.publishResults(),0);
@@ -140,7 +140,7 @@ test("help publishes one immutable reference and status keeps the same collapsed
   s.projections.initialize("work-1","BUILD","QUEUED");
   const inbox=new WorkflowInbox(s.store,{comments:()=>comments},["owner"]);assert.equal(inbox.poll("work-1").applied,1);
   const published:Array<{key:string;body:string}>=[];
-  const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){},publishWorkflowComment(_issue,key,body){published.push({key,body});}});
+  const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){},publishWorkflowComment(_issue,key,body){published.push({key,body});},assignees(){return[];},assign(){},unassign(){}});
   assert.equal(publisher.publishHelp(),1);assert.equal(published[0].key,"help");assert.match(published[0].body,/\/factory replace/);
   comments.push({id:12,body:"/factory help",user:{login:"owner",type:"User"},updatedAt:"2026-09-20T00:00:12Z"});assert.equal(inbox.poll("work-1").applied,1);
   assert.equal(publisher.publishHelp(),0);assert.equal(published.length,1);
