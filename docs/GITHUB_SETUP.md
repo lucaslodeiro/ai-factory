@@ -14,12 +14,12 @@ Available commands are:
 - `/factory answer <text>`
 - `/factory retry [--issue] [--for <roles>] [guidance]`
 - `/factory note [--issue] [--for <roles>] <text>`
-- `/factory replace <guidance-id> [--issue] [--for <roles>] <text>`
-- `/factory revoke <guidance-id>`
+- `/factory replace <#N|id-prefix> [--issue] [--for <roles>] <text>`
+- `/factory revoke <#N|id-prefix>`
 - `/factory pause [reason]`
 - `/factory cancel [reason]`
 
-`start` and `approve` guidance becomes an agent instruction. `answer` becomes a human decision except when it requests PR changes. `note`, `retry` and `replace` accept `--issue` for issue-wide guidance and `--for architect,builder,tester,reviewer` to target roles. Pause/cancel reasons are audit evidence and never enter prompts. A label is never a start, approval or retry command. Commands, spec versions and comment IDs are audited in SQLite.
+`start` and `approve` guidance becomes an agent instruction. `answer` becomes a human decision except when it requests PR changes. `note`, `retry` and `replace` accept `--issue` for issue-wide guidance and `--for architect,builder,tester,reviewer` to target roles. Active guidance is numbered in creation order; those ordinals never shift or get reused, and the displayed id prefix remains accepted. Pause/cancel reasons are audit evidence and never enter prompts. A label is never a start, approval or retry command. Commands, spec versions and comment IDs are audited in SQLite.
 
 The daemon reads new comments during normal polling. **Refresh issue list** is a global reconciliation tool for recovering missing managed issues, updating issue metadata and advancing each saved cursor to the newest comment. It evaluates only that newest comment when it is valid for the current state and never replays completed work.
 

@@ -103,6 +103,12 @@ export class WorkflowCommands {
   return request;
  }
  private recordId(workItemId:string,prefix:string) {
+  if(prefix.startsWith("#")){
+   const ordinal=Number(prefix.slice(1)),record=this.records.humanGuidance(workItemId,false)[ordinal-1];
+   if(!record)throw new Error(`no guidance entry ${prefix}`);
+   if(record.status!=="active")throw new Error(`Guidance entry ${prefix} is not active`);
+   return record;
+  }
   const matches=(this.store.db.prepare("SELECT id FROM records WHERE work_item_id=? AND id LIKE ? ORDER BY sequence").all(workItemId,`${prefix}%`) as Array<{id:string}>).map(row=>this.records.get(row.id)!);
   const rows=matches.filter(record=>record.status==="active"&&(record.payload.kind==="instruction"||(record.payload.kind==="decision"&&record.payload.category==="human")));
   if(rows.length!==1){if(rows.length)throw new Error(`Record prefix ${prefix} is ambiguous`);if(matches.length)throw new Error(`Record ${prefix} is not active human guidance; only instructions and human decisions may be changed`);throw new Error(`Active human guidance ${prefix} was not found`);}return rows[0];

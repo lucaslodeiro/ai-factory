@@ -185,3 +185,16 @@ test("human decisions can be listed, replaced and revoked while tactical decisio
   s.commands.apply({kind:"revoke",recordId:replacement.id.slice(0,8)},context(14));assert.equal(s.records.get(replacement.id)?.status,"revoked");
  } finally {s.store.db.close();}
 });
+
+test("stable guidance ordinals address historical entries without reuse",()=>{
+ const s=setup();
+ try {
+  s.initialize();const first=s.commands.apply({kind:"note",text:"First",scope:"spec",appliesTo:[]},context(20)).recordIds[0],second=s.commands.apply({kind:"note",text:"Second",scope:"spec",appliesTo:[]},context(21)).recordIds[0];
+  assert.match(workflowStatusMarkdown(s.store,"work-1"),/\*\*#1\*\*[\s\S]*First[\s\S]*\*\*#2\*\*[\s\S]*Second/);
+  s.commands.apply({kind:"revoke",recordId:"#1"},context(22));assert.equal(s.records.get(first)?.status,"revoked");
+  const replacement=s.commands.apply({kind:"replace",recordId:"#2",text:"Second revised",scope:"spec",appliesTo:[]},context(23)).recordIds[0];
+  assert.equal(s.records.get(second)?.status,"superseded");assert.equal(s.records.get(replacement)?.status,"active");
+  const body=workflowStatusMarkdown(s.store,"work-1");assert.match(body,/\*\*#3\*\*[\s\S]*Second revised/);assert.doesNotMatch(body,/\*\*#1\*\*|\*\*#2\*\*/);
+  assert.throws(()=>s.commands.apply({kind:"revoke",recordId:"#9"},context(24)),/no guidance entry #9/);
+ } finally {s.store.db.close();}
+});

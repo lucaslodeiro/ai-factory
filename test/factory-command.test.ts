@@ -9,6 +9,7 @@ test("parses lifecycle commands strictly",()=>{
  assert.deepEqual(parseFactoryCommand("/factory cancel"),{kind:"cancel",reason:""});
  assert.deepEqual(parseFactoryCommand("/factory pause"),{kind:"pause",reason:""});
  assert.deepEqual(parseFactoryCommand("/factory revoke abc-123"),{kind:"revoke",recordId:"abc-123"});
+ assert.deepEqual(parseFactoryCommand("/factory revoke #2"),{kind:"revoke",recordId:"#2"});
  assert.deepEqual(parseFactoryCommand("/factory cancel\nThanks"),{kind:"cancel",reason:"Thanks"});
  assert.deepEqual(parseFactoryCommand("/factory approve v12\nLooks good"),{kind:"approve",version:12,guidance:"Looks good"});
  assert.equal(parseFactoryCommand("Please /factory start"),null);
@@ -29,6 +30,7 @@ test("answer and retry accept inline or following multiline guidance",()=>{
 test("note and replace parse scope and human-facing role aliases",()=>{
  assert.deepEqual(parseFactoryCommand("/factory note --issue --for builder,tester Never expose the token"),{kind:"note",scope:"issue",appliesTo:["developer","qa"],text:"Never expose the token"});
  assert.deepEqual(parseFactoryCommand("/factory replace 1234 --for reviewer\nRequire an independent security review"),{kind:"replace",recordId:"1234",scope:"spec",appliesTo:["reviewer"],text:"Require an independent security review"});
+ assert.deepEqual(parseFactoryCommand("/factory replace #2 Use WebKit"),{kind:"replace",recordId:"#2",scope:"spec",appliesTo:[],text:"Use WebKit"});
  assert.throws(()=>parseFactoryCommand("/factory note --for manager Do it"),/Unknown role manager/);
  assert.throws(()=>parseFactoryCommand("/factory replace abc"),/requires replacement text/);
 });

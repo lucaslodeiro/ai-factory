@@ -82,8 +82,8 @@ Commands must be the first non-empty line of a new comment from an authorized ap
 - `/factory answer <text>` answers a question or requests PR changes.
 - `/factory retry [--issue] [--for <roles>] [guidance]` resumes failed, paused or cancelled work.
 - `/factory note [--issue] [--for <roles>] <text>` adds guidance without changing state.
-- `/factory replace <guidance-id> [--issue] [--for <roles>] <text>` replaces guidance.
-- `/factory revoke <guidance-id>` revokes guidance.
+- `/factory replace <#N|id-prefix> [--issue] [--for <roles>] <text>` replaces guidance.
+- `/factory revoke <#N|id-prefix>` revokes guidance.
 - `/factory pause [reason]` pauses active work.
 - `/factory cancel [reason]` cancels work.
 

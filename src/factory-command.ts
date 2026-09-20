@@ -49,14 +49,14 @@ export function parseFactoryCommand(body:string):FactoryCommand|null {
  if (cancel) return {kind:"cancel",reason:[cancel[1]??"",continuation].filter(Boolean).join("\n").trim()};
  const approve=first.match(/^\/factory approve v(\d+)(?:\s+(.*))?$/);
  if (approve) return {kind:"approve",version:Number(approve[1]),guidance:[approve[2]??"",continuation].filter(Boolean).join("\n").trim()};
- const revoke=first.match(/^\/factory revoke ([a-zA-Z0-9-]+)$/);
+ const revoke=first.match(/^\/factory revoke (#[1-9]\d*|[a-zA-Z0-9-]+)$/);
  if (revoke) return {kind:"revoke",recordId:revoke[1]};
  const note=first.match(/^\/factory note(?:\s+(.*))?$/);
  if (note) {
   const parsed=scoped([note[1]??"",continuation].filter(Boolean).join("\n"));
   if(!parsed.text)throw new Error("/factory note requires instruction text");return {kind:"note",...parsed};
  }
- const replace=first.match(/^\/factory replace\s+([a-zA-Z0-9-]+)(?:\s+(.*))?$/);
+ const replace=first.match(/^\/factory replace\s+(#[1-9]\d*|[a-zA-Z0-9-]+)(?:\s+(.*))?$/);
  if (replace) {
   const parsed=scoped([replace[2]??"",continuation].filter(Boolean).join("\n"));
   if(!parsed.text)throw new Error("/factory replace requires replacement text");return {kind:"replace",recordId:replace[1],...parsed};

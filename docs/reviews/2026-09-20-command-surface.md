@@ -55,6 +55,13 @@ Implementation details and commit hashes are recorded below as each item lands.
 - Files: `src/workflow-records.ts`, `src/workflow-commands.ts`, `src/workflow-status.ts`, `test/workflow-commands.test.ts`, `test/workflow-inbox.test.ts`, `test/workflow-github.test.ts`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
 - Change: replace/revoke now resolve either an active instruction or a human decision. Replacing a decision creates a new GitHub-authored human decision that supersedes it; revocation marks it revoked. Tactical decisions produce a visible rejection. Status groups instructions and human decisions as **Active human guidance**.
 - Tests: `human decisions can be listed, replaced and revoked while tactical decisions cannot` verifies status, supersession and prompt content; `tactical decisions cannot be revoked and the rejection is visible` verifies C1 presentation.
+- Commit: `09b0034`.
+
+### C7 — stable ordinal guidance references
+
+- Files: `src/factory-command.ts`, `src/workflow-commands.ts`, `src/workflow-status.ts`, `src/factory-help.ts`, `test/factory-command.test.ts`, `test/workflow-commands.test.ts`, `README.md`, `docs/GITHUB_SETUP.md`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
+- Change: active guidance displays a stable `#N` creation rank plus its id prefix. Replace/revoke accept either form. Ordinals are resolved across all historical human guidance, including inactive entries, so they never shift or get reused.
+- Test: `stable guidance ordinals address historical entries without reuse` verifies `#1` revocation, `#2` replacement, new `#3`, and the explicit missing-ordinal rejection; parser tests cover both ordinal forms.
 - Commit: recorded after commit creation.
 
 ## Removed or changed behavior
@@ -74,6 +81,7 @@ To be completed after implementation.
 - After C4: focused command/parser/inbox tests — 27 passed; `npm test` — 120 tests, 120 passed, 0 failed.
 - After C5: focused parser/publisher/status tests — 11 passed; `npm test` — 121 tests, 121 passed, 0 failed.
 - After C6: focused workflow tests — 34 passed. First `npm test` run: 123 tests, 122 passed, 1 failed because `daemon.test.ts` read a JSON file while it was being written (`Unexpected end of JSON input`); immediate unchanged rerun: 123 tests, 123 passed, 0 failed.
+- After C7: focused parser/command tests — 15 passed; `npm test` — 124 tests, 124 passed, 0 failed.
 
 ## Documentation
 
