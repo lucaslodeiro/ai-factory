@@ -52,10 +52,14 @@ The installer prepares the engine, installs both macOS services, starts the loca
 npm ci
 npm run build
 npm test
+npm run test:scripts
+npm run test:all
 npm run service -- start dashboard
 # Complete Dashboard → Configuration, then:
 npm run service -- start daemon
 ```
+
+The installer script suite intentionally exercises real macOS tooling and runs only on macOS. On another platform `test-macos-installer.sh` reports the skip and exits 3, so the gate cannot appear green. Because `test:all` includes that suite, `npm run test:all` is also macOS-only; use `npm test` for the portable TypeScript suite.
 
 Use **Dashboard → Configuration** whenever settings or credentials change. Every option with a safe universal value opens with a default; after GitHub connects, the dashboard suggests the account's demo repository, local clone and approver for any empty required fields. Optional secrets and allowlists remain empty. **Save and apply** validates the full candidate configuration before writing and restarts affected running services automatically. On the installer-opened first-time setup page, a valid save also starts and verifies the stopped daemon; later saves preserve an intentional stopped state. The installer accepts `--dashboard-host` and `--dashboard-port`; when the selected port is occupied it saves and opens the next available port automatically. Changing the address later in Configuration shows the new URL and reconnects after restarting the dashboard. `ai-factory configure` remains a supported terminal recovery path when the dashboard is unavailable; installation and update do not invoke it. Existing settings are preserved during updates.
 

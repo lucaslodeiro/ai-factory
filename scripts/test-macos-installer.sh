@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ $(uname -s) != Darwin ]]; then
+  echo "test-macos-installer: skipped, requires macOS" >&2
+  exit 3
+fi
+
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
