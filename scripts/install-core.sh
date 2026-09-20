@@ -120,6 +120,8 @@ if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
   if node -e 'fetch(process.argv[1]+"/api/settings").then(r=>r.json()).then(v=>process.exit(v.readiness?.ready?0:1)).catch(()=>process.exit(1))' "$dashboard_url"; then
     setup_suffix=''
     AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start daemon
+  else
+    AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh stop daemon
   fi
   if [[ $(uname -s) == Darwin && ${AI_FACTORY_NO_OPEN:-0} != 1 ]]; then
     open "$dashboard_url/$setup_suffix" || printf 'Open this URL to finish setup: %s/%s\n' "$dashboard_url" "$setup_suffix"

@@ -51,6 +51,7 @@ assert.doesNotMatch(installation.stdout,/Configure factory/);
 assert.match(fs.readFileSync(path.join(dest,'.env'),'utf8'),/^GITHUB_REPOSITORY=$/m);
 assert.equal(fs.statSync(path.join(dest,'.env')).mode & 0o777,0o600);
 assert.match(fs.readFileSync(env.AI_FACTORY_SERVICE_LOG,'utf8'),/install all\nstart dashboard/);
+assert.match(fs.readFileSync(env.AI_FACTORY_SERVICE_LOG,'utf8'),/start dashboard\nstop daemon/);
 assert.equal(fs.readFileSync(env.AI_FACTORY_OPEN_LOG,'utf8').trim(),'http://127.0.0.1:64173/?setup=1');
 const oneShotState=path.join(temp,'one-shot-state.json'),oneShotUpdate=path.join(temp,'one-shot-update.sh'),oneShotRuns=path.join(temp,'one-shot-runs');
 fs.writeFileSync(oneShotState,JSON.stringify({status:'updating'}));
