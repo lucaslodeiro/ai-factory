@@ -9,7 +9,7 @@ const source=fileURLToPath(new URL('..',import.meta.url));
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'factory-script-test-'));
 const remote=path.join(temp,'remote.git'), seed=path.join(temp,'seed'), dest=path.join(temp,'installed factory'), engine=path.join(dest,'engine'), bin=path.join(temp,'bin');
 fs.mkdirSync(bin);
-fs.writeFileSync(path.join(bin,'npm'),`#!/bin/sh\nif [ \"$1\" = ci ]; then ln -s '${path.join(source,'node_modules').replaceAll("'","'\\''")}' node_modules; fi\nif [ \"$1\" = test ] && [ \"\${FAIL_NPM_TEST:-0}\" = 1 ]; then exit 41; fi\nexit 0\n`,{mode:0o755});
+fs.writeFileSync(path.join(bin,'npm'),`#!/bin/sh\nif [ \"$1\" = ci ]; then ln -s '${path.join(source,'node_modules').replaceAll("'","'\\''")}' node_modules; ln -s '${path.join(source,'dist').replaceAll("'","'\\''")}' dist; fi\nif [ \"$1\" = test ] && [ \"\${FAIL_NPM_TEST:-0}\" = 1 ]; then exit 41; fi\nexit 0\n`,{mode:0o755});
 fs.writeFileSync(path.join(bin,'curl'),`#!/bin/sh\nexit 0\n`,{mode:0o755});
 fs.writeFileSync(path.join(bin,'open'),`#!/bin/sh\nprintf '%s\\n' \"$1\" >> \"$AI_FACTORY_OPEN_LOG\"\n`,{mode:0o755});
 fs.writeFileSync(path.join(bin,'uname'),`#!/bin/sh\necho Darwin\n`,{mode:0o755});
@@ -26,7 +26,7 @@ assert.match(run('bash',[path.join(source,'scripts/update.sh'),'--restart-servic
 run('git',['init','--bare',remote]);run('git',['clone',remote,seed]);
 run('git',['config','user.email','test@example.com'],seed);run('git',['config','user.name','Test'],seed);
 fs.mkdirSync(path.join(seed,'scripts'));
-for(const f of ['install-core.sh','update.sh','update.mjs','configure.sh','configure.mjs','dashboard-url.mjs','prepare-dashboard-config.mjs','paths.mjs']) fs.copyFileSync(path.join(source,'scripts',f),path.join(seed,'scripts',f));
+for(const f of ['install-core.sh','update.sh','update.mjs','configure.sh','configure.mjs','dashboard-url.mjs','prepare-dashboard-config.mjs','initialize-environment.mjs','paths.mjs']) fs.copyFileSync(path.join(source,'scripts',f),path.join(seed,'scripts',f));
 fs.writeFileSync(path.join(seed,'scripts','services.sh'),`#!/bin/sh
 printf '%s %s\\n' \"$1\" \"$2\" >> \"$AI_FACTORY_SERVICE_LOG\"
 if [ \"$1 $2\" = \"start dashboard\" ] && [ -n \"\${AI_FACTORY_FAKE_DASHBOARD_PORT:-}\" ]; then
@@ -100,6 +100,13 @@ assert.equal(fs.readFileSync(path.join(preservedDest,'.env'),'utf8'),'GITHUB_REP
 assert.equal(fs.existsSync(path.join(preservedDest,'engine','.git')),true);
 assert.equal(fs.existsSync(path.join(preservedDest,'data','install.json')),true);
 
+const seededDest=path.join(temp,'environment-seeded home');
+env.AI_FACTORY_SKIP_SERVICES='1';env.GITHUB_REPOSITORY='owner/from-shell';env.FACTORY_APPROVERS='owner';env.FACTORY_POLL_INTERVAL_MS='54321';
+run('bash',[path.join(source,'scripts/install-core.sh'),'--repo',remote,'--dir',seededDest],temp);
+const seededEnvironment=fs.readFileSync(path.join(seededDest,'.env'),'utf8');
+assert.match(seededEnvironment,/^GITHUB_REPOSITORY='owner\/from-shell'$/m);assert.match(seededEnvironment,/^FACTORY_APPROVERS='owner'$/m);assert.match(seededEnvironment,/^FACTORY_POLL_INTERVAL_MS='54321'$/m);
+delete env.GITHUB_REPOSITORY;delete env.FACTORY_APPROVERS;delete env.FACTORY_POLL_INTERVAL_MS;
+
 const readyDest=path.join(temp,'ready preserved home'),readyPort='64174',readyPid=path.join(temp,'ready-dashboard.pid');
 fs.mkdirSync(readyDest,{recursive:true});fs.writeFileSync(path.join(readyDest,'.env'),'GITHUB_REPOSITORY=preserved/example\n');
 env.AI_FACTORY_SKIP_SERVICES='0';env.AI_FACTORY_NO_OPEN='1';env.AI_FACTORY_FAKE_DASHBOARD_PORT=readyPort;env.AI_FACTORY_FAKE_DASHBOARD_PID=readyPid;env.AI_FACTORY_SERVICE_LOG=path.join(temp,'ready-services.log');
@@ -110,7 +117,7 @@ process.kill(Number(fs.readFileSync(readyPid,'utf8').trim()));
 delete env.AI_FACTORY_NO_OPEN;delete env.AI_FACTORY_FAKE_DASHBOARD_PORT;delete env.AI_FACTORY_FAKE_DASHBOARD_PID;
 env.AI_FACTORY_SKIP_SERVICES='1';
 
-fs.symlinkSync(path.join(source,'dist'),path.join(engine,'dist'),'dir');
+if(!fs.existsSync(path.join(engine,'dist')))fs.symlinkSync(path.join(source,'dist'),path.join(engine,'dist'),'dir');
 fs.appendFileSync(path.join(engine,'.git','info','exclude'),'\n/dist\n/node_modules\n');
 fs.mkdirSync(path.join(dest,'data','worktrees'),{recursive:true});
 fs.writeFileSync(path.join(dest,'data','worktrees','keep'),'worktree');

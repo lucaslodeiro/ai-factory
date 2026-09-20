@@ -82,7 +82,7 @@ fi
 ln -sfn "$engine/scripts/ai-factory" "$launcher"
 umask 077
 install_step="creating the initial configuration"
-if [[ ! -f "$dest/.env" ]]; then cp .env.example "$dest/.env"; fi
+node scripts/initialize-environment.mjs
 dashboard_url=$(node scripts/prepare-dashboard-config.mjs "$dashboard_host" "$dashboard_port")
 dashboard_ready=false
 if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
