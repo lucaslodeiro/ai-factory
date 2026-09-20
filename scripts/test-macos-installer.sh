@@ -25,6 +25,28 @@ cat > "$fixture/bin/uname" <<'MOCK'
 if [[ ${1:-} == -m ]]; then echo arm64; else echo Darwin; fi
 MOCK
 chmod +x "$fixture/bin/uname"
+cat > "$fixture/bin/launchctl" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${LAUNCHCTL_LOG:-/dev/null}"
+state=${LAUNCHCTL_STATE:-/nonexistent}
+case ${1:-} in
+  list)
+    [[ -d $state ]] || exit 0
+    for file in "$state"/*; do [[ -e $file ]] && printf '1\t0\t%s\n' "${file##*/}"; done
+    ;;
+  print) [[ -f "$state/${2##*/}" ]] ;;
+  bootout)
+    label=${2##*/}
+    [[ ${LAUNCHCTL_STICKY:-} == "$label" ]] || rm -f "$state/$label"
+    ;;
+  remove)
+    label=${2##*/}
+    [[ ${LAUNCHCTL_STICKY:-} == "$label" ]] || rm -f "$state/$label"
+    ;;
+esac
+MOCK
+chmod +x "$fixture/bin/launchctl"
 PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" CURL_LOG="$fixture/help-curl.log" \
   bash "$root/scripts/install-macos.sh" --help > "$fixture/help.out"
 grep -q -- '--dashboard-port PORT' "$fixture/help.out"
@@ -81,6 +103,10 @@ MOCK
   chmod +x "$fixture/bin/$executable"
 done
 
+launchctl_state="$fixture/launchctl-state"
+mkdir -p "$launchctl_state"
+touch "$launchctl_state/com.ai-factory.daemon" "$launchctl_state/com.ai-factory.dashboard" "$launchctl_state/com.ai-factory.update.123"
+
 cat > "$fixture/bin/uname" <<'MOCK'
 #!/usr/bin/env bash
 if [[ ${1:-} == -m ]]; then echo arm64; else echo Darwin; fi
@@ -104,12 +130,27 @@ PRIVATE_INSTALLER
 MOCK
 chmod +x "$fixture/bin/uname" "$fixture/bin/xcode-select" "$fixture/bin/curl"
 
-PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/args" CURL_LOG="$fixture/main-curl.log" \
+PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/args" CURL_LOG="$fixture/main-curl.log" LAUNCHCTL_STATE="$launchctl_state" LAUNCHCTL_LOG="$fixture/launchctl.log" \
   bash "$root/scripts/install-macos.sh" --dir "/tmp/path with spaces" >/dev/null
 
 printf '%s\n' --dir "/tmp/path with spaces" > "$fixture/expected"
 cmp "$fixture/expected" "$fixture/args"
 grep -q -- '--proto =https --tlsv1.2' "$fixture/main-curl.log"
+grep -q 'bootout .*com.ai-factory.daemon' "$fixture/launchctl.log"
+grep -q 'bootout .*com.ai-factory.dashboard' "$fixture/launchctl.log"
+grep -q 'remove com.ai-factory.update.123' "$fixture/launchctl.log"
+[[ ! -e "$launchctl_state/com.ai-factory.daemon" && ! -e "$launchctl_state/com.ai-factory.dashboard" && ! -e "$launchctl_state/com.ai-factory.update.123" ]]
+
+touch "$launchctl_state/com.ai-factory.daemon"
+set +e
+PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/sticky-args" CURL_LOG="$fixture/sticky-curl.log" LAUNCHCTL_STATE="$launchctl_state" LAUNCHCTL_LOG="$fixture/sticky-launchctl.log" LAUNCHCTL_STICKY=com.ai-factory.daemon \
+  bash "$root/scripts/install-macos.sh" --dir "/tmp/sticky service" > "$fixture/sticky.out" 2>&1
+sticky_status=$?
+set -e
+[[ $sticky_status -eq 1 ]]
+grep -q 'Could not stop existing service: com.ai-factory.daemon' "$fixture/sticky.out"
+[[ ! -e "$fixture/sticky-curl.log" ]]
+rm -f "$launchctl_state/com.ai-factory.daemon"
 PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/develop-args" CURL_LOG="$fixture/develop-curl.log" \
   bash "$root/scripts/install-macos.sh" --branch develop --dir "/tmp/develop path" >/dev/null
 grep -q 'raw.githubusercontent.com/lucaslodeiro/ai-factory/develop/scripts/install-core.sh' "$fixture/develop-curl.log"

@@ -13,7 +13,7 @@ fs.writeFileSync(path.join(bin,'npm'),`#!/bin/sh\nif [ \"$1\" = ci ]; then ln -s
 fs.writeFileSync(path.join(bin,'curl'),`#!/bin/sh\nexit 0\n`,{mode:0o755});
 fs.writeFileSync(path.join(bin,'open'),`#!/bin/sh\nprintf '%s\\n' \"$1\" >> \"$AI_FACTORY_OPEN_LOG\"\n`,{mode:0o755});
 fs.writeFileSync(path.join(bin,'uname'),`#!/bin/sh\necho Darwin\n`,{mode:0o755});
-fs.writeFileSync(path.join(bin,'launchctl'),`#!/bin/sh\nprintf '%s\\n' "$*" >> "$AI_FACTORY_LAUNCHCTL_LOG"\n`,{mode:0o755});
+fs.writeFileSync(path.join(bin,'launchctl'),`#!/bin/sh\nprintf '%s\\n' "$*" >> "$AI_FACTORY_LAUNCHCTL_LOG"\n[ "$1" != print ]\n`,{mode:0o755});
 const home=path.join(temp,'home');fs.mkdirSync(home);
 const env={...process.env,HOME:home,PATH:`${bin}:${process.env.PATH}`,AI_FACTORY_SKIP_SERVICES:'1'};
 for(const k of Object.keys(env)) if(/^(FACTORY_|GITHUB_|CODEX_COMMAND|CLAUDE_COMMAND|GIT_COMMAND)/.test(k)) delete env[k];

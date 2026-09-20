@@ -36,9 +36,32 @@ while (($#)); do
 done
 [[ -z $dashboard_host || $dashboard_host == 127.0.0.1 || $dashboard_host == localhost || $dashboard_host == ::1 ]] || { echo 'Dashboard host must be 127.0.0.1, localhost or ::1.' >&2; exit 1; }
 [[ -z $dashboard_port || ( $dashboard_port =~ ^[0-9]+$ && $dashboard_port -ge 1 && $dashboard_port -le 65535 ) ]] || { echo 'Dashboard port must be from 1 to 65535.' >&2; exit 1; }
+stop_existing_factory_services() {
+  [[ $(uname -s) != Darwin || ${AI_FACTORY_SKIP_SERVICES:-0} == 1 ]] && return
+  local domain="gui/$(id -u)" label
+  while IFS= read -r label; do
+    [[ $label == com.ai-factory.update.* ]] || continue
+    launchctl remove "$label" >/dev/null 2>&1 || true
+    if launchctl print "$domain/$label" >/dev/null 2>&1; then
+      echo "Could not stop existing service: $label" >&2
+      exit 1
+    fi
+  done < <(launchctl list 2>/dev/null | awk '{print $NF}')
+  for label in com.ai-factory.daemon com.ai-factory.dashboard; do
+    if launchctl print "$domain/$label" >/dev/null 2>&1; then
+      echo "Stopping existing ${label##*.} service..."
+      launchctl bootout "$domain/$label" >/dev/null 2>&1 || true
+      if launchctl print "$domain/$label" >/dev/null 2>&1; then
+        echo "Could not stop existing service: $label" >&2
+        exit 1
+      fi
+    fi
+  done
+}
 engine="$dest/engine"
 marker="$dest/data/install.json"
 if [[ -d $engine && -f $marker ]]; then echo "Destination is already installed: $dest" >&2; exit 1; fi
+stop_existing_factory_services
 if [[ -e $engine ]]; then echo "An incomplete engine already exists: $engine" >&2; exit 1; fi
 if [[ -e $dest ]]; then
   while IFS= read -r entry; do

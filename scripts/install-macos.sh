@@ -63,6 +63,29 @@ if [[ $(uname -s) != Darwin ]]; then
   exit 1
 fi
 
+stop_existing_factory_services() {
+  [[ ${AI_FACTORY_SKIP_SERVICES:-0} == 1 ]] && return
+  local domain="gui/$(id -u)" label
+  while IFS= read -r label; do
+    [[ $label == com.ai-factory.update.* ]] || continue
+    launchctl remove "$label" >/dev/null 2>&1 || true
+    if launchctl print "$domain/$label" >/dev/null 2>&1; then
+      echo "Could not stop existing service: $label" >&2
+      exit 1
+    fi
+  done < <(launchctl list 2>/dev/null | awk '{print $NF}')
+  for label in com.ai-factory.daemon com.ai-factory.dashboard; do
+    if launchctl print "$domain/$label" >/dev/null 2>&1; then
+      echo "Stopping existing ${label##*.} service..."
+      launchctl bootout "$domain/$label" >/dev/null 2>&1 || true
+      if launchctl print "$domain/$label" >/dev/null 2>&1; then
+        echo "Could not stop existing service: $label" >&2
+        exit 1
+      fi
+    fi
+  done
+}
+
 # Fail before downloading toolchains when this is already installed. The
 # standard installer repeats this guard to cover direct invocations.
 if [[ -d "$factory_destination/engine" && -f "$factory_destination/data/install.json" ]]; then
@@ -70,7 +93,9 @@ if [[ -d "$factory_destination/engine" && -f "$factory_destination/data/install.
     echo "Update it with: ai-factory update" >&2
     echo "For a clean reinstall: cd \"$HOME\" && ai-factory uninstall" >&2
     exit 1
-elif [[ -e "$factory_destination/engine" ]]; then
+fi
+stop_existing_factory_services
+if [[ -e "$factory_destination/engine" ]]; then
     echo "An incomplete or unrelated destination already exists: $factory_destination" >&2
     backup_destination="${factory_destination}/engine.incomplete-$(date +%Y%m%d-%H%M%S)"
     echo "Preserve it and retry with:" >&2

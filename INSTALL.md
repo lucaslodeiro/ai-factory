@@ -47,6 +47,11 @@ cd "$HOME"
 ai-factory uninstall
 ```
 
+The installer stops and verifies any daemon, dashboard or background update
+LaunchAgents from an earlier installation before it validates or replaces the
+engine. The uninstaller performs the same verified shutdown before removing
+files and aborts if launchd still reports a service as loaded.
+
 The installer places `ai-factory` in `~/.local/bin`, so service, update,
 configuration and factory commands work from any directory. If that directory
 is not yet on the current shell's `PATH`, use
