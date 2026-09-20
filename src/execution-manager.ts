@@ -91,18 +91,19 @@ export class ExecutionManager {
   isRunning(id:string){return this.running.has(id);}
   cancelAll() { for (const e of this.running.values()) e.cancel(); }
 }
+export class ExecutionNotStoppedError extends Error {}
 export function assertExecutionStopped(store: Store, workItemId: string) {
-  if (store.db.prepare("SELECT id FROM executions WHERE work_item_id=? AND status='running'").get(workItemId)) throw new Error("Wait for the active process to stop before retry");
+  if (store.db.prepare("SELECT id FROM executions WHERE work_item_id=? AND status='running'").get(workItemId)) throw new ExecutionNotStoppedError("Wait for the active process to stop before retry");
   const pending = store.db.prepare("SELECT id,pid FROM executions WHERE work_item_id=? AND recovery_pending=1").all(workItemId) as { id: string; pid: number | null }[];
   for (const run of pending) {
     if (run.pid) {
       try { process.kill(-run.pid, 0); }
       catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== "ESRCH") throw new Error(`Cannot establish whether interrupted run ${run.id} has exited`);
+        if ((e as NodeJS.ErrnoException).code !== "ESRCH") throw new ExecutionNotStoppedError(`Cannot establish whether interrupted run ${run.id} has exited`);
         store.db.prepare("UPDATE executions SET recovery_pending=0 WHERE id=?").run(run.id);
         continue;
       }
-      throw new Error(`Interrupted run ${run.id} still has a live process group; wait for supervisor cleanup before retry.`);
+      throw new ExecutionNotStoppedError(`Interrupted run ${run.id} still has a live process group; wait for supervisor cleanup before retry.`);
     }
     store.db.prepare("UPDATE executions SET recovery_pending=0 WHERE id=?").run(run.id);
   }

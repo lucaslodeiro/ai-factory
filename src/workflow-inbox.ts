@@ -5,6 +5,8 @@ import type { Store } from "./storage.js";
 import { WorkflowCommands } from "./workflow-commands.js";
 import { WorkflowProjections } from "./workflow-projection.js";
 import {workflowNotificationText} from "./notifications.js";
+import { config } from "./config.js";
+import { ExecutionNotStoppedError } from "./execution-manager.js";
 
 export interface CommentPort { comments(issue:number):Comment[]; }
 export interface ExecutionControl { cancel(id:string):boolean; interrupt(id:string,reason:string):boolean; }
@@ -52,11 +54,20 @@ export class WorkflowInbox {
     }
     const specVersion=(this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;
     try{const applied=this.commands.apply(command,{workItemId,login:comment.user.login,commentId:comment.id,specVersion});this.updateObservationCount(workItemId,0,true);return {result:"applied",executionAction:"executionAction" in applied?applied.executionAction:undefined};}
-    catch(error){const stale=/stale/i.test(String(error));this.store.event(stale?"command.stale":"command.rejected",{commentId:comment.id,login:comment.user.login,command:command.kind,error:String(error)},workItemId);return "rejected";}
+    catch(error){
+     if(error instanceof ExecutionNotStoppedError){
+      const prior=this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='command.deferred' AND json_extract(payload,'$.commentId')=? ORDER BY id LIMIT 1").get(workItemId,comment.id) as {payload:string}|undefined;
+      let deferredAt:string;if(prior)deferredAt=(JSON.parse(prior.payload) as {deferredAt:string}).deferredAt;else{deferredAt=new Date().toISOString();this.store.event("command.deferred",{commentId:comment.id,login:comment.user.login,command:command.kind,error:error.message,deferredAt},workItemId);}
+      if(Date.now()-Date.parse(deferredAt)<config.timeoutMs){this.setCursor(workItemId,latest.cursor);return "deferred";}
+      this.store.event("command.rejected",{commentId:comment.id,login:comment.user.login,command:command.kind,error:`Retry deferral exceeded ${config.timeoutMs}ms while waiting for the execution to stop`},workItemId);return "rejected";
+     }
+     const stale=/stale/i.test(String(error));this.store.event(stale?"command.stale":"command.rejected",{commentId:comment.id,login:comment.user.login,command:command.kind,error:String(error)},workItemId);return "rejected";
+    }
    }).immediate(),result=typeof outcome==="string"?outcome:outcome.result;
    if(typeof outcome!=="string"&&outcome.executionAction?.kind==="cancel")this.executions?.cancel(outcome.executionAction.runId);
    if(typeof outcome!=="string"&&outcome.executionAction?.kind==="interrupt")this.executions?.interrupt(outcome.executionAction.runId,outcome.executionAction.reason);
    if(result==="applied")applied++;else if(result==="rejected")rejected++;else if(result==="observed")observed++;
+   if(result==="deferred")break;
   }
   return {seen:comments.length,applied,rejected,observed,cursor:this.row(workItemId).cursor};
  }

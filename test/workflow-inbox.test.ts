@@ -5,6 +5,7 @@ import { WorkflowInbox,WorkflowIntake } from "../src/workflow-inbox.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
 import type { Comment } from "../src/adapters/github.js";
+import { config } from "../src/config.js";
 
 const issue={number:7,title:"Inbox",body:"Build it",url:"https://github.com/owner/demo/issues/7",state:"OPEN" as const};
 const comment=(id:number,body:string,login="owner",type="User"):Comment=>({id,body,user:{login,type}});
@@ -87,4 +88,37 @@ test("pause preserves a waiting request and retry restores the human gate withou
   comments.push(comment(3,"/factory retry"));inbox.poll(started.id);
   assert.deepEqual({status:projections.get(started.id).status,attempt:projections.get(started.id).attempt},{status:"WAITING",attempt:0});
  } finally {store.db.close();}
+});
+
+test("retry waits for a paused execution to exit without consuming the comment",()=>{
+ const store=new Store(":memory:");
+ try {
+  const started=new WorkflowIntake(store).start(issue,{actor:"owner",commentId:1,source:"github-comment"}),projections=new WorkflowProjections(store),comments=[comment(2,"/factory pause")];
+  store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at) VALUES('run-pause',?,'product-architect','DESIGN','running','now')").run(started.id);
+  projections.transition({workItemId:started.id,expectedRevision:0,stage:"DESIGN",status:"RUNNING",activeRunId:"run-pause",actor:{type:"orchestrator",id:"scheduler"},source:{executionId:"run-pause"},reason:{code:"start",summary:"Architect started"}});
+  const inbox=new WorkflowInbox(store,{comments:()=>comments},["owner"],{cancel(){return false;},interrupt(){return true;}});
+  inbox.poll(started.id);assert.equal(projections.get(started.id).status,"PAUSED");
+  comments.push(comment(3,"/factory retry"));
+  const deferred=inbox.poll(started.id);
+  assert.equal(deferred.cursor,2);assert.equal(deferred.rejected,0);assert.equal(projections.get(started.id).status,"PAUSED");
+  assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='command.deferred'").get() as {count:number}).count,1);
+  store.db.prepare("UPDATE executions SET status='interrupted',finished_at='now' WHERE id='run-pause'").run();
+  const applied=inbox.poll(started.id);
+  assert.deepEqual({cursor:applied.cursor,applied:applied.applied},{cursor:3,applied:1});
+  assert.deepEqual({status:projections.get(started.id).status,attempt:projections.get(started.id).attempt},{status:"QUEUED",attempt:1});
+ } finally {store.db.close();}
+});
+
+test("retry deferral expires instead of pinning the comment cursor forever",()=>{
+ const store=new Store(":memory:"),previous=config.timeoutMs;config.timeoutMs=1;
+ try {
+  const started=new WorkflowIntake(store).start(issue,{actor:"owner",commentId:1,source:"github-comment"}),projections=new WorkflowProjections(store);
+  store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at) VALUES('run-stuck',?,'product-architect','DESIGN','running','now')").run(started.id);
+  projections.transition({workItemId:started.id,expectedRevision:0,stage:"DESIGN",status:"PAUSED",actor:{type:"human",id:"owner"},source:{commentId:1},reason:{code:"pause",summary:"Paused"}});
+  store.event("command.deferred",{commentId:2,login:"owner",command:"retry",error:"still running",deferredAt:"2000-01-01T00:00:00.000Z"},started.id);
+  const result=new WorkflowInbox(store,{comments:()=>[comment(2,"/factory retry")]},["owner"]).poll(started.id);
+  assert.deepEqual({cursor:result.cursor,rejected:result.rejected,status:projections.get(started.id).status},{cursor:2,rejected:1,status:"PAUSED"});
+  const rejection=JSON.parse((store.db.prepare("SELECT payload FROM events WHERE type='command.rejected' ORDER BY id DESC LIMIT 1").get() as {payload:string}).payload);
+  assert.match(rejection.error,/deferral exceeded 1ms/);
+ } finally {config.timeoutMs=previous;store.db.close();}
 });
