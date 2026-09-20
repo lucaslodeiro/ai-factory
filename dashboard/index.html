@@ -15,11 +15,13 @@
   </header>
   <main>
     <section class="metrics" aria-label="Summary">
-      <article><span>Active</span><strong id="active-count">—</strong></article>
+      <article><span>Queued</span><strong id="queued-count">—</strong></article>
+      <article><span>Running</span><strong id="running-count">—</strong></article>
       <article><span>Waiting</span><strong id="waiting-count">—</strong></article>
       <article><span>Paused</span><strong id="paused-count">—</strong></article>
-      <article><span>Ready</span><strong id="ready-count">—</strong></article>
+      <article><span>Completed</span><strong id="completed-count">—</strong></article>
       <article><span>Failed</span><strong id="failed-count">—</strong></article>
+      <article><span>Cancelled</span><strong id="cancelled-count">—</strong></article>
     </section>
     <section id="services-panel" class="panel"><div class="panel-title"><div><p class="eyebrow">SERVICES</p><h2>Runtime controls</h2><p id="factory-version" class="version">Version…</p></div><div class="update-controls"><span id="update-status" class="muted">Checking updates…</span><button id="factory-update" class="primary" disabled>Check for updates</button></div></div><details id="update-details" class="update-details" hidden><summary>Update details</summary><pre id="update-detail-text"></pre><p class="muted">Full log: <code>data/service-logs/update.log</code></p></details><p class="service-help muted">Factory updates are global: both services stop, the current branch is downloaded and validated, then previously running services are restored.</p><div id="services" class="service-grid"><p class="empty">Loading services…</p></div></section>
     <section class="panel"><div class="panel-title"><div><p class="eyebrow">REPOSITORY CONTROLLER</p><h2 id="controller-title">Checking control…</h2><p id="controller-description" class="muted">Reading the repository lease.</p></div><div class="controller-actions"><button type="button" onclick="controllerAction('refresh')">Refresh</button><button id="controller-release" type="button" onclick="controllerAction('release')">Release control</button><button id="controller-takeover" type="button" onclick="controllerAction('takeover')">Take over</button><button id="controller-force" class="danger" type="button" onclick="controllerAction('force')">Force takeover</button></div></div><p id="remote-issues-updated" class="muted">GitHub view · awaiting refresh</p><div id="remote-issues"><p class="empty">Loading repository issues…</p></div></section>

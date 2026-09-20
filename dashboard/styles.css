@@ -33,7 +33,7 @@ button:disabled,fieldset:disabled { opacity:.55 }
 button.danger { color:var(--danger) }
 button.primary { background:var(--accent); color:var(--bg); border-color:var(--accent) }
 main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
-.metrics { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:1rem }
+.metrics { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:1rem }
 .metrics article,.panel { background:color-mix(in srgb,var(--panel) 94%,transparent); border:1px solid var(--line); border-radius:16px }
 .metrics article { padding:1.2rem; display:grid; gap:.5rem }
 .metrics span { color:var(--muted); font-size:.82rem }
