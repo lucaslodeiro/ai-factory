@@ -7,6 +7,7 @@ import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
 import { workflowLabels,workflowStatusMarkdown } from "../src/workflow-status.js";
 import { WorkflowFailures } from "../src/workflow-failures.js";
+import { result } from "./fixtures.js";
 
 const stagesForTest={DESIGN:"Design",BUILD:"Build",TEST:"Test",REVIEW:"Review",DELIVERY:"Delivery"} as const;
 const statusesForTest={QUEUED:"Queued",RUNNING:"Running",WAITING:"Waiting for you",FAILED:"Failed",PAUSED:"Paused",CANCELLED:"Cancelled",COMPLETED:"Completed"} as const;
@@ -101,5 +102,20 @@ test("publisher writes only changed presentation revisions and retries after del
   assert.throws(()=>failing.publishChanged(),/GitHub unavailable/);
   assert.equal(s.projections.get("work-1").publishedPresentationRevision,1);
   assert.equal(publisher.publishChanged(),1);assert.match(calls.at(-1)!.body,/event:[0-9a-f-]{36}/);
+ } finally {s.store.db.close();}
+});
+
+test("publisher keeps intermediate delivery results in status and publishes only milestone comments",()=>{
+ const s=setup();
+ try {
+  s.projections.initialize("work-1","DESIGN","QUEUED");
+  s.store.event("agent.result",{role:"developer",result:result("pass",{summary:"Builder completed implementation"}),specVersion:2},"work-1","run-builder");
+  s.store.event("agent.result",{role:"product-architect",result:result("spec",{summary:"Specification is ready"}),specVersion:3},"work-1","run-architect");
+  const comments:Array<{key:string;body:string}>=[];
+  const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){},publishWorkflowComment(_issue,key,body){comments.push({key,body});}});
+  assert.equal(publisher.publishResults(),1);
+  assert.deepEqual(comments.map(comment=>comment.key),["result-run-architect"]);
+  assert.equal(publisher.publishResults(),0);
+  assert.match(workflowStatusMarkdown(s.store,"work-1"),/Latest delivery summary[\s\S]*Builder completed implementation/);
  } finally {s.store.db.close();}
 });

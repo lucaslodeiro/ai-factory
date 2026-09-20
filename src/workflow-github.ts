@@ -40,10 +40,20 @@ export class WorkflowGitHubPublisher {
   for(const row of rows) {
    if(row.archived_at||this.store.metadata<boolean>(`github:result:${row.id}`))continue;
    const payload=JSON.parse(row.payload) as {role:AgentRole;result:AgentResult;specVersion:number};
+   if(!this.isMilestone(row,payload)) {this.store.setMetadata(`github:result:${row.id}`,true);continue;}
    const version=payload.specVersion||((this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(row.work_item_id) as {version:number|null}).version??0);
    this.github.publishWorkflowComment(row.issue_number,`result-${row.run_id}`,resultMarkdown(payload.role,payload.result,version));
    this.store.setMetadata(`github:result:${row.id}`,true);count++;
   }
   return count;
+ }
+ private isMilestone(row:{work_item_id:string;run_id:string},payload:{role:AgentRole;result:AgentResult}) {
+  if(payload.result.outcome==="decision")return true;
+  if(payload.role==="product-architect"&&["spec","questions","resolved"].includes(payload.result.outcome))return true;
+  if(payload.role==="reviewer"&&payload.result.outcome==="pass")return true;
+  if(payload.result.outcome!=="changes")return false;
+  const transition=this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND run_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(row.work_item_id,row.run_id) as {payload:string}|undefined;
+  if(!transition)return false;
+  try{return (JSON.parse(transition.payload) as {reason?:{code?:string}}).reason?.code==="correction-limit";}catch{return false;}
  }
 }
