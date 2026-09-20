@@ -236,13 +236,15 @@ type RecordPayload =
 | finding | `open` → `resolved` \| `accepted-defer` \| `superseded` | Orchestrator: when the next role returns `pass` for the same version, open `auto-fix` findings of the previous role → `resolved` with `resolved_by`; `defer` → `accepted-defer` on `pass`; new SPEC version → `superseded`. `decision-required` → `resolved` when the request it opened is resolved. |
 | request | `open` → `resolved` \| `cancelled` \| `superseded` | Orchestrator: a human-owned request is resolved by the matching command; an Architect-owned request by the corresponding Architect result. `/factory cancel` cancels; explicit replacement supersedes. A nested clarification points to the interrupted request through `parent_id`; resolving it restores the parent as the active causal request. |
 
-Comment edits never change a record; a new comment creates a new record. Open requests for a work item form one chain, never a branching tree: a request may have at most one open child, and the orchestrator rejects a transition that would create a sibling. Exactly one request is selected as the active causal request. Other open requests remain durable but blocked by their child. The active request is the deepest open record in the chain; resolving it exposes its nearest open ancestor, if one exists. `owner: human` means the workflow waits and publishes a human CTA. `owner: architect` means Architect is queued or running; it is never described as waiting for the human.
+A comment already processed as a command is immutable workflow evidence; later edits are inert. Authorized prose and unrecognized near-miss commands remain in `context.observedComments` as `{id, updatedAt}` and may be reevaluated when their `updatedAt` changes, until a later command is applied. Applying a command clears that list and freezes those earlier observations. On an untracked issue, each new `updatedAt` of a comment or description is evaluated for start, while issue identity makes starting idempotent. Open requests for a work item form one chain, never a branching tree: a request may have at most one open child, and the orchestrator rejects a transition that would create a sibling. Exactly one request is selected as the active causal request. Other open requests remain durable but blocked by their child. The active request is the deepest open record in the chain; resolving it exposes its nearest open ancestor, if one exists. `owner: human` means the workflow waits and publishes a human CTA. `owner: architect` means Architect is queued or running; it is never described as waiting for the human.
 
 ### 5.4 Scope
 
 Two values only. `spec` dies with the next SPEC version; `issue` survives until explicitly superseded or revoked. v1's `attempt` and `stage` scopes are removed: a hint like "rerun the failing test" carried with `spec` scope is harmless because the role contract already says "when compatible with the approved specification".
 
 A command is recognized when `/factory ...` is the first or last non-empty line. Text-taking commands combine inline text with every other line in its original order. Commands embedded in prose, quoted commands and commands in the middle are inert. If both boundary lines are commands, the first wins and the last becomes payload text.
+
+`/factory start` may appear on either boundary of a new comment or of the issue description. Description start is accepted only for an open non-PR issue authored by a configured human approver; its other lines become issue-scoped guidance, and intake snapshots the newest existing comment. A near miss such as `/fatcory start`, or a start placed in the middle or quoted, never executes and receives an idempotent placement or typo hint when authored by an approver. Unauthorized text remains silent on GitHub.
 
 `/factory help` is state-neutral. It publishes one idempotent immutable command reference per work item. The authoritative status comment always ends with the same reference in a collapsed **All commands** block.
 
@@ -356,7 +358,7 @@ interface Projection { stage: Stage; status: Status; attempt: number; revision: 
 
 | From | Trigger | To | Records | Human-visible |
 | --- | --- | --- | --- | --- |
-| — | `/factory start [guidance]` or dashboard | DESIGN/QUEUED | optional issue-scoped instruction | Started milestone |
+| — | `/factory start [guidance]` in an approver-authored issue description or comment, or dashboard | DESIGN/QUEUED | optional issue-scoped instruction | Started milestone |
 | any/QUEUED | scheduler selects item; adapter exists; no confirmed maintenance blocks it | same stage/RUNNING | execution row created; `activeRunId` set; revision + 1 | none |
 | DESIGN/RUNNING | Architect `questions` (no open tactical request) | DESIGN/WAITING | human-owned request `clarification` opened; prior approval invalid | Questions milestone with `/factory answer` |
 | DESIGN/RUNNING | Architect `questions` during open tactical request | DESIGN/WAITING | human-owned child request `clarification` opened with `parent_id` pointing to the Architect-owned tactical request; tactical request stays open but is blocked; approval kept | Questions milestone |
@@ -388,6 +390,8 @@ interface Projection { stage: Stage; status: Status; attempt: number; revision: 
 | DELIVERY/WAITING (prClosed) | PR reopened | DELIVERY/WAITING | flag cleared | Status |
 | any nonterminal | GitHub issue manually closed | same stage/PAUSED and hidden from operational views | open requests and worktree preserved; close cursor recorded | none; no further comments, labels or agents |
 | hidden issue | GitHub issue reopened | same stage/PAUSED | comment cursor advances past comments made while closed | Visible again with explicit Retry CTA |
+| tracked issue | remote GitHub issue id changes for the same number | same stage/PAUSED, archived | pending notifications suppressed; old records and worktree preserved | none on the replacement issue; it must be started explicitly |
+| tracked open issue | title/body/URL changes | same state | context refreshed; title change increments presentation revision | status title refresh only when title changed |
 | — | recovery from GitHub (no local row) | DESIGN/PAUSED | failure `recovery`; clarification request if questions were pending | Recovered milestone |
 
 Guard on every command: a comment resolves a request only when `comment.id > request.openedAfterCommentId` (preserves F12). Older commands are recorded as `command.stale` and ignored.
@@ -560,12 +564,13 @@ Markers use `Work item: <id>` (recovery depends on it, F8) and add `workflow-rev
 
 No dual-write, importer or compatibility reader is implemented.
 
-1. A newly created database is initialized atomically with `metadata.schema_version = 4` only after the complete V3 schema exists.
-2. The daemon and mutating CLI commands refuse a database without schema version 4. The error tells the operator to stop services and either run the supported uninstaller or select an empty `FACTORY_DATA_DIR`.
-3. Installation into an empty data directory starts with no work items, records, requests, failures, executions or retained worktrees. The operator starts desired open issues again with `/factory start` or the dashboard.
+1. A newly created database is initialized atomically with `metadata.schema_version = 5` only after the complete schema exists. Work items persist GitHub issue id, node id and creation time; the active `(repo, issue_number)` uniqueness constraint is partial so an archived item can coexist with a recreated issue.
+2. The daemon and mutating CLI commands refuse a database without schema version 5. The error tells the operator to stop services and either run the supported uninstaller or select an empty `FACTORY_DATA_DIR`.
+3. Installation into an empty data directory starts with no work items, records, requests, failures, executions or retained worktrees. On first doctor or daemon startup, the directory is bound to the target repository's stable GitHub id. Reusing it with a deleted/recreated or different repository is refused even when the `owner/name` string is unchanged. The operator starts desired open issues again with `/factory start` in the description or a comment, or with the dashboard.
    A dashboard/CLI start snapshots the issue's newest existing comment as its initial cursor, so commands from the discarded runtime history are never replayed. A comment-origin `/factory start` uses that command comment as the cursor and processes only later comments.
 4. An existing target application checkout may be reused; factory runtime state may not. Uninstall continues to preserve provider credentials and the target application repository.
 5. There is no rollback or reverse conversion. The previous data directory may be copied aside for manual audit, but V3 never reads it.
+6. Deleting and recreating an issue with the same number does not reuse its work item. Reconciliation archives the stale item without publishing stale labels or comments; the replacement stays untracked until explicitly started and receives a new work item and branch.
 
 This clean cutover is an explicit product decision: the operator can uninstall and start again, so compatibility machinery would add implementation and operational risk without preserving required behavior.
 

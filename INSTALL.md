@@ -228,7 +228,7 @@ When an issue is recovered after its previous worktree directory disappeared, Re
 
 ## First end-to-end run
 
-Create an open feature issue, then post this standalone comment as a configured approver:
+Create an open feature issue, then put this command on the first or last non-empty line of its description or of a comment as a configured approver:
 
 ```text
 /factory start
@@ -241,7 +241,9 @@ You can instead enter its number or URL in the dashboard's **Start tracking issu
 <your answer or requested changes, which may span multiple lines>
 ```
 
-Always post the command as a new comment. Editing a comment the factory already read does not create a new GitHub comment ID and will not reactivate the workflow.
+A comment already processed as a command is frozen and must be replaced by a new comment. A prose or unrecognized comment may be edited into a valid command until a later command is applied. On an untracked issue, editing its description or a comment to add `/factory start` is detected through GitHub's update timestamp.
+
+Each `FACTORY_DATA_DIR` is bound to one stable GitHub repository id. If the target repository is deleted and recreated, stop both services and select an empty data directory before starting again. If only an issue is deleted and recreated with the same number, the factory archives the old work item and leaves the replacement untracked until you start it explicitly.
 
 The proposed spec is versioned in SQLite and posted to GitHub. Approve its exact version:
 

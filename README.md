@@ -65,9 +65,11 @@ For a clean installer retest, keep the parent terminal outside the checkout: run
 
 If a failed attempt leaves a destination that is not a valid factory checkout, the installer reports `An incomplete or unrelated destination already exists` and prints the safe recovery commands. Preserve it with `mv "$HOME/ai-factory" "$HOME/ai-factory.incomplete-$(date +%Y%m%d-%H%M%S)"`, then rerun the downloaded installer. The installer never deletes or overwrites an unrecognized directory automatically. See [installation and operations](INSTALL.md) for the complete command sequence.
 
-The factory engine and target application are separate repositories. `GITHUB_REPOSITORY` selects where issues are read and PRs are created; `FACTORY_REPO_DIR` selects the local clone used for worktrees. Start an open issue from the dashboard, with `factory start-issue <number-or-url>`, or by posting a standalone `/factory start` comment from an authorized approver. The daemon creates and manages workflow labels automatically after ingestion.
+The factory engine and target application are separate repositories. `GITHUB_REPOSITORY` selects where issues are read and PRs are created; `FACTORY_REPO_DIR` selects the local clone used for worktrees. A data directory binds to the repository's stable GitHub id on first use and cannot be reused for another or recreated repository. Start an open issue from the dashboard, with `factory start-issue <number-or-url>`, or by putting `/factory start` on the first or last non-empty line of an authorized approver's comment or issue description. The daemon creates and manages workflow labels automatically after ingestion.
 
 Commands must be the first or last non-empty line of a comment from an authorized approver. Every other line becomes command text. Quoted commands and commands in the middle are ignored. If both the first and last lines are commands, the first wins and the last is treated as text.
+
+An observed prose comment or near-miss such as `/fatcory note` may be edited into a valid command until a later command is applied. Once a comment is processed as a command, later edits never change its outcome. The factory points out approver-authored start commands that are misspelled, quoted or placed in the middle. If an issue or repository is deleted and recreated, the old issue work is archived; use an empty data directory for a recreated repository and explicitly start a recreated issue again.
 
 - `/factory start [guidance]` starts an open issue.
 - `/factory help` publishes the complete command reference once.
