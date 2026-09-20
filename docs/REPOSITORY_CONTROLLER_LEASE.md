@@ -1,9 +1,9 @@
 # Repository Controller Lease
 
 **Version:** 2.2 (revised after architecture review; remote issues view and controller attribution added)  
-**Status:** Ready for implementation planning  
+**Status:** Implemented
 **Scope:** Prevent multiple AI Factory installations from operating the same GitHub repository concurrently  
-**Implementation status:** Not implemented
+**Implementation status:** Implemented on `feat/controller-lease`; validation evidence is recorded in `docs/reviews/2026-09-21-controller-lease.md`.
 
 ## 1. Purpose
 
@@ -318,7 +318,7 @@ repository_controller
 
 One row for the configured repository. The remote ref is the source of truth; the local row is never sufficient to authorize a mutation.
 
-`executions.interruption_reason` adds `controller-lost`. Held results are stored as `agent.result.held` events and either applied or discarded with an explicit event.
+`executions.interruption_reason` adds `controller-lost`. A held result body remains only in the running daemon's bounded in-memory buffer; the event log records a content-free `agent.result.held` marker. Recovery or ownership loss records `agent.result.held_applied` or `agent.result.held_discarded`. A daemon crash discards the in-memory result instead of persisting agent output outside the normal result transaction.
 
 ## 18. Cutover
 
