@@ -27,7 +27,13 @@ run('git',['init','--bare',remote]);run('git',['clone',remote,seed]);
 run('git',['config','user.email','test@example.com'],seed);run('git',['config','user.name','Test'],seed);
 fs.mkdirSync(path.join(seed,'scripts'));
 for(const f of ['install-core.sh','update.sh','update.mjs','configure.sh','configure.mjs','dashboard-url.mjs','prepare-dashboard-config.mjs','paths.mjs']) fs.copyFileSync(path.join(source,'scripts',f),path.join(seed,'scripts',f));
-fs.writeFileSync(path.join(seed,'scripts','services.sh'),`#!/bin/sh\nprintf '%s %s\\n' \"$1\" \"$2\" >> \"$AI_FACTORY_SERVICE_LOG\"\n`,{mode:0o755});
+fs.writeFileSync(path.join(seed,'scripts','services.sh'),`#!/bin/sh
+printf '%s %s\\n' \"$1\" \"$2\" >> \"$AI_FACTORY_SERVICE_LOG\"
+if [ \"$1 $2\" = \"start dashboard\" ] && [ -n \"\${AI_FACTORY_FAKE_DASHBOARD_PORT:-}\" ]; then
+  node -e 'require("http").createServer((request,response)=>{response.setHeader("content-type","application/json");response.end(request.url==="/api/settings"?JSON.stringify({readiness:{ready:true}}):JSON.stringify({ok:true}))}).listen(Number(process.argv[1]),"127.0.0.1")' \"$AI_FACTORY_FAKE_DASHBOARD_PORT\" > /dev/null 2>&1 &
+  echo $! > \"$AI_FACTORY_FAKE_DASHBOARD_PID\"
+fi
+`,{mode:0o755});
 fs.writeFileSync(path.join(seed,'scripts','service-summary.mjs'),`console.log('Dashboard: http://127.0.0.1:4173');\n`);
 for(const f of ['.gitignore','.env.example','package.json']) fs.copyFileSync(path.join(source,f),path.join(seed,f));
 run('git',['add','.'],seed);run('git',['commit','-m','initial'],seed);run('git',['push','origin','HEAD:main'],seed);
@@ -93,6 +99,16 @@ run('bash',[path.join(source,'scripts/install-core.sh'),'--repo',remote,'--dir',
 assert.equal(fs.readFileSync(path.join(preservedDest,'.env'),'utf8'),'GITHUB_REPOSITORY=preserved/example\n');
 assert.equal(fs.existsSync(path.join(preservedDest,'engine','.git')),true);
 assert.equal(fs.existsSync(path.join(preservedDest,'data','install.json')),true);
+
+const readyDest=path.join(temp,'ready preserved home'),readyPort='64174',readyPid=path.join(temp,'ready-dashboard.pid');
+fs.mkdirSync(readyDest,{recursive:true});fs.writeFileSync(path.join(readyDest,'.env'),'GITHUB_REPOSITORY=preserved/example\n');
+env.AI_FACTORY_SKIP_SERVICES='0';env.AI_FACTORY_NO_OPEN='1';env.AI_FACTORY_FAKE_DASHBOARD_PORT=readyPort;env.AI_FACTORY_FAKE_DASHBOARD_PID=readyPid;env.AI_FACTORY_SERVICE_LOG=path.join(temp,'ready-services.log');
+run('bash',[path.join(source,'scripts/install-core.sh'),'--repo',remote,'--dir',readyDest,'--dashboard-port',readyPort],temp);
+assert.match(fs.readFileSync(env.AI_FACTORY_SERVICE_LOG,'utf8'),/start dashboard\nstart daemon/);
+assert.equal(fs.readFileSync(env.AI_FACTORY_OPEN_LOG,'utf8').trim(),'http://127.0.0.1:64173/?setup=1');
+process.kill(Number(fs.readFileSync(readyPid,'utf8').trim()));
+delete env.AI_FACTORY_NO_OPEN;delete env.AI_FACTORY_FAKE_DASHBOARD_PORT;delete env.AI_FACTORY_FAKE_DASHBOARD_PID;
+env.AI_FACTORY_SKIP_SERVICES='1';
 
 fs.symlinkSync(path.join(source,'dist'),path.join(engine,'dist'),'dir');
 fs.appendFileSync(path.join(engine,'.git','info','exclude'),'\n/dist\n/node_modules\n');

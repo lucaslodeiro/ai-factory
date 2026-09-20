@@ -93,12 +93,12 @@ if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
     if node -e 'fetch(process.argv[1]).then(response=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))' "$dashboard_url/healthz"; then dashboard_ready=true; break; fi
     sleep 0.25
   done
+  setup_suffix='?setup=1'
+  if node -e 'fetch(process.argv[1]+"/api/settings").then(r=>r.json()).then(v=>process.exit(v.readiness?.ready?0:1)).catch(()=>process.exit(1))' "$dashboard_url"; then
+    setup_suffix=''
+    AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start daemon
+  fi
   if [[ $(uname -s) == Darwin && ${AI_FACTORY_NO_OPEN:-0} != 1 ]]; then
-    setup_suffix='?setup=1'
-    if node -e 'fetch(process.argv[1]+"/api/settings").then(r=>r.json()).then(v=>process.exit(v.readiness?.ready?0:1)).catch(()=>process.exit(1))' "$dashboard_url"; then
-      setup_suffix=''
-      AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start daemon
-    fi
     open "$dashboard_url/$setup_suffix" || printf 'Open this URL to finish setup: %s/%s\n' "$dashboard_url" "$setup_suffix"
   fi
 fi
