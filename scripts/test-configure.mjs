@@ -53,6 +53,7 @@ fi
   assert.doesNotMatch(initial.stdout,/Setup incomplete/);
   assert.equal(parse(fs.readFileSync(file)).FACTORY_POLL_INTERVAL_MS,'15000');
   assert.equal(parse(fs.readFileSync(file)).GITHUB_REPOSITORY,'');
+  for(const key of['PRODUCT_ARCHITECT_MODEL','DEVELOPER_MODEL','QA_MODEL','REVIEWER_MODEL'])assert.equal(parse(fs.readFileSync(file))[key],'auto');
   const provisioned = run([],keys.map(() => '').join('\n') + '\ny\n');
   const provisionedValues = parse(fs.readFileSync(file));
   assert.equal(provisionedValues.GITHUB_REPOSITORY,'alice/ai-factory-demo');
@@ -74,11 +75,11 @@ fi
   assert.equal(values.FACTORY_APPROVERS,'');
   assert.equal(values.FACTORY_POLL_INTERVAL_MS,'5000');
   assert.equal(values.CUSTOM_VALUE,'keep # $HOME');
-  assert.equal(values.PRODUCT_ARCHITECT_MODEL,'sonnet');
+  assert.equal(values.PRODUCT_ARCHITECT_MODEL,'auto');
   assert.equal(values.DEVELOPER_MODEL,'custom-balanced');
   assert.equal(values.QA_MODEL,'custom-balanced');
   assert.equal(values.REVIEWER_PROVIDER,'codex');
-  assert.equal(values.REVIEWER_MODEL,'gpt-5.6-terra');
+  assert.equal(values.REVIEWER_MODEL,'auto');
   const backups = fs.readdirSync(root).filter(name => name.startsWith('.env.backup-'));
   assert.equal(fs.readFileSync(path.join(root,backups.at(-1)),'utf8'),saved);
   assert.equal(fs.statSync(file).mode & 0o777,0o600);

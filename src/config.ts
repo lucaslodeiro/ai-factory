@@ -48,10 +48,10 @@ function role(prefix: string, fallback: "codex" | "claude", fallbackModel: strin
 }
 export const config = {
   roles: {
-    "product-architect":role("PRODUCT_ARCHITECT","claude","sonnet"),
-    developer:role("DEVELOPER","codex","gpt-5.6-terra"),
-    qa:role("QA","codex","gpt-5.6-terra"),
-    reviewer:role("REVIEWER","claude","sonnet"),
+    "product-architect":role("PRODUCT_ARCHITECT","claude","auto"),
+    developer:role("DEVELOPER","codex","auto"),
+    qa:role("QA","codex","auto"),
+    reviewer:role("REVIEWER","claude","auto"),
   },
   home,
   dataDir: path.resolve(home,process.env.FACTORY_DATA_DIR ?? "data"),

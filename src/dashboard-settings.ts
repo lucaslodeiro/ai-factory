@@ -134,8 +134,8 @@ export function readDashboardSettings(root: string, suggestions: Record<string,s
   const values: Record<string,string> = {...defaults,...saved};
   for (const [key,value] of Object.entries(suggestions)) if (key in defaults && !values[key]) values[key]=value;
   const providerCatalog = {
-    codex:{options:codexModels,default:"gpt-5.6-terra"},
-    claude:{options:claudeModels,default:"sonnet"},
+    codex:{options:codexModels,default:"auto"},
+    claude:{options:claudeModels,default:"auto"},
   };
   const fields = Object.keys(defaults).map(key => {
     const meta = descriptions[key] ?? {label:key,description:"Factory setting.",group:"Other"};

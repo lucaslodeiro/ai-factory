@@ -405,10 +405,14 @@ function dashboardSettings(root: string) {
     FACTORY_REPO_DIR:path.join(factoryHome(root),"repos","ai-factory-demo"),
     FACTORY_APPROVERS:login,
   } : {});
+  const providers=["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"].map(role=>readDashboardSetting(root,`${role}_PROVIDER`));
+  const setupProvider=providers.every(value=>value===providers[0])?providers[0]:"codex";
+  settings.fields.push({key:"AGENT_PROVIDER",label:"Agent provider",description:"Use one provider for all four roles during first-time setup.",group:"credentials",type:"select",options:[{value:"codex",label:"Codex"},{value:"claude",label:"Claude"}],value:setupProvider,required:true,restart:"daemon",setup:true,setupOnly:true} as any);
   return {...settings,readiness:setupReadiness(root,credentials)};
 }
+function expandSetupProvider(values:Record<string,unknown>){const result={...values};if("AGENT_PROVIDER" in result){const provider=result.AGENT_PROVIDER;if(provider!=="codex"&&provider!=="claude")throw new Error("AGENT_PROVIDER: choose codex or claude");for(const role of["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"])result[`${role}_PROVIDER`]=provider;delete result.AGENT_PROVIDER;}return result;}
 function saveConfiguration(store: Store, root: string, values: Record<string,unknown>, clearSecrets: string[] = [],maintenanceId?:string,startDaemonWhenReady=false) {
-  const candidate={...values};
+  const candidate=expandSetupProvider(values);
   const currentRepository=readDashboardSetting(root,"GITHUB_REPOSITORY").trim(),nextRepository=typeof candidate.GITHUB_REPOSITORY==="string"?candidate.GITHUB_REPOSITORY.trim():currentRepository;
   if(nextRepository&&nextRepository!==currentRepository){
     const github=credentialStatuses(root).credentials.find(item=>item.id==="github");
@@ -518,7 +522,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         if (!body.values || typeof body.values !== "object" || Array.isArray(body.values)) return json(res,400,{error:"Settings are required"});
         return json(res,200,saveConfiguration(store,settingsRoot,body.values,Array.isArray(body.clearSecrets) ? body.clearSecrets : [],body.maintenanceId,body.startDaemonWhenReady===true));
       }
-      if(req.method==="POST"&&url.pathname==="/api/settings/validate") {const body=await readBody(req) as {values?:Record<string,unknown>;clearSecrets?:string[]};if(!body.values||typeof body.values!=="object"||Array.isArray(body.values))return json(res,400,{error:"Settings are required"});const plan=validateDashboardSettings(settingsRoot,body.values,Array.isArray(body.clearSecrets)?body.clearSecrets:[]),daemon=serviceStatus(settingsRoot,"daemon"),active=daemonState(store).running||daemon.running;return json(res,200,{changedKeys:plan.changedKeys,restartServices:plan.restartServices,requiresDaemonRestart:active&&plan.restartServices.includes("daemon")});}
+      if(req.method==="POST"&&url.pathname==="/api/settings/validate") {const body=await readBody(req) as {values?:Record<string,unknown>;clearSecrets?:string[]};if(!body.values||typeof body.values!=="object"||Array.isArray(body.values))return json(res,400,{error:"Settings are required"});const plan=validateDashboardSettings(settingsRoot,expandSetupProvider(body.values),Array.isArray(body.clearSecrets)?body.clearSecrets:[]),daemon=serviceStatus(settingsRoot,"daemon"),active=daemonState(store).running||daemon.running;return json(res,200,{changedKeys:plan.changedKeys,restartServices:plan.restartServices,requiresDaemonRestart:active&&plan.restartServices.includes("daemon")});}
       if (req.method === "POST" && url.pathname === "/api/control") {
         const body = await readBody(req) as { kind?: string; target?: string };
         if (!["stop","cancel","retry","refresh-list","start-issue"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});

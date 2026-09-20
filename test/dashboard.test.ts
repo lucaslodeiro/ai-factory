@@ -218,7 +218,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.ok(settings.readiness.missing.some((item: any) => item.id === "repository"));
     assert.ok(settings.readiness.missing.some((item: any) => item.id === "approvers"));
     assert.deepEqual(settings.groups.map((group: any) => group.id),["credentials","project","runtime","dashboard","models","tools","access","notifications"]);
-    assert.deepEqual(settings.fields.filter((field:any)=>field.setup).map((field:any)=>field.key).sort(),["FACTORY_APPROVERS","FACTORY_REPO_DIR","GITHUB_REPOSITORY"]);
+    assert.deepEqual(settings.fields.filter((field:any)=>field.setup).map((field:any)=>field.key).sort(),["AGENT_PROVIDER","FACTORY_APPROVERS","FACTORY_REPO_DIR","GITHUB_REPOSITORY"]);
     const dashboardHost = settings.fields.find((field: any) => field.key === "FACTORY_DASHBOARD_HOST");
     assert.equal(dashboardHost.type,"select"); assert.deepEqual(dashboardHost.options.map((option: any) => option.value),["127.0.0.1","localhost","::1"]);
     const developerProvider = settings.fields.find((field: any) => field.key === "DEVELOPER_PROVIDER");
@@ -228,7 +228,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(developerModel.value,"custom-codex-model");
     assert.ok(developerModel.options.some((option: any) => option.value === "auto"));
     assert.ok(developerModel.options.some((option: any) => option.value === "gpt-5.6-terra"));
-    assert.equal(settings.modelCatalog.codex.default,"gpt-5.6-terra");
+    assert.equal(settings.modelCatalog.codex.default,"auto");
     assert.ok(settings.modelCatalog.codex.options.some((option: any) => option.value === "gpt-5.6-luna"));
     assert.equal(settings.fields.some((field: any) => field.key === "CODEX_MODEL_FAST"),false);
     const slackWebhook = settings.fields.find((field: any) => field.key === "SLACK_WEBHOOK_URL");
@@ -271,14 +271,13 @@ echo "$*" >> "$PWD/update-actions.log"
     const suggestedValue = (key: string) => suggestedSettings.fields.find((field: any) => field.key === key);
     assert.deepEqual({value:suggestedValue("GITHUB_REPOSITORY").value,suggested:suggestedValue("GITHUB_REPOSITORY").suggested},{value:"demo-user/ai-factory-demo",suggested:true});
     assert.equal(suggestedValue("FACTORY_REPO_DIR").value,path.join(settingsRoot,"repos","ai-factory-demo"));
-    assert.deepEqual({value:suggestedValue("FACTORY_REPO_DIR").value,suggested:suggestedValue("FACTORY_REPO_DIR").suggested},{value:path.join(os.homedir(),"Source","ai-factory-demo"),suggested:true});
     assert.deepEqual({value:suggestedValue("FACTORY_APPROVERS").value,suggested:suggestedValue("FACTORY_APPROVERS").suggested},{value:"demo-user",suggested:true});
     const unknownCredential = await fetch(`http://127.0.0.1:${port}/api/credentials/connect`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({provider:"other"})});
     assert.equal(unknownCredential.status,400);
     // From here the launchd stub is authoritative. Avoid treating this test process as
     // the daemon process while saveConfiguration waits for the old daemon PID to exit.
     store.db.prepare("DELETE FROM daemon_lock").run();
-    const saved = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_POLL_INTERVAL_MS:"5000",SLACK_WEBHOOK_URL:"",DEVELOPER_PROVIDER:"claude",DEVELOPER_MODEL:"auto"}})});
+    const saved = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_POLL_INTERVAL_MS:"5000",SLACK_WEBHOOK_URL:"",AGENT_PROVIDER:"claude",DEVELOPER_MODEL:"auto"}})});
     assert.equal(saved.status,200);
     const savedResult = await saved.json() as any;
     assert.deepEqual(savedResult.restartedServices,["daemon"]);
@@ -286,6 +285,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^FACTORY_POLL_INTERVAL_MS='5000'$/m);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^SLACK_WEBHOOK_URL='https:\/\/hooks\.example\.com\/private'$/m);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^DEVELOPER_PROVIDER='claude'$/m);
+    for(const key of["PRODUCT_ARCHITECT_PROVIDER","QA_PROVIDER","REVIEWER_PROVIDER"])assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),new RegExp(`^${key}='claude'$`,`m`));
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^DEVELOPER_MODEL='auto'$/m);
     assert.ok(fs.readdirSync(settingsRoot).some(file => file.startsWith(".env.backup-")));
     const serviceActionsBeforeInvalid = fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8");

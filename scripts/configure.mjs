@@ -206,7 +206,7 @@ export async function configure(root, useDefaults = false) {
             values[key] = value;
             if (key.endsWith('_PROVIDER') && value !== previous) {
               const prefix = key.slice(0,-'_PROVIDER'.length);
-              values[`${prefix}_MODEL`] = value === 'claude' ? 'sonnet' : 'gpt-5.6-terra';
+              values[`${prefix}_MODEL`] = 'auto';
             }
             break;
           }
