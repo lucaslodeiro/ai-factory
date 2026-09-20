@@ -53,7 +53,7 @@ function failedItem(){
 test("current main issue content reproduces the actionable audit findings",()=>{
  const h=lifecycle(),failed=failedItem();
  try {
-  const questions=h.milestones.get("questions")??"";assert.match(questions,/^# Specification v0/m);assert.match(questions,/Review the specification/);
+  const questions=h.milestones.get("questions")??"";assert.match(questions,/^# Architect — questions/m);assert.match(questions,/1\. Which audience is primary\?/);assert.match(questions,/\/factory answer\n1\. <answer 1>\n2\. <answer 2>/);assert.doesNotMatch(questions,/specification/i);
   const spec=h.milestones.get("spec")??"";assert.match(spec,/^# Specification v1/m);assert.match(spec,/^# Football dashboard/m);assert.match(spec,/use the command shown in the AI Factory status comment/);
   const decision=h.milestones.get("tester-decision")??"";assert.match(decision,/Tester finished\. The next workflow stage is queued automatically/);
   const resolved=h.milestones.get("architect-resolved")??"";assert.match(resolved,/^# Specification v1/m);assert.match(resolved,/Review the specification/);assert.match(h.statuses.get("architect-resolved")??"",/Latest delivery summary[\s\S]*Tester:\*\* The provider leaves postponed matches ambiguous/);
