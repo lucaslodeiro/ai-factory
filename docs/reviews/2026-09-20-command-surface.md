@@ -20,6 +20,13 @@ Implementation details and commit hashes are recorded below as each item lands.
 - Files: `src/workflow-inbox.ts`, `src/workflow-status.ts`, `test/workflow-inbox.test.ts`, `test/execution.test.ts`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
 - Change: persisted the latest newly observed command outcome in work-item context, advanced presentation for non-applied outcomes and rendered the outcome/reason in the authoritative status table. Comment-origin starts begin with an applied outcome. The pre-existing cancellation fixture now waits for worker readiness instead of a fixed delay so required full-suite runs are deterministic.
 - Tests: `command outcomes are persisted and visible in the status comment` covers wrong-version approval, typo, trailing text and unknown replacement; `applied answers and stale commands render their outcome` covers stale and applied states.
+- Commit: `3f3acaf`.
+
+### C2 — pull request feedback
+
+- Files: `src/workflow-commands.ts`, `src/workflow-status.ts`, `test/workflow-commands.test.ts`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
+- Change: `/factory answer <feedback>` now resolves an open merge request, creates a human `auto-fix` finding for Builder and returns the item to `BUILD/QUEUED` without incrementing correction cycles. The merge CTA advertises both merge and request-changes paths.
+- Test: `merge feedback returns delivery to Builder as an open human auto-fix finding` verifies the transition, record ownership/content and Builder context.
 - Commit: recorded after commit creation.
 
 ## Removed or changed behavior
@@ -34,6 +41,7 @@ To be completed after implementation.
 
 - Before changes: `npm test` — 113 tests, 112 passed, 1 failed. The pre-existing timing-sensitive test `explicit cancellation escalates an in-progress interruption` observed `interrupted` before its later cancel under concurrent suite load.
 - After C1: `npm test` — 115 tests, 115 passed, 0 failed.
+- After C2: `npm test` — 116 tests, 116 passed, 0 failed.
 
 ## Documentation
 

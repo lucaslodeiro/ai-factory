@@ -366,6 +366,7 @@ interface Projection { stage: Stage; status: Status; attempt: number; revision: 
 | TEST/RUNNING | `changes` | BUILD/QUEUED | findings `auto-fix` opened; correction_cycles + 1 | Status update with findings |
 | REVIEW/RUNNING | `changes` | BUILD/QUEUED | findings opened; correction_cycles + 1 | Status update |
 | REVIEW/RUNNING | `pass` | DELIVERY/WAITING | publish branch, ensure PR; human-owned request `merge` opened | Ready-to-merge milestone |
+| DELIVERY/WAITING | `/factory answer <feedback>` | BUILD/QUEUED | merge request resolved; human `auto-fix` finding opened; correction_cycles unchanged | Status shows Builder next |
 | BUILD/TEST/REVIEW RUNNING | `decision` | DESIGN/QUEUED | findings `decision-required` opened; Architect-owned request `tactical-decision` opened with `originatingStage` | Decision-request milestone; no human CTA unless Architect asks a question |
 | BUILD/TEST/REVIEW RUNNING | `changes` and `correction_cycles + 1 >= max` | same stage/WAITING | findings from the result persisted; human-owned request `correction-limit` opened with their ids and originatingStage after storing the incremented counter | Correction-limit milestone |
 | any/WAITING (`correction-limit`) | `/factory answer` | DESIGN/QUEUED | human decision created; `correction-limit` → resolved; Architect-owned child `tactical-decision` opened with the same originatingStage and parent history; cycles = 0 | Status shows Architect as next actor |

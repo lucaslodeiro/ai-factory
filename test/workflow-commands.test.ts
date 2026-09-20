@@ -5,6 +5,7 @@ import { WorkflowCommands } from "../src/workflow-commands.js";
 import { WorkflowFailures } from "../src/workflow-failures.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
+import { ContextAssembler } from "../src/context-assembly.js";
 
 function setup(stage:"DESIGN"|"BUILD"|"TEST"|"DELIVERY"="DESIGN",status:"QUEUED"|"WAITING"|"FAILED"|"PAUSED"|"CANCELLED"|"COMPLETED"="QUEUED") {
  const store=new Store(":memory:");
@@ -114,5 +115,22 @@ test("answering a correction limit queues Architect with the preserved return ro
   assert.equal(s.records.get(limit.id)?.status,"resolved");assert.equal(active?.payload.kind==="request"&&active.payload.type,"tactical-decision");
   assert.deepEqual(active?.payload.kind==="request"&&active.payload.allowedReturnStages,["BUILD","TEST"]);
   assert.deepEqual({stage:result.projection.stage,status:result.projection.status,active:result.projection.activeRequestId},{stage:"DESIGN",status:"QUEUED",active:active?.id});
+ } finally {s.store.db.close();}
+});
+
+test("merge feedback returns delivery to Builder as an open human auto-fix finding",()=>{
+ const s=setup("DELIVERY","WAITING");
+ try {
+  const request=s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"request",type:"merge",owner:"human",originatingStage:"DELIVERY",allowedReturnStages:["DELIVERY"],openedAfterCommentId:10},sourceType:"orchestrator",sourceId:"pr",actor:"orchestrator"});
+  s.initialize();
+  const result=s.commands.apply({kind:"answer",text:"Fix the flaky test"},context(11));
+  assert.deepEqual({stage:result.projection.stage,status:result.projection.status,cycles:result.projection.correctionCycles},{stage:"BUILD",status:"QUEUED",cycles:0});
+  assert.equal(s.records.get(request.id)?.status,"resolved");
+  const finding=s.records.active("work-1",1,"developer").find(record=>record.payload.kind==="finding");
+  assert.equal(finding?.payload.kind==="finding"&&finding.payload.classification,"auto-fix");
+  assert.equal(finding?.payload.kind==="finding"&&finding.payload.evidence,"Fix the flaky test");
+  assert.equal(finding?.sourceType,"github-comment");assert.equal(finding?.actor,"owner");
+  const prompt=new ContextAssembler(s.store).assemble({workItemId:"work-1",role:"developer",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"}});
+  assert.match(prompt.markdown,/Fix the flaky test/);
  } finally {s.store.db.close();}
 });

@@ -41,6 +41,14 @@ export class WorkflowCommands {
   }
   if(command.kind==="answer") {
    const request=this.requireHumanRequest(context);
+   if(request.payload.kind==="request"&&request.payload.type==="merge") {
+    const ids:string[]=[request.id];
+    const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:"BUILD",status:"QUEUED",actor,source,reason:{code:"merge-feedback",summary:"Human requested pull request changes"},recordIds:ids},()=>{
+     this.records.resolveRequest(request.id);
+     ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:"spec",payload:{kind:"finding",classification:"auto-fix",originRole:"reviewer",evidence:command.text},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
+    });
+    return {projection:result,recordIds:ids};
+   }
    if(!["clarification","correction-limit"].includes(request.payload.kind==="request"?request.payload.type:""))throw new Error(`Request ${request.id} cannot be answered with /factory answer`);
    const ids:string[]=[request.id];
    const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:"DESIGN",status:"QUEUED",actor,source,reason:{code:"human-answer",summary:"Human guidance recorded"},recordIds:ids,correctionCycles:0},()=>{

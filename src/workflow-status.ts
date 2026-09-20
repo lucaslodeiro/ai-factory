@@ -26,7 +26,7 @@ function nextAction(store:Store,workItemId:string) {
  const projection=new WorkflowProjections(store).get(workItemId),request=new WorkflowRecords(store).activeRequest(workItemId);
  if(request?.payload.kind==="request"&&request.payload.owner==="human") {
   if(request.payload.type==="spec-approval")return box(`Review the proposed specification and post one new comment.\n\n**Approve**${command(`/factory approve v${request.specVersion}`)}\n\n**Request changes**${command("/factory answer <feedback>")}`);
-  if(request.payload.type==="merge")return box("Review and merge the pull request in GitHub when it is ready.");
+  if(request.payload.type==="merge")return box(`Review and merge the pull request in GitHub when it is ready, or request changes.\n\n**Merge** in GitHub.\n\n**Request changes**${command("/factory answer <changes>")}`);
   return box(`Reply with the guidance Architect needs.${command("/factory answer <guidance>")}`);
  }
  if(request?.payload.kind==="request"&&request.payload.owner==="architect")return box("Architect is next. No human action is required.");
