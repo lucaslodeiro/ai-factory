@@ -4,6 +4,7 @@ import { WorkflowProjections } from "./workflow-projection.js";
 import { WorkflowRecords } from "./workflow-records.js";
 import { sanitizeFailureEvidence,workflowFailureEvidence } from "./failure-report.js";
 import { roleShortName } from "./names.js";
+import type { LastCommandOutcome } from "./workflow-inbox.js";
 
 const stages={DESIGN:"Design",BUILD:"Build",TEST:"Test",REVIEW:"Review",DELIVERY:"Delivery"} as const;
 const stageActors={DESIGN:"Architect",BUILD:"Builder",TEST:"Tester",REVIEW:"Reviewer",DELIVERY:"None"} as const;
@@ -38,7 +39,7 @@ function nextAction(store:Store,workItemId:string) {
 export function workflowStatusMarkdown(store:Store,workItemId:string) {
  const item=store.db.prepare("SELECT issue_number,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;context:string}|undefined;
  if(!item)throw new Error("Unknown work item");
- const context=JSON.parse(item.context||"{}") as {title?:string;pr?:string;observedApproverComments?:number};
+ const context=JSON.parse(item.context||"{}") as {title?:string;pr?:string;observedApproverComments?:number;lastCommand?:LastCommandOutcome};
  const projection=new WorkflowProjections(store).get(workItemId),records=new WorkflowRecords(store),request=records.activeRequest(workItemId),failure=new WorkflowFailures(store).active(workItemId);
  const spec=(store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;
  const actor=request?.payload.kind==="request"?(request.payload.owner==="human"?"Human":"Architect"):projection.status==="RUNNING"||projection.status==="QUEUED"?stageActors[projection.stage]:"None";
@@ -47,6 +48,7 @@ export function workflowStatusMarkdown(store:Store,workItemId:string) {
  if(failure)rows.push(["Failure",sanitizeFailureEvidence(failure.message,240)]);
  if(context.pr)rows.push(["Pull request",context.pr]);
  if(context.observedApproverComments)rows.push(["Approver comments since last command",`${context.observedApproverComments} — use \`/factory note\` to make guidance actionable`]);
+ if(context.lastCommand){const last=context.lastCommand,reason=last.outcome==="deferred"?"waiting for the interrupted execution to exit":last.reason;rows.push(["Last command",`\`${last.kind}\` by @${last.login} — ${last.outcome}${reason?`: ${reason}`:""}`]);}
  const byId=new Map(["product-architect","developer","qa","reviewer"].flatMap(role=>records.active(workItemId,spec,role as "product-architect"|"developer"|"qa"|"reviewer")).filter(record=>record.payload.kind==="instruction").map(record=>[record.id,record]));
  const instructions=[...byId.values()].sort((a,b)=>a.sequence-b.sequence);
  const guidance=instructions.length?`\n\n### Active human instructions\n\n${instructions.map(record=>`- \`${record.id.slice(0,8)}\` — ${record.payload.kind==="instruction"?record.payload.text:""}`).join("\n")}${instructions.length>3?`\n\nConsider \`/factory replace\` or \`/factory revoke\` to keep guidance current.`:""}`:"";

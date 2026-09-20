@@ -6,6 +6,7 @@ import { WorkflowRecords } from "../src/workflow-records.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
 import type { Comment } from "../src/adapters/github.js";
 import { config } from "../src/config.js";
+import { workflowStatusMarkdown } from "../src/workflow-status.js";
 
 const issue={number:7,title:"Inbox",body:"Build it",url:"https://github.com/owner/demo/issues/7",state:"OPEN" as const};
 const comment=(id:number,body:string,login="owner",type="User"):Comment=>({id,body,user:{login,type}});
@@ -28,7 +29,7 @@ test("inbox consumes commands once and records explicit human guidance",()=>{
   const inbox=new WorkflowInbox(store,{comments:()=>comments},["owner"]),result=inbox.poll(started.id);
   assert.deepEqual(result,{seen:4,applied:1,rejected:1,observed:2,cursor:4});
   const instruction=new WorkflowRecords(store).active(started.id,0,"qa").find(record=>record.kind==="instruction");assert.equal(instruction?.payload.kind==="instruction"&&instruction.payload.text,"Do not use Chromium");
-  assert.equal(new WorkflowProjections(store).get(started.id).presentationRevision,2);
+  assert.equal(new WorkflowProjections(store).get(started.id).presentationRevision,3);
   assert.deepEqual(inbox.poll(started.id),{seen:0,applied:0,rejected:0,observed:0,cursor:4});
  } finally {store.db.close();}
 });
@@ -161,4 +162,38 @@ test("non-cancel commands remain blocked behind a deferred retry",()=>{
   assert.deepEqual({status:s.projections.get(s.started.id).status,cursor:result.cursor,applied:result.applied,rejected:result.rejected},{status:"PAUSED",cursor:2,applied:0,rejected:0});
   assert.equal(s.cancelled(),undefined);
  } finally {s.store.db.close();}
+});
+
+test("command outcomes are persisted and visible in the status comment",()=>{
+ const store=new Store(":memory:");
+ try {
+  const started=new WorkflowIntake(store).start(issue,{actor:"dashboard",source:"control"}),records=new WorkflowRecords(store),projections=new WorkflowProjections(store),comments:Comment[]=[];
+  store.db.prepare("INSERT INTO specs(work_item_id,version,body) VALUES(?,?,?)").run(started.id,2,"SPEC");
+  records.create({workItemId:started.id,specVersion:2,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:10},sourceType:"agent-result",sourceId:"run",actor:"product-architect"});
+  projections.transition({workItemId:started.id,expectedRevision:0,stage:"DESIGN",status:"WAITING",actor:{type:"agent",id:"product-architect"},source:{executionId:"run"},reason:{code:"spec",summary:"SPEC proposed"}});
+  const inbox=new WorkflowInbox(store,{comments:()=>comments},["owner"]),before=projections.get(started.id).presentationRevision;
+  comments.push(comment(11,"/factory approve v1"));inbox.poll(started.id);
+  assert.equal(projections.get(started.id).presentationRevision,before+1);
+  assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `approve v1` by @owner — rejected: Approval is for v1; active specification is v2/);
+  comments.push(comment(12,"/factory aprove v2"));inbox.poll(started.id);
+  assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `unparsed` by @owner — rejected: Unknown or malformed \/factory command/);
+  comments.push(comment(13,"/factory cancel thanks"));inbox.poll(started.id);
+  assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `unparsed` by @owner — rejected/);
+  comments.push(comment(14,"/factory replace missing replacement"));inbox.poll(started.id);
+  assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `replace missing` by @owner — rejected: Record missing was not found/);
+ } finally {store.db.close();}
+});
+
+test("applied answers and stale commands render their outcome",()=>{
+ const store=new Store(":memory:");
+ try {
+  const started=new WorkflowIntake(store).start(issue,{actor:"dashboard",source:"control"}),records=new WorkflowRecords(store),projections=new WorkflowProjections(store),comments:Comment[]=[];
+  records.create({workItemId:started.id,specVersion:0,scope:"spec",payload:{kind:"request",type:"clarification",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:5},sourceType:"agent-result",sourceId:"run",actor:"product-architect"});
+  projections.transition({workItemId:started.id,expectedRevision:0,stage:"DESIGN",status:"WAITING",actor:{type:"agent",id:"product-architect"},source:{executionId:"run"},reason:{code:"question",summary:"Question asked"}});
+  const inbox=new WorkflowInbox(store,{comments:()=>comments},["owner"]);
+  comments.push(comment(5,"/factory answer Too early"));inbox.poll(started.id);
+  assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `answer` by @owner — stale:/);
+  comments.push(comment(6,"/factory answer Use SQLite"));inbox.poll(started.id);
+  assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `answer` by @owner — applied/);
+ } finally {store.db.close();}
 });

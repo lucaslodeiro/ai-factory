@@ -43,9 +43,11 @@ test("planned interruption is distinct from cancellation and preserves its reaso
 });
 test("explicit cancellation escalates an in-progress interruption", async () => {
  const s=new Store(":memory:"),m=new ExecutionManager(s);
- const pending=m.run("w","developer",process.execPath,["-e","process.on('SIGTERM',()=>{});setInterval(()=>{},100)"],os.tmpdir());
+ const pending=m.run("w","developer",process.execPath,["-e","process.on('SIGTERM',()=>{});console.log('ready');setInterval(()=>{},100)"],os.tmpdir());
  const id=(s.db.prepare("SELECT id FROM executions").get() as any).id;
- await new Promise(resolve=>setTimeout(resolve,200));
+ const ready=path.join(config.dataDir,"runs",id,"stdout.log"),deadline=Date.now()+3000;
+ while((!fs.existsSync(ready)||!fs.readFileSync(ready,"utf8").includes("ready"))&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20));
+ assert.match(fs.readFileSync(ready,"utf8"),/ready/);
  assert.equal(m.interrupt(id,"user-pause"),true);
  await new Promise(resolve=>setTimeout(resolve,50));
  assert.equal(m.cancel(id),true);await assert.rejects(pending,/cancelled/);

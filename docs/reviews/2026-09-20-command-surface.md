@@ -1,0 +1,44 @@
+# Human command surface review and implementation
+
+## Decisions
+
+- **C1 — agree, different fix.** Newly observed applied, rejected, stale, deferred and expired commands need a visible durable outcome. An already consumed comment edit cannot produce a new outcome because the cursor deliberately prevents reprocessing and issue-comment polling supplies no edit event; the implementation therefore covers every newly observed command and leaves edits inert.
+- **C2 — agree.** An open merge request currently rejects `/factory answer`; routing explicit human review feedback to Builder as an `auto-fix` finding is the minimal safe transition.
+- **C3 — agree.** One first-line command grammar removes surprising differences and prevents prose or quoted commands from firing.
+- **C4 — agree.** Guidance belongs in instruction records while pause/cancel reasons belong only to transition evidence; retry should share the scoped-guidance grammar.
+- **C5 — agree.** The complete command surface needs an idempotent help comment, an always-available collapsed reference and complete user documentation.
+- **C6 — agree.** The existing record rules already permit GitHub-authored human decisions to supersede one another; replace/revoke should expose that supported lifecycle without touching tactical decisions.
+- **C7 — agree, different fix.** Ordinals are assigned by rank across all human guidance ever created, including inactive records, and only active entries are actionable/displayed. This preserves `#2` after `#1` is revoked; numbering only the current active subset would renumber entries and contradict the no-reuse requirement.
+- **C8 — agree.** Every workflow state should expose the exact valid commands and explain how optional text is stored.
+
+## Changes
+
+Implementation details and commit hashes are recorded below as each item lands.
+
+### C1 — visible command outcomes
+
+- Files: `src/workflow-inbox.ts`, `src/workflow-status.ts`, `test/workflow-inbox.test.ts`, `test/execution.test.ts`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
+- Change: persisted the latest newly observed command outcome in work-item context, advanced presentation for non-applied outcomes and rendered the outcome/reason in the authoritative status table. Comment-origin starts begin with an applied outcome. The pre-existing cancellation fixture now waits for worker readiness instead of a fixed delay so required full-suite runs are deterministic.
+- Tests: `command outcomes are persisted and visible in the status comment` covers wrong-version approval, typo, trailing text and unknown replacement; `applied answers and stale commands render their outcome` covers stale and applied states.
+- Commit: recorded after commit creation.
+
+## Removed or changed behavior
+
+To be completed after implementation.
+
+## Not changed
+
+- Editing an already consumed GitHub comment remains inert. Post a new comment to receive a command outcome and trigger workflow behavior.
+
+## Verification
+
+- Before changes: `npm test` — 113 tests, 112 passed, 1 failed. The pre-existing timing-sensitive test `explicit cancellation escalates an in-progress interruption` observed `interrupted` before its later cancel under concurrent suite load.
+- After C1: `npm test` — 115 tests, 115 passed, 0 failed.
+
+## Documentation
+
+To be completed after implementation.
+
+## Open questions
+
+None at validation time.
