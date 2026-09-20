@@ -20,6 +20,7 @@ import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {GitHubAdapter} from "./adapters/github.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {cachedControllerState,ControllerLease} from "./controller-lease.js";
+import {publishTakeoverNotices} from "./workflow-github.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
 const types: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
@@ -511,7 +512,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if(req.method==="POST"&&url.pathname==="/api/controller"){
         const body=await readBody(req) as {action?:string;force?:boolean;confirmation?:string};if(!config.repo)return json(res,409,{error:"Configure a repository first"});
         const github=new GitHubAdapter(),repository=verifyRepositoryIdentity(store,github,false),lease=new ControllerLease(repository,store);let result;
-        if(body.action==="refresh")result=lease.readLease();else if(body.action==="release")result=lease.release(false);else if(body.action==="takeover"){if(body.force&&body.confirmation!==repository.fullName)return json(res,400,{error:`Type ${repository.fullName} to confirm force takeover`});result=lease.takeover(Boolean(body.force));}else return json(res,400,{error:"Unknown controller action"});
+        if(body.action==="refresh")result=lease.readLease();else if(body.action==="release")result=lease.release(false);else if(body.action==="takeover"){if(body.force&&body.confirmation!==repository.fullName)return json(res,400,{error:`Type ${repository.fullName} to confirm force takeover`});const previous=lease.readLease();result=lease.takeover(Boolean(body.force),previous);publishTakeoverNotices(store,github,previous,result);}else return json(res,400,{error:"Unknown controller action"});
         return json(res,200,{...result,repository:repository.fullName});
       }
       if(req.method==="GET"&&url.pathname.startsWith("/api/maintenance/"))return json(res,200,maintenanceOperation(store,url.pathname.split("/").at(-1)!));

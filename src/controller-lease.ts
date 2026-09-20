@@ -60,7 +60,7 @@ export class ControllerLease{
   if(observed.record.instanceId!==this.instance.instanceId)throw new Error(`Repository is controlled by ${observed.record.displayName}`);
   const record={...observed.record,displayName:this.instance.displayName,heartbeatAt:this.nowIso(),activeWorkCount:this.activeWorkCount()};
   if(!this.updateRemoteRef(this.commit(record),observed.sha))throw new ControllerCasError();
-  const renewed=this.readLease();this.store?.event("controller.renewed",{repository:this.repository.fullName,displayName:this.instance.displayName,generation:record.generation});return renewed;
+  return this.readLease();
  }
  release(force=false):LeaseObservation{
   this.store?.event("controller.release_requested",{repository:this.repository.fullName,displayName:this.instance.displayName,force});
@@ -96,3 +96,4 @@ export function cachedControllerState(store:Store):CachedControllerState{
  const row=store.db.prepare("SELECT instance_id instanceId,generation,remote_sha remoteSha,state,last_verified_at lastVerifiedAt,last_error lastError FROM repository_controller ORDER BY last_verified_at DESC LIMIT 1").get() as Omit<CachedControllerState,"state">&{state:CachedControllerState["state"]}|undefined;
  return row??{state:"unconfigured",instanceId:null,generation:null,remoteSha:null,lastVerifiedAt:null,lastError:null};
 }
+export function controllerAttribution(store:Store){const cached=cachedControllerState(store);if(!cached.instanceId||cached.generation===null)return null;let displayName=`Factory ${cached.instanceId.replaceAll("-","").slice(0,6)}`;try{const value=JSON.parse(fs.readFileSync(path.join(factoryHome(),"instance.json"),"utf8")) as FactoryInstance;if(value.instanceId===cached.instanceId)displayName=value.displayName;}catch{}return{displayName,generation:cached.generation};}

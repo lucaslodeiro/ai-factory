@@ -41,3 +41,11 @@ event log stores only its execution id and role, never the result body. Commands
 execution starts and publication each verify the acquired generation. A changed
 owner interrupts active executions with `controller-lost`, pauses their work
 items and discards held results.
+
+## P5 — Uninstall release and issue attribution
+
+**Decision: agree.** Uninstall attempts a controller release after stopping the
+services and refuses local removal on failure unless `--force` was explicit.
+Status comments carry controller name and generation, milestone comments keep
+the controller name, and takeover notices are idempotent by issue id and
+generation for open, labelled issues without local state.

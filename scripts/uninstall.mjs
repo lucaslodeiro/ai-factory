@@ -55,6 +55,12 @@ if(process.platform==="darwin"&&process.env.AI_FACTORY_UNINSTALL_SKIP_LAUNCHCTL!
   for(const line of(jobs.stdout??"").split("\n")){const label=line.trim().split(/\s+/).at(-1)??"";if(label.startsWith("com.ai-factory.update.")){call(["remove",label]);if(loaded(label))throw new Error(`Could not stop existing service: ${label}`);}}
   for(const service of["daemon","dashboard"]){const label=`com.ai-factory.${service}`;if(!loaded(label))continue;call(["bootout",`${domain}/${label}`]);if(loaded(label))throw new Error(`Could not stop existing service: ${label}`);console.log(`Stopped ${service} service.`);}
 }
+const configuredRepository=envValue("GITHUB_REPOSITORY"),controllerCli=path.join(engine,"dist","src","cli.js");
+if(configuredRepository&&fs.existsSync(controllerCli)){
+  const release=spawnSync(process.execPath,[controllerCli,"controller","release",...(forced?["--force"]:[])],{cwd:engine,env:{...process.env,AI_FACTORY_HOME:factoryHome},encoding:"utf8",timeout:60000});
+  if(release.status!==0){console.error("Repository controller release failed. Another installation must run:");console.error(`  ai-factory controller takeover --force`);if(!forced)throw new Error("Remote repository control was not released. Re-run uninstall with --force to remove this installation locally.");}
+  else console.log("Released repository control.");
+}
 for(const plist of plists)fs.rmSync(plist,{force:true});
 const installedLayout=path.basename(actualEngine)==="engine"&&path.dirname(actualEngine)===actualFactoryHome,residualRoot=path.join(factoryHome,".uninstall");
 if(!purge&&installedLayout){fs.mkdirSync(path.join(residualRoot,"scripts"),{recursive:true});fs.copyFileSync(fileURLToPath(import.meta.url),path.join(residualRoot,"scripts","uninstall.mjs"));fs.copyFileSync(path.join(engine,"scripts","ai-factory"),path.join(residualRoot,"scripts","ai-factory"));fs.chmodSync(path.join(residualRoot,"scripts","ai-factory"),0o755);fs.writeFileSync(path.join(residualRoot,"package.json"),JSON.stringify({name:"ai-factory"})+"\n");fs.mkdirSync(path.dirname(launcher),{recursive:true});try{fs.rmSync(launcher,{force:true});}catch{}fs.symlinkSync(path.join(residualRoot,"scripts","ai-factory"),launcher);}

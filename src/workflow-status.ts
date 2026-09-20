@@ -6,6 +6,7 @@ import { sanitizeFailureEvidence,workflowFailureEvidence } from "./failure-repor
 import { roleShortName } from "./names.js";
 import type { LastCommandOutcome } from "./workflow-inbox.js";
 import { factoryCommandReference } from "./factory-help.js";
+import {controllerAttribution} from "./controller-lease.js";
 
 const stages={DESIGN:"Design",BUILD:"Build",TEST:"Test",REVIEW:"Review",DELIVERY:"Delivery"} as const;
 const stageActors={DESIGN:"Architect",BUILD:"Builder",TEST:"Tester",REVIEW:"Reviewer",DELIVERY:"Orchestrator"} as const;
@@ -61,6 +62,7 @@ export function workflowStatusMarkdown(store:Store,workItemId:string) {
  const spec=(store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;
  const actor=request?.payload.kind==="request"?(request.payload.owner==="human"?"Human":"Architect"):["FAILED","PAUSED","CANCELLED"].includes(projection.status)?"Human":projection.status==="RUNNING"||projection.status==="QUEUED"?stageActors[projection.stage]:"None";
  const rows=[["Stage",stages[projection.stage]],["Status",statuses[projection.status]],["Current actor",actor],["SPEC version",spec?`v${spec}`:"Not proposed"],["Attempt",String(projection.attempt)]];
+ const controller=controllerAttribution(store);if(controller)rows.push(["Controller",controller.displayName]);
  if(request?.payload.kind==="request")rows.push(["Open request",requestLabel(request)]);
  if(failure)rows.push(["Failure",sanitizeFailureEvidence(failure.message,240)]);
  if(context.pr)rows.push(["Pull request",context.pr]);
