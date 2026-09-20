@@ -50,7 +50,7 @@ if(!confirmed){
   const prompt=readline.createInterface({input:process.stdin,output:process.stdout}),word=purge?"purge":"uninstall",answer=await prompt.question(`Type "${word}" to continue: `);if(answer!==word){prompt.close();console.log("Uninstall cancelled.");process.exit(0);}
   if(!forced&&(unsafeWork.length||unsafeRepos.length)){const forceAnswer=await prompt.question('Unpublished work may be lost. Type "force" to continue: ');if(forceAnswer!=="force"){prompt.close();console.log("Uninstall cancelled.");process.exit(0);}}prompt.close();
 }
-if(process.platform==="darwin"&&process.env.AI_FACTORY_UNINSTALL_SKIP_LAUNCHCTL!=="1"){
+if((process.platform==="darwin"||process.env.AI_FACTORY_UNINSTALL_LAUNCHCTL==="1")&&process.env.AI_FACTORY_UNINSTALL_SKIP_LAUNCHCTL!=="1"){
   const domain=`gui/${process.getuid()}`,call=args=>spawnSync("launchctl",args,{encoding:"utf8"}),loaded=label=>call(["print",`${domain}/${label}`]).status===0,jobs=call(["list"]);
   for(const line of(jobs.stdout??"").split("\n")){const label=line.trim().split(/\s+/).at(-1)??"";if(label.startsWith("com.ai-factory.update.")){call(["remove",label]);if(loaded(label))throw new Error(`Could not stop existing service: ${label}`);}}
   for(const service of["daemon","dashboard"]){const label=`com.ai-factory.${service}`;if(!loaded(label))continue;call(["bootout",`${domain}/${label}`]);if(loaded(label))throw new Error(`Could not stop existing service: ${label}`);console.log(`Stopped ${service} service.`);}
