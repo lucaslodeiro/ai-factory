@@ -53,7 +53,8 @@ Added `docs/reviews/2026-09-21-out-of-series-fixes.md` with motivation, change a
 - `git status --porcelain` immediately after `npm test` contained only the in-progress review document and the local `node_modules` worktree symlink; `instance.json` was absent. After removing the symlink and committing this report, the worktree was clean.
 - `PATH=/Users/lucaslodeiro/.local/bin:$PATH npm run build` — passed.
 - `git diff --check` — passed.
+- After the owner authorized publication, GitHub Actions **Product validation** passed on both [`main`](https://github.com/lucaslodeiro/ai-factory/actions/runs/35530336834) and [`develop`](https://github.com/lucaslodeiro/ai-factory/actions/runs/35530336347) at `36757e3`. This confirms the detached-checkout installer gate in the hosted macOS runner.
 
 ## Limitations
 
-The GitHub Actions pull-request job was not triggered during validation because the original review instruction prohibited pushing or opening a PR. Its detached-HEAD condition was reproduced locally with the complete macOS installer suite. An initial sandboxed `npm test` run could not bind the dashboard test server (`listen EPERM`) and reported 204/206; it was rerun once outside the network sandbox and passed 206/206. This was an environment restriction, not a flaky test or product failure.
+No pull request was opened. Before publication, the detached-HEAD condition was reproduced locally with the complete macOS installer suite; the later branch pushes also passed their hosted macOS workflows. An initial sandboxed `npm test` run could not bind the dashboard test server (`listen EPERM`) and reported 204/206; it was rerun once outside the network sandbox and passed 206/206. This was an environment restriction, not a flaky test or product failure.
