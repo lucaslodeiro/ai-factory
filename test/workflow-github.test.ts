@@ -119,3 +119,15 @@ test("publisher keeps intermediate delivery results in status and publishes only
   assert.match(workflowStatusMarkdown(s.store,"work-1"),/Latest delivery summary[\s\S]*Builder completed implementation/);
  } finally {s.store.db.close();}
 });
+
+test("status clips a verbose delivery summary and preserves one authoritative next action",()=>{
+ const s=setup();
+ try {
+  s.projections.initialize("work-1","BUILD","QUEUED");
+  s.store.event("agent.result",{role:"developer",result:result("pass",{summary:"x".repeat(10_000)}),specVersion:2},"work-1","run-verbose");
+  const body=workflowStatusMarkdown(s.store,"work-1"),section=body.match(/### Latest delivery summary([\s\S]*?)(?:\n\n<details>|\n\n## Next action)/)?.[0]??"";
+  assert.ok(section.length<=1600,`summary section was ${section.length} characters`);
+  assert.match(section,/…/);assert.match(section,/execution `run-verbose` in the dashboard/);
+  assert.equal(body.match(/^## Next action$/gm)?.length,1);
+ } finally {s.store.db.close();}
+});

@@ -11,6 +11,7 @@ const statuses={QUEUED:"Queued",RUNNING:"Running",WAITING:"Waiting for you",FAIL
 const palette={DESIGN:["5319e7","Architect is designing the specification"],BUILD:["1d76db","Builder is implementing the approved specification"],TEST:["fbca04","Tester is verifying the implementation"],REVIEW:["006b75","Reviewer is inspecting delivery evidence"],DELIVERY:["0e8a16","Delivery is awaiting or recording merge"],done:["0e8a16","Factory delivery completed"],WAITING:["d4c5f9","Human action is required"],FAILED:["b60205","Factory execution failed"],PAUSED:["c5def5","Factory workflow is paused"],CANCELLED:["6a737d","Factory workflow was cancelled"]} as const;
 const box=(body:string)=>`## Next action\n\n> ${body.replaceAll("\n","\n> ")}`;
 const command=(value:string)=>`\n\n\`\`\`text\n${value}\n\`\`\``;
+const clipSummary=(value:string,max=1450)=>value.length<=max?{text:value,clipped:false}:{text:`${value.slice(0,max-1).trimEnd()}…`,clipped:true};
 
 export function workflowLabels(store:Store,workItemId:string) {
  const p=new WorkflowProjections(store).get(workItemId);
@@ -52,7 +53,7 @@ export function workflowStatusMarkdown(store:Store,workItemId:string) {
  const transitions=(store.db.prepare("SELECT ts,payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 10").all(workItemId) as Array<{ts:string;payload:string}>).map(row=>{const event=JSON.parse(row.payload) as {to:{stage:string;status:string};reason:{summary:string}};return `- ${row.ts} — ${event.to.stage}/${event.to.status}: ${event.reason.summary}`;});
  const history=transitions.length?`\n\n<details><summary>Last ${transitions.length} workflow transitions</summary>\n\n${transitions.join("\n")}\n\n</details>`:"";
  const failureDetails=failure?`\n\n${workflowFailureEvidence(store,failure)}`:"";
- const latest=store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='agent.result' AND json_extract(payload,'$.role')!='product-architect' ORDER BY id DESC LIMIT 1").get(workItemId) as {payload:string}|undefined;
- let latestSummary="";if(latest)try{const payload=JSON.parse(latest.payload) as {role:"developer"|"qa"|"reviewer";result:{summary:string}};latestSummary=`\n\n### Latest delivery summary\n\n**${roleShortName(payload.role)}:** ${payload.result.summary}`;}catch{}
+ const latest=store.db.prepare("SELECT payload,run_id FROM events WHERE work_item_id=? AND type='agent.result' AND json_extract(payload,'$.role')!='product-architect' ORDER BY id DESC LIMIT 1").get(workItemId) as {payload:string;run_id:string}|undefined;
+ let latestSummary="";if(latest)try{const payload=JSON.parse(latest.payload) as {role:"developer"|"qa"|"reviewer";result:{summary:string}},summary=clipSummary(payload.result.summary);latestSummary=`\n\n### Latest delivery summary\n\n**${roleShortName(payload.role)}:** ${summary.text}${summary.clipped?`\n\nSummary clipped. Open execution \`${latest.run_id}\` in the dashboard for the full result.`:""}`;}catch{}
  return `# ${context.title??`Issue #${item.issue_number}`}\n\n| Detail | Value |\n| --- | --- |\n${rows.map(([name,value])=>`| ${name} | ${String(value).replaceAll("|","\\|")} |`).join("\n")}${guidance}${latestSummary}${failureDetails}${history}\n\n${nextAction(store,workItemId)}`;
 }
