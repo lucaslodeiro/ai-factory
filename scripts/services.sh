@@ -10,7 +10,7 @@ usage() {
   cat <<'EOF'
 Usage:
   npm run service -- <install|start|stop|restart|status|logs> <daemon|dashboard|all>
-  npm run service -- uninstall [--yes]
+  npm run service -- uninstall [--yes] [--force]
 
 Uninstall removes both services, this factory installation and its runtime data.
 Target repositories, shared tools and provider credentials are preserved.
@@ -89,7 +89,6 @@ done
 case ${1:-} in
   uninstall)
     shift
-    [[ $# == 0 || ( $# == 1 && $1 == --yes ) ]] || { usage >&2; exit 1; }
     exec node "$root/scripts/uninstall.mjs" "$@"
     ;;
 esac

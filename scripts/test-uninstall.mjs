@@ -9,6 +9,11 @@ import Database from "better-sqlite3";
 const source = fileURLToPath(new URL("..",import.meta.url));
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(),"factory-uninstall-"));
 try {
+  const passthroughRoot=path.join(sandbox,"passthrough"),passthroughLog=path.join(sandbox,"passthrough-args.json");fs.mkdirSync(path.join(passthroughRoot,"scripts"),{recursive:true});
+  fs.copyFileSync(path.join(source,"scripts","services.sh"),path.join(passthroughRoot,"scripts","services.sh"));
+  fs.writeFileSync(path.join(passthroughRoot,"scripts","uninstall.mjs"),`import fs from "node:fs";fs.writeFileSync(process.env.PASSTHROUGH_LOG,JSON.stringify(process.argv.slice(2)));`);
+  const passthrough=spawnSync("bash",[path.join(passthroughRoot,"scripts","services.sh"),"uninstall","--yes","--force"],{env:{...process.env,PASSTHROUGH_LOG:passthroughLog},encoding:"utf8"});
+  assert.equal(passthrough.status,0,passthrough.stderr);assert.deepEqual(JSON.parse(fs.readFileSync(passthroughLog,"utf8")),["--yes","--force"]);
   const home=path.join(sandbox,"home"),root=path.join(home,"ai-factory"),data=path.join(home,"factory-data"),target=path.join(home,"Source","target"),agents=path.join(home,"Library","LaunchAgents");
   fs.mkdirSync(path.join(root,"scripts"),{recursive:true}); fs.mkdirSync(data,{recursive:true}); fs.mkdirSync(target,{recursive:true}); fs.mkdirSync(agents,{recursive:true});
   fs.writeFileSync(path.join(root,"package.json"),JSON.stringify({name:"ai-factory"}));
@@ -41,5 +46,5 @@ try {
   assert.match(result.stdout,/AI Factory was uninstalled/);
   assert.match(result.stdout,/parent shell may still reference the removed directory/);
   assert.match(fs.readFileSync(gitLog,"utf8"),/ls-remote --heads origin factory\/issue-17-demo/);
-  console.log("PASS: uninstall preflights unpublished work, requires force, removes factory services, installation and data while preserving targets and shared tools");
+  console.log("PASS: service passthrough reaches uninstall with --yes --force; uninstall preflights unpublished work, requires force, removes factory services, installation and data while preserving targets and shared tools");
 } finally { fs.rmSync(sandbox,{recursive:true,force:true}); }
