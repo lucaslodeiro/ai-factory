@@ -23,7 +23,7 @@
       <article><span>Failed</span><strong id="failed-count">—</strong></article>
       <article><span>Cancelled</span><strong id="cancelled-count">—</strong></article>
     </section>
-    <section id="services-panel" class="panel"><div class="panel-title"><div><p class="eyebrow">SERVICES</p><h2>Runtime controls</h2><p id="factory-version" class="version">Version…</p></div><div class="update-controls"><span id="update-status" class="muted">Checking updates…</span><button id="factory-update" class="primary" disabled>Check for updates</button></div></div><details id="update-details" class="update-details" hidden><summary>Update details</summary><pre id="update-detail-text"></pre><p class="muted">Full log: <code>data/service-logs/update.log</code></p></details><p class="service-help muted">Factory updates are global: both services stop, the current branch is downloaded and validated, then previously running services are restored.</p><div id="services" class="service-grid"><p class="empty">Loading services…</p></div></section>
+    <section id="services-panel" class="panel"><div class="panel-title"><div><p class="eyebrow">SERVICES</p><h2>Runtime controls</h2><p id="factory-version" class="version">Version…</p></div><div class="update-controls"><span id="update-status" class="muted">Checking updates…</span><button id="factory-update" class="primary" disabled>Check for updates</button></div></div><button id="update-diagnose" type="button" hidden onclick="diagnoseOperationFailure('update-diagnose')">Diagnose failure</button><details id="update-details" class="update-details" hidden><summary>Update details</summary><pre id="update-detail-text"></pre><p class="muted">Full log: <code>data/service-logs/update.log</code></p></details><p class="service-help muted">Factory updates are global: both services stop, the current branch is downloaded and validated, then previously running services are restored.</p><div id="services" class="service-grid"><p class="empty">Loading services…</p></div></section>
     <details id="daemon-logs-panel" class="panel logs-panel">
       <summary><div><p class="eyebrow">OBSERVABILITY</p><h2>Daemon logs</h2></div><span id="daemon-logs-summary" class="muted">Open to inspect recent output</span></summary>
       <div class="log-toolbar">
@@ -36,7 +36,7 @@
     <details class="panel settings-panel">
       <summary><div><p class="eyebrow">ADMINISTRATION</p><h2>Configuration</h2></div><span id="settings-summary" class="muted">Environment and runtime settings</span></summary>
       <div id="setup-guide" class="setup-guide" role="status" hidden><div><p class="eyebrow">ACTION REQUIRED</p><h3>Complete the required setup</h3><p>AI Factory needs the following before it can process project issues:</p></div><ul id="setup-requirements"></ul></div>
-      <p id="settings-status" class="settings-status">Loading configuration…</p>
+      <button id="settings-diagnose" type="button" hidden onclick="diagnoseOperationFailure('settings-diagnose')">Diagnose failure</button><p id="settings-status" class="settings-status">Loading configuration…</p>
       <form id="settings-form"><fieldset id="settings-fieldset"><div class="settings-layout"><nav id="settings-navigation" class="settings-navigation" aria-label="Configuration categories"></nav><div id="settings-groups" class="settings-content"></div></div><div id="settings-actions" class="settings-actions"><button id="settings-save" type="submit" class="primary">Save and apply</button><span id="settings-progress" class="settings-progress" role="status" aria-live="polite" hidden></span><span id="settings-change-status" class="muted">Values are validated before affected running services restart automatically.</span></div></fieldset></form>
     </details>
     <section class="panel"><div class="panel-title queue-heading"><div><p class="eyebrow">WORK QUEUE</p><h2>Local issues</h2></div><div class="issue-toolbar"><button id="refresh-issue-list" type="button" title="Reconcile issues, metadata and newest comments" onclick="refreshIssueList()">Refresh issue list</button><button id="add-issue" type="button" class="primary">Add Issue</button></div></div>
@@ -51,5 +51,5 @@
   </main>
   <div id="toast" role="status"></div>
   <script type="module" src="/app.js"></script>
-</body>
+<dialog id="diagnosis-dialog" class="add-issue-dialog diagnosis-dialog" aria-labelledby="diagnosis-title"><h3 id="diagnosis-title">Failure diagnosis</h3><div id="diagnosis-content" aria-live="polite"></div><div class="actions"><button id="diagnosis-copy" type="button" disabled>Copy report</button><button type="button" onclick="document.querySelector('#diagnosis-dialog').close()">Close</button></div></dialog></body>
 </html>

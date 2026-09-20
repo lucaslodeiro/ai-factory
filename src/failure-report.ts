@@ -43,6 +43,21 @@ export function failureLogTail(file: string, maxLines = 30) {
 export function failureDiagnosis(reason: string, stderr: string, run?: {status:string;exit_code:number|null},failureClass?:WorkflowFailure["class"]) {
   const evidence=`${reason}\n${stderr}`;
   const kind=failureClass??reason.match(/^\[([^\]]+)\]/)?.[1] as WorkflowFailure["class"]|undefined;
+  if (/(?:RPC failed|remote end hung up unexpectedly|HTTP [45]\d\d|curl \d+)/i.test(evidence) && /(?:RPC failed|remote end hung up|git push)/i.test(evidence)) return [
+    "**Summary:** Git could not complete the transfer to the remote repository.",
+    "**Evidence:** The recorded Git output reports a transport failure. An HTTP 400 alone does not prove invalid credentials, a size limit or a server outage.",
+    "**Recommended action:** Check the push destination and remote branch before retrying. Verify network/proxy and Git transport settings; use SSH only after configuring and verifying access. Retry Delivery after correcting the connection; the completed review is preserved.",
+  ].join("\n\n");
+  if (/(?:authentication failed|not logged in|unauthorized|HTTP 401|HTTP 403|Permission denied \(publickey\))/i.test(evidence)) return [
+    "**Summary:** The integration rejected authentication or repository access.",
+    "**Evidence:** The recorded error explicitly reports an authentication or access failure; it does not identify which credential or permission is missing.",
+    "**Recommended action:** Verify the account and repository permissions for the configured transport. Reconnect the affected provider or verify the SSH key, then retry the failed operation.",
+  ].join("\n\n");
+  if (/ENOBUFS/i.test(evidence)) return [
+    "**Summary:** A subprocess exceeded the output buffer available to the Factory.",
+    "**Evidence:** The process wrapper reported ENOBUFS. This is not evidence of a problem in the application being built.",
+    "**Recommended action:** Update the Factory to a version that streams large command output. If it persists, share the sanitized technical evidence with the Factory maintainer before retrying.",
+  ].join("\n\n");
   if (kind==="invalid-context") return [
     "**Summary:** The required specification, decisions, instructions and request chain do not fit within the configured context budget.",
     "**Evidence:** Context assembly stopped before invoking a provider rather than silently dropping protected information.",
@@ -58,7 +73,7 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
     "**Evidence:** Startup recovery found an execution that was still marked running and preserved its stage and worktree.",
     "**Recommended action:** Inspect the preserved changes and daemon logs, then retry the saved stage.",
   ].join("\n\n");
-  if (kind==="integration"&&/(?:pull request create failed|Base ref must be a branch|Head sha can't be blank)/i.test(evidence)) return [
+  if (kind==="integration"&&/(?:Base ref must be a branch|Head sha can't be blank)/i.test(evidence)) return [
     "**Summary:** Delivery could not create the pull request because the configured base branch is unavailable or invalid on GitHub.",
     `**Evidence:** ${reason.replace(/^Error:\s*/,"")}`,
     "**Recommended action:** Run Doctor, create and push the configured base branch or select the repository's real default branch, then retry. Delivery will reuse the successful review.",
@@ -71,7 +86,7 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
   if (kind==="integration"||kind==="configuration") return [
     "**Summary:** A required factory setting or external integration prevented the stage from running safely.",
     "**Evidence:** The orchestrator stopped at its configuration or integration boundary before advancing the workflow.",
-    "**Recommended action:** Run Doctor, repair the named credential or setting, and retry after validation passes.",
+    "**Recommended action:** Inspect the exact operation and error below. Run the relevant connection or configuration check; do not change credentials unless the evidence identifies an access failure. Retry after the reported cause is resolved.",
   ].join("\n\n");
   if(kind==="execution"&&run?.status==="timed_out")return [
     "**Summary:** The agent execution exceeded its configured time limit.",
@@ -162,7 +177,7 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
     "**Recommended action:** Use the stderr evidence below to correct the first concrete command or test failure, then retry the saved stage.",
   ].join("\n\n");
   return [
-    "**Summary:** The workflow rejected the stage result after the agent process returned.",
+    "**Summary:** The operation failed, but the available evidence does not identify its underlying cause.",
     `**Evidence:** ${reason.replace(/\s+/g," ")}`,
     "**Recommended action:** Inspect the evidence below and daemon logs, add clarifying guidance to the retry comment if needed, then retry the saved stage.",
   ].join("\n\n");

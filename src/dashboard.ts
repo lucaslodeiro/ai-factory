@@ -1,3 +1,4 @@
+import {diagnoseWorkItem,diagnoseOperation} from "./failure-diagnostics.js";
 import {workflowActivity} from "./workflow-activity.js";
 import {logEntries} from "./log-entries.js";
 import {workActions,validateWorkControl} from "./workflow-controls.js";
@@ -550,6 +551,14 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         return json(res,200,saveConfiguration(store,settingsRoot,body.values,Array.isArray(body.clearSecrets) ? body.clearSecrets : [],body.maintenanceId,body.startDaemonWhenReady===true));
       }
       if(req.method==="POST"&&url.pathname==="/api/settings/validate") {const body=await readBody(req) as {values?:Record<string,unknown>;clearSecrets?:string[]};if(!body.values||typeof body.values!=="object"||Array.isArray(body.values))return json(res,400,{error:"Settings are required"});const plan=validateDashboardSettings(settingsRoot,expandSetupProvider(body.values),Array.isArray(body.clearSecrets)?body.clearSecrets:[]),daemon=serviceStatus(settingsRoot,"daemon"),active=daemonState(store).running||daemon.running;return json(res,200,{changedKeys:plan.changedKeys,restartServices:plan.restartServices,requiresDaemonRestart:active&&plan.restartServices.includes("daemon")});}
+      if(req.method==="GET"&&/^\/api\/issues\/[^/]+\/diagnosis$/.test(url.pathname)) {
+        try{return json(res,200,diagnoseWorkItem(store,decodeURIComponent(url.pathname.split("/")[3])));}catch(error){return json(res,(error as {statusCode?:number}).statusCode??500,{error:(error as Error).message});}
+      }
+      if(req.method==="POST"&&url.pathname==="/api/diagnosis") {
+        const body=await readBody(req) as {operation?:unknown;message?:unknown};
+        if(typeof body.operation!=="string"||typeof body.message!=="string"||!body.message.trim()||body.message.length>16000||body.operation.length>120)return json(res,400,{error:"A bounded operation name and error message are required"});
+        return json(res,200,diagnoseOperation(body.operation,body.message));
+      }
       if (req.method === "POST" && url.pathname === "/api/control") {
         const body = await readBody(req) as { kind?: string; target?: string };
         if (!["stop","cancel","retry","pause","resume","refresh-list","start-issue"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});

@@ -344,3 +344,5 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .remote-issues-updated{font-size:.75rem;margin-top:.9rem}
 #local-issues-note:not(:empty),#issue-refresh-status:not(:empty){margin-bottom:.8rem}
 @media(max-width:760px){.remote-item{grid-template-columns:1fr}.queue-heading .issue-toolbar{justify-content:flex-start}.controller-details-label{display:inline-block;margin-left:.35rem}}
+
+.diagnosis-dialog{width:min(44rem,calc(100vw - 2rem));max-height:85vh;overflow:auto}.diagnosis-dialog h4{margin:1rem 0 .4rem}.diagnosis-dialog p{line-height:1.55;margin:.5rem 0;overflow-wrap:anywhere}.diagnosis-dialog pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:18rem;overflow:auto;padding:1rem;background:var(--bg);border:1px solid var(--line);border-radius:10px}.diagnosis-dialog .actions{margin-top:1rem}

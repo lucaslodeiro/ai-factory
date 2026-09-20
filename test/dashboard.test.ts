@@ -95,6 +95,11 @@ echo "$*" >> "$PWD/update-actions.log"
   store.event("execution.finished",{status:"succeeded",code:0,usage:{inputTokens:1000,outputTokens:250,cachedTokens:500,totalTokens:1750}},"owner-demo-7","run-12345678");
   const server = await startDashboard(store,"127.0.0.1",0,settingsRoot);
   const port = (server.address() as AddressInfo).port;
+  const diagnostic=await fetch(`http://127.0.0.1:${port}/api/diagnosis`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operation:"Delivery",message:"RPC failed; HTTP 400"})});
+  assert.equal(diagnostic.status,200);assert.match((await diagnostic.json() as any).summary,/transfer/);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/issues/missing/diagnosis`)).status,404);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/issues/owner-demo-7/diagnosis`)).status,409);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/diagnosis`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operation:"Delivery",message:{command:"push"}})})).status,400);
   const originalFetch = globalThis.fetch;
   let slackPayload: any;
   globalThis.fetch = ((input: URL | RequestInfo, init?: RequestInit) => {
