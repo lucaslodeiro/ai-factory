@@ -2,6 +2,7 @@ import type { AgentResult, AgentRole, Criterion, DeliveryStage } from "./types.j
 import { tacticalRouteError, type TacticalNextRole } from "./tactical-routing.js";
 export const reviewDimensions = ["specification", "code-quality", "security", "performance", "product-ui-copy", "test-quality", "dependencies"];
 type Schema = { type?: string | string[]; enum?: unknown[]; properties?: Record<string, Schema>; required?: string[]; additionalProperties?: boolean; items?: Schema; minLength?: number; maxLength?: number; maxItems?: number; };
+export class InvalidResultError extends Error { readonly failureClass="invalid-result" as const; }
 const text = (maxLength = 5000): Schema => ({ type: "string", minLength: 1, maxLength });
 const enumeration = (...values: string[]): Schema => ({ type: "string", enum: values });
 const list = (items: Schema): Schema => ({ type: "array", items, maxItems: 100 });
@@ -56,7 +57,7 @@ function validate(value: unknown, schema: Schema, location = "result"): void {
 function unique(ids: string[], label: string) {
   if (new Set(ids).size !== ids.length) throw new Error(`Duplicate ${label}`);
 }
-export function parseResult(raw: unknown, role: AgentRole, allowedNextRoles?: TacticalNextRole[], consultationFrom?: DeliveryStage): AgentResult {
+function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: TacticalNextRole[], consultationFrom?: DeliveryStage): AgentResult {
   const serialized = JSON.stringify(raw);
   if (serialized && serialized.length > 80000) throw new Error("Agent result exceeds publication limits");
   // Provider structured-output implementations do not all enforce enum/maxItems
@@ -97,9 +98,14 @@ export function parseResult(raw: unknown, role: AgentRole, allowedNextRoles?: Ta
   }
   return r;
 }
+export function parseResult(raw: unknown,role:AgentRole,allowedNextRoles?:TacticalNextRole[],consultationFrom?:DeliveryStage):AgentResult {
+ try{return parseResultUnchecked(raw,role,allowedNextRoles,consultationFrom);}catch(error){if(error instanceof InvalidResultError)throw error;throw new InvalidResultError(error instanceof Error?error.message:String(error));}
+}
 export function validateCoverage(r: AgentResult, criteria: Criterion[]) {
-  if (!criteria.length) throw new Error("Approved specification lacks structured acceptance criteria; regenerate it");
-  const ids = new Set(criteria.map(c => c.id));
-  if (r.coverage.some(c => !ids.has(c.criterionId))) throw new Error("Report references an unknown acceptance criterion");
-  if (r.outcome === "pass" && (r.coverage.length !== ids.size || r.coverage.some(c => c.status !== "passed"))) throw new Error("PASS must cover every approved acceptance criterion with evidence");
+  try {
+   if (!criteria.length) throw new Error("Approved specification lacks structured acceptance criteria; regenerate it");
+   const ids = new Set(criteria.map(c => c.id));
+   if (r.coverage.some(c => !ids.has(c.criterionId))) throw new Error("Report references an unknown acceptance criterion");
+   if (r.outcome === "pass" && (r.coverage.length !== ids.size || r.coverage.some(c => c.status !== "passed"))) throw new Error("PASS must cover every approved acceptance criterion with evidence");
+  } catch(error){if(error instanceof InvalidResultError)throw error;throw new InvalidResultError(error instanceof Error?error.message:String(error));}
 }

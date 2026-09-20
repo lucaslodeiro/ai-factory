@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseResult, validateCoverage, resultSchemaFor } from "../src/results.js";
+import { InvalidResultError,parseResult, validateCoverage, resultSchemaFor } from "../src/results.js";
 import { result } from "./fixtures.js";
 test("reports require evidence fields, tests, dependency rationale and review dimensions", () => {
  const missing = result("pass") as any; delete missing.dependencies;
@@ -63,4 +63,9 @@ test("delivery reports discard provider attempts to populate architect-owned fie
 test("Architect results accept optional tactical supersession ids",()=>{
  const parsed=parseResult(result("resolved",{nextRole:"qa",decisions:[{kind:"tactical",decision:"Use cache v2",rationale:"Replaces the earlier tactic",conflictsWithHuman:false,supersedes:["decision-1"]}]}),"product-architect",["qa"],"TEST");
  assert.deepEqual(parsed.decisions[0].supersedes,["decision-1"]);
+});
+
+test("result contract failures use a typed error",()=>{
+ assert.throws(()=>parseResult({},"developer"),error=>error instanceof InvalidResultError&&error.failureClass==="invalid-result");
+ assert.throws(()=>validateCoverage(result("pass"),[]),error=>error instanceof InvalidResultError);
 });

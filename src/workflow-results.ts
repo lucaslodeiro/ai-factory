@@ -1,5 +1,5 @@
 import { config } from "./config.js";
-import { validateCoverage } from "./results.js";
+import { InvalidResultError,validateCoverage } from "./results.js";
 import type { Store } from "./storage.js";
 import type { AgentResult,AgentRole } from "./types.js";
 import { WorkflowProjections } from "./workflow-projection.js";
@@ -19,7 +19,7 @@ export class WorkflowResults {
   const specVersion=this.specVersion(input.workItemId),ids:string[]=[];
   if(input.role==="product-architect")return this.architect(input,current.revision,specVersion,ids);
   const spec=this.store.db.prepare("SELECT criteria,approved_by FROM specs WHERE work_item_id=? AND version=?").get(input.workItemId,specVersion) as {criteria:string;approved_by:string|null}|undefined;
-  if(!spec?.approved_by)throw new Error("Delivery result requires an approved current specification");
+  if(!spec?.approved_by)throw new InvalidResultError("Delivery result requires an approved current specification");
   validateCoverage(input.result,JSON.parse(spec.criteria));
   return this.delivery(input,current.revision,specVersion,ids);
  }
@@ -39,8 +39,8 @@ export class WorkflowResults {
     ids.push(this.records.create({workItemId:input.workItemId,specVersion:next,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
    });return {discarded:false,projection,recordIds:ids};
   }
-  if(result.outcome!=="resolved"||!active||active.payload.kind!=="request"||active.payload.type!=="tactical-decision"||active.payload.owner!=="architect")throw new Error("Architect resolution requires an active tactical request");
-  const requestPayload=active.payload,target=result.nextRole?nextRoleStage[result.nextRole]:undefined;if(!target||!requestPayload.allowedReturnStages.includes(target))throw new Error(`Tactical result cannot return to ${target??"an unknown stage"}`);
+  if(result.outcome!=="resolved"||!active||active.payload.kind!=="request"||active.payload.type!=="tactical-decision"||active.payload.owner!=="architect")throw new InvalidResultError("Architect resolution requires an active tactical request");
+  const requestPayload=active.payload,target=result.nextRole?nextRoleStage[result.nextRole]:undefined;if(!target||!requestPayload.allowedReturnStages.includes(target))throw new InvalidResultError(`Tactical result cannot return to ${target??"an unknown stage"}`);
   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status:"QUEUED",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"tactical-resolved",summary:`Architect resolved the decision for ${target}`},recordIds:ids},()=>{
    this.resultEvent(input);
    for(const decision of result.decisions)ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"decision",category:"tactical",decision:decision.decision,rationale:decision.rationale,supersedes:decision.supersedes??[]},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
@@ -60,12 +60,12 @@ export class WorkflowResults {
    const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:limited?stage:"BUILD",status:limited?"WAITING":"QUEUED",actor:{type:"agent",id:input.role},source:{executionId:input.executionId},reason:{code:limited?"correction-limit":"changes",summary:limited?"Automatic correction limit reached":"Changes requested from Builder"},recordIds:ids,correctionCycles:cycles},()=>{this.resultEvent(input);createFindings();if(limited){const findingIds=ids.slice();ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"correction-limit",owner:"human",originatingStage:stage,allowedReturnStages:this.returnStages(stage),openedAfterCommentId:this.cursor(input.workItemId),findingIds},sourceType:"agent-result",sourceId:input.executionId,actor:input.role}).id);}});
    return {discarded:false,projection,recordIds:ids};
   }
-  if(result.outcome!=="pass")throw new Error(`Unsupported ${input.role} outcome ${result.outcome}`);
+  if(result.outcome!=="pass")throw new InvalidResultError(`Unsupported ${input.role} outcome ${result.outcome}`);
   const target=input.role==="developer"?"TEST":input.role==="qa"?"REVIEW":"DELIVERY",status=input.role==="reviewer"?"WAITING":"QUEUED";
   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status,actor:{type:"agent",id:input.role},source:{executionId:input.executionId},reason:{code:"pass",summary:`${input.role} passed`},recordIds:ids},()=>{
    this.resultEvent(input);
    createFindings();this.settlePass(input.workItemId,input.role,input.executionId);
-   if(input.role==="reviewer"){if(!input.pullRequestUrl)throw new Error("Reviewer pass requires a published pull request");this.updateContext(input.workItemId,{pr:input.pullRequestUrl});ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"merge",owner:"human",originatingStage:"DELIVERY",allowedReturnStages:["DELIVERY"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"orchestrator",sourceId:input.executionId,actor:"orchestrator"}).id);}
+   if(input.role==="reviewer"){if(!input.pullRequestUrl)throw new InvalidResultError("Reviewer pass requires a published pull request");this.updateContext(input.workItemId,{pr:input.pullRequestUrl});ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"merge",owner:"human",originatingStage:"DELIVERY",allowedReturnStages:["DELIVERY"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"orchestrator",sourceId:input.executionId,actor:"orchestrator"}).id);}
   });return {discarded:false,projection,recordIds:ids};
  }
  private settlePass(workItemId:string,role:AgentRole,executionId:string) {

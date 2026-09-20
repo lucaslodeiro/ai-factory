@@ -10,6 +10,7 @@ import { config } from "../src/config.js";
 import { result } from "./fixtures.js";
 import type { AgentAdapter,AgentRunRequest } from "../src/adapters/agent.js";
 import type { WorkspacePort } from "../src/worktrees.js";
+import { InvalidResultError } from "../src/results.js";
 
 class Workspace implements WorkspacePort {
  commits:string[]=[];ensure(){return "/tmp/factory-work";}assertBranch(){}head(){return "abc";}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){}
@@ -38,4 +39,10 @@ test("protected context overflow fails before invoking a provider",async()=>{
   const runner=new WorkflowRunner(store,{"product-architect":{async run(){invoked=true;return result("spec");}}},workspace,{ensurePR(){throw new Error("unused");}});
   assert.equal(await runner.run(started.id),true);assert.equal(invoked,false);assert.equal(new WorkflowProjections(store).get(started.id).status,"FAILED");assert.equal(new WorkflowFailures(store).active(started.id)?.class,"invalid-context");
  } finally {config.contextBudget.defaultBytes=previous;store.db.close();}
+});
+
+test("runner classifies failures by typed result errors rather than message text",async()=>{
+ const run=async(error:Error)=>{const store=new Store(":memory:"),started=new WorkflowIntake(store).start({number:1,title:"Runner",body:"Build it",url:"https://github.com/owner/demo/issues/1",state:"OPEN"},{actor:"dashboard",source:"control"});try{const runner=new WorkflowRunner(store,{"product-architect":{async run(){throw error;}}},new Workspace(),{ensurePR(){throw new Error("unused");}});await runner.run(started.id);return new WorkflowFailures(store).active(started.id)?.class;}finally{store.db.close();}};
+ assert.equal(await run(new Error("provider result channel disconnected")),"execution");
+ assert.equal(await run(new InvalidResultError("invalid structured output")),"invalid-result");
 });

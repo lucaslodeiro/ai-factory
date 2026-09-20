@@ -10,6 +10,7 @@ import { WorkflowScheduler } from "./workflow-scheduler.js";
 import { WorkflowResults } from "./workflow-results.js";
 import { WorkflowRecords } from "./workflow-records.js";
 import type { TacticalNextRole } from "./tactical-routing.js";
+import { InvalidResultError } from "./results.js";
 
 export interface DeliveryPort {ensurePR(branch:string,title:string,body:string):string;}
 
@@ -45,7 +46,7 @@ export class WorkflowRunner {
    let pullRequestUrl:string|undefined;
    if(role==="reviewer"&&result.outcome==="pass"){this.workspaces.publish(cwd,row.branch);pullRequestUrl=this.delivery.ensurePR(row.branch,`#${row.issue_number}: ${context.title??"Factory delivery"}`,this.prBody(workItemId,row.issue_number,result));}
    this.results.apply({workItemId,executionId:started.executionId,role,result,pullRequestUrl});return true;
-  } catch(error){this.scheduler.fail(workItemId,started.executionId,error,error instanceof InvalidContextError?"invalid-context":/result|coverage|SPEC/i.test(String(error))?"invalid-result":"execution");return true;}
+  } catch(error){this.scheduler.fail(workItemId,started.executionId,error,error instanceof InvalidContextError?"invalid-context":error instanceof InvalidResultError?"invalid-result":"execution");return true;}
   finally{if(reviewerContext)this.workspaces.cleanupReviewerContext(cwd,workItemId);}
  }
  private specVersion(workItemId:string){return (this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;}
