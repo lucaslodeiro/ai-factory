@@ -13,6 +13,11 @@ export class WorkflowCommands {
  apply(command:FactoryCommand,context:CommandContext) {
   if(command.kind==="start")throw new Error("Start is handled before a work item exists");
   const current=this.projections.get(context.workItemId),source={commentId:context.commentId},actor={type:"human" as const,id:context.login};
+  if(command.kind==="help") {
+   const result=this.projections.present({workItemId:context.workItemId,expectedRevision:current.revision,actor,source,reason:{code:"help",summary:"Command reference requested"}});
+   this.store.event("command.help",{commentId:context.commentId,login:context.login},context.workItemId);
+   return {projection:result,recordIds:[]};
+  }
   if(command.kind==="note"||command.kind==="replace") {
    this.requireMutable(current.status,command.kind);
    const ids:string[]=[];

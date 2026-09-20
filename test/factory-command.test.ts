@@ -4,6 +4,7 @@ import { parseFactoryCommand } from "../src/factory-command.js";
 
 test("parses lifecycle commands strictly",()=>{
  assert.deepEqual(parseFactoryCommand("/factory start"),{kind:"start",guidance:""});
+ assert.deepEqual(parseFactoryCommand("/factory help\nThanks"),{kind:"help"});
  assert.deepEqual(parseFactoryCommand("/factory approve v12"),{kind:"approve",version:12,guidance:""});
  assert.deepEqual(parseFactoryCommand("/factory cancel"),{kind:"cancel",reason:""});
  assert.deepEqual(parseFactoryCommand("/factory pause"),{kind:"pause",reason:""});

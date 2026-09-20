@@ -41,6 +41,13 @@ Implementation details and commit hashes are recorded below as each item lands.
 - Files: `src/factory-command.ts`, `src/workflow-inbox.ts`, `src/workflow-orchestrator.ts`, `src/workflow-commands.ts`, `src/workflow-status.ts`, `src/daemon.ts`, affected typed tests, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
 - Change: start guidance is stored before Design begins; approval guidance becomes a spec instruction; retry shares note's scope/role selectors; pause and cancel text is transition evidence only. Retry CTAs explain guidance lifetime and visibility.
 - Tests: `start guidance exists before the first Architect execution`; `approval guidance becomes a spec-scoped instruction`; `retry guidance accepts role and issue scopes`; `pause and cancel reasons are transition evidence rather than guidance records`; parser assertions cover every new form.
+- Commit: `0fdabfd`.
+
+### C5 — command help and documentation
+
+- Files: `src/factory-help.ts`, `src/factory-command.ts`, `src/workflow-commands.ts`, `src/workflow-github.ts`, `src/workflow-orchestrator.ts`, `src/workflow-status.ts`, `test/factory-command.test.ts`, `test/workflow-github.test.ts`, `README.md`, `docs/GITHUB_SETUP.md`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
+- Change: `/factory help` is approver-only and state-neutral, publishes one idempotent immutable reference per work item, and shares its complete command list with the status comment's collapsed **All commands** block. User documentation now describes the full grammar and semantics.
+- Test: `help publishes one immutable reference and status keeps the same collapsed list` verifies first and repeated help, shared content and exactly one Next action.
 - Commit: recorded after commit creation.
 
 ## Removed or changed behavior
@@ -58,6 +65,7 @@ To be completed after implementation.
 - After C2: `npm test` — 116 tests, 116 passed, 0 failed.
 - After C3: focused parser tests — 3 passed; `npm test` — 116 tests, 116 passed, 0 failed.
 - After C4: focused command/parser/inbox tests — 27 passed; `npm test` — 120 tests, 120 passed, 0 failed.
+- After C5: focused parser/publisher/status tests — 11 passed; `npm test` — 121 tests, 121 passed, 0 failed.
 
 ## Documentation
 

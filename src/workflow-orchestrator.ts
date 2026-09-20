@@ -44,7 +44,7 @@ export class WorkflowOrchestrator {
   }
  }
  async flush(){
-  try{this.publisher.publishResults();this.publisher.publishChanged();}catch(error){this.store.event("github.projection_failed",{error:String(error)});}
+  try{this.publisher.publishHelp();this.publisher.publishResults();this.publisher.publishChanged();}catch(error){this.store.event("github.projection_failed",{error:String(error)});}
   await deliverNotifications(this.store,this.notifications);
  }
  private discoverStartCommands(){

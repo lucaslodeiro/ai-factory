@@ -74,9 +74,22 @@ If a failed attempt leaves a destination that is not a valid factory checkout, t
 
 The factory engine and target application are separate repositories. `GITHUB_REPOSITORY` selects where issues are read and PRs are created; `FACTORY_REPO_DIR` selects the local clone used for worktrees. Start an open issue from the dashboard, with `factory start-issue <number-or-url>`, or by posting a standalone `/factory start` comment from an authorized approver. The daemon creates and manages workflow labels automatically after ingestion.
 
-Start an issue with `/factory start`. Answer `/factory answer <text>` and approve the posted version with `/factory approve vN`. If an item is failed, paused or cancelled, an authorized approver can resume it by posting `/factory retry` on the same issue. The command may be the whole comment or the first/last line of a multiline comment; surrounding text is preserved as guidance for the next agent. Every factory comment ends with a consistent **Next action** section: commands appear in copyable code blocks, alternative actions are shown separately, and automatic stages explicitly say that no human action is required. The daemon runs independent role processes, routes findings, and creates a pull request after passing Test and Review. Human merge remains required.
+Commands must be the first non-empty line of a new comment from an authorized approver. Text may continue on following lines; quoted commands and commands after prose are ignored.
 
-FAILED issues receive a readable troubleshooting comment containing the stage, matching execution metadata, sanitized failure reason, a human-readable diagnosis with evidence and a recommended action, a bounded `stderr` tail when available, and exact retry instructions. Full logs stay local in the dashboard. Guidance written above or below `/factory retry` is echoed in the acceptance comment and becomes an explicit human instruction for every remaining agent in that delivery; it takes priority over conflicting suggestions from earlier agent reports.
+- `/factory start [guidance]` starts an open issue.
+- `/factory help` publishes the complete command reference once.
+- `/factory approve vN [guidance]` approves the posted SPEC version.
+- `/factory answer <text>` answers a question or requests PR changes.
+- `/factory retry [--issue] [--for <roles>] [guidance]` resumes failed, paused or cancelled work.
+- `/factory note [--issue] [--for <roles>] <text>` adds guidance without changing state.
+- `/factory replace <guidance-id> [--issue] [--for <roles>] <text>` replaces guidance.
+- `/factory revoke <guidance-id>` revokes guidance.
+- `/factory pause [reason]` pauses active work.
+- `/factory cancel [reason]` cancels work.
+
+Roles accepted by `--for` are `architect`, `builder`, `tester` and `reviewer`. Every factory comment ends with a consistent **Next action** section: commands appear in copyable code blocks, alternative actions are shown separately, and automatic stages explicitly say that no human action is required. The daemon runs independent role processes, routes findings, and creates a pull request after passing Test and Review. Human merge remains required.
+
+FAILED issues receive a readable troubleshooting comment containing the stage, matching execution metadata, sanitized failure reason, a human-readable diagnosis with evidence and a recommended action, a bounded `stderr` tail when available, and exact retry instructions. Full logs stay local in the dashboard. Guidance written on the `/factory retry` line or below it becomes an explicit human instruction for applicable agents; it takes priority over conflicting suggestions from earlier agent reports.
 
 Configuration is managed from the dashboard. The installer creates separate macOS services for the orchestrator and local dashboard. Control them with `npm run service -- <start|stop|restart|status|logs> <daemon|dashboard|all>`. The dashboard defaults to [http://127.0.0.1:4173](http://127.0.0.1:4173), supports persistent light/dark themes, and updates issue stage/status badges, metrics, executions and events over a near-real-time local stream. Recent executions show role, provider/model, duration, provider-reported tokens and interruption reason; exact prompts require an explicit sensitive-content acknowledgement. **Time and tokens by issue** aggregates retries and offers a responsive per-stage breakdown. **Daemon logs** tails bounded output and supports copy.
 

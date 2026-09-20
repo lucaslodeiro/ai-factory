@@ -3,6 +3,7 @@ import type { WorkflowGitHubPort } from "./adapters/github.js";
 import { workflowStatusMarkdown,workflowLabels } from "./workflow-status.js";
 import type { AgentResult,AgentRole } from "./types.js";
 import { roleFullName,roleShortName } from "./names.js";
+import { factoryHelpMarkdown } from "./factory-help.js";
 
 function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:number) {
  const heading=role==="product-architect"?`Specification v${specVersion}`:`${roleFullName(role)} report`;
@@ -34,6 +35,11 @@ export class WorkflowGitHubPublisher {
   return true;
  }
  publishChanged() {let count=0;for(const row of this.store.db.prepare("SELECT id FROM work_items WHERE archived_at IS NULL AND presentation_revision>COALESCE(published_presentation_revision,-1)").all() as Array<{id:string}>)if(this.publish(row.id))count++;return count;}
+ publishHelp() {
+  let count=0;const rows=this.store.db.prepare("SELECT DISTINCT e.work_item_id,w.issue_number,w.archived_at FROM events e JOIN work_items w ON w.id=e.work_item_id WHERE e.type='command.help' ORDER BY e.id").all() as Array<{work_item_id:string;issue_number:number;archived_at:string|null}>;
+  for(const row of rows){const key=`github:help:${row.work_item_id}`;if(row.archived_at||this.store.metadata<boolean>(key))continue;this.github.publishWorkflowComment(row.issue_number,"help",factoryHelpMarkdown());this.store.setMetadata(key,true);count++;}
+  return count;
+ }
  publishResults() {
   let count=0;
   const rows=this.store.db.prepare("SELECT e.id,e.work_item_id,e.run_id,e.payload,w.issue_number,w.archived_at FROM events e JOIN work_items w ON w.id=e.work_item_id WHERE e.type='agent.result' ORDER BY e.id").all() as Array<{id:number;work_item_id:string;run_id:string;payload:string;issue_number:number;archived_at:string|null}>;

@@ -5,6 +5,7 @@ import { WorkflowRecords } from "./workflow-records.js";
 import { sanitizeFailureEvidence,workflowFailureEvidence } from "./failure-report.js";
 import { roleShortName } from "./names.js";
 import type { LastCommandOutcome } from "./workflow-inbox.js";
+import { factoryCommandReference } from "./factory-help.js";
 
 const stages={DESIGN:"Design",BUILD:"Build",TEST:"Test",REVIEW:"Review",DELIVERY:"Delivery"} as const;
 const stageActors={DESIGN:"Architect",BUILD:"Builder",TEST:"Tester",REVIEW:"Reviewer",DELIVERY:"None"} as const;
@@ -57,5 +58,6 @@ export function workflowStatusMarkdown(store:Store,workItemId:string) {
  const failureDetails=failure?`\n\n${workflowFailureEvidence(store,failure)}`:"";
  const latest=store.db.prepare("SELECT payload,run_id FROM events WHERE work_item_id=? AND type='agent.result' AND json_extract(payload,'$.role')!='product-architect' ORDER BY id DESC LIMIT 1").get(workItemId) as {payload:string;run_id:string}|undefined;
  let latestSummary="";if(latest)try{const payload=JSON.parse(latest.payload) as {role:"developer"|"qa"|"reviewer";result:{summary:string}},summary=clipSummary(payload.result.summary);latestSummary=`\n\n### Latest delivery summary\n\n**${roleShortName(payload.role)}:** ${summary.text}${summary.clipped?`\n\nSummary clipped. Open execution \`${latest.run_id}\` in the dashboard for the full result.`:""}`;}catch{}
- return `# ${context.title??`Issue #${item.issue_number}`}\n\n| Detail | Value |\n| --- | --- |\n${rows.map(([name,value])=>`| ${name} | ${String(value).replaceAll("|","\\|")} |`).join("\n")}${guidance}${latestSummary}${failureDetails}${history}\n\n${nextAction(store,workItemId)}`;
+ const help=`\n\n<details><summary>All commands</summary>\n\n${factoryCommandReference}\n\n</details>`;
+ return `# ${context.title??`Issue #${item.issue_number}`}\n\n| Detail | Value |\n| --- | --- |\n${rows.map(([name,value])=>`| ${name} | ${String(value).replaceAll("|","\\|")} |`).join("\n")}${guidance}${latestSummary}${failureDetails}${history}\n\n${nextAction(store,workItemId)}${help}`;
 }

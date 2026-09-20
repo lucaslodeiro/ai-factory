@@ -8,6 +8,7 @@ import { WorkflowRecords } from "../src/workflow-records.js";
 import { workflowLabels,workflowStatusMarkdown } from "../src/workflow-status.js";
 import { WorkflowFailures } from "../src/workflow-failures.js";
 import { result } from "./fixtures.js";
+import { WorkflowInbox } from "../src/workflow-inbox.js";
 
 const stagesForTest={DESIGN:"Design",BUILD:"Build",TEST:"Test",REVIEW:"Review",DELIVERY:"Delivery"} as const;
 const statusesForTest={QUEUED:"Queued",RUNNING:"Running",WAITING:"Waiting for you",FAILED:"Failed",PAUSED:"Paused",CANCELLED:"Cancelled",COMPLETED:"Completed"} as const;
@@ -40,7 +41,7 @@ test("Architect-owned requests never render a human command",()=>{
   s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"request",type:"tactical-decision",owner:"architect",originatingStage:"TEST",allowedReturnStages:["BUILD","TEST"],openedAfterCommentId:20},sourceType:"agent-result",sourceId:"run",actor:"qa"});
   s.projections.initialize("work-1","DESIGN","QUEUED");
   const body=workflowStatusMarkdown(s.store,"work-1");
-  assert.match(body,/Architect is next/);assert.doesNotMatch(body,/\/factory answer|\/factory retry/);
+  const action=body.split("<details><summary>All commands</summary>")[0];assert.match(action,/Architect is next/);assert.doesNotMatch(action,/\/factory answer|\/factory retry/);
  } finally {s.store.db.close();}
 });
 
@@ -129,5 +130,19 @@ test("status clips a verbose delivery summary and preserves one authoritative ne
   assert.ok(section.length<=1600,`summary section was ${section.length} characters`);
   assert.match(section,/…/);assert.match(section,/execution `run-verbose` in the dashboard/);
   assert.equal(body.match(/^## Next action$/gm)?.length,1);
+ } finally {s.store.db.close();}
+});
+
+test("help publishes one immutable reference and status keeps the same collapsed list",()=>{
+ const s=setup(),comments=[{id:11,body:"/factory help",user:{login:"owner",type:"User"}}];
+ try {
+  s.projections.initialize("work-1","BUILD","QUEUED");
+  const inbox=new WorkflowInbox(s.store,{comments:()=>comments},["owner"]);assert.equal(inbox.poll("work-1").applied,1);
+  const published:Array<{key:string;body:string}>=[];
+  const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){},publishWorkflowComment(_issue,key,body){published.push({key,body});}});
+  assert.equal(publisher.publishHelp(),1);assert.equal(published[0].key,"help");assert.match(published[0].body,/\/factory replace/);
+  comments.push({id:12,body:"/factory help",user:{login:"owner",type:"User"}});assert.equal(inbox.poll("work-1").applied,1);
+  assert.equal(publisher.publishHelp(),0);assert.equal(published.length,1);
+  const status=workflowStatusMarkdown(s.store,"work-1");assert.match(status,/<details><summary>All commands<\/summary>/);assert.match(status,/\/factory cancel/);assert.equal(status.match(/^## Next action$/gm)?.length,1);
  } finally {s.store.db.close();}
 });

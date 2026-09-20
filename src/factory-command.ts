@@ -3,6 +3,7 @@ import type { RecordScope } from "./workflow-records.js";
 
 export type FactoryCommand=
  | {kind:"start";guidance:string}
+ | {kind:"help"}
  | {kind:"approve";version:number;guidance:string}
  | {kind:"answer";text:string}
  | {kind:"retry";guidance:string;scope:RecordScope;appliesTo:AgentRole[]}
@@ -35,6 +36,7 @@ export function parseFactoryCommand(body:string):FactoryCommand|null {
  const trimmed=body.trim();if (!trimmed) return null;
  const lines=trimmed.split(/\r?\n/),first=lines[0].trim(),continuation=lines.slice(1).join("\n").trim();
  if (!first.startsWith("/factory ")) return null;
+ if (first==="/factory help") return {kind:"help"};
  const answer=first.match(/^\/factory answer(?:\s+(.*))?$/);
  if (answer) {const text=[answer[1]??"",continuation].filter(Boolean).join("\n").trim();if(!text)throw new Error("/factory answer requires guidance");return {kind:"answer",text};}
  const retry=first.match(/^\/factory retry(?:\s+(.*))?$/);
