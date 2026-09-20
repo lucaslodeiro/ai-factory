@@ -7,7 +7,11 @@ while [[ -L $script ]]; do
   target=$(readlink "$script")
   [[ $target == /* ]] && script=$target || script=$directory/$target
 done
-root=$(CDPATH= cd -- "$(dirname -- "$script")/.." && pwd)
+launcher_root=$(CDPATH= cd -- "$(dirname -- "$script")/.." && pwd)
+if [[ ${launcher_root##*/} == engine ]]; then home=${AI_FACTORY_HOME:-${launcher_root%/engine}}; root=$launcher_root
+else home=${AI_FACTORY_HOME:-$launcher_root}; root=$home/engine; [[ -d $root ]] || root=$launcher_root
+fi
+export AI_FACTORY_HOME="$home"
 command=${1:-help}
 [[ $# == 0 ]] || shift
 

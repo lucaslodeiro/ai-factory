@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import net from "node:net";
 import { parse } from "dotenv";
+import { environmentFile } from "./paths.mjs";
 
-const file = ".env";
+const file = environmentFile;
 const original = fs.readFileSync(file,"utf8");
 const values = parse(original);
 const requestedHost = process.argv[2] || values.FACTORY_DASHBOARD_HOST || "127.0.0.1";

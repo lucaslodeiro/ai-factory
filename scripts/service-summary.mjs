@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-const url = execFileSync(process.execPath,["scripts/dashboard-url.mjs"],{encoding:"utf8"});
+import { engine } from "./paths.mjs";
+const url = execFileSync(process.execPath,[`${engine}/scripts/dashboard-url.mjs`],{encoding:"utf8"});
 
 console.log(`
 AI Factory service commands

@@ -17,9 +17,9 @@ cloned_destination=false
 report_install_failure() {
   status=$?
   if "$cloned_destination"; then
-    backup_destination="${dest}.incomplete-$(date +%Y%m%d-%H%M%S)"
+    backup_destination="${dest}/engine.incomplete-$(date +%Y%m%d-%H%M%S)"
     printf 'Installation failed while %s. The incomplete directory was preserved.\n' "$install_step" >&2
-    printf 'Retry with:\n  cd %q\n  mv %q %q\n  bash /tmp/ai-factory-install-macos.sh --dir %q --branch %q --repo %q\n' "$HOME" "$dest" "$backup_destination" "$dest" "$branch" "$repo" >&2
+    printf 'Retry with:\n  cd %q\n  mv %q %q\n  bash /tmp/ai-factory-install-macos.sh --dir %q --branch %q --repo %q\n' "$dest" "$dest/engine" "$backup_destination" "$dest" "$branch" "$repo" >&2
   fi
   return "$status"
 }
@@ -36,16 +36,26 @@ while (($#)); do
 done
 [[ -z $dashboard_host || $dashboard_host == 127.0.0.1 || $dashboard_host == localhost || $dashboard_host == ::1 ]] || { echo 'Dashboard host must be 127.0.0.1, localhost or ::1.' >&2; exit 1; }
 [[ -z $dashboard_port || ( $dashboard_port =~ ^[0-9]+$ && $dashboard_port -ge 1 && $dashboard_port -le 65535 ) ]] || { echo 'Dashboard port must be from 1 to 65535.' >&2; exit 1; }
-[[ ! -e "$dest" ]] || { if [[ -f "$dest/.factory/install.json" ]]; then echo "Destination is already installed: $dest" >&2; else echo "An incomplete or unrelated destination already exists: $dest" >&2; fi; exit 1; }
+engine="$dest/engine"
+marker="$dest/data/install.json"
+if [[ -d $engine && -f $marker ]]; then echo "Destination is already installed: $dest" >&2; exit 1; fi
+if [[ -e $engine ]]; then echo "An incomplete engine already exists: $engine" >&2; exit 1; fi
+if [[ -e $dest ]]; then
+  while IFS= read -r entry; do
+    name=${entry##*/}; [[ $name == .env || $name == .env.backup-* || $name == repos ]] || { echo "An unrelated destination entry already exists: $entry" >&2; exit 1; }
+  done < <(find "$dest" -mindepth 1 -maxdepth 1 -print)
+fi
+mkdir -p "$dest"
+export AI_FACTORY_HOME="$dest"
 export PATH="$HOME/.local/bin:$PATH"
 node_ok() { command -v node >/dev/null && node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)'; }
 node_ok || { echo 'Node 22+ is required.' >&2; exit 1; }
 npm --version >/dev/null
 git --version >/dev/null
 install_step="cloning the factory repository"
-GIT_TERMINAL_PROMPT=0 git clone --branch "$branch" -- "$repo" "$dest"
+GIT_TERMINAL_PROMPT=0 git clone --branch "$branch" -- "$repo" "$engine"
 cloned_destination=true
-cd "$dest"
+cd "$engine"
 install_step="installing npm dependencies"
 CI=1 npm ci --no-audit --no-fund
 install_step="building the factory"
@@ -58,10 +68,10 @@ if [[ -e $launcher && ! -L $launcher ]]; then
   echo "Cannot install launcher over existing file: $launcher" >&2
   exit 1
 fi
-ln -sfn "$dest/scripts/ai-factory" "$launcher"
+ln -sfn "$engine/scripts/ai-factory" "$launcher"
 umask 077
 install_step="creating the initial configuration"
-cp .env.example .env
+if [[ ! -f "$dest/.env" ]]; then cp .env.example "$dest/.env"; fi
 dashboard_url=$(node scripts/prepare-dashboard-config.mjs "$dashboard_host" "$dashboard_port")
 dashboard_ready=false
 if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
@@ -73,17 +83,23 @@ if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
     sleep 0.25
   done
   if [[ $(uname -s) == Darwin && ${AI_FACTORY_NO_OPEN:-0} != 1 ]]; then
-    open "$dashboard_url/?setup=1" || printf 'Open this URL to finish setup: %s/?setup=1\n' "$dashboard_url"
+    setup_suffix='?setup=1'
+    if node -e 'fetch(process.argv[1]+"/api/settings").then(r=>r.json()).then(v=>process.exit(v.readiness?.ready?0:1)).catch(()=>process.exit(1))' "$dashboard_url"; then
+      setup_suffix=''
+      AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start daemon
+    fi
+    open "$dashboard_url/$setup_suffix" || printf 'Open this URL to finish setup: %s/%s\n' "$dashboard_url" "$setup_suffix"
   fi
 fi
 
 printf '\n============================================================\n'
 printf 'AI Factory installation completed successfully\n'
 printf '============================================================\n'
-printf 'Engine:        %s\n' "$PWD"
+printf 'Home:          %s\n' "$dest"
+printf 'Engine:        %s\n' "$engine"
 printf 'Configuration: continue in the dashboard\n'
 printf 'Daemon:        starts automatically after valid first-time setup\n'
-if "$dashboard_ready"; then printf 'Dashboard:     running at %s\n' "$dashboard_url"; else printf 'Dashboard:     started; health check pending at %s (see .factory/service-logs/dashboard.error.log)\n' "$dashboard_url"; fi
+if "$dashboard_ready"; then printf 'Dashboard:     running at %s\n' "$dashboard_url"; else printf 'Dashboard:     started; health check pending at %s (see data/service-logs/dashboard.error.log)\n' "$dashboard_url"; fi
 printf 'Services:      daemon and dashboard definitions installed\n'
 printf 'Launcher:      %s\n' "$HOME/.local/bin/ai-factory"
 printf 'Toolchain:     %s (no Homebrew)\n' "$HOME/.local"
@@ -104,5 +120,5 @@ Until setup is valid, only the local dashboard runs and no agent can start.
 NEXT
 if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then node scripts/service-summary.mjs; fi
 install_step="writing the installation marker"
-mkdir -p .factory
-node -e 'const fs=require("fs"),cp=require("child_process"),manifest=require("./package.json");const run=args=>cp.execFileSync("git",args,{encoding:"utf8"}).trim();const marker={version:manifest.version,branch:run(["symbolic-ref","--quiet","--short","HEAD"]),revision:run(["rev-parse","HEAD"]),installedAt:new Date().toISOString()};fs.writeFileSync(".factory/install.json",JSON.stringify(marker,null,2)+"\n",{mode:0o600});'
+mkdir -p "$dest/data"
+node -e 'const fs=require("fs"),cp=require("child_process"),manifest=require("./package.json");const run=args=>cp.execFileSync("git",args,{encoding:"utf8"}).trim();const marker={version:manifest.version,branch:run(["symbolic-ref","--quiet","--short","HEAD"]),revision:run(["rev-parse","HEAD"]),installedAt:new Date().toISOString()};fs.writeFileSync(process.env.AI_FACTORY_HOME+"/data/install.json",JSON.stringify(marker,null,2)+"\n",{mode:0o600});'

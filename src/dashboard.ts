@@ -9,6 +9,7 @@ import Database from "better-sqlite3";
 import { config } from "./config.js";
 import { Store } from "./storage.js";
 import { readDashboardSetting, readDashboardSettings, saveDashboardSettings, validateDashboardSettings } from "./dashboard-settings.js";
+import { factoryHome } from "./home.js";
 import { connectCredential, credentialStatuses, type CredentialProvider } from "./dashboard-credentials.js";
 import { SlackAdapter } from "./adapters/slack.js";
 import { publicNaming, roleShortName, stateName } from "./names.js";
@@ -190,14 +191,14 @@ function tailLog(file: string, lines: number) {
 function daemonLogs(root: string, requestedLines: string | null) {
   const parsed=Number.parseInt(requestedLines ?? "200",10);
   const lines=Number.isFinite(parsed) ? Math.min(1000,Math.max(50,parsed)) : 200;
-  const directory=path.join(root,".factory","service-logs");
+  const directory=path.join(factoryHome(root),"data","service-logs");
   const files: Array<{source:LogSource;filename:string}> = [
     {source:"output",filename:"daemon.log"},
     {source:"errors",filename:"daemon.error.log"},
   ];
   return {
     generatedAt:new Date().toISOString(),lines,
-    logs:files.map(({source,filename})=>({source,path:`.factory/service-logs/${filename}`,...tailLog(path.join(directory,filename),lines)})),
+    logs:files.map(({source,filename})=>({source,path:`data/service-logs/${filename}`,...tailLog(path.join(directory,filename),lines)})),
   };
 }
 function serviceStatus(root: string, service: "daemon" | "dashboard") {
@@ -216,7 +217,7 @@ function waitUntil(check: () => boolean, timeoutMs: number, intervalMs = 100) {
 }
 function configuredDaemonLock(root: string) {
   const configured=readDashboardSetting(root,"FACTORY_DATA_DIR");
-  const directory=path.resolve(root,configured || ".factory"),file=path.join(directory,"factory.db");
+  const directory=path.resolve(factoryHome(root),configured || "data"),file=path.join(directory,"factory.db");
   if (!fs.existsSync(file)) return null;
   try {
     const db=new Database(file,{readonly:true,fileMustExist:true});
@@ -238,14 +239,14 @@ function waitForDaemonStarted(root: string) {
   },75000,200);
 }
 function restoreEnvironment(root: string, original: string | null) {
-  const file=path.join(root,".env"),temporary=`${file}.rollback-${process.pid}`;
+  const file=path.join(factoryHome(root),".env"),temporary=`${file}.rollback-${process.pid}`;
   if (original === null) { fs.rmSync(file,{force:true}); return; }
   fs.writeFileSync(temporary,original,{mode:0o600});
   fs.renameSync(temporary,file);
 }
 type UpdateState = { status: "idle" | "updating" | "completed" | "failed"; phase?: string; pid?: number; startedAt?: string; updatedAt?: string; finishedAt?: string; restoreDaemon?: boolean; restoreDashboard?: boolean;maintenanceId?:string };
 type VersionInfo = { number: string; revision: string; branch: string; display: string };
-const updateStateFile = (root: string) => path.join(root,".factory","update-state.json");
+const updateStateFile = (root: string) => path.join(factoryHome(root),"data","update-state.json");
 function git(root: string, args: string[], timeout = 10000) {
   const result = spawnSync(config.gitCommand,args,{cwd:root,encoding:"utf8",timeout});
   if (result.status !== 0) throw new Error((result.stderr || result.stdout || `git ${args.join(" ")} failed`).trim());
@@ -309,7 +310,7 @@ function runService(root: string, service: "daemon" | "dashboard", action: "star
 function runUpdate(root: string,maintenanceId?:string) {
   const current = updateState(root);
   if (current.status === "updating") throw new Error("A factory update is already running");
-  const logs = path.join(root,".factory","service-logs");
+  const logs = path.join(factoryHome(root),"data","service-logs");
   fs.mkdirSync(logs,{recursive:true});
   const logFile = path.join(logs,"update.log");
   const stateFile = updateStateFile(root);
@@ -352,7 +353,7 @@ function setupReadiness(root: string, credentials: ReturnType<typeof credentialS
   const require = (condition: boolean, requirement: SetupRequirement) => { if (!condition) missing.push(requirement); };
   const repository = readDashboardSetting(root,"GITHUB_REPOSITORY").trim();
   const repoDirValue = readDashboardSetting(root,"FACTORY_REPO_DIR").trim();
-  const repoDir = repoDirValue ? path.resolve(root,repoDirValue) : "";
+  const repoDir = repoDirValue ? path.resolve(factoryHome(root),repoDirValue) : "";
   const approvers = readDashboardSetting(root,"FACTORY_APPROVERS").split(",").map(item => item.trim()).filter(Boolean);
   const gitCommand = readDashboardSetting(root,"GIT_COMMAND").trim() || config.gitCommand;
   const credential = (id: CredentialProvider) => credentials.credentials.find(item => item.id === id);
@@ -416,7 +417,7 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
   const restartDashboard = plan.restartServices.includes("dashboard") && dashboard.running;
   if (plan.restartServices.includes("daemon") && daemonActive && !daemon.loaded) throw new Error("The daemon is running outside the service manager. Stop it, then save again.");
   if(restartDaemon)requireMaintenance(store,maintenanceId,["configuration-apply"]);
-  const environmentFile=path.join(root,".env"),originalEnvironment=fs.existsSync(environmentFile) ? fs.readFileSync(environmentFile,"utf8") : null;
+  const environmentFile=path.join(factoryHome(root),".env"),originalEnvironment=fs.existsSync(environmentFile) ? fs.readFileSync(environmentFile,"utf8") : null;
   let daemonStopped = false,saved = false,initialDaemonStartAttempted=false,initialDaemonStarted=false,initialDaemonStartError:string|undefined;
   try {
     if(maintenanceId)maintenanceCoordinator(store).markStarted(maintenanceId);
@@ -428,7 +429,7 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
     if (restartDaemon) {
       runService(root,"daemon","start");
       if (!waitForDaemonStarted(root)) {
-        const error=tailLog(path.join(root,".factory","service-logs","daemon.error.log"),25).content;
+        const error=tailLog(path.join(factoryHome(root),"data","service-logs","daemon.error.log"),25).content;
         throw new Error(`The daemon did not become ready after restart.${error ? ` Last error: ${error.split(/\r?\n/).at(-1)}` : ""}`);
       }
     }
@@ -440,7 +441,7 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
         if(!waitForDaemonStarted(root))throw new Error("The daemon did not become ready after initial setup");
         initialDaemonStarted=true;
       } catch(error) {
-        const currentError=error instanceof Error?error.message:String(error),logged=tailLog(path.join(root,".factory","service-logs","daemon.error.log"),25).content.split(/\r?\n/).filter(Boolean).at(-1),message=currentError==="The daemon did not become ready after initial setup"&&logged?logged:currentError;
+        const currentError=error instanceof Error?error.message:String(error),logged=tailLog(path.join(factoryHome(root),"data","service-logs","daemon.error.log"),25).content.split(/\r?\n/).filter(Boolean).at(-1),message=currentError==="The daemon did not become ready after initial setup"&&logged?logged:currentError;
         initialDaemonStartError=message.replace(/[.\s]+$/g,"")||"Unknown daemon start failure";
         try{if(serviceStatus(root,"daemon").loaded)runService(root,"daemon","stop");}catch(stopError){initialDaemonStartError+=`; failed to stop the daemon service: ${stopError instanceof Error?stopError.message:String(stopError)}`;}
         if(maintenanceId){store.db.prepare("UPDATE maintenance_operations SET status='failed',finished_at=?,error=? WHERE id=?").run(new Date().toISOString(),initialDaemonStartError,maintenanceId);store.event("maintenance.failed",{maintenanceId,operation:"configuration-apply",error:initialDaemonStartError});}

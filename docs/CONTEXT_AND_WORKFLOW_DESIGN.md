@@ -571,6 +571,8 @@ Markers use `Work item: <id>` (recovery depends on it, F8) and add `workflow-rev
 
 No dual-write, importer or compatibility reader is implemented.
 
+The installed filesystem uses one home (`$HOME/ai-factory` by default, or `AI_FACTORY_HOME`): `engine/` contains this repository, `repos/` contains factory-managed application clones, `data/` contains runtime state, and `.env` contains configuration. A checkout not named `engine` is treated as a self-contained developer home. Existing layouts are not migrated; the supported cutover is uninstall and reinstall with configuration restored by hand.
+
 1. A newly created database is initialized atomically with `metadata.schema_version = 5` only after the complete schema exists. Work items persist GitHub issue id, node id and creation time; the active `(repo, issue_number)` uniqueness constraint is partial so an archived item can coexist with a recreated issue.
 2. The daemon and mutating CLI commands refuse a database without schema version 5. The error tells the operator to stop services and either run the supported uninstaller or select an empty `FACTORY_DATA_DIR`.
 3. Installation into an empty data directory starts with no work items, records, requests, failures, executions or retained worktrees. On first doctor or daemon startup, the directory is bound to the target repository's stable GitHub id. Reusing it with a deleted/recreated or different repository is refused even when the `owner/name` string is unchanged. The operator starts desired open issues again with `/factory start` in the description or a comment, or with the dashboard.

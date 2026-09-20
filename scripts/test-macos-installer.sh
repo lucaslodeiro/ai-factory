@@ -39,8 +39,8 @@ set -e
 [[ $bogus_status -eq 1 ]]
 grep -q 'Unknown option: --bogus. Run with --help.' "$fixture/bogus.out"
 [[ ! -e "$fixture/bogus-curl.log" ]]
-mkdir -p "$fixture/home/incomplete/.git"
-printf '{}\n' > "$fixture/home/incomplete/package.json"
+mkdir -p "$fixture/home/incomplete/engine/.git"
+printf '{}\n' > "$fixture/home/incomplete/engine/package.json"
 set +e
 PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" CURL_LOG="$fixture/incomplete-curl.log" \
   bash "$root/scripts/install-macos.sh" --dir "$fixture/home/incomplete" > "$fixture/incomplete.out" 2>&1

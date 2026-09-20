@@ -2,8 +2,11 @@
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+home=${AI_FACTORY_HOME:-$root}
+[[ ${root##*/} != engine || -n ${AI_FACTORY_HOME:-} ]] || home=${root%/engine}
+export AI_FACTORY_HOME="$home"
 agents="$HOME/Library/LaunchAgents"
-logs="$root/.factory/service-logs"
+logs="$home/data/service-logs"
 domain="gui/$UID"
 
 usage() {
@@ -38,7 +41,7 @@ write_service() {
   <key>Label</key><string>$(xml "$service_label")</string>
   <key>ProgramArguments</key><array><string>$(xml "$node_path")</string><string>$(xml "$root/dist/src/cli.js")</string><string>$command</string></array>
   <key>WorkingDirectory</key><string>$(xml "$root")</string>
-  <key>EnvironmentVariables</key><dict><key>HOME</key><string>$(xml "$HOME")</string><key>PATH</key><string>$(xml "$runtime_path")</string></dict>
+  <key>EnvironmentVariables</key><dict><key>HOME</key><string>$(xml "$HOME")</string><key>PATH</key><string>$(xml "$runtime_path")</string><key>AI_FACTORY_HOME</key><string>$(xml "$home")</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
   <key>ThrottleInterval</key><integer>10</integer>

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { config } from "./config.js";
+import { factoryHome } from "./home.js";
 
 export type CredentialProvider = "github" | "claude" | "codex";
 type StoredState = { status: "connecting" | "failed"; pid?: number; startedAt?: string; finishedAt?: string };
@@ -12,8 +13,8 @@ const providers: Array<{ id: CredentialProvider; label: string; description: str
   { id:"codex",label:"Codex",description:"Builder and Tester agents." },
 ];
 
-const stateFile = (root: string) => path.join(root,".factory","credential-state.json");
-const logFile = (root: string) => path.join(root,".factory","service-logs","credentials.log");
+const stateFile = (root: string) => path.join(factoryHome(root),"data","credential-state.json");
+const logFile = (root: string) => path.join(factoryHome(root),"data","service-logs","credentials.log");
 const githubCommand = () => process.env.GH_COMMAND || "gh";
 
 function processAlive(pid?: number) {
@@ -72,7 +73,7 @@ export function credentialStatuses(root: string) {
     return {...provider,...actual,status:pending?.status === "failed" ? "failed" as const : "disconnected" as const};
   });
   if (changed) writeState(root,stored);
-  return { credentials,log:".factory/service-logs/credentials.log" };
+  return { credentials,log:"data/service-logs/credentials.log" };
 }
 
 export function connectCredential(root: string, provider: CredentialProvider) {

@@ -1,5 +1,8 @@
-import "dotenv/config";
 import path from "node:path";
+import { config as loadEnvironment } from "dotenv";
+import { factoryHome } from "./home.js";
+const home=factoryHome();
+loadEnvironment({path:path.join(home,".env"),quiet:true});
 function positive(name: string, fallback: number) {
   const n = Number(process.env[name] ?? fallback);
   if (!Number.isSafeInteger(n) || n < 1) throw new Error(`${name} must be a positive integer`);
@@ -50,8 +53,9 @@ export const config = {
     qa:role("QA","codex","gpt-5.6-terra"),
     reviewer:role("REVIEWER","claude","sonnet"),
   },
-  dataDir: path.resolve(process.env.FACTORY_DATA_DIR ?? ".factory"),
-  repoDir: path.resolve(process.env.FACTORY_REPO_DIR ?? "."),
+  home,
+  dataDir: path.resolve(home,process.env.FACTORY_DATA_DIR ?? "data"),
+  repoDir: path.resolve(home,process.env.FACTORY_REPO_DIR ?? "."),
   pollMs: positive("FACTORY_POLL_INTERVAL_MS", 15000),
   timeoutMs: positive("FACTORY_EXECUTION_TIMEOUT_MS", 1800000),
   maxCycles: positive("FACTORY_MAX_FIX_CYCLES", 3),

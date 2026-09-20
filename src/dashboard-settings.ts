@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parse } from "dotenv";
 import { roleFullName } from "./names.js";
+import { factoryHome } from "./home.js";
 
 type Option = { value: string; label: string };
 type Field = { key: string; label: string; description: string; group: string; secret?: boolean; required?: boolean; type?: "number" | "text" | "select"; options?: Option[]; unit?: string; restart?: "daemon" | "dashboard" | "all"; hidden?: boolean; section?: string; role?: string; kind?: "provider" | "role-model" };
@@ -87,7 +88,8 @@ function validate(key: string, value: string) {
 }
 
 function files(root: string) {
-  return { template:path.join(root,".env.example"), env:path.join(root,".env") };
+  const home=factoryHome(root);
+  return { template:path.join(root,".env.example"), env:path.join(home,".env"),home };
 }
 function prepareDashboardSettings(root: string, changes: Record<string,unknown>, clearSecrets: string[] = []) {
   const names = files(root);
@@ -152,7 +154,7 @@ export function readDashboardSettings(root: string, suggestions: Record<string,s
 export function saveDashboardSettings(root: string, changes: Record<string,unknown>, clearSecrets: string[] = []) {
   const { names,original,output } = prepareDashboardSettings(root,changes,clearSecrets);
   if ((fs.existsSync(names.env) ? fs.readFileSync(names.env,"utf8") : null) !== original) throw new Error("Configuration changed while saving; reload and retry");
-  if (original !== null) fs.writeFileSync(path.join(root,`.env.backup-${Date.now()}-${process.pid}`),original,{flag:"wx",mode:0o600});
+  if (original !== null) fs.writeFileSync(path.join(names.home,`.env.backup-${Date.now()}-${process.pid}`),original,{flag:"wx",mode:0o600});
   const temporary = `${names.env}.tmp-${process.pid}`;
   try { fs.writeFileSync(temporary,output,{flag:"wx",mode:0o600}); fs.renameSync(temporary,names.env); }
   finally { fs.rmSync(temporary,{force:true}); }

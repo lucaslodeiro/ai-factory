@@ -73,7 +73,7 @@ fi
   fs.writeFileSync(path.join(settingsRoot,"scripts","update.sh"),`#!/usr/bin/env bash
 echo "$*" >> "$PWD/update-actions.log"
 `);
-  const serviceLogs=path.join(settingsRoot,".factory","service-logs");
+  const serviceLogs=path.join(settingsRoot,"data","service-logs");
   fs.mkdirSync(serviceLogs,{recursive:true});
   fs.writeFileSync(path.join(serviceLogs,"daemon.log"),Array.from({length:80},(_,index)=>`output-line-${index}`).join("\n")+"\n");
   fs.writeFileSync(path.join(serviceLogs,"daemon.error.log"),"provider temporarily unavailable\nretry scheduled\n");
@@ -131,7 +131,7 @@ echo "$*" >> "$PWD/update-actions.log"
     }
     const daemonLogs = await fetch(`http://127.0.0.1:${port}/api/logs/daemon?lines=50`).then(response => response.json()) as any;
     assert.equal(daemonLogs.lines,50); assert.equal(daemonLogs.logs.length,2);
-    assert.equal(daemonLogs.logs[0].path,".factory/service-logs/daemon.log");
+    assert.equal(daemonLogs.logs[0].path,"data/service-logs/daemon.log");
     assert.doesNotMatch(daemonLogs.logs[0].content,/output-line-29(?:\n|$)/); assert.match(daemonLogs.logs[0].content,/output-line-30/); assert.match(daemonLogs.logs[0].content,/output-line-79/);
     assert.equal(daemonLogs.logs[0].truncated,true); assert.match(daemonLogs.logs[1].content,/retry scheduled/);
     const snapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
@@ -187,8 +187,8 @@ echo "$*" >> "$PWD/update-actions.log"
     const startIssue = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"start-issue",target:"#19"})});
     assert.equal(startIssue.status,202);
     assert.deepEqual(store.db.prepare("SELECT kind,target FROM controls WHERE kind='start-issue'").get(),{kind:"start-issue",target:"#19"});
-    fs.mkdirSync(path.join(settingsRoot,".factory"),{recursive:true});
-    fs.writeFileSync(path.join(settingsRoot,".factory","update-state.json"),JSON.stringify({status:"updating",phase:"stale",pid:process.pid,startedAt:"2026-01-01T00:00:00.000Z"}));
+    fs.mkdirSync(path.join(settingsRoot,"data"),{recursive:true});
+    fs.writeFileSync(path.join(settingsRoot,"data","update-state.json"),JSON.stringify({status:"updating",phase:"stale",pid:process.pid,startedAt:"2026-01-01T00:00:00.000Z"}));
     const staleUpdate = await fetch(`http://127.0.0.1:${port}/api/services`).then(response => response.json()) as any;
     assert.equal(staleUpdate.update.status,"failed");
     assert.match(staleUpdate.update.phase,/stopped unexpectedly/);

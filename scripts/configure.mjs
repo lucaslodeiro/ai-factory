@@ -6,6 +6,7 @@ import readline from 'node:readline';
 import {Writable} from 'node:stream';
 import {parse} from 'dotenv';
 import Database from 'better-sqlite3';
+function installationHome(root){return process.env.AI_FACTORY_HOME?.trim()?path.resolve(process.env.AI_FACTORY_HOME):path.basename(path.resolve(root))==='engine'?path.dirname(path.resolve(root)):path.resolve(root);}
 
 function run(command, args, options = {}) {
   return spawnSync(command,args,{encoding:'utf8',timeout:30000,...options});
@@ -116,11 +117,11 @@ export function saveConfig(root, template, values, original) {
   let output = template.replace(/^([A-Z_][A-Z0-9_]*)=.*$/gm, (_, key) => `${key}=${encode(values[key])}`);
   const known = parse(template);
   for (const [key, value] of Object.entries(values)) if (!(key in known)) output += `\n${key}=${encode(value)}`;
-  const file = path.join(root,'.env');
+  const home=installationHome(root),file = path.join(home,'.env');
   const current = fs.existsSync(file) ? fs.readFileSync(file,'utf8') : null;
   if (current !== original) throw new Error('.env changed during configuration; rerun to load the new defaults.');
   if (original !== null) {
-    const backup = path.join(root,`.env.backup-${Date.now()}-${process.pid}`);
+    const backup = path.join(home,`.env.backup-${Date.now()}-${process.pid}`);
     fs.writeFileSync(backup,original,{flag:'wx',mode:0o600});
     console.log(`Previous configuration saved to ${backup}`);
   }
@@ -131,7 +132,7 @@ export function saveConfig(root, template, values, original) {
   } finally { fs.rmSync(temporary,{force:true}); }
 }
 function assertStopped(root, values) {
-  const file = path.join(path.resolve(root,values.FACTORY_DATA_DIR), 'factory.db');
+  const file = path.join(path.resolve(installationHome(root),values.FACTORY_DATA_DIR), 'factory.db');
   if (!fs.existsSync(file)) return;
   const db = new Database(file,{readonly:true});
   try {
@@ -145,7 +146,7 @@ function assertStopped(root, values) {
 }
 export async function configure(root, useDefaults = false) {
   const template = fs.readFileSync(path.join(root,'.env.example'),'utf8');
-  const file = path.join(root,'.env');
+  const file = path.join(installationHome(root),'.env');
   const original = fs.existsSync(file) ? fs.readFileSync(file,'utf8') : null;
   const saved = parse(original ?? '');
   const defaults = parse(template);

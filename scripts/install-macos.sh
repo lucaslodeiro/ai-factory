@@ -65,19 +65,18 @@ fi
 
 # Fail before downloading toolchains when this is already installed. The
 # standard installer repeats this guard to cover direct invocations.
-if [[ -e "$factory_destination" ]]; then
-  if [[ -f "$factory_destination/.factory/install.json" ]]; then
+if [[ -d "$factory_destination/engine" && -f "$factory_destination/data/install.json" ]]; then
     echo "AI Factory is already installed at $factory_destination" >&2
     echo "Update it with: ai-factory update" >&2
     echo "For a clean reinstall: cd \"$HOME\" && ai-factory uninstall" >&2
-  else
+    exit 1
+elif [[ -e "$factory_destination/engine" ]]; then
     echo "An incomplete or unrelated destination already exists: $factory_destination" >&2
-    backup_destination="${factory_destination}.incomplete-$(date +%Y%m%d-%H%M%S)"
+    backup_destination="${factory_destination}/engine.incomplete-$(date +%Y%m%d-%H%M%S)"
     echo "Preserve it and retry with:" >&2
-    echo "  cd \"$HOME\"" >&2
-    echo "  mv \"$factory_destination\" \"$backup_destination\"" >&2
+    echo "  cd \"$factory_destination\"" >&2
+    echo "  mv \"$factory_destination/engine\" \"$backup_destination\"" >&2
     echo "  bash /tmp/ai-factory-install-macos.sh --dir \"$factory_destination\"" >&2
-  fi
   exit 1
 fi
 

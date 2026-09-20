@@ -15,7 +15,7 @@ try {
   await new Promise((resolve,reject) => { occupied.once("error",reject); occupied.listen(0,"127.0.0.1",resolve); });
   const initialPort = occupied.address().port;
   const result = await new Promise((resolve,reject) => {
-    const child = spawn(process.execPath,[path.join(source,"scripts","prepare-dashboard-config.mjs"),"127.0.0.1",String(initialPort)],{cwd:root});
+    const child = spawn(process.execPath,[path.join(source,"scripts","prepare-dashboard-config.mjs"),"127.0.0.1",String(initialPort)],{cwd:source,env:{...process.env,AI_FACTORY_HOME:root}});
     let stdout="",stderr="";
     child.stdout.on("data",chunk => stdout+=chunk);
     child.stderr.on("data",chunk => stderr+=chunk);

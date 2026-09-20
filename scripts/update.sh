@@ -26,6 +26,10 @@ done
 (($# == 0)) || { echo 'Unexpected arguments; see --help.' >&2; exit 1; }
 ! "$restart_services" || ! "$start_services" || { echo 'Choose either --restart-services or --start-services.' >&2; exit 1; }
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+engine=$PWD
+home=${AI_FACTORY_HOME:-$engine}
+[[ ${engine##*/} != engine || -n ${AI_FACTORY_HOME:-} ]] || home=${engine%/engine}
+export AI_FACTORY_HOME="$home"
 node -e 'if(Number(process.versions.node.split(".")[0]) < 22) { console.error("Node 22+ is required"); process.exit(1); }'
 
 update_complete=false
@@ -44,7 +48,7 @@ finish_update() {
     write_update_state completed "Update completed. Services restored."
   else
     if [[ -z ${AI_FACTORY_UPDATE_STATE_FILE:-} ]] || ! node -e 'const fs=require("fs");try{process.exit(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).status==="failed"?0:1)}catch{process.exit(1)}' "$AI_FACTORY_UPDATE_STATE_FILE"; then
-      write_update_state failed "Update failed. Inspect .factory/service-logs/update.log."
+      write_update_state failed "Update failed. Inspect data/service-logs/update.log."
     fi
     # A failed update must not change the operator's service state. Reinstall
     # launchd definitions in case the checkout changed before the failure, then
@@ -86,7 +90,7 @@ fi
 write_update_state updating "Downloading, building and validating…"
 node scripts/update.mjs
 write_update_state updating "Preserving configuration…"
-if [[ ! -f .env ]]; then umask 077; cp .env.example .env; fi
+if [[ ! -f "$home/.env" ]]; then umask 077; cp .env.example "$home/.env"; fi
 mkdir -p "$HOME/.local/bin"
 launcher="$HOME/.local/bin/ai-factory"
 if [[ ! -e $launcher || -L $launcher ]]; then
@@ -103,6 +107,6 @@ if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
   fi
   node scripts/service-summary.mjs
 fi
-mkdir -p .factory
-node -e 'const fs=require("fs"),cp=require("child_process"),manifest=require("./package.json");const run=args=>cp.execFileSync("git",args,{encoding:"utf8"}).trim();const marker={version:manifest.version,branch:run(["symbolic-ref","--quiet","--short","HEAD"]),revision:run(["rev-parse","HEAD"]),installedAt:new Date().toISOString()};fs.writeFileSync(".factory/install.json",JSON.stringify(marker,null,2)+"\n",{mode:0o600});'
+mkdir -p "$home/data"
+node -e 'const fs=require("fs"),cp=require("child_process"),manifest=require("./package.json");const run=args=>cp.execFileSync("git",args,{encoding:"utf8"}).trim();const marker={version:manifest.version,branch:run(["symbolic-ref","--quiet","--short","HEAD"]),revision:run(["rev-parse","HEAD"]),installedAt:new Date().toISOString()};fs.writeFileSync(process.env.AI_FACTORY_HOME+"/data/install.json",JSON.stringify(marker,null,2)+"\n",{mode:0o600});'
 update_complete=true

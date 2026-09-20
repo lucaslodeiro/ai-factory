@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {environmentFile} from './paths.mjs';
 
 // Load the installed runtime before replacing dependencies/build assets.
 const {config} = await import('../dist/src/config.js');
@@ -56,8 +57,8 @@ try {
   backup = fs.mkdtempSync(path.join(config.dataDir,'update-backup-'));
   fs.chmodSync(backup,0o700);
   await store.db.backup(path.join(backup,'factory.db'));
-  if (fs.existsSync('.env')) {
-    fs.copyFileSync('.env',path.join(backup,'.env'));
+  if (fs.existsSync(environmentFile)) {
+    fs.copyFileSync(environmentFile,path.join(backup,'.env'));
     fs.chmodSync(path.join(backup,'.env'),0o600);
   }
   fs.writeFileSync(path.join(backup,'revision.json'),JSON.stringify({before,target,branch},null,2));
