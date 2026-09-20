@@ -1,3 +1,4 @@
+import {browserRequired,browserInstructions} from "./browser-runner.mjs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
@@ -28,6 +29,7 @@ export class ExecutionManager {
   private running = new Map<string, { child: ChildProcess; cancel: () => void; interrupt: (reason:string) => void }>();
   constructor(private store: Store) {}
   async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs, selection?: ModelSelection, promptMetadata:PromptManifestInput = {}, executionId?:string): Promise<{id: string; stdout: string}> {
+    if(browserRequired(cwd,role))input+=browserInstructions();
     const id = executionId??randomUUID();
     const logDir = path.join(config.dataDir, "runs", id);
     fs.mkdirSync(logDir, { recursive: true });
@@ -58,7 +60,7 @@ export class ExecutionManager {
       this.running.set(id, { child, cancel, interrupt });
       const timeout = setTimeout(() => { timedOut = true; cancel(); }, timeoutMs);
       child.stdin?.on("error", () => {});
-      child.stdin?.end(JSON.stringify({ command, args, cwd, input }));
+      child.stdin?.end(JSON.stringify({ command, args, cwd, input, role, browserExecutable: process.env.FACTORY_BROWSER_EXECUTABLE }));
       let spawnError: Error | undefined;
       child.on("error", e => { spawnError = e; });
       child.on("close", code => {

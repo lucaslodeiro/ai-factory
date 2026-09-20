@@ -6,7 +6,7 @@ import {home} from './paths.mjs';
 
 const engine=fileURLToPath(new URL('..',import.meta.url));
 if(Number(process.versions.node.split('.')[0])<22)throw new Error('Node 22+ is required');
-for(const name of ['dist/src/cli.js','dist/src/storage.js','dist/src/worker-supervisor.mjs','dist/dashboard/index.html']){
+for(const name of ['dist/src/cli.js','dist/src/storage.js','dist/src/worker-supervisor.mjs','dist/src/browser-runner.mjs','dist/dashboard/index.html']){
  fs.accessSync(path.join(engine,name),fs.constants.R_OK);
 }
 fs.mkdirSync(home,{recursive:true});

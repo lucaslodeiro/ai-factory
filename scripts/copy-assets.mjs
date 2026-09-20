@@ -1,3 +1,5 @@
 import { cpSync } from "node:fs";
 for (const dir of ["agents", "templates", "dashboard"]) cpSync(dir, `dist/${dir}`, { recursive: true });
 cpSync("src/worker-supervisor.mjs", "dist/src/worker-supervisor.mjs");
+
+cpSync("src/browser-runner.mjs", "dist/src/browser-runner.mjs");
