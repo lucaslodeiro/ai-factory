@@ -305,3 +305,12 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .repository-danger{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:.85rem;font-size:.82rem}
 .repository-danger>div{flex:1;min-width:min(100%,16rem)}
 @media(max-width:640px){.repository-result dl{grid-template-columns:1fr}}
+
+.settings-actions{flex-wrap:wrap}
+.settings-progress{display:inline-flex;align-items:center;gap:.5rem;font-size:.8rem;line-height:1.4;overflow-wrap:anywhere}
+.settings-progress[hidden]{display:none}
+.settings-progress[data-state="busy"]::before{content:"";width:.8rem;height:.8rem;flex-shrink:0;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:settings-spin .8s linear infinite}
+.settings-progress[data-state="success"]{color:var(--accent)}
+.settings-progress[data-state="error"]{color:var(--danger)}
+@keyframes settings-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.settings-progress[data-state="busy"]::before{animation:none}}
