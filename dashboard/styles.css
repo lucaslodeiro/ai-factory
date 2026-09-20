@@ -323,3 +323,9 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .work-activity{max-width:65ch;overflow-wrap:anywhere;line-height:1.5}
 .work-blockers{font-size:.78rem;line-height:1.5;margin-top:.5rem;overflow-wrap:anywhere}
 .work-blockers ul{padding-left:1.2rem;max-width:75ch}
+
+.work-details{margin-top:.5rem;font-size:.78rem}
+.work-details summary{cursor:pointer;color:var(--accent);font-weight:600;width:fit-content}
+.work-details-content{margin-top:.65rem;padding:.8rem 1rem;background:var(--panel);border:1px solid var(--line);border-radius:10px;max-width:75ch;max-height:22rem;overflow:auto;overflow-wrap:anywhere;line-height:1.5}
+.work-details-content .work-activity{white-space:pre-wrap;margin:0 0 .5rem}
+.work-details-content ul{padding-left:1.2rem}
