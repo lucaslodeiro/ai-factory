@@ -18,9 +18,10 @@ class GitHub {
  repositoryIssues(_since:string){return this.discoverIssues?[this.issue(1)]:[];}
  listManaged(){return [];}commentOnce(){}syncState(){}ensurePR(_branch:string,_title:string,body:string){this.lastPrBody=body;return "https://github.com/owner/demo/pull/1";}pullRequestState(){return this.pr;}
  repository(){return{id:1,nodeId:"R_1",fullName:"owner/demo",defaultBranch:"main"};}
- syncWorkflow(_issue:number,labels:Array<{name:string}>,body:string){this.labels.push(labels.map(label=>label.name));this.statusBodies.push(body);}
- publishWorkflowComment(_issue:number,_key:string,body:string){this.resultBodies.push(body);}
+ syncWorkflow(_issue:number,labels:Array<{name:string}>,body:string){this.labels.push(labels.map(label=>label.name));this.statusBodies.push(body);this.advanceIssueUpdatedAt();}
+ publishWorkflowComment(_issue:number,_key:string,body:string){this.resultBodies.push(body);this.advanceIssueUpdatedAt();}
  reply(id:number,body:string){const rows=this.commentsByIssue.get(1)??[];rows.push({id,body,user:{login:"owner",type:"User"},updatedAt:`2026-09-20T00:00:${String(id).padStart(2,"0")}Z`});this.commentsByIssue.set(1,rows);}
+ private advanceIssueUpdatedAt(){this.updatedAt=new Date(Date.parse(this.updatedAt)+1000).toISOString();}
 }
 
 test("V3 orchestrator completes Design, Build, Test, Review and merge with one authoritative CTA",async()=>{
@@ -99,7 +100,7 @@ test("description discovery audits non-approvers without public feedback and pic
 
 test("misplaced approver starts in comments and descriptions receive one idempotent hint",async()=>{
  const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");const store=new Store(":memory:"),github=new GitHub();github.discoverIssues=true;github.body="Please start\n/factory start\nThanks";github.repositoryCommentRows=[{id:33,body:"> /factory start",user:{login:"owner",type:"User"},updatedAt:"2026-09-20T00:00:33Z",issueUrl:"https://api.github.com/repos/owner/demo/issues/1",createdAt:"2026-09-20T00:00:33Z",issue_url:"https://api.github.com/repos/owner/demo/issues/1",created_at:"2026-09-20T00:00:33Z",updated_at:"2026-09-20T00:00:33Z"}];const orchestrator=new WorkflowOrchestrator(store,github,new WorkflowRunner(store,{},new Workspace(),github),{enabled:false,async notify(){}});
- try {await orchestrator.tick();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,0);assert.equal(github.resultBodies.length,2);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='command.rejected'").get() as {count:number}).count,2);await orchestrator.tick();assert.equal(github.resultBodies.length,2);github.body="Please start\n/factory start";github.updatedAt="2026-09-20T00:01:00Z";await assert.rejects(orchestrator.tick(),/No adapter configured/);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,1);assert.equal(github.resultBodies.length,2);}
+ try {await orchestrator.tick();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,0);assert.equal(github.resultBodies.length,2);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='command.rejected'").get() as {count:number}).count,2);await orchestrator.tick();assert.equal(github.resultBodies.length,2);await orchestrator.tick();assert.equal(github.resultBodies.length,2);github.body="Please start\n/factory start";github.updatedAt="2026-09-20T00:01:00Z";await assert.rejects(orchestrator.tick(),/No adapter configured/);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,1);assert.equal(github.resultBodies.length,2);}
  finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
 });
 
