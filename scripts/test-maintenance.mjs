@@ -31,6 +31,7 @@ const validationScript=path.join(seed,'scripts','validate-installation.mjs');
 fs.writeFileSync(validationScript,"if(process.env.FAIL_INSTALL_CHECK==='1')throw new Error('fixture installation check failed');\n"+fs.readFileSync(validationScript,'utf8'));
 fs.writeFileSync(path.join(seed,'scripts','services.sh'),`#!/bin/sh
 printf '%s %s\\n' \"$1\" \"$2\" >> \"$AI_FACTORY_SERVICE_LOG\"
+if [ \"$1 $2\" = \"start daemon\" ] && [ \"\${FAIL_DAEMON_START:-0}\" = 1 ]; then exit 43; fi
 if [ \"$1 $2\" = \"start dashboard\" ] && [ -n \"\${AI_FACTORY_FAKE_DASHBOARD_PORT:-}\" ]; then
   node -e 'require("http").createServer((request,response)=>{response.setHeader("content-type","application/json");response.end(request.url==="/api/settings"?JSON.stringify({readiness:{ready:true}}):JSON.stringify({ok:true}))}).listen(Number(process.argv[1]),"127.0.0.1")' \"$AI_FACTORY_FAKE_DASHBOARD_PORT\" > /dev/null 2>&1 &
   echo $! > \"$AI_FACTORY_FAKE_DASHBOARD_PID\"
@@ -158,6 +159,16 @@ fs.writeFileSync(env.AI_FACTORY_SERVICE_LOG,'');
 run('bash',['scripts/update.sh','--restart-services'],engine);
 const restored=fs.readFileSync(env.AI_FACTORY_SERVICE_LOG,'utf8');
 assert.match(restored,/stop daemon/);assert.match(restored,/start daemon/);assert.match(restored,/start dashboard/);
+env.FAIL_DAEMON_START='1';
+fs.writeFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,JSON.stringify({status:'updating',restoreDaemon:true,restoreDashboard:true}));
+fs.writeFileSync(env.AI_FACTORY_SERVICE_LOG,'');
+const failedService=run('bash',['scripts/update.sh','--restart-services'],engine,false);
+assert.match(failedService.stderr,/Daemon left stopped/);
+const failedServiceActions=fs.readFileSync(env.AI_FACTORY_SERVICE_LOG,'utf8');
+assert.equal(failedServiceActions.split('start daemon').length-1,1);
+assert.match(failedServiceActions,/stop daemon\n$/);
+assert.equal(JSON.parse(fs.readFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,'utf8')).status,'failed');
+delete env.FAIL_DAEMON_START;
 env.AI_FACTORY_SKIP_SERVICES='1';
 fs.writeFileSync(path.join(engine,'dirty'),'dirty');assert.match(run('bash',['scripts/update.sh'],engine,false).stderr,/Local changes/);fs.unlinkSync(path.join(engine,'dirty'));
 const db=new Database(path.join(dest,'data','factory.db'));
