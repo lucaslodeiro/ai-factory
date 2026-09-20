@@ -20,7 +20,7 @@ const actualEngine=fs.realpathSync(engine),actualFactoryHome=fs.realpathSync(fac
 if(purge&&path.dirname(actualEngine)!==actualFactoryHome&&actualEngine!==actualFactoryHome)throw new Error(`Refusing to purge because engine ${engine} is not inside factory home ${factoryHome}`);
 const environmentFile=path.join(factoryHome,".env"),envText=fs.existsSync(environmentFile)?fs.readFileSync(environmentFile,"utf8"):"";
 const envValue=key=>{const raw=envText.match(new RegExp(`^${key}=(.*)$`,`m`))?.[1]?.trim()??"";return raw.length>=2&&["'",'"',"`"].includes(raw[0])&&raw.at(-1)===raw[0]?raw.slice(1,-1):raw;};
-const configuredData=path.resolve(factoryHome,envValue("FACTORY_DATA_DIR")||"data"),standardData=path.join(factoryHome,"data"),targetDir=envValue("FACTORY_REPO_DIR")?path.resolve(factoryHome,envValue("FACTORY_REPO_DIR")):null,reposDir=path.join(factoryHome,"repos");
+const gitCommand=envValue("GIT_COMMAND")||"git",configuredData=path.resolve(factoryHome,envValue("FACTORY_DATA_DIR")||"data"),standardData=path.join(factoryHome,"data"),targetDir=envValue("FACTORY_REPO_DIR")?path.resolve(factoryHome,envValue("FACTORY_REPO_DIR")):null,reposDir=path.join(factoryHome,"repos");
 const plists=["daemon","dashboard"].map(service=>path.join(userHome,"Library","LaunchAgents",`com.ai-factory.${service}.plist`)),launcher=path.join(userHome,".local","bin","ai-factory");
 for(const directory of new Set([configuredData,standardData]))if(!directory.startsWith(`${factoryHome}${path.sep}`)){
   if([path.parse(directory).root,userHome,path.dirname(userHome),targetDir].filter(Boolean).includes(directory))throw new Error(`Unsafe configured data directory: ${directory}`);
@@ -33,14 +33,14 @@ console.log(purge?`  Purge:        ${factoryHome} including configuration and re
 let unsafeWork=[];const databaseFile=path.join(configuredData,"factory.db");
 if(fs.existsSync(databaseFile))try{
   const db=new Database(databaseFile,{readonly:true,fileMustExist:true});let active=[];try{active=db.prepare("SELECT issue_number,stage,status,branch FROM work_items WHERE status IN ('QUEUED','RUNNING','WAITING','PAUSED') ORDER BY issue_number").all();}finally{db.close();}
-  const gitCommand=envValue("GIT_COMMAND")||"git";unsafeWork=active.map(item=>{if(!item.branch||!targetDir||!fs.existsSync(targetDir))return{...item,published:false,publication:"unverifiable"};const remote=spawnSync(gitCommand,["ls-remote","--heads","origin",item.branch],{cwd:targetDir,encoding:"utf8",timeout:10000});const published=remote.status===0&&Boolean(remote.stdout.trim());return{...item,published,publication:remote.status===0?(published?"published":"unpublished"):"unverifiable"};}).filter(item=>!item.published);
+  unsafeWork=active.map(item=>{if(!item.branch||!targetDir||!fs.existsSync(targetDir))return{...item,published:false,publication:"unverifiable"};const remote=spawnSync(gitCommand,["ls-remote","--heads","origin",item.branch],{cwd:targetDir,encoding:"utf8",timeout:10000});const published=remote.status===0&&Boolean(remote.stdout.trim());return{...item,published,publication:remote.status===0?(published?"published":"unpublished"):"unverifiable"};}).filter(item=>!item.published);
   console.log(`  Work preflight: ${active.length} active item${active.length===1?"":"s"}; ${unsafeWork.length} with unpublished or unverifiable work.`);for(const item of unsafeWork)console.log(`    #${item.issue_number} ${item.stage}/${item.status} — ${item.branch||"no branch"} (${item.publication})`);
 }catch(error){console.log(`  Work preflight: factory.db could not be inspected (${error.message}); continuing without workflow inspection.`);}else console.log("  Work preflight: no factory database was found.");
 
 const unsafeRepos=[];
 if(purge&&fs.existsSync(reposDir))for(const name of fs.readdirSync(reposDir)){
   const repo=path.join(reposDir,name);if(!fs.statSync(repo).isDirectory()||!fs.existsSync(path.join(repo,".git")))continue;
-  const dirty=spawnSync("git",["status","--porcelain"],{cwd:repo,encoding:"utf8",timeout:10000}),unique=spawnSync("git",["log","--branches","--not","--remotes","--oneline"],{cwd:repo,encoding:"utf8",timeout:10000}),reasons=[];
+  const dirty=spawnSync(gitCommand,["status","--porcelain"],{cwd:repo,encoding:"utf8",timeout:10000}),unique=spawnSync(gitCommand,["log","--branches","--not","--remotes","--oneline"],{cwd:repo,encoding:"utf8",timeout:10000}),reasons=[];
   if(dirty.status!==0||dirty.stdout.trim())reasons.push("dirty working tree");if(unique.status!==0||unique.stdout.trim())reasons.push("unpushed commits");if(reasons.length)unsafeRepos.push({repo,reasons});
 }
 for(const item of unsafeRepos)console.log(`  Repository preflight: ${item.repo} — ${item.reasons.join(" and ")}`);

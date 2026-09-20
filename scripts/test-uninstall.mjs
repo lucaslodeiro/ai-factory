@@ -30,7 +30,9 @@ try{
 
   fs.mkdirSync(path.join(engine,"scripts"),{recursive:true});fs.writeFileSync(path.join(engine,"package.json"),JSON.stringify({name:"ai-factory"}));fs.copyFileSync(path.join(source,"scripts/uninstall.mjs"),path.join(engine,"scripts/uninstall.mjs"));fs.symlinkSync(path.join(source,"node_modules"),path.join(engine,"node_modules"),"dir");
   run("/usr/bin/git",["init"],{cwd:target});run("/usr/bin/git",["config","user.email","test@example.com"],{cwd:target});run("/usr/bin/git",["config","user.name","Test"],{cwd:target});fs.writeFileSync(path.join(target,"dirty"),"dirty");
+  fs.writeFileSync(gitLog,"");
   const purgeBlocked=run(process.execPath,[path.join(engine,"scripts/uninstall.mjs"),"--purge","--yes"],{cwd:engine,env});assert.notEqual(purgeBlocked.status,0);assert.match(purgeBlocked.stdout,/dirty working tree/,purgeBlocked.stderr);assert.equal(fs.existsSync(home),true);
+  assert.match(fs.readFileSync(gitLog,"utf8"),/status --porcelain/);assert.match(fs.readFileSync(gitLog,"utf8"),/log --branches --not --remotes --oneline/);
   const purged=run(process.execPath,[path.join(engine,"scripts/uninstall.mjs"),"--purge","--yes","--force"],{cwd:engine,env});assert.equal(purged.status,0,purged.stderr+purged.stdout);assert.equal(fs.existsSync(home),false);assert.match(purged.stdout,/home was removed/);
   console.log("PASS: basic uninstall preserves configuration and repos; purge preflights dirty clones and removes the complete home only with force");
 }finally{fs.rmSync(sandbox,{recursive:true,force:true});}
