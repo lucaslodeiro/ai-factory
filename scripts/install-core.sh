@@ -18,7 +18,7 @@ while (($#)); do
       (($# >= 2)) || { echo "Missing value for $1" >&2; exit 1; }
       case "$1" in --dir) dest=$2;; --branch) branch=$2;; --repo) repo=$2;; --dashboard-host) dashboard_host=$2;; --dashboard-port) dashboard_port=$2;; esac
       shift 2;;
-    --help) echo 'Internal usage: bash install-core.sh [--dir PATH] [--branch BRANCH] [--repo URL] [--dashboard-host LOOPBACK] [--dashboard-port PORT]'; echo 'Use install-macos.sh as the public installer. If the selected/default port is occupied, it saves and opens the next available port.'; exit 0;;
+    -h|--help) echo 'Internal installer. Run install-macos.sh --help for public options.'; exit 0;;
     *) echo "Unknown option: $1" >&2; exit 1;;
   esac
 done

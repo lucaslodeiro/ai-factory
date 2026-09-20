@@ -6,6 +6,27 @@ fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
 mkdir -p "$fixture/bin" "$fixture/home"
 
+cat > "$fixture/bin/curl" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CURL_LOG"
+exit 99
+MOCK
+chmod +x "$fixture/bin/curl"
+PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" CURL_LOG="$fixture/help-curl.log" \
+  bash "$root/scripts/install-macos.sh" --help > "$fixture/help.out"
+grep -q -- '--dashboard-port PORT' "$fixture/help.out"
+grep -q -- 'AI_FACTORY_SKIP_SERVICES' "$fixture/help.out"
+grep -q -- 'ai-factory update' "$fixture/help.out"
+[[ ! -e "$fixture/help-curl.log" ]]
+set +e
+PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" CURL_LOG="$fixture/bogus-curl.log" \
+  bash "$root/scripts/install-macos.sh" --bogus > "$fixture/bogus.out" 2>&1
+bogus_status=$?
+set -e
+[[ $bogus_status -eq 1 ]]
+grep -q 'Unknown option: --bogus. Run with --help.' "$fixture/bogus.out"
+[[ ! -e "$fixture/bogus-curl.log" ]]
+
 for executable in node npm git gh codex claude; do
   cat > "$fixture/bin/$executable" <<'MOCK'
 #!/usr/bin/env bash

@@ -7,6 +7,57 @@ if ! builtin pwd -P >/dev/null 2>&1; then
   cd "$HOME"
 fi
 
+factory_destination="$HOME/ai-factory"
+factory_branch=main
+factory_repo=https://github.com/lucaslodeiro/ai-factory.git
+factory_dashboard_host=127.0.0.1
+factory_dashboard_port=4173
+installer_arguments=("$@")
+installer_argument_count=$#
+usage() {
+  cat <<EOF
+Usage: install-macos.sh [options]
+
+Installs AI Factory and its user-local toolchain on macOS. Apple Command Line
+Tools must already be installed. Downloaded tools live under ~/.local/opt and
+their launchers under ~/.local/bin.
+
+Options:
+  --dir PATH                 Installation directory (default: $HOME/ai-factory)
+  --branch BRANCH            Git branch to install (default: main)
+  --repo URL                 Factory Git repository (default: https://github.com/lucaslodeiro/ai-factory.git)
+  --dashboard-host ADDRESS   Dashboard loopback address (default: 127.0.0.1)
+  --dashboard-port PORT      Dashboard port (default: 4173)
+  -h, --help                 Show this help without installing anything
+
+Environment:
+  AI_FACTORY_SKIP_SERVICES=1  Do not install or start launchd services
+  AI_FACTORY_NO_OPEN=1        Do not open the dashboard in a browser
+  AI_FACTORY_INSTALL_TESTS=0  Skip npm test during installation (default: run)
+
+After installation:
+  ai-factory help
+  ai-factory update
+  cd ~ && ai-factory uninstall
+EOF
+}
+while (($#)); do
+  case "$1" in
+    --dir|--branch|--repo|--dashboard-host|--dashboard-port)
+      (($# >= 2)) || { echo "Missing value for $1" >&2; exit 1; }
+      case "$1" in
+        --dir) factory_destination=$2;;
+        --branch) factory_branch=$2;;
+        --repo) factory_repo=$2;;
+        --dashboard-host) factory_dashboard_host=$2;;
+        --dashboard-port) factory_dashboard_port=$2;;
+      esac
+      shift 2;;
+    -h|--help) usage; exit 0;;
+    *) echo "Unknown option: $1. Run with --help." >&2; exit 1;;
+  esac
+done
+
 if [[ $(uname -s) != Darwin ]]; then
   echo "This installer supports macOS only." >&2
   exit 1
@@ -14,20 +65,6 @@ fi
 
 # Fail before downloading toolchains when this is already installed. The
 # standard installer repeats this guard to cover direct invocations.
-factory_destination="$HOME/ai-factory"
-expect_destination=false
-for argument in "$@"; do
-  if "$expect_destination"; then
-    factory_destination=$argument
-    expect_destination=false
-  elif [[ $argument == --dir ]]; then
-    expect_destination=true
-  fi
-done
-if "$expect_destination"; then
-  echo "Missing value for --dir" >&2
-  exit 1
-fi
 if [[ -e "$factory_destination" ]]; then
   if [[ -d "$factory_destination/.git" && -f "$factory_destination/package.json" ]]; then
     echo "AI Factory is already installed at $factory_destination" >&2
@@ -176,4 +213,8 @@ claude --version
 
 curl -fsSL https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install-core.sh \
   -o "$temporary_dir/ai-factory-install-core.sh"
-AI_FACTORY_INSTALL_MODE=user-local bash "$temporary_dir/ai-factory-install-core.sh" "$@"
+if ((installer_argument_count)); then
+  AI_FACTORY_INSTALL_MODE=user-local bash "$temporary_dir/ai-factory-install-core.sh" "${installer_arguments[@]}"
+else
+  AI_FACTORY_INSTALL_MODE=user-local bash "$temporary_dir/ai-factory-install-core.sh"
+fi
