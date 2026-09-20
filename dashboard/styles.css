@@ -279,3 +279,8 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .update-details summary{cursor:pointer;font-weight:600}
 .update-details pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;font-size:12px;line-height:1.5}
 .update-details code{overflow-wrap:anywhere}
+
+.queue-maintenance{margin-bottom:1rem}
+.queue-pause-notice{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.queue-pause-notice h3{margin:.6rem 0 0;color:var(--muted);font-size:.85rem}
+@media(max-width:640px){.queue-pause-notice{align-items:flex-start;flex-direction:column}.queue-pause-notice .state{white-space:normal}}
