@@ -284,3 +284,5 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .queue-pause-notice{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
 .queue-pause-notice h3{margin:.6rem 0 0;color:var(--muted);font-size:.85rem}
 @media(max-width:640px){.queue-pause-notice{align-items:flex-start;flex-direction:column}.queue-pause-notice .state{white-space:normal}}
+
+.controller-actions{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem}
