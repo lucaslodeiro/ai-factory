@@ -7,3 +7,7 @@ export function controllerModeAfterVerificationFailure(mode:ControllerMode,lastV
 }
 
 export function controllerMayMutate(mode:ControllerMode){return mode==="active";}
+
+export function assertLocalController(mode:ControllerMode,cachedGeneration:number|null,acquiredGeneration:number){
+ if(!controllerMayMutate(mode)||cachedGeneration!==acquiredGeneration)throw new Error(`Repository controller is ${mode}`);
+}

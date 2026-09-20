@@ -25,7 +25,7 @@ import { WorkflowScheduler } from "./workflow-scheduler.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {ControllerLease,CONTROLLER_HEARTBEAT_MS,type LeaseObservation} from "./controller-lease.js";
 import {applyControllerLoss,type ControllerFence} from "./controller-fence.js";
-import {controllerMayMutate,controllerModeAfterVerificationFailure,type ControllerMode} from "./controller-runtime.js";
+import {assertLocalController,controllerModeAfterVerificationFailure,type ControllerMode} from "./controller-runtime.js";
 export function acquireLock(store: Store) {
  fs.mkdirSync(config.dataDir, { recursive: true });
  const file = path.join(config.dataDir, "daemon.lock"), token = randomUUID();
@@ -61,7 +61,7 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
  } catch(error) {throw new StartupError(error instanceof Error?error.message:String(error));}
  const controller=options.controller??new ControllerLease(repository,store),initialController=controller.acquire();
  let controllerState:LeaseObservation=initialController,controllerMode:ControllerMode=initialController.state==="active"?"active":"standby",lastControllerSuccess=performance.now(),generation=initialController.state==="absent"?0:initialController.record.generation;
- const fence:ControllerFence={assertController(){if(!controllerMayMutate(controllerMode))throw new Error(`Repository controller is ${controllerMode}`);controllerState=controller.assertController(generation);},resultDisposition(){return controllerMode==="uncertain"?"hold":controllerMode==="fenced"||controllerMode==="standby"?"discard":"apply";}};
+ const fence:ControllerFence={assertController(){assertLocalController(controllerMode,controllerState.state==="absent"?null:controllerState.record.generation,generation);},resultDisposition(){return controllerMode==="uncertain"?"hold":controllerMode==="fenced"||controllerMode==="standby"?"discard":"apply";}};
  daemonLog("info","daemon.starting",{repo:config.repo,pollMs:config.pollMs,dataDir:config.dataDir});
  const release = acquireLock(store), executions = new ExecutionManager(store);
  const codex = new CodexAdapter(executions), claude = new ClaudeAdapter(executions);

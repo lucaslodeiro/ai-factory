@@ -169,13 +169,13 @@ If renewal later succeeds with the same generation, held results are applied nor
 3. held and in-flight results are discarded as local evidence;
 4. it records `controller.lost` and enters standby.
 
-**Fencing points.** Every remote mutation passes through one of three places, and each calls `assertController(generation)` immediately before acting:
+**Fencing points.** Every remote mutation passes through one of three places. Each performs a local fence immediately before acting: the daemon must still be `active`, and the last successfully verified cached generation must equal the generation acquired at startup or takeover. Remote verification belongs only to the two-minute renewal loop; a transient network failure does not fail an otherwise active tick before the ten-minute uncertainty deadline.
 
 - `WorkflowCommands.apply`, before a command changes workflow state;
 - the orchestrator, before `runner.run` starts an execution or the delivery publication;
 - the orchestrator, before `flush()` publishes labels, comments, assignments, branches or pull requests.
 
-The check-then-act window between `assertController` and the GitHub call is accepted: GitHub cannot verify a fencing token. Manual takeover plus the 10-minute expiry keep that window irrelevant in practice. This is cooperative fencing; a legacy daemon that ignores the lease must be stopped during cutover (§18).
+The check-then-act window between the last successful renewal, the local fence and the GitHub call is accepted: GitHub cannot verify a fencing token. Manual takeover plus the 10-minute expiry bound that window in practice. This is cooperative fencing; a legacy daemon that ignores the lease must be stopped during cutover (§18).
 
 ## 11. Release and takeover
 
