@@ -11,6 +11,8 @@ import { config } from "../src/config.js";
 test("dashboard serves readable state and queues daemon controls", async () => {
   const store = new Store(":memory:");
   const settingsRoot = fs.mkdtempSync(path.join(os.tmpdir(),"factory-dashboard-settings-"));
+  const previousFactoryHome = process.env.AI_FACTORY_HOME;
+  process.env.AI_FACTORY_HOME=settingsRoot;
   const previousGit = config.gitCommand,previousDataDir=config.dataDir;
   const previousCodex = config.codexCommand, previousClaude = config.claudeCommand, previousGh = process.env.GH_COMMAND;
   const fakeGit = path.join(settingsRoot,"git");
@@ -353,6 +355,7 @@ echo "$*" >> "$PWD/update-actions.log"
     config.gitCommand=previousGit;config.dataDir=previousDataDir;
     config.codexCommand=previousCodex; config.claudeCommand=previousClaude;
     if (previousGh === undefined) delete process.env.GH_COMMAND; else process.env.GH_COMMAND=previousGh;
+    if (previousFactoryHome === undefined) delete process.env.AI_FACTORY_HOME; else process.env.AI_FACTORY_HOME=previousFactoryHome;
     fs.rmSync(settingsRoot,{recursive:true,force:true});
   }
 });
