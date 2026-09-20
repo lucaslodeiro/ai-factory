@@ -9,8 +9,14 @@ export class Store {
     if (filename !== ":memory:") fs.mkdirSync(path.dirname(filename), { recursive: true });
     this.db = new Database(filename);
     this.db.pragma("busy_timeout = 5000");
-    this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
+    const existingTables=(this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as Array<{name:string}>).map(row=>row.name);
+    if(existingTables.length){
+      const stored=existingTables.includes("metadata")?this.db.prepare("SELECT value FROM metadata WHERE key='schema_version'").get() as {value:string}|undefined:undefined;
+      let version:unknown;try{version=stored?JSON.parse(stored.value):undefined;}catch{version=undefined;}
+      if(version!==schemaVersion){this.db.close();throw new Error("Unsupported AI Factory database schema. The completed V3 runtime requires a fresh data directory. Stop services and run the supported uninstaller, or select an empty FACTORY_DATA_DIR. Existing data was not changed.");}
+    }
+    this.db.pragma("journal_mode = WAL");
     // CLI and daemon can open a fresh database together: serialize schema creation.
     try { this.db.transaction(() => {
     const tables=(this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as Array<{name:string}>).map(row=>row.name);
@@ -18,7 +24,7 @@ export class Store {
     const stored=metadataExists ? this.db.prepare("SELECT value FROM metadata WHERE key='schema_version'").get() as {value:string}|undefined : undefined;
     let version:unknown;
     try { version=stored ? JSON.parse(stored.value) : undefined; } catch { version=undefined; }
-    if (tables.length && version !== schemaVersion && version !== 5) throw new Error("Unsupported AI Factory database schema. The completed V3 runtime requires a fresh data directory. Stop services and run the supported uninstaller, or select an empty FACTORY_DATA_DIR. Existing data was not changed.");
+    if (tables.length && version !== schemaVersion) throw new Error("Unsupported AI Factory database schema. The completed V3 runtime requires a fresh data directory. Stop services and run the supported uninstaller, or select an empty FACTORY_DATA_DIR. Existing data was not changed.");
     this.db.exec(`CREATE TABLE IF NOT EXISTS work_items(
         id TEXT PRIMARY KEY,issue_number INTEGER NOT NULL,issue_id INTEGER,issue_node_id TEXT,issue_created_at TEXT,repo TEXT NOT NULL,branch TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
         context TEXT NOT NULL DEFAULT '{}',stage TEXT,status TEXT,attempt INTEGER NOT NULL DEFAULT 0,revision INTEGER NOT NULL DEFAULT 0,
@@ -97,8 +103,6 @@ export class Store {
         last_verified_at TEXT,
         last_error TEXT
       );`);
-    // Version 6 only adds repository_controller; all version 5 data stays intact.
-    if (version === 5) this.db.prepare("UPDATE metadata SET value=? WHERE key='schema_version'").run(JSON.stringify(schemaVersion));
     if (!stored) this.db.prepare("INSERT INTO metadata(key,value) VALUES('schema_version',?)").run(JSON.stringify(schemaVersion));
     }).immediate(); }
     catch (error) { this.db.close();throw error; }

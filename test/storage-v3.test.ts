@@ -68,28 +68,21 @@ test("an unversioned existing database is rejected without mutation",()=>{
  } finally {inspected.close();fs.rmSync(root,{recursive:true,force:true});}
 });
 
-test('schema 5 upgrades atomically, preserves all existing rows and reopens idempotently',()=>{
- const root=fs.mkdtempSync(path.join(os.tmpdir(),'factory-v5-')),file=path.join(root,'factory.db');
- try{
-  const old=new Database(file);old.exec(fs.readFileSync(new URL('./fixtures/schema-v5.sql',import.meta.url),'utf8'));
-  old.exec("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,stage,status,attempt,revision) VALUES('queued',1,'owner/demo','now','now','DESIGN','PAUSED',2,6); INSERT INTO maintenance_operations(id,operation,actor,status,requested_at) VALUES('update','update','dashboard','failed','now'); INSERT INTO maintenance_items VALUES('update','queued',6,'now',NULL); INSERT INTO metadata VALUES('cursor','123');");
-  const tables=(old.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as {name:string}[]).map(row=>row.name);
-  const before=new Map(tables.map(name=>[name,old.prepare(`SELECT * FROM ${name}`).all()]));old.close();
-  for(let attempt=0;attempt<2;attempt++){
-   const store=new Store(file);try{
-    assert.equal(store.metadata('schema_version'),6);
-    for(const name of tables){const rows=store.db.prepare(`SELECT * FROM ${name}`).all();assert.deepEqual(name==='metadata'?rows.filter((r:any)=>r.key!=='schema_version'):rows,name==='metadata'?before.get(name)!.filter((r:any)=>r.key!=='schema_version'):before.get(name));}
-    assert.deepEqual(store.db.prepare('SELECT * FROM repository_controller').all(),[]);
-   }finally{store.db.close();}
-  }
- }finally{fs.rmSync(root,{recursive:true,force:true});}
+test("stored schema versions older or newer than current are refused without changing file bytes",()=>{
+ for(const version of [5,7]){
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),`factory-schema-${version}-`)),file=path.join(root,"factory.db");
+  try{
+   const database=new Database(file);database.exec(`CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE preserved(value TEXT); INSERT INTO metadata VALUES('schema_version','${version}'); INSERT INTO preserved VALUES('unchanged');`);database.close();
+   const before=fs.readFileSync(file);
+   assert.throws(()=>new Store(file),/Unsupported AI Factory database schema.*requires a fresh data directory/);
+   assert.deepEqual(fs.readFileSync(file),before,`schema ${version} database bytes changed during refusal`);
+  }finally{fs.rmSync(root,{recursive:true,force:true});}
+ }
 });
 
-test('failed schema 5 migration rolls back both schema and version marker',()=>{
- const root=fs.mkdtempSync(path.join(os.tmpdir(),'factory-v5-rollback-')),file=path.join(root,'factory.db');
- try{
-  const old=new Database(file);old.exec(fs.readFileSync(new URL('./fixtures/schema-v5.sql',import.meta.url),'utf8'));old.exec("CREATE TRIGGER fail_version BEFORE UPDATE ON metadata BEGIN SELECT RAISE(ABORT,'injected migration failure'); END;");old.close();
-  assert.throws(()=>new Store(file),/injected migration failure/);
-  const inspected=new Database(file);try{assert.deepEqual(inspected.prepare("SELECT value FROM metadata WHERE key='schema_version'").get(),{value:'5'});assert.equal(inspected.prepare("SELECT name FROM sqlite_master WHERE name='repository_controller'").get(),undefined);}finally{inspected.close();}
- }finally{fs.rmSync(root,{recursive:true,force:true});}
+test("schema migration is forbidden while there is no production",()=>{
+ const source=fs.readFileSync(new URL("../src/storage.ts",import.meta.url),"utf8");
+ assert.doesNotMatch(source,/UPDATE\s+metadata\s+SET\s+value[^\n]*schema_version/i);
+ assert.doesNotMatch(source,/\bversion\s*(?:===|!==|==|!=)\s*\d+\b/);
+ assert.doesNotMatch(source,/\b\d+\s*(?:===|!==|==|!=)\s*version\b/);
 });
