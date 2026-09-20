@@ -296,3 +296,12 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 @media(max-width:640px){.queue-pause-notice{align-items:flex-start;flex-direction:column}.queue-pause-notice .state{white-space:normal}}
 
 .controller-actions{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem}
+
+.repository-result{padding:1rem;border:1px solid var(--line);border-radius:10px;background:var(--input);font-size:.8rem;overflow-wrap:anywhere}
+.repository-result dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;margin:.85rem 0}
+.repository-result dt{color:var(--muted);font-size:.72rem}
+.repository-result dd{margin:.2rem 0 0;font-weight:600}
+.repository-result ul{padding-left:1.2rem;line-height:1.5}
+.repository-danger{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:.85rem;font-size:.82rem}
+.repository-danger>div{flex:1;min-width:min(100%,16rem)}
+@media(max-width:640px){.repository-result dl{grid-template-columns:1fr}}

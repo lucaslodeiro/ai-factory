@@ -1,0 +1,8 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const source=fs.readFileSync(new URL('../dashboard/app.js',import.meta.url),'utf8');
+function fixture(){const element={innerHTML:'',value:'work-1'},context=vm.createContext({$:()=>element,escapeHtml:(s:unknown)=>String(s??'').replaceAll('<','&lt;'),document:{querySelectorAll:()=>[]},toast:()=>{},confirm:()=>false,window:{}});for(const name of ['renderRepositoryResult','repositoryAction'])vm.runInContext(source.split('\n').find(line=>line.startsWith(`${name==='repositoryAction'?'async ':''}function ${name}(`))!,context);vm.runInContext('let repositoryBusy=false',context);return {element,context};}
+test('repository diagnosis is readable and escapes data',()=>{const {element,context}=fixture();context.data={root:'/repos/<demo>',exists:true,git:true,originMatches:true,branch:'main',dirty:[],untracked:[],unpushed:0,worktrees:['/repos/demo'],recommendation:'Repository is synchronized',inconsistencies:[]};vm.runInContext("renderRepositoryResult(data,'check')",context);assert.match(element.innerHTML,/Repository is synchronized/);assert.match(element.innerHTML,/Changed files/);assert.match(element.innerHTML,/&lt;demo>/);assert.doesNotMatch(element.innerHTML,/"originMatches"/);});
+test('declining publish or restore sends no mutation request',async()=>{const {context}=fixture();let requests=0;context.fetch=()=>{requests++;throw new Error('Unexpected request');};await vm.runInContext("repositoryAction('publish')",context);await vm.runInContext("repositoryAction('restore')",context);assert.equal(requests,0);assert.equal(vm.runInContext('repositoryBusy',context),false);});
