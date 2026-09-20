@@ -2,7 +2,7 @@ import type { Store } from "./storage.js";
 import type { FactoryCommand } from "./factory-command.js";
 import { WorkflowFailures } from "./workflow-failures.js";
 import { WorkflowProjections } from "./workflow-projection.js";
-import { WorkflowRecords, type WorkflowRecord } from "./workflow-records.js";
+import { WorkflowRecords } from "./workflow-records.js";
 import {assertExecutionStopped} from "./execution-manager.js";
 
 export interface CommandContext { workItemId:string;login:string;commentId:number;specVersion:number; }
@@ -22,15 +22,16 @@ export class WorkflowCommands {
    this.requireMutable(current.status,command.kind);
    const ids:string[]=[];
    const result=this.projections.present({workItemId:context.workItemId,expectedRevision:current.revision,actor,source,reason:{code:command.kind,summary:command.kind==="note"?"Human instruction added":"Human instruction replaced"},recordIds:ids},()=>{
-    const supersedes=command.kind==="replace"?[this.recordId(context.workItemId,command.recordId,"instruction")]:undefined;
-    ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:command.scope,appliesTo:command.appliesTo,payload:{kind:"instruction",text:command.text,supersedes},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
+    const target=command.kind==="replace"?this.recordId(context.workItemId,command.recordId):undefined;
+    if(target?.payload.kind==="decision")ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:command.scope,payload:{kind:"decision",category:"human",decision:command.text,rationale:`Replacement from @${context.login}`,supersedes:[target.id]},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
+    else ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:command.scope,appliesTo:command.appliesTo,payload:{kind:"instruction",text:command.text,supersedes:target?[target.id]:undefined},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
    });
    return {projection:result,recordIds:ids};
   }
   if(command.kind==="revoke") {
    this.requireMutable(current.status,command.kind);
-   const id=this.recordId(context.workItemId,command.recordId,"instruction");
-   const result=this.projections.present({workItemId:context.workItemId,expectedRevision:current.revision,actor,source,reason:{code:"revoke",summary:"Human instruction revoked"},recordIds:[id]},()=>{this.records.revokeInstruction(id);});
+   const id=this.recordId(context.workItemId,command.recordId).id;
+   const result=this.projections.present({workItemId:context.workItemId,expectedRevision:current.revision,actor,source,reason:{code:"revoke",summary:"Human guidance revoked"},recordIds:[id]},()=>{this.records.revokeHumanGuidance(id);});
    return {projection:result,recordIds:[id]};
   }
   if(command.kind==="approve") {
@@ -101,9 +102,10 @@ export class WorkflowCommands {
   if(context.commentId<=request.payload.openedAfterCommentId)throw new Error(`Command is stale; request opened after comment ${request.payload.openedAfterCommentId}`);
   return request;
  }
- private recordId(workItemId:string,prefix:string,kind:WorkflowRecord["kind"]) {
-  const rows=this.store.db.prepare("SELECT id FROM records WHERE work_item_id=? AND kind=? AND id LIKE ? ORDER BY sequence").all(workItemId,kind,`${prefix}%`) as Array<{id:string}>;
-  if(rows.length!==1)throw new Error(rows.length?`Record prefix ${prefix} is ambiguous`:`Record ${prefix} was not found`);return rows[0].id;
+ private recordId(workItemId:string,prefix:string) {
+  const matches=(this.store.db.prepare("SELECT id FROM records WHERE work_item_id=? AND id LIKE ? ORDER BY sequence").all(workItemId,`${prefix}%`) as Array<{id:string}>).map(row=>this.records.get(row.id)!);
+  const rows=matches.filter(record=>record.status==="active"&&(record.payload.kind==="instruction"||(record.payload.kind==="decision"&&record.payload.category==="human")));
+  if(rows.length!==1){if(rows.length)throw new Error(`Record prefix ${prefix} is ambiguous`);if(matches.length)throw new Error(`Record ${prefix} is not active human guidance; only instructions and human decisions may be changed`);throw new Error(`Active human guidance ${prefix} was not found`);}return rows[0];
  }
  private requireMutable(status:string,command:string) {if(["COMPLETED","CANCELLED"].includes(status))throw new Error(`Cannot ${command} while workflow is ${status}`);}
  private returnStages(stage:"DESIGN"|"BUILD"|"TEST"|"REVIEW"|"DELIVERY") {return stage==="BUILD"?["BUILD" as const]:stage==="TEST"?["BUILD" as const,"TEST" as const]:stage==="REVIEW"?["BUILD" as const,"TEST" as const,"REVIEW" as const]:[stage];}

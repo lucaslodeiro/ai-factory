@@ -192,7 +192,7 @@ test("command outcomes are persisted and visible in the status comment",()=>{
   comments.push(comment(13,"/factory revoke"));inbox.poll(started.id);
   assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `unparsed` by @owner — rejected/);
   comments.push(comment(14,"/factory replace missing replacement"));inbox.poll(started.id);
-  assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `replace missing` by @owner — rejected: Record missing was not found/);
+  assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `replace missing` by @owner — rejected: Active human guidance missing was not found/);
  } finally {store.db.close();}
 });
 
@@ -207,5 +207,14 @@ test("applied answers and stale commands render their outcome",()=>{
   assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `answer` by @owner — stale:/);
   comments.push(comment(6,"/factory answer Use SQLite"));inbox.poll(started.id);
   assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `answer` by @owner — applied/);
+ } finally {store.db.close();}
+});
+
+test("tactical decisions cannot be revoked and the rejection is visible",()=>{
+ const store=new Store(":memory:");
+ try {
+  const started=new WorkflowIntake(store).start(issue,{actor:"dashboard",source:"control"}),records=new WorkflowRecords(store),tactical=records.create({workItemId:started.id,specVersion:0,scope:"spec",payload:{kind:"decision",category:"tactical",decision:"Use queues",rationale:"Architecture",supersedes:[]},sourceType:"agent-result",sourceId:"run",actor:"product-architect"});
+  const result=new WorkflowInbox(store,{comments:()=>[comment(1,`/factory revoke ${tactical.id.slice(0,8)}`)]},["owner"]).poll(started.id);
+  assert.equal(result.rejected,1);assert.match(workflowStatusMarkdown(store,started.id),/rejected: Record .* is not active human guidance; only instructions and human decisions may be changed/);
  } finally {store.db.close();}
 });

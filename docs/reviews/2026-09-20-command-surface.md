@@ -48,6 +48,13 @@ Implementation details and commit hashes are recorded below as each item lands.
 - Files: `src/factory-help.ts`, `src/factory-command.ts`, `src/workflow-commands.ts`, `src/workflow-github.ts`, `src/workflow-orchestrator.ts`, `src/workflow-status.ts`, `test/factory-command.test.ts`, `test/workflow-github.test.ts`, `README.md`, `docs/GITHUB_SETUP.md`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
 - Change: `/factory help` is approver-only and state-neutral, publishes one idempotent immutable reference per work item, and shares its complete command list with the status comment's collapsed **All commands** block. User documentation now describes the full grammar and semantics.
 - Test: `help publishes one immutable reference and status keeps the same collapsed list` verifies first and repeated help, shared content and exactly one Next action.
+- Commit: `a40640d`.
+
+### C6 — mutable human decisions
+
+- Files: `src/workflow-records.ts`, `src/workflow-commands.ts`, `src/workflow-status.ts`, `test/workflow-commands.test.ts`, `test/workflow-inbox.test.ts`, `test/workflow-github.test.ts`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
+- Change: replace/revoke now resolve either an active instruction or a human decision. Replacing a decision creates a new GitHub-authored human decision that supersedes it; revocation marks it revoked. Tactical decisions produce a visible rejection. Status groups instructions and human decisions as **Active human guidance**.
+- Tests: `human decisions can be listed, replaced and revoked while tactical decisions cannot` verifies status, supersession and prompt content; `tactical decisions cannot be revoked and the rejection is visible` verifies C1 presentation.
 - Commit: recorded after commit creation.
 
 ## Removed or changed behavior
@@ -66,6 +73,7 @@ To be completed after implementation.
 - After C3: focused parser tests — 3 passed; `npm test` — 116 tests, 116 passed, 0 failed.
 - After C4: focused command/parser/inbox tests — 27 passed; `npm test` — 120 tests, 120 passed, 0 failed.
 - After C5: focused parser/publisher/status tests — 11 passed; `npm test` — 121 tests, 121 passed, 0 failed.
+- After C6: focused workflow tests — 34 passed. First `npm test` run: 123 tests, 122 passed, 1 failed because `daemon.test.ts` read a JSON file while it was being written (`Unexpected end of JSON input`); immediate unchanged rerun: 123 tests, 123 passed, 0 failed.
 
 ## Documentation
 

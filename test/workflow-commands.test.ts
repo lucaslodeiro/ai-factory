@@ -6,6 +6,7 @@ import { WorkflowFailures } from "../src/workflow-failures.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
 import { ContextAssembler } from "../src/context-assembly.js";
+import { workflowStatusMarkdown } from "../src/workflow-status.js";
 
 function setup(stage:"DESIGN"|"BUILD"|"TEST"|"DELIVERY"="DESIGN",status:"QUEUED"|"WAITING"|"FAILED"|"PAUSED"|"CANCELLED"|"COMPLETED"="QUEUED") {
  const store=new Store(":memory:");
@@ -165,5 +166,22 @@ test("merge feedback returns delivery to Builder as an open human auto-fix findi
   assert.equal(finding?.sourceType,"github-comment");assert.equal(finding?.actor,"owner");
   const prompt=new ContextAssembler(s.store).assemble({workItemId:"work-1",role:"developer",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"}});
   assert.match(prompt.markdown,/Fix the flaky test/);
+ } finally {s.store.db.close();}
+});
+
+test("human decisions can be listed, replaced and revoked while tactical decisions cannot",()=>{
+ const s=setup("DESIGN","WAITING");
+ try {
+  s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"request",type:"clarification",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:10},sourceType:"agent-result",sourceId:"run",actor:"product-architect"});s.initialize();
+  const answered=s.commands.apply({kind:"answer",text:"Use SQLite"},context(11)),decision=s.records.get(answered.recordIds.find(id=>s.records.get(id)?.payload.kind==="decision")!)!;
+  assert.match(workflowStatusMarkdown(s.store,"work-1"),new RegExp(`Active human guidance[\\s\\S]*${decision.id.slice(0,8)}[\\s\\S]*Use SQLite`));
+  const replaced=s.commands.apply({kind:"replace",recordId:decision.id.slice(0,8),text:"Use PostgreSQL",scope:"spec",appliesTo:[]},context(12));
+  assert.equal(s.records.get(decision.id)?.status,"superseded");
+  const replacement=s.records.get(replaced.recordIds[0])!;assert.equal(replacement.payload.kind==="decision"&&replacement.payload.decision,"Use PostgreSQL");
+  const prompt=new ContextAssembler(s.store).assemble({workItemId:"work-1",role:"developer",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"}}).markdown;
+  assert.match(prompt,/Use PostgreSQL/);assert.doesNotMatch(prompt,/Use SQLite/);
+  const tactical=s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"decision",category:"tactical",decision:"Internal choice",rationale:"Architect",supersedes:[]},sourceType:"agent-result",sourceId:"run-2",actor:"product-architect"});
+  assert.throws(()=>s.commands.apply({kind:"revoke",recordId:tactical.id.slice(0,8)},context(13)),/only instructions and human decisions/);
+  s.commands.apply({kind:"revoke",recordId:replacement.id.slice(0,8)},context(14));assert.equal(s.records.get(replacement.id)?.status,"revoked");
  } finally {s.store.db.close();}
 });

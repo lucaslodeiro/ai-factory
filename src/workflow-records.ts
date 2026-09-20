@@ -76,6 +76,10 @@ export class WorkflowRecords {
    AND status IN ('active','open') AND (scope='issue' OR spec_version=?) ORDER BY sequence`).all(workItemId,specVersion) as Row[];
   return rows.map(parse).filter(record=>record.kind !== "instruction" || !record.appliesTo.length || record.appliesTo.includes(role));
  }
+ humanGuidance(workItemId:string,activeOnly=true) {
+  const rows=this.store.db.prepare(`SELECT * FROM records WHERE work_item_id=? ${activeOnly?"AND status='active'":""} ORDER BY sequence`).all(workItemId) as Row[];
+  return rows.map(parse).filter(record=>record.payload.kind==="instruction"||(record.payload.kind==="decision"&&record.payload.category==="human"));
+ }
  openRequests(workItemId:string) {
   return (this.store.db.prepare("SELECT * FROM records WHERE work_item_id=? AND kind='request' AND status='open' ORDER BY sequence").all(workItemId) as Row[]).map(parse);
  }
@@ -100,6 +104,12 @@ export class WorkflowRecords {
  revokeInstruction(id:string) {
   const record=this.get(id);
   if (!record || record.payload.kind !== "instruction" || record.status !== "active") throw new Error("Only an active instruction can be revoked");
+  this.store.db.prepare("UPDATE records SET status='revoked',updated_at=? WHERE id=?").run(new Date().toISOString(),id);
+  return this.get(id)!;
+ }
+ revokeHumanGuidance(id:string) {
+  const record=this.get(id),isHumanDecision=record?.payload.kind==="decision"&&record.payload.category==="human";
+  if (!record || record.status!=="active" || (record.payload.kind!=="instruction"&&!isHumanDecision)) throw new Error("Only active human guidance can be revoked");
   this.store.db.prepare("UPDATE records SET status='revoked',updated_at=? WHERE id=?").run(new Date().toISOString(),id);
   return this.get(id)!;
  }

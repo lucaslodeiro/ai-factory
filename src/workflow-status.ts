@@ -50,9 +50,8 @@ export function workflowStatusMarkdown(store:Store,workItemId:string) {
  if(context.pr)rows.push(["Pull request",context.pr]);
  if(context.observedApproverComments)rows.push(["Approver comments since last command",`${context.observedApproverComments} — use \`/factory note\` to make guidance actionable`]);
  if(context.lastCommand){const last=context.lastCommand,reason=last.outcome==="deferred"?"waiting for the interrupted execution to exit":last.reason;rows.push(["Last command",`\`${last.kind}\` by @${last.login} — ${last.outcome}${reason?`: ${reason}`:""}`]);}
- const byId=new Map(["product-architect","developer","qa","reviewer"].flatMap(role=>records.active(workItemId,spec,role as "product-architect"|"developer"|"qa"|"reviewer")).filter(record=>record.payload.kind==="instruction").map(record=>[record.id,record]));
- const instructions=[...byId.values()].sort((a,b)=>a.sequence-b.sequence);
- const guidance=instructions.length?`\n\n### Active human instructions\n\n${instructions.map(record=>`- \`${record.id.slice(0,8)}\` — ${record.payload.kind==="instruction"?record.payload.text:""}`).join("\n")}${instructions.length>3?`\n\nConsider \`/factory replace\` or \`/factory revoke\` to keep guidance current.`:""}`:"";
+ const humanGuidance=records.humanGuidance(workItemId);
+ const guidance=humanGuidance.length?`\n\n### Active human guidance\n\n${humanGuidance.map(record=>`- \`${record.id.slice(0,8)}\` — ${record.payload.kind==="instruction"?record.payload.text:record.payload.kind==="decision"?record.payload.decision:""}`).join("\n")}${humanGuidance.length>3?`\n\nConsider \`/factory replace\` or \`/factory revoke\` to keep guidance current.`:""}`:"";
  const transitions=(store.db.prepare("SELECT ts,payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 10").all(workItemId) as Array<{ts:string;payload:string}>).map(row=>{const event=JSON.parse(row.payload) as {to:{stage:string;status:string};reason:{summary:string}};return `- ${row.ts} — ${event.to.stage}/${event.to.status}: ${event.reason.summary}`;});
  const history=transitions.length?`\n\n<details><summary>Last ${transitions.length} workflow transitions</summary>\n\n${transitions.join("\n")}\n\n</details>`:"";
  const failureDetails=failure?`\n\n${workflowFailureEvidence(store,failure)}`:"";

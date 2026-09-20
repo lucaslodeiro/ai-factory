@@ -30,7 +30,7 @@ test("status projection has one current CTA and derives it from the active reque
   assert.equal(body.match(/^## Next action$/gm)?.length,1);
   assert.match(body,/Current actor \| Human/);
   assert.match(body,/\/factory approve v2/);
-  assert.match(body,/Active human instructions[\s\S]*Keep it lightweight/);
+  assert.match(body,/Active human guidance[\s\S]*Keep it lightweight/);
   assert.deepEqual(workflowLabels(s.store,"work-1").map(label=>label.name),["factory:design","factory:waiting"]);
  } finally {s.store.db.close();}
 });
