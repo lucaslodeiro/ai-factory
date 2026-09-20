@@ -47,6 +47,7 @@ function metric(items,statuses){return items.filter(item=>statuses.includes(item
 const stateClass=value=>`state-${String(value).toLowerCase().replaceAll('_','-')}`;
 function render(data){
   if(data.naming)naming=data.naming;
+  document.title=data.repository?`${data.repository} · AI Factory`:'AI Factory · Dashboard';
   $('#repository').innerHTML=`${brandIcon('github')}<span>${escapeHtml(data.repository||'No repository configured')} · ${escapeHtml(data.branch)}</span>`;
   $('#active-count').textContent=metric(data.items,['QUEUED','RUNNING']);$('#waiting-count').textContent=metric(data.items,['WAITING']);$('#paused-count').textContent=metric(data.items,['PAUSED']);$('#ready-count').textContent=metric(data.items,['COMPLETED']);$('#failed-count').textContent=metric(data.items,['FAILED','CANCELLED']);$('#updated').textContent=`Updated ${relative(data.generatedAt)}`;
   const standby=data.controller?.state==='standby'||data.controller?.state==='expired';$('#local-issues-note').textContent=standby?'This list shows only this installation’s local database and may be empty while another factory controls the repository.':'';$('#start-issue-form').hidden=standby;

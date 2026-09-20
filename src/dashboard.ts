@@ -584,6 +584,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         "/assets/brands/github.svg":"assets/brands/github.svg", "/assets/brands/claude.svg":"assets/brands/claude.svg",
         "/assets/brands/openai.svg":"assets/brands/openai.svg", "/assets/brands/git.svg":"assets/brands/git.svg",
         "/assets/brands/slack.svg":"assets/brands/slack.svg",
+        "/favicon.svg":"favicon.svg",
       };
       return files[url.pathname] ? asset(res,files[url.pathname]) : json(res,404,{error:"Not found"});
     } catch (error) { return json(res,400,{error:error instanceof Error ? error.message : String(error)}); }
