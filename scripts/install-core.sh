@@ -69,6 +69,7 @@ if [[ -e $dest ]]; then
     if [[ $name == .env || $name == .env.backup-* || $name == repos ]]; then
       continue
     fi
+    if [[ $name == .uninstall && -d $entry ]]; then continue; fi
     if [[ $name == engine.incomplete-* && -d $entry ]]; then
       continue
     fi
@@ -103,6 +104,7 @@ if [[ -e $launcher && ! -L $launcher ]]; then
   exit 1
 fi
 ln -sfn "$engine/scripts/ai-factory" "$launcher"
+rm -rf "$dest/.uninstall"
 umask 077
 install_step="creating the initial configuration"
 node scripts/initialize-environment.mjs

@@ -40,11 +40,14 @@ Git comes from Apple's Command Line Tools. Installing those tools is an operatin
 ## Uninstall and clean reinstall
 
 Run the uninstaller while the parent shell remains outside the directory that
-will be removed:
+will be removed. The basic mode can be followed by purge later:
 
 ```sh
 cd "$HOME"
+# Preserve .env and repos/:
 ai-factory uninstall
+# Or remove the entire factory home:
+ai-factory uninstall --purge
 ```
 
 The installer stops and verifies any daemon, dashboard or background update
@@ -63,7 +66,24 @@ configuration and factory commands work from any directory. If that directory
 is not yet on the current shell's `PATH`, use
 `$HOME/.local/bin/ai-factory uninstall` instead.
 
-The basic uninstaller removes the services, `engine/` and `data/` after its unpublished-work preflight. It preserves `.env`, `.env.backup-*` and `repos/`, so reinstalling into the same home reuses configuration and managed clones. Use `ai-factory uninstall --purge` to remove the entire home; purge also blocks on dirty or unpushed managed clones unless `--force` is supplied. Provider credentials always remain outside the home. For an automated disposable-machine test, use `--yes`.
+The basic uninstaller removes the services, `engine/` and `data/` after its unpublished-work preflight. It preserves `.env`, `.env.backup-*` and `repos/`, so reinstalling into the same home reuses configuration and managed clones. It also leaves a small uninstall-only helper behind the `ai-factory` launcher. That launcher can run `ai-factory uninstall --purge` later, while other commands ask you to reinstall. Purge removes the helper and complete home, and blocks on dirty or unpushed managed clones unless `--force` is supplied. Provider credentials always remain outside the home. For an automated disposable-machine test, use `--yes`.
+
+`$HOME/ai-factory` is the installation home, not an npm package. Do not run
+`npm run service` or `npm --prefix "$HOME/ai-factory" …` there. Installed
+operations always use the launcher:
+
+```sh
+cd "$HOME"
+ai-factory service status all
+ai-factory uninstall --yes
+# Or remove configuration and managed repositories too:
+ai-factory uninstall --purge --yes
+```
+
+A purge removes `.env` but preserves provider credentials stored by GitHub,
+Claude and Codex. After reinstalling, the dashboard therefore asks again for
+the repository, checkout and approvers; the daemon remains stopped until the
+new project configuration passes readiness.
 
 If an older uninstall left a terminal pointing at the removed checkout, run
 `cd "$HOME"` before using that terminal again. Both installers now recover
@@ -146,7 +166,7 @@ ai-factory service logs all
 ai-factory service uninstall
 ```
 
-The `logs` action prints the last 100 stdout/error lines and continues following both files until `Ctrl+C`. Installation, update, service start and service restart print the configured dashboard URL plus the status, restart, log and stop commands so the next operational step is visible without reopening this document.
+The `logs` action prints the last 100 stdout/error lines and continues following both files until `Ctrl+C`. Start and restart wait for a stable launchd PID; daemon actions also wait for the runtime lock written only after preflight succeeds. Stop waits until launchd no longer reports the job. If verification fails, the command returns an error and unloads a failed start instead of printing a false success. Installation, update, service start and service restart print the configured dashboard URL plus the status, restart, log and stop commands so the next operational step is visible without reopening this document.
 
 Open `http://127.0.0.1:4173` after starting the dashboard. It shows daemon health, the issue queue, recent agent executions and readable audit events. Its persistent theme selector follows the operating-system preference initially and switches between light and dark modes. Issue status badges, the complete issue list, metrics, executions and events update through a local Server-Sent Events stream every two seconds; a visible Live/Reconnecting badge reports stream health and a 15-second poll remains as fallback. Retry, Cancel and Stop actions write to the same durable control queue as the CLI.
 
@@ -194,7 +214,7 @@ On a Mac where the Tailscale application is installed but its CLI is not in `PAT
 
 The engine repository and target application repository are separate. Set `GITHUB_REPOSITORY=owner/application` and `FACTORY_REPO_DIR=/absolute/path/to/application`; issues and PRs belong to that target. Start an open issue from the dashboard, with `ai-factory start-issue <number-or-url>`, or with a standalone `/factory start` comment from a configured approver.
 
-For two projects, use two factory installations with separate `.env`, target clones and `FACTORY_DATA_DIR` values, and start each in its own terminal. Within one instance, agent stages run sequentially; another issue can advance while one is waiting for human approval. Simultaneous agents within one project and multiple instances targeting the same repository are not supported. Locks protect a data directory on one host, not a repository across hosts.
+For two projects, use two factory installations with separate `.env`, target clones and `FACTORY_DATA_DIR` values, and start each in its own terminal. Within one instance, agent stages run sequentially; another issue can advance while one is waiting for human approval. Locks protect a data directory on one host, not a repository across hosts. Until the [repository controller lease](docs/REPOSITORY_CONTROLLER_LEASE_SPEC.md) is implemented, keep exactly one daemon active for each GitHub repository. A second host may run its dashboard, but its daemon must remain stopped; otherwise both factories can consume the same command while showing unrelated local state.
 
 ## Manual installation
 

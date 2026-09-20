@@ -13,8 +13,12 @@ service_wait_attempts=${AI_FACTORY_SERVICE_WAIT_ATTEMPTS:-}
 usage() {
   cat <<'EOF'
 Usage:
+  ai-factory service <install|start|stop|restart|status|logs> <daemon|dashboard|all>
+  ai-factory uninstall [--purge] [--yes] [--force]
+
+From a developer checkout:
   npm run service -- <install|start|stop|restart|status|logs> <daemon|dashboard|all>
-  npm run service -- uninstall [--purge] [--yes] [--force]
+  npm run uninstall -- [--purge] [--yes] [--force]
 
 Basic uninstall removes services, engine and runtime data while preserving configuration and repos/. Use --purge to remove the complete factory home.
 Run `ai-factory help` for every command.

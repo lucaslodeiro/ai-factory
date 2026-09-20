@@ -78,7 +78,7 @@ grep -Eq "bash /tmp/ai-factory-install-macos\.sh --dir .*incomplete.*--branch .*
 retry_user="$fixture/retry-user"
 retry_home="$retry_user/ai-factory"
 retry_bin="$fixture/retry-bin"
-mkdir -p "$retry_home/engine.incomplete-x" "$retry_home/data/service-logs" "$retry_home/repos" "$retry_bin"
+mkdir -p "$retry_home/engine.incomplete-x" "$retry_home/data/service-logs" "$retry_home/repos" "$retry_home/.uninstall/scripts" "$retry_bin"
 cp "$root/.env.example" "$retry_home/.env"
 cat > "$retry_bin/npm" <<'MOCK'
 #!/usr/bin/env bash
@@ -94,6 +94,7 @@ PATH="$retry_bin:/usr/local/Cellar/node/26.4.0/bin:/usr/local/git/bin:/usr/bin:/
 [[ -d "$retry_home/engine.incomplete-x" ]]
 [[ -d "$retry_home/data/service-logs" ]]
 [[ -f "$retry_home/data/install.json" ]]
+[[ ! -e "$retry_home/.uninstall" ]]
 
 for executable in node npm git gh codex claude; do
   cat > "$fixture/bin/$executable" <<'MOCK'

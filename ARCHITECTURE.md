@@ -37,11 +37,22 @@ Every execution persists the exact `prompt.md`, a permanent `prompt.json` inclus
 
 Disruptive update, daemon stop/restart and daemon-affecting configuration changes use a durable maintenance handshake. Preflight captures exact runnable item revisions, confirmation revalidates them, the scheduler barrier prevents a new run, active work becomes `PAUSED`, and service work begins only after processes exit. Tasks remain paused until individual Retry or batch resume.
 
+The service launcher treats launchd acceptance and runtime readiness as
+different states. Start/restart wait for a stable service PID; daemon readiness
+also requires the local runtime lock created after doctor succeeds. Stop and
+uninstall verify that launchd no longer reports the job before claiming
+completion.
+
 ## Repository and delivery
 
 Each work item owns a `factory/*` branch and isolated worktree. Agents cannot commit or push; the orchestrator verifies role mutation boundaries, creates commits and publishes only the assigned branch. Reviewer pass creates or reuses a PR. Human merge is mandatory.
 
 Repository recovery exposes only Check, Sync from remote, Publish branch, Clear local copy and Restore from remote. Check is read-only; Sync is clean fast-forward only; Publish refuses unrelated/default branches; Clear requires the exact configured path twice and pauses affected work; Restore requires an empty directory.
+
+The local daemon lock and stored repository identity do not coordinate separate
+factory homes or hosts. The current operational invariant is one active daemon
+per GitHub repository. A remote ownership protocol is specified, but not yet
+implemented, in [Repository Controller Lease](docs/REPOSITORY_CONTROLLER_LEASE_SPEC.md).
 
 ## Adapters and observability
 

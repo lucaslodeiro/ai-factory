@@ -4,7 +4,6 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import Database from "better-sqlite3";
 
 const args=process.argv.slice(2);
 if(args.some(arg=>["-h","--help"].includes(arg))){console.log("Usage: ai-factory uninstall [--purge] [--yes] [--force]\nBasic uninstall preserves .env, backups and repos/. --purge removes the entire factory home after checking managed clones. Provider credentials and shared tools are always preserved.");process.exit(0);}
@@ -32,6 +31,7 @@ console.log(purge?`  Purge:        ${factoryHome} including configuration and re
 
 let unsafeWork=[];const databaseFile=path.join(configuredData,"factory.db");
 if(fs.existsSync(databaseFile))try{
+  const {default:Database}=await import("better-sqlite3");
   const db=new Database(databaseFile,{readonly:true,fileMustExist:true});let active=[];try{active=db.prepare("SELECT issue_number,stage,status,branch FROM work_items WHERE status IN ('QUEUED','RUNNING','WAITING','PAUSED') ORDER BY issue_number").all();}finally{db.close();}
   unsafeWork=active.map(item=>{if(!item.branch||!targetDir||!fs.existsSync(targetDir))return{...item,published:false,publication:"unverifiable"};const remote=spawnSync(gitCommand,["ls-remote","--heads","origin",item.branch],{cwd:targetDir,encoding:"utf8",timeout:10000});const published=remote.status===0&&Boolean(remote.stdout.trim());return{...item,published,publication:remote.status===0?(published?"published":"unpublished"):"unverifiable"};}).filter(item=>!item.published);
   console.log(`  Work preflight: ${active.length} active item${active.length===1?"":"s"}; ${unsafeWork.length} with unpublished or unverifiable work.`);for(const item of unsafeWork)console.log(`    #${item.issue_number} ${item.stage}/${item.status} — ${item.branch||"no branch"} (${item.publication})`);
@@ -55,8 +55,11 @@ if(process.platform==="darwin"&&process.env.AI_FACTORY_UNINSTALL_SKIP_LAUNCHCTL!
   for(const line of(jobs.stdout??"").split("\n")){const label=line.trim().split(/\s+/).at(-1)??"";if(label.startsWith("com.ai-factory.update.")){call(["remove",label]);if(loaded(label))throw new Error(`Could not stop existing service: ${label}`);}}
   for(const service of["daemon","dashboard"]){const label=`com.ai-factory.${service}`;if(!loaded(label))continue;call(["bootout",`${domain}/${label}`]);if(loaded(label))throw new Error(`Could not stop existing service: ${label}`);console.log(`Stopped ${service} service.`);}
 }
-for(const plist of plists)fs.rmSync(plist,{force:true});try{if(fs.lstatSync(launcher).isSymbolicLink()&&path.resolve(path.dirname(launcher),fs.readlinkSync(launcher))===path.join(engine,"scripts","ai-factory"))fs.rmSync(launcher,{force:true});}catch{}
+for(const plist of plists)fs.rmSync(plist,{force:true});
+const installedLayout=path.basename(actualEngine)==="engine"&&path.dirname(actualEngine)===actualFactoryHome,residualRoot=path.join(factoryHome,".uninstall");
+if(!purge&&installedLayout){fs.mkdirSync(path.join(residualRoot,"scripts"),{recursive:true});fs.copyFileSync(fileURLToPath(import.meta.url),path.join(residualRoot,"scripts","uninstall.mjs"));fs.copyFileSync(path.join(engine,"scripts","ai-factory"),path.join(residualRoot,"scripts","ai-factory"));fs.chmodSync(path.join(residualRoot,"scripts","ai-factory"),0o755);fs.writeFileSync(path.join(residualRoot,"package.json"),JSON.stringify({name:"ai-factory"})+"\n");fs.mkdirSync(path.dirname(launcher),{recursive:true});try{fs.rmSync(launcher,{force:true});}catch{}fs.symlinkSync(path.join(residualRoot,"scripts","ai-factory"),launcher);}
+else try{if(fs.lstatSync(launcher).isSymbolicLink()){const target=path.resolve(path.dirname(launcher),fs.readlinkSync(launcher));if(target===path.join(engine,"scripts","ai-factory")||target===path.join(residualRoot,"scripts","ai-factory"))fs.rmSync(launcher,{force:true});}}catch{}
 const callerInside=process.cwd()===factoryHome||process.cwd().startsWith(`${factoryHome}${path.sep}`);if(callerInside)process.chdir(userHome);
 for(const directory of new Set([configuredData,standardData]))fs.rmSync(directory,{recursive:true,force:true});fs.rmSync(engine,{recursive:true,force:true});
-if(purge){fs.rmSync(factoryHome,{recursive:true,force:true});console.log(`AI Factory was purged. The home was removed: ${factoryHome}`);}else{const preserved=[];if(fs.existsSync(environmentFile))preserved.push(environmentFile);if(fs.existsSync(reposDir))for(const name of fs.readdirSync(reposDir))preserved.push(path.join(reposDir,name));console.log("AI Factory was uninstalled. Preserved paths:");for(const item of preserved)console.log(`  ${item}`);if(!preserved.length)console.log(`  ${factoryHome} (empty)`);}
+if(purge){fs.rmSync(factoryHome,{recursive:true,force:true});console.log(`AI Factory was purged. The home was removed: ${factoryHome}`);}else{const preserved=[];if(fs.existsSync(environmentFile))preserved.push(environmentFile);if(fs.existsSync(reposDir))for(const name of fs.readdirSync(reposDir))preserved.push(path.join(reposDir,name));console.log("AI Factory was uninstalled. Preserved paths:");for(const item of preserved)console.log(`  ${item}`);if(!preserved.length)console.log(`  ${factoryHome} (empty)`);if(installedLayout)console.log("The uninstall helper remains available. Run `ai-factory uninstall --purge` later to remove the preserved home.");}
 console.log("Provider credentials and shared command-line tools were preserved.");if(callerInside)console.log(`Your parent shell may still reference the removed engine. Run: cd ${userHome}`);

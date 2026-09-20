@@ -59,6 +59,11 @@ npm run service -- start dashboard
 npm run service -- start daemon
 ```
 
+The `npm run …` examples above are only for a source checkout. In an installed
+factory, `$HOME/ai-factory` is the installation home and has no `package.json`;
+use `ai-factory service …`, `ai-factory update` and `ai-factory uninstall` from
+any directory.
+
 The installer script suite intentionally exercises real macOS tooling and runs only on macOS. On another platform `test-macos-installer.sh` reports the skip and exits 3, so the gate cannot appear green. Because `test:all` includes that suite, `npm run test:all` is also macOS-only; use `npm test` for the portable TypeScript suite.
 
 Use **Dashboard → Configuration** whenever settings or credentials change. Every option with a safe universal value opens with a default; after GitHub connects, the dashboard suggests the account's demo repository, local clone and approver for any empty required fields. Optional secrets and allowlists remain empty. **Save and apply** validates the full candidate configuration before writing and restarts affected running services automatically. On the installer-opened first-time setup page, a valid save also starts and verifies the stopped daemon; later saves preserve an intentional stopped state. The installer accepts `--dashboard-host` and `--dashboard-port`; when the selected port is occupied it saves and opens the next available port automatically. Changing the address later in Configuration shows the new URL and reconnects after restarting the dashboard. `ai-factory configure` remains a supported terminal recovery path when the dashboard is unavailable; installation and update do not invoke it. Existing settings are preserved during updates.
@@ -67,7 +72,13 @@ An installed factory uses `$HOME/ai-factory` as its home by default: source code
 
 For an interrupted update that already unloaded both services, run `AI_FACTORY_UPDATE_STATE_FILE="$HOME/ai-factory/data/update-state.json" ai-factory update --start-services`. This explicit recovery mode starts both services after a successful update. Normal dashboard updates persist each service's original loaded state before the background job begins and restore that recorded intent after success or failure.
 
-For a clean installer retest, keep the parent terminal outside the checkout: run `cd "$HOME"` and then `ai-factory uninstall`. The basic mode removes services, `engine/` and `data/` while preserving `.env`, backups and `repos/`. `ai-factory uninstall --purge` removes the complete home after checking managed clones for dirty or unpushed work. Provider credentials and shared command-line tools remain installed in both modes. Use `--yes` only for automated disposable-machine runs and `--force` only after reviewing unpublished work.
+For a clean installer retest, keep the parent terminal outside the checkout. `cd "$HOME" && ai-factory uninstall` removes services, `engine/` and `data/` while preserving `.env`, backups and `repos/`. A small uninstall-only helper keeps the launcher available, so `ai-factory uninstall --purge` can later remove the preserved home after checking managed clones for dirty or unpushed work. You may also use `--purge` directly on the first invocation. Provider credentials and shared command-line tools remain installed in both modes. Use `--yes` only for automated disposable-machine runs and `--force` only after reviewing unpublished work.
+
+Because purge removes `.env`, a reinstall after purge remembers provider login
+credentials but not the repository, checkout or approvers. The dashboard starts
+for setup and the daemon remains stopped until those required values validate.
+Service commands report success only after launchd reaches the requested state;
+daemon start additionally waits for the runtime lock created after preflight.
 
 If a failed attempt leaves an incomplete engine, the installer prints safe recovery commands. Move only `$HOME/ai-factory/engine` to an `engine.incomplete-*` sibling, then rerun the installer; preserved `.env` and `repos/` remain in place. The installer never deletes an unrecognized engine automatically. See [installation and operations](INSTALL.md) for the complete command sequence.
 
@@ -102,7 +113,7 @@ The global update area checks `origin` before enabling update and runs through a
 
 Factory commands include `doctor`, `start`, `start-issue`, `status`, `events`, `cancel`, `retry`, `refresh-list`, `stop --pause-active`, `notifications`, `slack-test`, `models`, `sync`, and `repo <check|sync|publish|clear|restore>`.
 
-One instance executes agent stages sequentially for one target repository. To run two projects at once, use two installations with separate target clones, `.env` files and data directories. Multiple instances targeting the same repository are not supported.
+One instance executes agent stages sequentially for one target repository. To run two projects at once, use two installations with separate target clones, `.env` files and data directories. Until the repository-controller design is implemented, only one daemon may target a given repository across all hosts. Multiple dashboards are harmless, but a second daemon can consume the same commands and publish conflicting GitHub state. See the draft [repository controller lease specification](docs/REPOSITORY_CONTROLLER_LEASE_SPEC.md).
 
 This repository uses two long-lived branches: `develop` for ongoing work and `main` for stable releases. The installer defaults to `main`; pass `--branch develop` only when intentionally testing unreleased factory changes.
 

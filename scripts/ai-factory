@@ -9,11 +9,28 @@ while [[ -L $script ]]; do
 done
 launcher_root=$(CDPATH= cd -- "$(dirname -- "$script")/.." && pwd)
 if [[ ${launcher_root##*/} == engine ]]; then home=${AI_FACTORY_HOME:-${launcher_root%/engine}}; root=$launcher_root
+elif [[ ${launcher_root##*/} == .uninstall ]]; then home=${AI_FACTORY_HOME:-${launcher_root%/.uninstall}}; root=$home/engine
 else home=${AI_FACTORY_HOME:-$launcher_root}; root=$home/engine; [[ -d $root ]] || root=$launcher_root
 fi
 export AI_FACTORY_HOME="$home"
 command=${1:-help}
 [[ $# == 0 ]] || shift
+
+if [[ ! -d $root && -f $home/.uninstall/scripts/uninstall.mjs ]]; then
+  case $command in
+    uninstall) exec node "$home/.uninstall/scripts/uninstall.mjs" "$@";;
+    help|-h|--help)
+      cat <<'EOF'
+AI Factory is uninstalled; preserved configuration or repositories remain.
+Usage:
+  ai-factory uninstall --purge [--yes] [--force]
+
+Reinstall AI Factory to restore all other commands.
+EOF
+      exit 0;;
+    *) echo "AI Factory is uninstalled. Reinstall it or run: ai-factory uninstall --purge" >&2; exit 1;;
+  esac
+fi
 
 case $command in
   uninstall) exec node "$root/scripts/uninstall.mjs" "$@";;
