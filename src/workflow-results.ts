@@ -43,7 +43,7 @@ export class WorkflowResults {
   const requestPayload=active.payload,target=result.nextRole?nextRoleStage[result.nextRole]:undefined;if(!target||!requestPayload.allowedReturnStages.includes(target))throw new Error(`Tactical result cannot return to ${target??"an unknown stage"}`);
   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status:"QUEUED",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"tactical-resolved",summary:`Architect resolved the decision for ${target}`},recordIds:ids},()=>{
    this.resultEvent(input);
-   for(const decision of result.decisions)ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"decision",category:"tactical",decision:decision.decision,rationale:decision.rationale,supersedes:[]},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
+   for(const decision of result.decisions)ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"decision",category:"tactical",decision:decision.decision,rationale:decision.rationale,supersedes:decision.supersedes??[]},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
    const findingIds=requestPayload.findingIds??[];if(findingIds.length)this.records.settleFindings(findingIds,"resolved",input.executionId);
    this.records.resolveRequest(active.id,input.executionId);ids.push(active.id);
   });return {discarded:false,projection,recordIds:ids};

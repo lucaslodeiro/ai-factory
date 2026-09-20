@@ -47,14 +47,16 @@ test("delivery pass advances the stored stage and accepts role-owned deferred fi
 test("a delivery decision routes through Architect and returns only to an allowed stage",()=>{
  const s=setup("TEST",true);
  try {
+  const prior=s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"decision",category:"tactical",decision:"Use fixture v1",rationale:"Initial tactic",supersedes:[]},sourceType:"agent-result",sourceId:"old",actor:"product-architect"});
   running(s,"qa","run-q");
   const decision=s.results.apply({workItemId:"work-1",executionId:"run-q",role:"qa",result:result("decision")});
   assert.deepEqual({stage:decision.projection.stage,status:decision.projection.status},{stage:"DESIGN",status:"QUEUED"});
   const request=s.records.activeRequest("work-1");assert.equal(request?.payload.kind==="request"&&request.payload.type,"tactical-decision");
   running(s,"product-architect","run-a");
-  const resolved=s.results.apply({workItemId:"work-1",executionId:"run-a",role:"product-architect",result:result("resolved",{decisions:[{kind:"tactical",decision:"Keep the fixture",rationale:"Within SPEC",conflictsWithHuman:false}],nextRole:"qa"})});
+  const resolved=s.results.apply({workItemId:"work-1",executionId:"run-a",role:"product-architect",result:result("resolved",{decisions:[{kind:"tactical",decision:"Keep the fixture",rationale:"Within SPEC",conflictsWithHuman:false,supersedes:[prior.id]}],nextRole:"qa"})});
   assert.deepEqual({stage:resolved.projection.stage,status:resolved.projection.status},{stage:"TEST",status:"QUEUED"});assert.equal(s.records.get(request!.id)?.status,"resolved");
   assert.equal(s.records.active("work-1",1,"qa").some(record=>record.payload.kind==="decision"&&record.payload.category==="tactical"),true);
+  assert.equal(s.records.get(prior.id)?.status,"superseded");
  } finally {s.store.db.close();}
 });
 

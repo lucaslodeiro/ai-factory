@@ -59,3 +59,8 @@ test("delivery reports discard provider attempts to populate architect-owned fie
  assert.equal(parsed.taskAssessment,null);
  assert.equal(parsed.nextRole,null);
 });
+
+test("Architect results accept optional tactical supersession ids",()=>{
+ const parsed=parseResult(result("resolved",{nextRole:"qa",decisions:[{kind:"tactical",decision:"Use cache v2",rationale:"Replaces the earlier tactic",conflictsWithHuman:false,supersedes:["decision-1"]}]}),"product-architect",["qa"],"TEST");
+ assert.deepEqual(parsed.decisions[0].supersedes,["decision-1"]);
+});

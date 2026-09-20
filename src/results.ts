@@ -6,6 +6,8 @@ const text = (maxLength = 5000): Schema => ({ type: "string", minLength: 1, maxL
 const enumeration = (...values: string[]): Schema => ({ type: "string", enum: values });
 const list = (items: Schema): Schema => ({ type: "array", items, maxItems: 100 });
 const object = (properties: Record<string, Schema>): Schema => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
+const decisionSchema=object({ kind: enumeration("tactical", "major"), decision: text(), rationale: text(), conflictsWithHuman: { type: "boolean" }, supersedes:list(text(100)) });
+decisionSchema.required=decisionSchema.required!.filter(key=>key!=="supersedes");
 export const resultSchema = object({
   taskAssessment: { ...object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), rationale: text() }), type: ["object", "null"] },
   outcome: enumeration("spec", "questions", "resolved", "pass", "changes", "decision"),
@@ -16,7 +18,7 @@ export const resultSchema = object({
   tests: list(object({ command: text(), exitCode: { type: ["integer", "null"] }, evidence: text() })),
   dependencies: list(object({ name: text(200), change: enumeration("added", "updated", "removed"), rationale: text() })),
   changedFiles: list(text(1000)),
-  decisions: list(object({ kind: enumeration("tactical", "major"), decision: text(), rationale: text(), conflictsWithHuman: { type: "boolean" } })),
+  decisions: list(decisionSchema),
   nextRole: { type: ["string", "null"], enum: ["developer", "qa", "reviewer", null] },
   reviewChecks: list(object({ dimension: enumeration(...reviewDimensions), status: enumeration("passed", "failed", "not-applicable"), evidence: text() })),
 });
