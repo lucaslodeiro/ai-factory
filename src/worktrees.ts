@@ -1,6 +1,6 @@
 import {createHash} from "node:crypto";
 import {verificationPolicy,verificationPathAllowed,verificationArtifactAllowed,secretPath,type VerificationPolicy} from "./verification-paths.js";
-import { spawnSync } from "node:child_process";
+import { execFile,spawnSync } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
 import { config } from "./config.js";
@@ -30,6 +30,7 @@ export interface WorkspacePort {
  check(cwd: string, role: string, before: string, branch: string, baseline?:WorkspaceSnapshot): string[]|void;
  commit(cwd: string, message: string, branch: string, files?:string[]): void;
  publish(cwd: string, branch: string): void;
+ publishAsync?(cwd:string,branch:string):Promise<void>;
  changeSummary(cwd:string):{files:string[];stat:string};
  prepareReviewerContext(cwd:string,workItemId:string):{path:string;files:string[];stat:string};
  cleanupReviewerContext(cwd:string,workItemId:string):void;
@@ -106,6 +107,10 @@ export class Workspaces implements WorkspacePort {
   }
  }
 
+ async publishAsync(cwd:string,branch:string){
+  this.assertBranch(cwd,branch);
+  await new Promise<void>((resolve,reject)=>execFile(config.gitCommand,["push","--set-upstream","origin",`HEAD:refs/heads/${branch}`],{cwd,timeout:60000,maxBuffer:10000000},(error,_stdout,stderr)=>error?reject(new Error(stderr||error.message)):resolve()));
+ }
  publish(cwd: string, branch: string) {
   if (!branch.startsWith("factory/") || branch === config.defaultBranch || git(cwd, ["branch", "--show-current"]) !== branch) throw new Error("Refusing to push unexpected branch");
   git(cwd, ["push", "--set-upstream", "origin", `HEAD:refs/heads/${branch}`]);

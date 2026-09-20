@@ -1,3 +1,4 @@
+import {sanitizeFailureEvidence} from "./failure-report.js";
 import {workflowNextStep} from "./workflow-next-step.js";
 import {diagnoseWorkItem,diagnoseOperation} from "./failure-diagnostics.js";
 import {workflowActivity} from "./workflow-activity.js";
@@ -113,8 +114,10 @@ function buildSnapshot(store: Store) {
   const storedItems=(store.db.prepare("SELECT id,issue_number,repo,stage,status,attempt,revision,branch,updated_at,archived_at,context FROM work_items ORDER BY created_at").all() as any[]).map(item=>({...item,context:JSON.parse(item.context||"{}")}));
   const itemById=new Map(storedItems.map(item=>[item.id,item]));
   const visibleItems=storedItems.filter(item=>!item.archived_at);
+  const latestControls=new Map<string,{id:number;kind:string;pending:boolean;error?:string}>();
+  for(const control of store.db.prepare("SELECT id,kind,target,handled FROM controls WHERE kind IN ('pause','resume','retry','cancel') ORDER BY id DESC").all() as Array<{id:number;kind:string;target:string;handled:number}>){if(latestControls.has(control.target))continue;const failure=control.handled?store.db.prepare("SELECT payload FROM events WHERE type='control.failed' AND json_extract(payload,'$.id')=? ORDER BY id DESC LIMIT 1").get(control.id) as {payload:string}|undefined:undefined;latestControls.set(control.target,{id:control.id,kind:control.kind,pending:!control.handled,...(failure?{error:sanitizeFailureEvidence(JSON.parse(failure.payload).error,500)}:{})});}
   const items = visibleItems.slice().reverse().map(item => ({
-    id:item.id,issue:item.issue_number,repo:item.repo,stage:item.stage,status:item.status,attempt:item.attempt,revision:item.revision,title:item.context.title,
+    control:latestControls.get(item.id)??null,id:item.id,issue:item.issue_number,repo:item.repo,stage:item.stage,status:item.status,attempt:item.attempt,revision:item.revision,title:item.context.title,
     nextStep:workflowNextStep(store,item.id,item.status,item.context.pr),activity:workflowActivity(store,item.id,item.status),actions:workActions(item.status),url:item.context.url,pr:item.context.pr??null,updatedAt:item.updated_at,
   }));
   const executionRows=(store.db.prepare("SELECT id,work_item_id,role,stage,status,pid,started_at,finished_at,exit_code,input_tokens,output_tokens,cached_tokens,total_tokens,interruption_reason,maintenance_id FROM executions ORDER BY started_at DESC LIMIT 30").all() as any[]).filter(run=>!itemById.get(run.work_item_id)?.archived_at);
@@ -164,7 +167,7 @@ function buildSnapshot(store: Store) {
     }
   }
   const maintenance=(store.db.prepare("SELECT id,operation,actor,status,requested_at,confirmed_at,finished_at,error FROM maintenance_operations ORDER BY requested_at DESC LIMIT 10").all() as any[]).map(operation=>({...operation,affected:(store.db.prepare("SELECT work_item_id,paused_at,resumed_at FROM maintenance_items WHERE maintenance_id=?").all(operation.id) as any[])}));
-  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), controller:{...cachedControllerState(store),...controllerAttribution(store)}, issueRefresh, items, executions, usage, events,maintenance };
+  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), controller:{...cachedControllerState(store),...controllerAttribution(store)}, githubSync:store.metadata("runtime:github-sync")??null,issueRefresh, items, executions, usage, events,maintenance };
 }
 function controllerView(store:Store){
  if(!config.repo)return{state:"unconfigured",issues:[]};
@@ -567,8 +570,8 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         if (["refresh-list","start-issue","retry","cancel","pause","resume"].includes(body.kind ?? "")&&["standby","expired","uncertain","fenced"].includes(cachedControllerState(store).state))return json(res,409,{error:"This installation is in controller standby; use the active controller or take over explicitly."});
         if (["refresh-list","start-issue"].includes(body.kind ?? "") && !daemonState(store).running) return json(res,409,{error:"Start the daemon before synchronizing GitHub issues."});
         if (["pause","resume","retry","cancel"].includes(body.kind??"")) {try{validateWorkControl(store,body.kind!,body.target!);}catch(error){return json(res,409,{error:(error as Error).message});}}
-        store.request(body.kind!,body.target ?? "");
-        return json(res,202,{ok:true,message:body.kind === "refresh-list" ? "GitHub issue refresh queued." : body.kind === "start-issue" ? "Issue start queued." : `${body.kind} queued`});
+        const requestId=store.request(body.kind!,body.target ?? "");
+        return json(res,202,{ok:true,requestId,message:body.kind === "refresh-list" ? "GitHub issue refresh queued." : body.kind === "start-issue" ? "Issue start queued." : `${body.kind} queued`});
       }
       if (req.method === "POST" && url.pathname === "/api/services") {
         const body = await readBody(req) as { service?: string; action?: string;maintenanceId?:string };

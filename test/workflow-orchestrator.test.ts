@@ -32,12 +32,12 @@ test("V3 orchestrator completes Design, Build, Test, Review and merge with one a
  const runner=new WorkflowRunner(store,{"product-architect":adapter("architect"),developer:adapter("builder"),qa:adapter("tester"),reviewer:adapter("reviewer")},workspace,github);
  const orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
  try {
-  const started=orchestrator.startIssue("1","Dashboard");assert.equal(started.created,true);
+  const started=await orchestrator.startIssue("1","Dashboard");assert.equal(started.created,true);
   await orchestrator.tick();let projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"DESIGN",status:"WAITING"});assert.match(github.resultBodies.at(-1)!,/^# Specification v1/m);assert.match(github.resultBodies.at(-1)!,/## Next action/);
   assert.equal(github.statusBodies.at(-1)?.match(/^## Next action$/gm)?.length,1);assert.match(github.statusBodies.at(-1)!,/\/factory approve v1/);
   github.reply(1,"/factory approve v1");await orchestrator.tick();projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"TEST",status:"QUEUED"});
   await orchestrator.tick();assert.equal(new WorkflowProjections(store).get(started.id).stage,"REVIEW");
-  await orchestrator.tick();projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"DELIVERY",status:"WAITING"});assert.match(github.statusBodies.at(-1)!,/Review and merge/);assert.deepEqual(github.labels.at(-1),["factory:delivery","factory:waiting"]);assert.match(github.lastPrBody,/^Closes #1$/m);
+  await orchestrator.runLocal();await orchestrator.runLocal();await orchestrator.flush();projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"DELIVERY",status:"WAITING"});assert.match(github.statusBodies.at(-1)!,/Review and merge/);assert.deepEqual(github.labels.at(-1),["factory:delivery","factory:waiting"]);assert.match(github.lastPrBody,/^Closes #1$/m);
   github.pr={state:"MERGED",mergedAt:"2026-09-19T20:00:00Z",mergeCommit:{oid:"abc"}};await orchestrator.tick();projection=new WorkflowProjections(store).get(started.id);assert.equal(projection.status,"COMPLETED");assert.deepEqual(github.labels.at(-1),["factory:done"]);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM executions WHERE status='succeeded'").get() as {count:number}).count,4);
  } finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
 });
@@ -46,7 +46,7 @@ test("closed issues disappear operationally and reopen paused past closed-period
  const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
  const store=new Store(":memory:"),github=new GitHub(),runner=new WorkflowRunner(store,{},new Workspace(),github),orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
  try {
-  const started=orchestrator.startIssue("1");github.state="CLOSED";await orchestrator.tick();let row=store.db.prepare("SELECT archived_at,status FROM work_items WHERE id=?").get(started.id) as {archived_at:string|null;status:string};assert.ok(row.archived_at);assert.equal(row.status,"PAUSED");
+  const started=await orchestrator.startIssue("1");github.state="CLOSED";await orchestrator.tick();let row=store.db.prepare("SELECT archived_at,status FROM work_items WHERE id=?").get(started.id) as {archived_at:string|null;status:string};assert.ok(row.archived_at);assert.equal(row.status,"PAUSED");
   github.reply(20,"/factory retry");github.state="OPEN";await orchestrator.tick();row=store.db.prepare("SELECT archived_at,status FROM work_items WHERE id=?").get(started.id) as {archived_at:string|null;status:string};assert.equal(row.archived_at,null);assert.equal(row.status,"PAUSED");
   const context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(started.id) as {context:string}).context);assert.equal(context.cursor,20);assert.equal(github.statusBodies.at(-1)?.match(/^## Next action$/gm)?.length,1);
  } finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
@@ -57,39 +57,39 @@ test("dashboard start snapshots historical comments instead of replaying command
  const store=new Store(":memory:"),github=new GitHub(),runner=new WorkflowRunner(store,{},new Workspace(),github),orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
  try {
   github.reply(1,"/factory cancel");
-  const started=orchestrator.startIssue("1","Dashboard");
+  const started=await orchestrator.startIssue("1","Dashboard");
   await assert.rejects(orchestrator.tick(),/No adapter configured/);
   const projection=new WorkflowProjections(store).get(started.id);
   assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"DESIGN",status:"QUEUED"});
  } finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
 });
 
-test("a replaced GitHub issue archives stale work without publishing and can start a distinct item",()=>{
+test("a replaced GitHub issue archives stale work without publishing and can start a distinct item",async()=>{
  const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
  const store=new Store(":memory:"),github=new GitHub(),runner=new WorkflowRunner(store,{},new Workspace(),github),orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
  try {
-  const old=orchestrator.startIssue("1");github.issueId=200;
-  const refreshed=orchestrator.refreshIssueList(),stale=store.db.prepare("SELECT archived_at,status FROM work_items WHERE id=?").get(old.id) as {archived_at:string|null;status:string};
+  const old=await orchestrator.startIssue("1");github.issueId=200;
+  const refreshed=await orchestrator.refreshIssueList(),stale=store.db.prepare("SELECT archived_at,status FROM work_items WHERE id=?").get(old.id) as {archived_at:string|null;status:string};
   assert.ok(stale.archived_at);assert.equal(stale.status,"PAUSED");assert.deepEqual(refreshed,{found:0,added:0,updated:0});assert.equal(github.statusBodies.length,0);assert.equal(github.resultBodies.length,0);
   const event=JSON.parse((store.db.prepare("SELECT payload FROM events WHERE type='github.issue_replaced'").get() as {payload:string}).payload);assert.deepEqual(event,{issue:1,previousIssueId:100,currentIssueId:200});
-  const replacement=orchestrator.startIssue("1");assert.equal(replacement.created,true);assert.notEqual(replacement.id,old.id);
+  const replacement=await orchestrator.startIssue("1");assert.equal(replacement.created,true);assert.notEqual(replacement.id,old.id);
   assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE issue_number=1").get() as {count:number}).count,2);
  } finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
 });
 
-test("visibility reconciliation refreshes issue content and presents only title changes",()=>{
+test("visibility reconciliation refreshes issue content and presents only title changes",async()=>{
  const previousRepo=config.repo;config.repo="owner/demo";const store=new Store(":memory:"),github=new GitHub(),orchestrator=new WorkflowOrchestrator(store,github,new WorkflowRunner(store,{},new Workspace(),github),{enabled:false,async notify(){}});
  try {
-  const started=orchestrator.startIssue("1"),before=new WorkflowProjections(store).get(started.id).presentationRevision;
-  github.body="Updated body";orchestrator.refreshIssueList();let context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(started.id) as {context:string}).context);assert.equal(context.body,"Updated body");assert.equal(new WorkflowProjections(store).get(started.id).presentationRevision,before);
-  github.title="Updated title";orchestrator.refreshIssueList();context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(started.id) as {context:string}).context);assert.equal(context.title,"Updated title");assert.equal(new WorkflowProjections(store).get(started.id).presentationRevision,before+1);
-  const writes=(store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='workflow.presentation'").get() as {count:number}).count;orchestrator.refreshIssueList();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='workflow.presentation'").get() as {count:number}).count,writes);
+  const started=await orchestrator.startIssue("1"),before=new WorkflowProjections(store).get(started.id).presentationRevision;
+  github.body="Updated body";await orchestrator.refreshIssueList();let context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(started.id) as {context:string}).context);assert.equal(context.body,"Updated body");assert.equal(new WorkflowProjections(store).get(started.id).presentationRevision,before);
+  github.title="Updated title";await orchestrator.refreshIssueList();context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(started.id) as {context:string}).context);assert.equal(context.title,"Updated title");assert.equal(new WorkflowProjections(store).get(started.id).presentationRevision,before+1);
+  const writes=(store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='workflow.presentation'").get() as {count:number}).count;await orchestrator.refreshIssueList();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='workflow.presentation'").get() as {count:number}).count,writes);
  } finally {store.db.close();config.repo=previousRepo;}
 });
 
 test("an approver-authored description start is discovered once with guidance and a comment snapshot",async()=>{
  const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");const store=new Store(":memory:"),github=new GitHub();github.discoverIssues=true;github.body="Keep dependencies small\n/factory start";github.reply(9,"historical");const orchestrator=new WorkflowOrchestrator(store,github,new WorkflowRunner(store,{},new Workspace(),github),{enabled:false,async notify(){}});
- try {await assert.rejects(orchestrator.tick(),/No adapter configured/);const row=store.db.prepare("SELECT id,context FROM work_items").get() as {id:string;context:string},context=JSON.parse(row.context);assert.equal(context.cursor,9);assert.equal((store.db.prepare("SELECT json_extract(payload,'$.text') text FROM records WHERE kind='instruction'").get() as {text:string}).text,"Keep dependencies small");const events=(store.db.prepare("SELECT COUNT(*) count FROM events").get() as {count:number}).count;github.issueCalls=0;(orchestrator as any).discoverStartIssues();assert.equal(github.issueCalls,0);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events").get() as {count:number}).count,events);await assert.rejects(orchestrator.tick(),/No adapter configured/);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,1);}
+ try {await assert.rejects(orchestrator.tick(),/No adapter configured/);const row=store.db.prepare("SELECT id,context FROM work_items").get() as {id:string;context:string},context=JSON.parse(row.context);assert.equal(context.cursor,9);assert.equal((store.db.prepare("SELECT json_extract(payload,'$.text') text FROM records WHERE kind='instruction'").get() as {text:string}).text,"Keep dependencies small");const events=(store.db.prepare("SELECT COUNT(*) count FROM events").get() as {count:number}).count;github.issueCalls=0;await (orchestrator as any).discoverStartIssues();assert.equal(github.issueCalls,0);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events").get() as {count:number}).count,events);await assert.rejects(orchestrator.tick(),/No adapter configured/);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,1);}
  finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
 });
 
@@ -117,9 +117,9 @@ test("factory-authored comments cannot start an untracked issue",async()=>{
  finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
 });
 
-test("comment discovery caches issue identity within one tick",()=>{
+test("comment discovery caches issue identity within one tick",async()=>{
  const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");const store=new Store(":memory:"),github=new GitHub(),base={user:{login:"owner",type:"User"},issueUrl:"https://api.github.com/repos/owner/demo/issues/1",issue_url:"https://api.github.com/repos/owner/demo/issues/1"};github.repositoryCommentRows=[{...base,id:60,body:"ordinary context",updatedAt:"2026-09-20T00:01:00Z",createdAt:"2026-09-20T00:01:00Z",created_at:"2026-09-20T00:01:00Z",updated_at:"2026-09-20T00:01:00Z"},{...base,id:61,body:"/factory start",updatedAt:"2026-09-20T00:01:01Z",createdAt:"2026-09-20T00:01:01Z",created_at:"2026-09-20T00:01:01Z",updated_at:"2026-09-20T00:01:01Z"}] as RepositoryComment[];const orchestrator=new WorkflowOrchestrator(store,github,new WorkflowRunner(store,{},new Workspace(),github),{enabled:false,async notify(){}});
- try {github.issueCalls=0;(orchestrator as any).discoverStartCommands();assert.equal(github.issueCalls,1);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,1);}
+ try {github.issueCalls=0;await (orchestrator as any).discoverStartCommands();assert.equal(github.issueCalls,1);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,1);}
  finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
 });
 
@@ -146,19 +146,19 @@ test("initial comment scan starts an old authorized issue once after upgrading t
  try{await orchestrator.tick();await orchestrator.tick();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as any).count,1);}finally{store.db.close();config.repo=oldRepo;config.approvers.splice(0,config.approvers.length,...oldApprovers);}
 });
 
-test("historical discovery skips controller-labelled issues but accepts an unlabelled start",()=>{
+test("historical discovery skips controller-labelled issues but accepts an unlabelled start",async()=>{
  const oldRepo=config.repo,oldApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
  const old="2020-01-01T00:00:00Z",comment={id:70,body:"/factory start",user:{login:"owner",type:"User"},updatedAt:old,issueUrl:"https://api.github.com/repos/owner/demo/issues/1",createdAt:old,issue_url:"https://api.github.com/repos/owner/demo/issues/1",created_at:old,updated_at:old} as RepositoryComment;
  try{
   const labelledStore=new Store(":memory:"),labelledGitHub=new GitHub();labelledGitHub.issueLabels=[{name:"factory:design"}];labelledGitHub.repositoryCommentRows=[comment];labelledGitHub.discoverIssues=true;labelledGitHub.body="/factory start";const labelled=new WorkflowOrchestrator(labelledStore,labelledGitHub,{run:async()=>{}} as any,{enabled:false,async notify(){}});
-  (labelled as any).discoverStartCommands();(labelled as any).discoverStartIssues();
+  await (labelled as any).discoverStartCommands();await (labelled as any).discoverStartIssues();
   assert.equal((labelledStore.db.prepare("SELECT COUNT(*) count FROM work_items").get() as any).count,0);assert.equal(labelledGitHub.resultBodies.length,0);assert.equal((labelledStore.db.prepare("SELECT COUNT(*) count FROM events WHERE type='start.command_rejected'").get() as any).count,0);const rejected=labelledStore.db.prepare("SELECT payload FROM events WHERE type='command.rejected'").all() as Array<{payload:string}>;assert.equal(rejected.length,2);assert.ok(rejected.every(row=>JSON.parse(row.payload).reason==="already processed by a controller"));labelledStore.db.close();
-  const freshStore=new Store(":memory:"),freshGitHub=new GitHub();freshGitHub.repositoryCommentRows=[comment];const fresh=new WorkflowOrchestrator(freshStore,freshGitHub,{run:async()=>{}} as any,{enabled:false,async notify(){}});(fresh as any).discoverStartCommands();assert.equal((freshStore.db.prepare("SELECT COUNT(*) count FROM work_items").get() as any).count,1);freshStore.db.close();
+  const freshStore=new Store(":memory:"),freshGitHub=new GitHub();freshGitHub.repositoryCommentRows=[comment];const fresh=new WorkflowOrchestrator(freshStore,freshGitHub,{run:async()=>{}} as any,{enabled:false,async notify(){}});await (fresh as any).discoverStartCommands();assert.equal((freshStore.db.prepare("SELECT COUNT(*) count FROM work_items").get() as any).count,1);freshStore.db.close();
  }finally{config.repo=oldRepo;config.approvers.splice(0,config.approvers.length,...oldApprovers);}
 });
 
-test("a fresh start comment can reclaim a controller-labelled issue after historical discovery",()=>{
+test("a fresh start comment can reclaim a controller-labelled issue after historical discovery",async()=>{
  const oldRepo=config.repo,oldApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");const store=new Store(":memory:"),github=new GitHub(),old="2020-01-01T00:00:00Z",comment=(id:number,at:string)=>({id,body:"/factory start",user:{login:"owner",type:"User"},updatedAt:at,issueUrl:"https://api.github.com/repos/owner/demo/issues/1",createdAt:at,issue_url:"https://api.github.com/repos/owner/demo/issues/1",created_at:at,updated_at:at} as RepositoryComment);github.issueLabels=[{name:"factory:design"}];github.repositoryCommentRows=[comment(80,old)];const orchestrator=new WorkflowOrchestrator(store,github,{run:async()=>{}} as any,{enabled:false,async notify(){}});
- try{(orchestrator as any).discoverStartCommands();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as any).count,0);github.repositoryCommentRows=[comment(81,new Date(Date.now()+1000).toISOString())];(orchestrator as any).discoverStartCommands();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as any).count,1);}
+ try{await (orchestrator as any).discoverStartCommands();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as any).count,0);github.repositoryCommentRows=[comment(81,new Date(Date.now()+1000).toISOString())];await (orchestrator as any).discoverStartCommands();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as any).count,1);}
  finally{store.db.close();config.repo=oldRepo;config.approvers.splice(0,config.approvers.length,...oldApprovers);}
 });

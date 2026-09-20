@@ -1,3 +1,4 @@
+import type {RuntimeGitHub} from "./github-runtime.js";
 import type { Store } from "./storage.js";
 import type { WorkflowGitHubPort } from "./adapters/github.js";
 import { workflowStatusMarkdown,workflowLabels } from "./workflow-status.js";
@@ -25,8 +26,8 @@ export function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:num
 }
 
 export class WorkflowGitHubPublisher {
- constructor(private store:Store,private github:WorkflowGitHubPort) {}
- publish(workItemId:string) {
+ constructor(private store:Store,private github:Pick<RuntimeGitHub,keyof WorkflowGitHubPort>) {}
+ async publish(workItemId:string) {
   const row=this.store.db.prepare("SELECT issue_number,revision,presentation_revision,published_presentation_revision,archived_at FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;revision:number;presentation_revision:number;published_presentation_revision:number|null;archived_at:string|null}|undefined;
   if(!row)throw new Error("Unknown work item");
   if(row.archived_at||row.presentation_revision<=(row.published_presentation_revision??-1))return false;
@@ -34,24 +35,24 @@ export class WorkflowGitHubPublisher {
   const lastEvent=this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(workItemId) as {payload:string}|undefined;
   let eventId:string|undefined;try{eventId=lastEvent?(JSON.parse(lastEvent.payload) as {eventId?:string}).eventId:undefined;}catch{}
   const controller=controllerAttribution(this.store),body=`${workflowStatusMarkdown(this.store,workItemId)}\n\n<sub>workflow-rev:${revision} · presentation-rev:${presentationRevision}${eventId?` · event:${eventId}`:""}${controller?` · generation:${controller.generation}`:""}</sub>`;
-  this.github.syncWorkflow(row.issue_number,workflowLabels(this.store,workItemId),body);
-  this.syncAssignees(workItemId,row.issue_number);
+  await this.github.syncWorkflow(row.issue_number,workflowLabels(this.store,workItemId),body);
+  await this.syncAssignees(workItemId,row.issue_number);
   this.store.db.prepare("UPDATE work_items SET published_presentation_revision=? WHERE id=? AND (published_presentation_revision IS NULL OR published_presentation_revision<?)").run(presentationRevision,workItemId,presentationRevision);
   return true;
  }
- publishChanged() {
+ async publishChanged() {
   // Re-render existing status comments once when their presentation format changes.
   if(this.store.metadata<number>("github:status-format")!==2)this.store.db.transaction(()=>{
    this.store.db.prepare("UPDATE work_items SET presentation_revision=presentation_revision+1 WHERE archived_at IS NULL AND published_presentation_revision IS NOT NULL").run();
    this.store.setMetadata("github:status-format",2);
   })();
-  let count=0;for(const row of this.store.db.prepare("SELECT id FROM work_items WHERE archived_at IS NULL AND presentation_revision>COALESCE(published_presentation_revision,-1)").all() as Array<{id:string}>)if(this.publish(row.id))count++;return count;}
- publishHelp() {
+  let count=0;for(const row of this.store.db.prepare("SELECT id FROM work_items WHERE archived_at IS NULL AND presentation_revision>COALESCE(published_presentation_revision,-1)").all() as Array<{id:string}>)if(await this.publish(row.id))count++;return count;}
+ async publishHelp() {
   let count=0;const rows=this.store.db.prepare("SELECT DISTINCT e.work_item_id,w.issue_number,w.archived_at FROM events e JOIN work_items w ON w.id=e.work_item_id WHERE e.type='command.help' ORDER BY e.id").all() as Array<{work_item_id:string;issue_number:number;archived_at:string|null}>;
-  for(const row of rows){const key=`github:help:${row.work_item_id}`;if(row.archived_at||this.store.metadata<boolean>(key))continue;this.github.publishWorkflowComment(row.issue_number,"help",factoryHelpMarkdown());this.store.setMetadata(key,true);count++;}
+  for(const row of rows){const key=`github:help:${row.work_item_id}`;if(row.archived_at||this.store.metadata<boolean>(key))continue;await this.github.publishWorkflowComment(row.issue_number,"help",factoryHelpMarkdown());this.store.setMetadata(key,true);count++;}
   return count;
  }
- publishResults() {
+ async publishResults() {
   let count=0;
   const rows=this.store.db.prepare("SELECT e.id,e.work_item_id,e.run_id,e.payload,w.issue_number,w.archived_at,w.context FROM events e JOIN work_items w ON w.id=e.work_item_id WHERE e.type='agent.result' ORDER BY e.id").all() as Array<{id:number;work_item_id:string;run_id:string;payload:string;issue_number:number;archived_at:string|null;context:string}>;
   for(const row of rows) {
@@ -59,7 +60,7 @@ export class WorkflowGitHubPublisher {
    const payload=JSON.parse(row.payload) as {role:AgentRole;result:AgentResult;specVersion:number};
    if(!this.isMilestone(row,payload)) {this.store.setMetadata(`github:result:${row.id}`,true);continue;}
    const version=payload.specVersion||((this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(row.work_item_id) as {version:number|null}).version??0);
-   const context=JSON.parse(row.context||"{}") as {pr?:string},controller=controllerAttribution(this.store),footer=controller?`\n\n<sub>${controller.displayName}</sub>`:"";this.github.publishWorkflowComment(row.issue_number,`result-${row.run_id}`,`${resultMarkdown(payload.role,payload.result,version,context.pr)}${footer}`);
+   const context=JSON.parse(row.context||"{}") as {pr?:string},controller=controllerAttribution(this.store),footer=controller?`\n\n<sub>${controller.displayName}</sub>`:"";await this.github.publishWorkflowComment(row.issue_number,`result-${row.run_id}`,`${resultMarkdown(payload.role,payload.result,version,context.pr)}${footer}`);
    this.store.setMetadata(`github:result:${row.id}`,true);count++;
   }
   return count;
@@ -73,10 +74,10 @@ export class WorkflowGitHubPublisher {
   if(!transition)return false;
   try{return (JSON.parse(transition.payload) as {reason?:{code?:string}}).reason?.code==="correction-limit";}catch{return false;}
  }
- private syncAssignees(workItemId:string,issueNumber:number) {
+ private async syncAssignees(workItemId:string,issueNumber:number) {
   const projection=new WorkflowProjections(this.store).get(workItemId),request=new WorkflowRecords(this.store).activeRequest(workItemId);let needsHuman=projection.status==="FAILED"||projection.status==="WAITING"&&request?.payload.kind==="request"&&request.payload.owner==="human";
   if(["PAUSED","CANCELLED"].includes(projection.status)){const transition=this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(workItemId) as {payload:string}|undefined;try{needsHuman=(JSON.parse(transition?.payload??"{}") as {actor?:{type?:string}}).actor?.type!=="human";}catch{needsHuman=true;}}
-  const current=new Set(this.github.assignees(issueNumber)),wanted=new Set(needsHuman?config.approvers:[]),add=config.approvers.filter(login=>wanted.has(login)&&!current.has(login)),remove=config.approvers.filter(login=>!wanted.has(login)&&current.has(login));if(add.length)this.github.assign(issueNumber,add);if(remove.length)this.github.unassign(issueNumber,remove);
+  const current=new Set(await this.github.assignees(issueNumber)),wanted=new Set(needsHuman?config.approvers:[]),add=config.approvers.filter(login=>wanted.has(login)&&!current.has(login)),remove=config.approvers.filter(login=>!wanted.has(login)&&current.has(login));if(add.length)await this.github.assign(issueNumber,add);if(remove.length)await this.github.unassign(issueNumber,remove);
  }
 }
 

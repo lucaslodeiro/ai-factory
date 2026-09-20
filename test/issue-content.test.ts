@@ -28,35 +28,35 @@ class IssuePort {
 
 function oneNextAction(body:string){assert.equal(body.match(/^## Next action$/gm)?.length,1,body);}
 
-function lifecycle() {
+async function lifecycle() {
  const store=new Store(":memory:"),port=new IssuePort(),intake=new WorkflowIntake(store),inbox=new WorkflowInbox(store,port,["owner"]),scheduler=new WorkflowScheduler(store),results=new WorkflowResults(store),publisher=new WorkflowGitHubPublisher(store,port);
  const started=intake.start(issue,{actor:"dashboard",source:"control"}),workItemId=started.id;
  const statuses=new Map<string,string>(),milestones=new Map<string,string>(),assignments=new Map<string,string[]>();
- const publish=(name:string)=>{const before=port.publishedComments.length;publisher.publishResults();publisher.publishChanged();const status=port.statuses.at(-1)?.body??"";statuses.set(name,status);assignments.set(name,[...port.assigned]);oneNextAction(status);for(const comment of port.publishedComments.slice(before))milestones.set(name,comment.body);};
+ const publish=async(name:string)=>{const before=port.publishedComments.length;await publisher.publishResults();await publisher.publishChanged();const status=port.statuses.at(-1)?.body??"";statuses.set(name,status);assignments.set(name,[...port.assigned]);oneNextAction(status);for(const comment of port.publishedComments.slice(before))milestones.set(name,comment.body);};
  const run=(role:AgentRole,agentResult:AgentResult)=>{const execution=scheduler.begin(workItemId);store.db.prepare("UPDATE executions SET status='succeeded',finished_at='2026-09-20T01:00:00Z',exit_code=0 WHERE id=?").run(execution.executionId);return results.apply({workItemId,executionId:execution.executionId,role,result:agentResult});};
- publish("start");
- run("product-architect",result("questions",{summary:"I need two product choices",questions:["Which audience is primary?","Should results be cached?"]}));publish("questions");
- port.reply(1,"/factory answer\n1. Support fans.\n2. Cache for five minutes.");inbox.poll(workItemId);publish("answer");
- run("product-architect",result("spec",{summary:"A small read-only football dashboard",spec:"# Football dashboard\n\n## AC1\nShows current standings.",acceptanceCriteria:[{id:"AC1",description:"Shows current standings"}]}));publish("spec");
- port.reply(2,"/factory approve v1");inbox.poll(workItemId);publish("approved");
- run("developer",result("pass",{summary:"Implemented the dashboard"}));publish("builder-pass-1");
- run("qa",result("changes",{summary:"Standings need a deterministic sort",coverage:[{criterionId:"AC1",status:"failed",evidence:"Oldest row appears first"}],findings:[{classification:"auto-fix",evidence:"Sort standings newest first"}]}));publish("tester-changes");
- run("developer",result("pass",{summary:"Corrected standings ordering"}));publish("builder-pass-2");
- run("qa",result("decision",{summary:"The provider leaves postponed matches ambiguous",coverage:[{criterionId:"AC1",status:"not-run",evidence:"Decision blocks final verification"}],findings:[{classification:"decision-required",evidence:"Choose whether postponed matches appear"}]}));publish("tester-decision");
- run("product-architect",result("resolved",{summary:"Show postponed matches with a status badge",decisions:[{kind:"tactical",decision:"Keep postponed matches visible",rationale:"Preserves schedule completeness",conflictsWithHuman:false}],nextRole:"qa"}));publish("architect-resolved");
- run("qa",result("pass",{summary:"All acceptance checks now pass"}));publish("tester-pass");
- run("reviewer",result("pass",{summary:"Delivery is ready for human review"}));results.published({workItemId,pullRequestUrl:"https://github.com/owner/demo/pull/7"});publish("delivery-waiting");
- port.reply(3,"/factory pause lunch");inbox.poll(workItemId);publish("delivery-paused");
- port.reply(4,"/factory cancel superseded");inbox.poll(workItemId);publish("cancelled");
+ await publish("start");
+ run("product-architect",result("questions",{summary:"I need two product choices",questions:["Which audience is primary?","Should results be cached?"]}));await publish("questions");
+ port.reply(1,"/factory answer\n1. Support fans.\n2. Cache for five minutes.");inbox.poll(workItemId);await publish("answer");
+ run("product-architect",result("spec",{summary:"A small read-only football dashboard",spec:"# Football dashboard\n\n## AC1\nShows current standings.",acceptanceCriteria:[{id:"AC1",description:"Shows current standings"}]}));await publish("spec");
+ port.reply(2,"/factory approve v1");inbox.poll(workItemId);await publish("approved");
+ run("developer",result("pass",{summary:"Implemented the dashboard"}));await publish("builder-pass-1");
+ run("qa",result("changes",{summary:"Standings need a deterministic sort",coverage:[{criterionId:"AC1",status:"failed",evidence:"Oldest row appears first"}],findings:[{classification:"auto-fix",evidence:"Sort standings newest first"}]}));await publish("tester-changes");
+ run("developer",result("pass",{summary:"Corrected standings ordering"}));await publish("builder-pass-2");
+ run("qa",result("decision",{summary:"The provider leaves postponed matches ambiguous",coverage:[{criterionId:"AC1",status:"not-run",evidence:"Decision blocks final verification"}],findings:[{classification:"decision-required",evidence:"Choose whether postponed matches appear"}]}));await publish("tester-decision");
+ run("product-architect",result("resolved",{summary:"Show postponed matches with a status badge",decisions:[{kind:"tactical",decision:"Keep postponed matches visible",rationale:"Preserves schedule completeness",conflictsWithHuman:false}],nextRole:"qa"}));await publish("architect-resolved");
+ run("qa",result("pass",{summary:"All acceptance checks now pass"}));await publish("tester-pass");
+ run("reviewer",result("pass",{summary:"Delivery is ready for human review"}));results.published({workItemId,pullRequestUrl:"https://github.com/owner/demo/pull/7"});await publish("delivery-waiting");
+ port.reply(3,"/factory pause lunch");inbox.poll(workItemId);await publish("delivery-paused");
+ port.reply(4,"/factory cancel superseded");inbox.poll(workItemId);await publish("cancelled");
  return {store,port,workItemId,statuses,milestones,assignments};
 }
 
-function failedItem(){
- const store=new Store(":memory:");store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context) VALUES('failed-work',2,'owner/demo','factory/failed','2026-09-20T00:00:00Z','2026-09-20T00:00:00Z',?)").run(JSON.stringify({title:"Timed out work",body:"Run it",cursor:0}));new WorkflowProjections(store).initialize("failed-work","DESIGN","QUEUED");const scheduler=new WorkflowScheduler(store),execution=scheduler.begin("failed-work");store.db.prepare("UPDATE executions SET status='timed_out',finished_at='2026-09-20T02:00:00Z',exit_code=NULL WHERE id=?").run(execution.executionId);scheduler.fail("failed-work",execution.executionId,new Error("Provider stopped before returning a result"),"execution");const port=new IssuePort(),publisher=new WorkflowGitHubPublisher(store,port);publisher.publishChanged();const body=port.statuses.at(-1)?.body??"";oneNextAction(body);return{store,body,port};
+async function failedItem(){
+ const store=new Store(":memory:");store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context) VALUES('failed-work',2,'owner/demo','factory/failed','2026-09-20T00:00:00Z','2026-09-20T00:00:00Z',?)").run(JSON.stringify({title:"Timed out work",body:"Run it",cursor:0}));new WorkflowProjections(store).initialize("failed-work","DESIGN","QUEUED");const scheduler=new WorkflowScheduler(store),execution=scheduler.begin("failed-work");store.db.prepare("UPDATE executions SET status='timed_out',finished_at='2026-09-20T02:00:00Z',exit_code=NULL WHERE id=?").run(execution.executionId);scheduler.fail("failed-work",execution.executionId,new Error("Provider stopped before returning a result"),"execution");const port=new IssuePort(),publisher=new WorkflowGitHubPublisher(store,port);await publisher.publishChanged();const body=port.statuses.at(-1)?.body??"";oneNextAction(body);return{store,body,port};
 }
 
-test("issue content lifecycle publishes actionable human-facing messages",()=>{
- const previousApprovers=[...config.approvers];config.approvers.splice(0,config.approvers.length,"owner");const h=lifecycle(),failed=failedItem();
+test("issue content lifecycle publishes actionable human-facing messages",async()=>{
+ const previousApprovers=[...config.approvers];config.approvers.splice(0,config.approvers.length,"owner");const h=await lifecycle(),failed=await failedItem();
  try {
   const questions=h.milestones.get("questions")??"";assert.match(questions,/^# Architect — questions/m);assert.match(questions,/1\. Which audience is primary\?/);assert.match(questions,/\/factory answer\n1\. <answer 1>\n2\. <answer 2>/);assert.doesNotMatch(questions,/specification/i);
   const spec=h.milestones.get("spec")??"";assert.match(spec,/^# Specification v1 — awaiting approval/m);assert.match(spec,/^## Football dashboard/m);assert.match(spec,/## Acceptance criteria[\s\S]*\| AC1 \| Shows current standings \|/);assert.match(spec,/`\/factory approve v1 \[guidance\]`/);assert.match(spec,/`\/factory answer <feedback>`/);assert.doesNotMatch(spec,/use the command shown in the AI Factory status comment/);oneNextAction(spec);
@@ -73,7 +73,7 @@ test("issue content lifecycle publishes actionable human-facing messages",()=>{
  } finally {config.approvers.splice(0,config.approvers.length,...previousApprovers);h.store.db.close();failed.store.db.close();}
 });
 
-test("GitHub assignment adapter uses explicit add and remove operations",()=>{
+test("GitHub assignment adapter uses explicit add and remove operations",async()=>{
  const calls:string[][]=[],adapter=new GitHubAdapter(args=>{calls.push(args);return args.includes("--json")?JSON.stringify({assignees:[{login:"owner"}]}):"";},"owner/demo");
  assert.deepEqual(adapter.assignees(1),["owner"]);adapter.assign(1,["owner","reviewer"]);adapter.unassign(1,["owner"]);
  assert.deepEqual(calls[1],["issue","edit","1","--repo","owner/demo","--add-assignee","owner,reviewer"]);assert.deepEqual(calls[2],["issue","edit","1","--repo","owner/demo","--remove-assignee","owner"]);

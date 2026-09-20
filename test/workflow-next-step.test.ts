@@ -5,7 +5,7 @@ import {WorkflowRecords} from '../src/workflow-records.js';
 import {workflowNextStep} from '../src/workflow-next-step.js';
 import {WorkflowGitHubPublisher} from '../src/workflow-github.js';
 import {workflowStatusMarkdown} from '../src/workflow-status.js';
-test('pending merge exposes its PR and next action before status history',()=>{
+test('pending merge exposes its PR and next action before status history',async()=>{
  const store=new Store(':memory:');try{
  const pr='https://github.com/owner/demo/pull/3';
  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status) VALUES('w',2,'owner/demo','now','now',?,'DELIVERY','WAITING')").run(JSON.stringify({pr,title:'Portal'}));
@@ -16,7 +16,7 @@ test('pending merge exposes its PR and next action before status history',()=>{
  const markdown=workflowStatusMarkdown(store,'w');assert.ok(markdown.indexOf('## Next action')<markdown.indexOf('| Detail'));assert.match(markdown,/\[Open pull request\]\(https:\/\/github.com\/owner\/demo\/pull\/3\)/);assert.equal(markdown.split('## Next action').length,2);
  store.db.prepare('UPDATE work_items SET published_presentation_revision=presentation_revision').run();
  let published=0;const publisher=new WorkflowGitHubPublisher(store,{syncWorkflow(){published++},publishWorkflowComment(){},assignees(){return[]},assign(){},unassign(){}});
- publisher.publishChanged();assert.equal(published,1);publisher.publishChanged();assert.equal(published,1);
+ await publisher.publishChanged();assert.equal(published,1);await publisher.publishChanged();assert.equal(published,1);
 
  }finally{store.db.close()}
 });

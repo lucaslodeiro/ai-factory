@@ -111,7 +111,7 @@ export class Store {
     this.db.prepare("INSERT INTO events(ts,work_item_id,run_id,type,payload) VALUES(?,?,?,?,?)")
       .run(new Date().toISOString(), workItemId ?? null, runId ?? null, type, JSON.stringify(payload));
   }
-  request(kind: string, target = "") { this.db.prepare("INSERT INTO controls(kind,target) VALUES(?,?)").run(kind, target); }
+  request(kind: string, target = "") { return Number(this.db.prepare("INSERT INTO controls(kind,target) VALUES(?,?)").run(kind, target).lastInsertRowid); }
   metadata<T>(key: string): T | undefined {
     const row=this.db.prepare("SELECT value FROM metadata WHERE key=?").get(key) as {value:string} | undefined;
     if (!row) return undefined;

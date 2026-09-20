@@ -42,8 +42,8 @@ export class WorkflowIntake {
 export class WorkflowInbox {
  private commands:WorkflowCommands;private projections:WorkflowProjections;
  constructor(private store:Store,private github:CommentPort,private approvers:string[],private executions?:ExecutionControl,fence?:ControllerFence){this.commands=new WorkflowCommands(store,fence);this.projections=new WorkflowProjections(store);}
- poll(workItemId:string) {
-  const item=this.row(workItemId),fetched=this.github.comments(item.issue_number).slice().sort((a,b)=>a.id-b.id),observedById=new Map(item.context.observedComments.map(comment=>[comment.id,comment.updatedAt])),changed=fetched.filter(comment=>observedById.has(comment.id)&&observedById.get(comment.id)!==comment.updatedAt),fresh=fetched.filter(comment=>comment.id>item.cursor),comments=[...changed,...fresh.filter(comment=>!changed.some(candidate=>candidate.id===comment.id))],rechecks=new Set(changed.map(comment=>comment.id));
+ poll(workItemId:string,providedComments?:Comment[]) {
+  const item=this.row(workItemId),fetched=(providedComments??this.github.comments(item.issue_number)).slice().sort((a,b)=>a.id-b.id),observedById=new Map(item.context.observedComments.map(comment=>[comment.id,comment.updatedAt])),changed=fetched.filter(comment=>observedById.has(comment.id)&&observedById.get(comment.id)!==comment.updatedAt),fresh=fetched.filter(comment=>comment.id>item.cursor),comments=[...changed,...fresh.filter(comment=>!changed.some(candidate=>candidate.id===comment.id))],rechecks=new Set(changed.map(comment=>comment.id));
   let applied=0,rejected=0,observed=0,deferredRetry:{commentId:number;login:string}|undefined,blockedAfterRetry=0;
   for(const comment of comments) {
    const outcome=this.store.db.transaction(()=>{

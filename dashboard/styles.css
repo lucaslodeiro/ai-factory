@@ -365,3 +365,5 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .next-step-help a{display:inline-block;margin-top:.25rem}
 .local-item>.work-details{grid-column:1/-1;font-size:.8rem}
 @media(max-width:760px){.local-item{grid-template-columns:1fr}.work-item-actions{justify-content:flex-start}.work-next-step{grid-template-columns:1fr}.item .next-step-link{justify-self:start}.work-item-id{display:none}}
+
+.work-control-pending{grid-column:1/-1;color:var(--warn)!important}

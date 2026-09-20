@@ -21,7 +21,7 @@ function setup() {
  return {store,records:new WorkflowRecords(store),projections:new WorkflowProjections(store)};
 }
 
-test("status projection has one current CTA and derives it from the active request",()=>{
+test("status projection has one current CTA and derives it from the active request",async()=>{
  const s=setup();
  try {
   s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:10},sourceType:"agent-result",sourceId:"run",actor:"product-architect"});
@@ -36,7 +36,7 @@ test("status projection has one current CTA and derives it from the active reque
  } finally {s.store.db.close();}
 });
 
-test("Architect-owned requests never render a human command",()=>{
+test("Architect-owned requests never render a human command",async()=>{
  const s=setup();
  try {
   s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"request",type:"tactical-decision",owner:"architect",originatingStage:"TEST",allowedReturnStages:["BUILD","TEST"],openedAfterCommentId:20},sourceType:"agent-result",sourceId:"run",actor:"qa"});
@@ -46,7 +46,7 @@ test("Architect-owned requests never render a human command",()=>{
  } finally {s.store.db.close();}
 });
 
-test("failed status explains the cause, identifies the execution and keeps one safe CTA",()=>{
+test("failed status explains the cause, identifies the execution and keeps one safe CTA",async()=>{
  const s=setup();
  try {
   s.store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,finished_at,exit_code) VALUES('run-1','work-1','qa','TEST','failed','now','now',2)").run();
@@ -64,7 +64,7 @@ test("failed status explains the cause, identifies the execution and keeps one s
  } finally {s.store.db.close();}
 });
 
-test("every public workflow status has readable state, labels and one authoritative CTA",()=>{
+test("every public workflow status has readable state, labels and one authoritative CTA",async()=>{
  const cases=[
   {stage:"DESIGN",status:"QUEUED",actor:"Architect",labels:["factory:design"],action:/next agent is queued/i},
   {stage:"DESIGN",status:"RUNNING",actor:"Architect",labels:["factory:design"],action:/current agent is running/i},
@@ -88,26 +88,26 @@ test("every public workflow status has readable state, labels and one authoritat
  }
 });
 
-test("publisher writes only changed presentation revisions and retries after delivery failure",()=>{
+test("publisher writes only changed presentation revisions and retries after delivery failure",async()=>{
  const s=setup();
  try {
   s.projections.initialize("work-1","BUILD","QUEUED");
   const calls:Array<{issue:number;labels:string[];body:string}>=[];
   const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(issue,labels,body){calls.push({issue,labels:labels.map(label=>label.name),body});},publishWorkflowComment(){},assignees(){return[];},assign(){},unassign(){}});
-  assert.equal(publisher.publishChanged(),1);assert.equal(publisher.publishChanged(),0);assert.equal(calls.length,1);
+  assert.equal(await publisher.publishChanged(),1);assert.equal(await publisher.publishChanged(),0);assert.equal(calls.length,1);
   assert.match(calls[0].body,/workflow-rev:0 · presentation-rev:0/);
   s.projections.present({workItemId:"work-1",expectedRevision:0,actor:{type:"orchestrator",id:"observer"},source:{},reason:{code:"evidence",summary:"Evidence changed"}});
-  assert.equal(publisher.publishChanged(),1);assert.equal(calls.length,2);assert.match(calls[1].body,/presentation-rev:1/);
+  assert.equal(await publisher.publishChanged(),1);assert.equal(calls.length,2);assert.match(calls[1].body,/presentation-rev:1/);
 
   s.projections.transition({workItemId:"work-1",expectedRevision:0,stage:"BUILD",status:"RUNNING",activeRunId:"run",actor:{type:"orchestrator",id:"scheduler"},source:{executionId:"run"},reason:{code:"start",summary:"Builder started"}});
   const failing=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){throw new Error("GitHub unavailable");},publishWorkflowComment(){throw new Error("GitHub unavailable");},assignees(){return[];},assign(){},unassign(){}});
-  assert.throws(()=>failing.publishChanged(),/GitHub unavailable/);
+  await assert.rejects(async()=>await failing.publishChanged(),/GitHub unavailable/);
   assert.equal(s.projections.get("work-1").publishedPresentationRevision,1);
-  assert.equal(publisher.publishChanged(),1);assert.match(calls.at(-1)!.body,/event:[0-9a-f-]{36}/);
+  assert.equal(await publisher.publishChanged(),1);assert.match(calls.at(-1)!.body,/event:[0-9a-f-]{36}/);
  } finally {s.store.db.close();}
 });
 
-test("publisher keeps intermediate delivery results in status and publishes only milestone comments",()=>{
+test("publisher keeps intermediate delivery results in status and publishes only milestone comments",async()=>{
  const s=setup();
  try {
   s.projections.initialize("work-1","DESIGN","QUEUED");
@@ -115,14 +115,14 @@ test("publisher keeps intermediate delivery results in status and publishes only
   s.store.event("agent.result",{role:"product-architect",result:result("spec",{summary:"Specification is ready"}),specVersion:3},"work-1","run-architect");
   const comments:Array<{key:string;body:string}>=[];
   const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){},publishWorkflowComment(_issue,key,body){comments.push({key,body});},assignees(){return[];},assign(){},unassign(){}});
-  assert.equal(publisher.publishResults(),1);
+  assert.equal(await publisher.publishResults(),1);
   assert.deepEqual(comments.map(comment=>comment.key),["result-run-architect"]);
-  assert.equal(publisher.publishResults(),0);
+  assert.equal(await publisher.publishResults(),0);
   assert.match(workflowStatusMarkdown(s.store,"work-1"),/Latest delivery summary[\s\S]*Builder completed implementation/);
  } finally {s.store.db.close();}
 });
 
-test("status clips a verbose delivery summary and preserves one authoritative next action",()=>{
+test("status clips a verbose delivery summary and preserves one authoritative next action",async()=>{
  const s=setup();
  try {
   s.projections.initialize("work-1","BUILD","QUEUED");
@@ -134,21 +134,21 @@ test("status clips a verbose delivery summary and preserves one authoritative ne
  } finally {s.store.db.close();}
 });
 
-test("help publishes one immutable reference and status keeps the same collapsed list",()=>{
+test("help publishes one immutable reference and status keeps the same collapsed list",async()=>{
  const s=setup(),comments=[{id:11,body:"/factory help",user:{login:"owner",type:"User"},updatedAt:"2026-09-20T00:00:11Z"}];
  try {
   s.projections.initialize("work-1","BUILD","QUEUED");
   const inbox=new WorkflowInbox(s.store,{comments:()=>comments},["owner"]);assert.equal(inbox.poll("work-1").applied,1);
   const published:Array<{key:string;body:string}>=[];
   const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){},publishWorkflowComment(_issue,key,body){published.push({key,body});},assignees(){return[];},assign(){},unassign(){}});
-  assert.equal(publisher.publishHelp(),1);assert.equal(published[0].key,"help");assert.match(published[0].body,/\/factory replace/);
+  assert.equal(await publisher.publishHelp(),1);assert.equal(published[0].key,"help");assert.match(published[0].body,/\/factory replace/);
   comments.push({id:12,body:"/factory help",user:{login:"owner",type:"User"},updatedAt:"2026-09-20T00:00:12Z"});assert.equal(inbox.poll("work-1").applied,1);
-  assert.equal(publisher.publishHelp(),0);assert.equal(published.length,1);
+  assert.equal(await publisher.publishHelp(),0);assert.equal(published.length,1);
   const status=workflowStatusMarkdown(s.store,"work-1");assert.match(status,/<details><summary>All commands<\/summary>/);assert.match(status,/\/factory cancel/);assert.equal(status.match(/^## Next action$/gm)?.length,1);
  } finally {s.store.db.close();}
 });
 
-test("every workflow CTA shows the exact valid commands and text semantics",()=>{
+test("every workflow CTA shows the exact valid commands and text semantics",async()=>{
  const requestCase=(type:"spec-approval"|"clarification"|"correction-limit"|"merge")=>{const s=setup();s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"request",type,owner:"human",originatingStage:type==="merge"?"DELIVERY":"DESIGN",allowedReturnStages:type==="merge"?["DELIVERY"]:["DESIGN","BUILD"],openedAfterCommentId:10},sourceType:"orchestrator",sourceId:type,actor:"orchestrator"});s.projections.initialize("work-1",type==="merge"?"DELIVERY":"DESIGN","WAITING");return s;};
  for(const [type,patterns] of [
   ["spec-approval",[/\/factory approve v2 \[guidance\]/,/\/factory answer <feedback>/,/spec-scoped instruction/,/human decision/]],
@@ -160,6 +160,6 @@ test("every workflow CTA shows the exact valid commands and text semantics",()=>
  for(const status of ["QUEUED","RUNNING"] as const){const s=setup();try{s.projections.initialize("work-1","BUILD","QUEUED");if(status==="RUNNING")s.projections.transition({workItemId:"work-1",expectedRevision:0,stage:"BUILD",status:"RUNNING",activeRunId:"run",actor:{type:"orchestrator",id:"scheduler"},source:{executionId:"run"},reason:{code:"start",summary:"Started"}});const action=nextAction(workflowStatusMarkdown(s.store,"work-1"));assert.match(action,/No human action is required/);assert.match(action,/\/factory pause \[reason\]/);assert.match(action,/\/factory cancel \[reason\]/);assert.equal(action.match(/^## Next action$/gm)?.length,1);}finally{s.store.db.close();}}
 });
 
-test("correction limit CTA names the findings that need human guidance",()=>{
+test("correction limit CTA names the findings that need human guidance",async()=>{
  const s=setup();try{const finding=s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"finding",classification:"auto-fix",originRole:"qa",evidence:"The standings table still sorts oldest first"},sourceType:"agent-result",sourceId:"run-q",actor:"qa"});s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"request",type:"correction-limit",owner:"human",originatingStage:"TEST",allowedReturnStages:["BUILD","TEST"],openedAfterCommentId:10,findingIds:[finding.id]},sourceType:"orchestrator",sourceId:"limit",actor:"orchestrator"});s.projections.initialize("work-1","TEST","WAITING");const action=nextAction(workflowStatusMarkdown(s.store,"work-1"));assert.match(action,/Open findings[\s\S]*standings table still sorts oldest first/);assert.match(action,/Tell Architect how to resolve/);assert.equal(action.match(/^## Next action$/gm)?.length,1);}finally{s.store.db.close();}
 });

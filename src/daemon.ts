@@ -1,3 +1,4 @@
+import {backgroundGitHub} from "./github-runtime.js";
 import {applyWorkControl} from "./workflow-controls.js";
 import {reconcileUpdateMaintenanceFile} from "./update-maintenance.js";
 import {factoryHome} from "./home.js";
@@ -72,7 +73,8 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
   qa:adapters[config.roles.qa.provider],
   reviewer:adapters[config.roles.reviewer.provider],
  };
- const runner=new WorkflowRunner(store,agents,new Workspaces(),github,fence),o=new WorkflowOrchestrator(store,github,runner,new SlackAdapter(),executions,fence);
+ const remote=backgroundGitHub(()=>{fence.assertController();});
+ const runner=new WorkflowRunner(store,agents,new Workspaces(),remote.github,fence),o=new WorkflowOrchestrator(store,remote.github,runner,new SlackAdapter(),executions,fence);
  const commands=new WorkflowCommands(store,fence),maintenance=new WorkflowMaintenance(store,executions);
  const recoveredSignalMaintenance=maintenance.reconcileSignalsAfterRestart();
  let stopping = false,stopRequested=false,stopReason="unknown",stopPromise:Promise<unknown>|undefined;
@@ -103,6 +105,7 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
    daemonLog(level,row.type.replaceAll(".","_"),fields,row.ts);
   }
  };
+ const remoteControlIds=new Set<number>();
  let controlsBusy=false;
  const controls = async () => {
   if(controlsBusy)return;controlsBusy=true;
@@ -110,13 +113,12 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
   reconcileUpdateMaintenanceFile(store,path.join(factoryHome(),"data","update-state.json"));
   const rows = store.db.prepare("SELECT * FROM controls WHERE handled=0 ORDER BY id").all() as { id: number; kind: string; target: string }[];
   for (const r of rows) {
+   if(remoteControlIds.has(r.id)||["start-issue","refresh-list"].includes(r.kind)&&controllerMode==="active")continue;
    try {
     let result: unknown;
     if (r.kind === "stop") result=await stop();
-    else if(controllerState.state!=="active")throw new Error("This installation is in controller standby; workflow controls are read-only");
+    else if(controllerMode!=="active")throw new Error("Repository control is not confirmed; workflow controls are read-only");
     else if (["pause","resume","retry","cancel"].includes(r.kind)) result=applyWorkControl(store,commands,executions,r);
-    else if (r.kind === "start-issue") result = o.startIssue(r.target);
-    else if (r.kind === "refresh-list") result = o.refreshIssueList();
     else if(r.kind==="maintenance-confirm")result=await maintenance.confirm(r.target);
     else if(r.kind==="maintenance-resume")result=maintenance.resume(r.target);
     else throw new Error(`Unknown control: ${r.kind}`);
@@ -134,16 +136,29 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
   const recovered=controllerState.state==="active"?recoverAbandonedExecutions(store):0;
   const loseController=()=>{if(controllerMode==="standby"||controllerMode==="fenced")return;controllerMode="fenced";controller.markLocalState("fenced","Ownership changed");applyControllerLoss(store,executions,runner,generation);controllerMode="standby";controller.markLocalState("standby");};
   let renewalBusy=false;const renewController=()=>{if(renewalBusy)return;renewalBusy=true;try{if(controllerMode==="active"||controllerMode==="uncertain"){const verified=controller.assertController(generation);controllerState=controller.renew(verified);lastControllerSuccess=performance.now();if(controllerMode==="uncertain"){controllerMode="active";runner.applyHeld();store.event("controller.renewed",{generation});store.event("controller.ownership_restored",{generation});}}else{controllerState=controller.readLease();if(controllerState.state==="active"){generation=controllerState.record.generation;controllerMode="active";lastControllerSuccess=performance.now();store.event("controller.acquired",{repository:repository.fullName,displayName:controller.instance.displayName,generation});}}}catch{try{const observed=controller.readLease();if(observed.state==="absent"||observed.record.instanceId!==controller.instance.instanceId||observed.record.generation!==generation){loseController();return;}}catch{}const nextMode=controllerModeAfterVerificationFailure(controllerMode,lastControllerSuccess,performance.now());if(nextMode==="uncertain"&&controllerMode!=="uncertain"){controllerMode=nextMode;controller.markLocalState("uncertain","Renewal could not be verified");store.event("controller.ownership_uncertain",{generation});}}finally{renewalBusy=false;}};
+  store.setMetadata("runtime:local-work",null);
   audit(); await controls(); timer = setInterval(()=>void controls(), 200);controllerTimer=setInterval(renewController,CONTROLLER_HEARTBEAT_MS);
   daemonLog("info","daemon.ready",{items:(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL").get() as {count:number}).count,recoveredExecutions:recovered,recoveredSignalMaintenance,controller:controllerState.state});
-  while (!stopping) {
-   try {if(controllerMode==="active"&&await runControllerCycle(controllerState,o))audit();} catch (e) { daemonLog("error","daemon.tick_failed",{error:String(e)}); }
-   const until = Date.now() + config.pollMs;
-   while (!stopping && Date.now() < until) await new Promise(r => setTimeout(r, 100));
+  let localTask:Promise<void>|undefined,remoteTask:Promise<void>|undefined,nextRemote=0;
+  const mark=(state:string,error?:string)=>store.setMetadata("runtime:github-sync",{state,at:new Date().toISOString(),...(error?{error}:{} )});
+  while(!stopping){
+   if(controllerMode==="active"&&!stopRequested){
+    if(!localTask)localTask=o.runLocal().then(worked=>{if(worked)nextRemote=0;}).catch(error=>daemonLog("error","daemon.local_failed",{error:String(error)})).finally(()=>{audit();localTask=undefined;});
+    if(!remoteTask&&(Date.now()>=nextRemote||store.db.prepare("SELECT 1 FROM controls WHERE handled=0 AND kind IN ('start-issue','refresh-list') LIMIT 1").get())){mark("syncing");remoteTask=(async()=>{
+      for(const r of store.db.prepare("SELECT id,kind,target FROM controls WHERE handled=0 AND kind IN ('start-issue','refresh-list') ORDER BY id").all() as Array<{id:number;kind:string;target:string}>){if((store.db.prepare("SELECT handled FROM controls WHERE id=?").get(r.id) as {handled:number}).handled)continue;remoteControlIds.add(r.id);try{fence.assertController();const result=r.kind==='start-issue'?await o.startIssue(r.target):await o.refreshIssueList();store.event('control.applied',{id:r.id,kind:r.kind,target:r.target,result});}catch(error){store.event('control.failed',{id:r.id,kind:r.kind,error:String(error)});}store.db.prepare('UPDATE controls SET handled=1 WHERE id=?').run(r.id);remoteControlIds.delete(r.id);}
+      await o.syncRemote();
+     })().then(()=>mark("idle")).catch(error=>{mark("failed",String(error));daemonLog("error","daemon.sync_failed",{error:String(error)});}).finally(()=>{audit();nextRemote=Date.now()+config.pollMs;remoteTask=undefined;});}
+   }
+   await new Promise(resolve=>setTimeout(resolve,200));
   }
+  await localTask;
+  // Stop the external lane before final synchronization; never leave an orphan worker.
+  await remoteTask;
+
  } finally {
   if (timer) clearInterval(timer);if(controllerTimer)clearInterval(controllerTimer); process.off("SIGINT",sigint); process.off("SIGTERM",sigterm);if(stopPromise)await stopPromise;
   if(controllerState.state==="active")try { await o.flush(); audit(); } catch (e) { daemonLog("error","daemon.final_sync_failed",{error:String(e)}); }
+  await remote.close();
   release();
   daemonLog("info","daemon.stopped",{reason:stopReason});
  }
