@@ -30,8 +30,8 @@ function nextAction(store:Store,workItemId:string) {
   return box(`Reply with the guidance Architect needs.${command("/factory answer <guidance>")}`);
  }
  if(request?.payload.kind==="request"&&request.payload.owner==="architect")return box("Architect is next. No human action is required.");
- if(projection.status==="FAILED")return box(`Resolve the reported cause, then retry this stage.${command("/factory retry")}`);
- if(["PAUSED","CANCELLED"].includes(projection.status))return box(`Resume the preserved work when ready.${command("/factory retry")}`);
+ if(projection.status==="FAILED")return box(`Resolve the reported cause, then retry this stage.${command("/factory retry [--issue] [--for <roles>] [guidance]")}\n\nOptional guidance stays active for the current SPEC by default and appears above with its id.`);
+ if(["PAUSED","CANCELLED"].includes(projection.status))return box(`Resume the preserved work when ready.${command("/factory retry [--issue] [--for <roles>] [guidance]")}\n\nOptional guidance stays active for the current SPEC by default and appears above with its id.`);
  if(projection.status==="COMPLETED")return box("Delivery is complete. No further factory action is required.");
  return box(`${projection.status==="RUNNING"?"The current agent is running":"The next agent is queued"}. No human action is required.`);
 }

@@ -2,15 +2,15 @@ import type { AgentRole } from "./types.js";
 import type { RecordScope } from "./workflow-records.js";
 
 export type FactoryCommand=
- | {kind:"start"}
- | {kind:"approve";version:number}
+ | {kind:"start";guidance:string}
+ | {kind:"approve";version:number;guidance:string}
  | {kind:"answer";text:string}
- | {kind:"retry";guidance:string}
+ | {kind:"retry";guidance:string;scope:RecordScope;appliesTo:AgentRole[]}
  | {kind:"note";text:string;scope:RecordScope;appliesTo:AgentRole[]}
  | {kind:"replace";recordId:string;text:string;scope:RecordScope;appliesTo:AgentRole[]}
  | {kind:"revoke";recordId:string}
- | {kind:"pause"}
- | {kind:"cancel"};
+ | {kind:"pause";reason:string}
+ | {kind:"cancel";reason:string};
 
 const roles:Record<string,AgentRole>={architect:"product-architect",builder:"developer",tester:"qa",reviewer:"reviewer"};
 
@@ -38,12 +38,15 @@ export function parseFactoryCommand(body:string):FactoryCommand|null {
  const answer=first.match(/^\/factory answer(?:\s+(.*))?$/);
  if (answer) {const text=[answer[1]??"",continuation].filter(Boolean).join("\n").trim();if(!text)throw new Error("/factory answer requires guidance");return {kind:"answer",text};}
  const retry=first.match(/^\/factory retry(?:\s+(.*))?$/);
- if (retry) return {kind:"retry",guidance:[retry[1]??"",continuation].filter(Boolean).join("\n").trim()};
- if (first==="/factory start") return {kind:"start"};
- if (first==="/factory pause") return {kind:"pause"};
- if (first==="/factory cancel") return {kind:"cancel"};
- const approve=first.match(/^\/factory approve v(\d+)$/);
- if (approve) return {kind:"approve",version:Number(approve[1])};
+ if (retry) {const parsed=scoped([retry[1]??"",continuation].filter(Boolean).join("\n"));return {kind:"retry",guidance:parsed.text,scope:parsed.scope,appliesTo:parsed.appliesTo};}
+ const start=first.match(/^\/factory start(?:\s+(.*))?$/);
+ if (start) return {kind:"start",guidance:[start[1]??"",continuation].filter(Boolean).join("\n").trim()};
+ const pause=first.match(/^\/factory pause(?:\s+(.*))?$/);
+ if (pause) return {kind:"pause",reason:[pause[1]??"",continuation].filter(Boolean).join("\n").trim()};
+ const cancel=first.match(/^\/factory cancel(?:\s+(.*))?$/);
+ if (cancel) return {kind:"cancel",reason:[cancel[1]??"",continuation].filter(Boolean).join("\n").trim()};
+ const approve=first.match(/^\/factory approve v(\d+)(?:\s+(.*))?$/);
+ if (approve) return {kind:"approve",version:Number(approve[1]),guidance:[approve[2]??"",continuation].filter(Boolean).join("\n").trim()};
  const revoke=first.match(/^\/factory revoke ([a-zA-Z0-9-]+)$/);
  if (revoke) return {kind:"revoke",recordId:revoke[1]};
  const note=first.match(/^\/factory note(?:\s+(.*))?$/);

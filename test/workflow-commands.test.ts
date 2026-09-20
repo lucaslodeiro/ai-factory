@@ -40,11 +40,21 @@ test("approval rejects stale comments and atomically opens build",()=>{
  try {
   const request=s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:10},sourceType:"agent-result",sourceId:"run-1",actor:"product-architect"});
   s.initialize();
-  assert.throws(()=>s.commands.apply({kind:"approve",version:1},context(10)),/stale/);
-  const result=s.commands.apply({kind:"approve",version:1},context(11));
+  assert.throws(()=>s.commands.apply({kind:"approve",version:1,guidance:""},context(10)),/stale/);
+  const result=s.commands.apply({kind:"approve",version:1,guidance:""},context(11));
   assert.deepEqual({stage:result.projection.stage,status:result.projection.status,active:result.projection.activeRequestId},{stage:"BUILD",status:"QUEUED",active:undefined});
   assert.equal(s.records.get(request.id)?.status,"resolved");
   assert.deepEqual(s.store.db.prepare("SELECT approved_by,approval_comment_id FROM specs WHERE work_item_id='work-1' AND version=1").get(),{approved_by:"owner",approval_comment_id:11});
+ } finally {s.store.db.close();}
+});
+
+test("approval guidance becomes a spec-scoped instruction",()=>{
+ const s=setup("DESIGN","WAITING");
+ try {
+  s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:10},sourceType:"agent-result",sourceId:"run-1",actor:"product-architect"});
+  s.initialize();s.commands.apply({kind:"approve",version:1,guidance:"Keep public APIs backward compatible"},context(11));
+  const instruction=s.records.active("work-1",1,"developer").find(record=>record.payload.kind==="instruction");
+  assert.equal(instruction?.scope,"spec");assert.equal(instruction?.payload.kind==="instruction"&&instruction.payload.text,"Keep public APIs backward compatible");
  } finally {s.store.db.close();}
 });
 
@@ -68,7 +78,7 @@ test("retry resolves failure, records optional guidance and advances attempt onl
  try {
   const failure=s.failures.open({workItemId:"work-1",class:"execution",message:"Tests failed",stage:"TEST",attempt:0});
   s.initialize();
-  const result=s.commands.apply({kind:"retry",guidance:"Skip Chromium"},context());
+  const result=s.commands.apply({kind:"retry",guidance:"Skip Chromium",scope:"spec",appliesTo:[]},context());
   assert.deepEqual({stage:result.projection.stage,status:result.projection.status,attempt:result.projection.attempt},{stage:"TEST",status:"QUEUED",attempt:1});
   assert.equal(s.failures.get(failure.id)?.resolvedBy,"comment:20");
   assert.equal(s.records.active("work-1",1,"qa").some(record=>record.kind==="instruction"),true);
@@ -78,9 +88,32 @@ test("retry resolves failure, records optional guidance and advances attempt onl
  try {
   paused.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"request",type:"clarification",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:1},sourceType:"agent-result",sourceId:"run",actor:"product-architect"});
   paused.initialize();
-  const result=paused.commands.apply({kind:"retry",guidance:""},context());
+  const result=paused.commands.apply({kind:"retry",guidance:"",scope:"spec",appliesTo:[]},context());
   assert.deepEqual({status:result.projection.status,attempt:result.projection.attempt},{status:"WAITING",attempt:0});
  } finally {paused.store.db.close();}
+});
+
+test("retry guidance accepts role and issue scopes",()=>{
+ const s=setup("BUILD","FAILED");
+ try {
+  s.failures.open({workItemId:"work-1",class:"execution",message:"Build failed",stage:"BUILD",attempt:0});
+  s.initialize();s.commands.apply({kind:"retry",guidance:"Use the existing client",scope:"issue",appliesTo:["developer"]},context());
+  const instruction=s.records.active("work-1",1,"developer").find(record=>record.payload.kind==="instruction");
+  assert.equal(instruction?.scope,"issue");assert.deepEqual(instruction?.appliesTo,["developer"]);
+  assert.equal(instruction?.payload.kind==="instruction"&&instruction.payload.text,"Use the existing client");
+ } finally {s.store.db.close();}
+});
+
+test("pause and cancel reasons are transition evidence rather than guidance records",()=>{
+ for(const command of [{kind:"pause",reason:"Waiting for legal review"} as const,{kind:"cancel",reason:"Product direction changed"} as const]){
+  const s=setup("BUILD","QUEUED");
+  try {
+   s.initialize();s.commands.apply(command,context());
+   const event=JSON.parse((s.store.db.prepare("SELECT payload FROM events WHERE type='workflow.transition' ORDER BY id DESC LIMIT 1").get() as {payload:string}).payload);
+   assert.match(event.reason.summary,new RegExp(command.reason));
+   assert.equal((s.store.db.prepare("SELECT COUNT(*) count FROM records WHERE work_item_id='work-1'").get() as {count:number}).count,0);
+  } finally {s.store.db.close();}
+ }
 });
 
 test("cancel closes request chain and failure, while terminal workflows stay immutable",()=>{
@@ -90,7 +123,7 @@ test("cancel closes request chain and failure, while terminal workflows stay imm
   const child=s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",parentId:parent.id,payload:{kind:"request",type:"clarification",owner:"human",originatingStage:"BUILD",allowedReturnStages:["BUILD"],openedAfterCommentId:2},sourceType:"agent-result",sourceId:"run-2",actor:"product-architect"});
   const failure=s.failures.open({workItemId:"work-1",class:"recovery",message:"Interrupted",stage:"BUILD",attempt:1});
   s.initialize();
-  const result=s.commands.apply({kind:"cancel"},context());
+  const result=s.commands.apply({kind:"cancel",reason:""},context());
   assert.equal(result.projection.status,"CANCELLED");
   assert.equal(s.records.get(parent.id)?.status,"cancelled");
   assert.equal(s.records.get(child.id)?.status,"cancelled");
@@ -100,7 +133,7 @@ test("cancel closes request chain and failure, while terminal workflows stay imm
  const terminal=setup("DELIVERY","COMPLETED");
  try {
   terminal.initialize();
-  assert.throws(()=>terminal.commands.apply({kind:"cancel"},context()),/Cannot cancel/);
+  assert.throws(()=>terminal.commands.apply({kind:"cancel",reason:""},context()),/Cannot cancel/);
   assert.throws(()=>terminal.commands.apply({kind:"note",text:"change",scope:"spec",appliesTo:[]},context()),/Cannot note/);
  } finally {terminal.store.db.close();}
 });

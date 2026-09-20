@@ -33,11 +33,13 @@ export class WorkflowCommands {
    if(command.version!==context.specVersion)throw new Error(`Approval is for v${command.version}; active specification is v${context.specVersion}`);
    const spec=this.store.db.prepare("SELECT 1 FROM specs WHERE work_item_id=? AND version=?").get(context.workItemId,context.specVersion);
    if(!spec)throw new Error(`SPEC v${context.specVersion} is unavailable`);
-   const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:"BUILD",status:"QUEUED",actor,source,reason:{code:"spec-approved",summary:`SPEC v${command.version} approved`},recordIds:[request.id]},()=>{
+   const ids=[request.id];
+   const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:"BUILD",status:"QUEUED",actor,source,reason:{code:"spec-approved",summary:`SPEC v${command.version} approved`},recordIds:ids},()=>{
     this.records.resolveRequest(request.id);
     this.store.db.prepare("UPDATE specs SET approved_by=?,approval_comment_id=?,approved_at=? WHERE work_item_id=? AND version=?").run(context.login,context.commentId,new Date().toISOString(),context.workItemId,context.specVersion);
+    if(command.guidance)ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:"spec",payload:{kind:"instruction",text:command.guidance},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
    });
-   return {projection:result,recordIds:[request.id]};
+   return {projection:result,recordIds:ids};
   }
   if(command.kind==="answer") {
    const request=this.requireHumanRequest(context);
@@ -64,21 +66,21 @@ export class WorkflowCommands {
    const ids:string[]=[];
    const next=this.projections.resumeStatus(context.workItemId),failure=this.failures.active(context.workItemId);
    const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:current.stage,status:next,attemptDelta:next==="QUEUED"?1:0,actor,source,reason:{code:"retry",summary:"Human requested retry"},recordIds:ids},()=>{
-    if(command.guidance)ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:"spec",payload:{kind:"instruction",text:command.guidance},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
+    if(command.guidance)ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:command.scope,appliesTo:command.appliesTo,payload:{kind:"instruction",text:command.guidance},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
     if(failure)this.failures.resolve(failure.id,`comment:${context.commentId}`);
    });
    return {projection:result,recordIds:ids};
   }
   if(command.kind==="pause") {
    if(!["QUEUED","RUNNING","WAITING"].includes(current.status))throw new Error(`Cannot pause while workflow is ${current.status}`);
-   const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:current.stage,status:"PAUSED",actor,source,reason:{code:"user-pause",summary:"Human paused work"}});
+   const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:current.stage,status:"PAUSED",actor,source,reason:{code:"user-pause",summary:command.reason?`Human paused work: ${command.reason}`:"Human paused work"}});
    return {projection:result,recordIds:[],executionAction:current.activeRunId?{kind:"interrupt" as const,runId:current.activeRunId,reason:"user-pause"}:undefined};
   }
   if(command.kind==="cancel") {
    if(["COMPLETED","CANCELLED"].includes(current.status))throw new Error(`Cannot cancel while workflow is ${current.status}`);
    const ids=this.records.openRequests(context.workItemId).map(record=>record.id).reverse();
    const failure=this.failures.active(context.workItemId);
-   const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:current.stage,status:"CANCELLED",actor,source,reason:{code:"cancel",summary:"Human cancelled work"},recordIds:ids},()=>{
+   const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:current.stage,status:"CANCELLED",actor,source,reason:{code:"cancel",summary:command.reason?`Human cancelled work: ${command.reason}`:"Human cancelled work"},recordIds:ids},()=>{
     for(const id of ids)this.records.cancelRequest(id);
     if(failure)this.failures.resolve(failure.id,`comment:${context.commentId}`);
    });

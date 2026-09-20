@@ -7,12 +7,13 @@ import { WorkflowProjections } from "./workflow-projection.js";
 import {workflowNotificationText} from "./notifications.js";
 import { config } from "./config.js";
 import { ExecutionNotStoppedError } from "./execution-manager.js";
+import { WorkflowRecords } from "./workflow-records.js";
 
 export interface LastCommandOutcome {commentId:number;login:string;kind:string;outcome:"applied"|"rejected"|"stale"|"deferred"|"expired";reason?:string;at:string;}
 
 export interface CommentPort { comments(issue:number):Comment[]; }
 export interface ExecutionControl { cancel(id:string):boolean; interrupt(id:string,reason:string):boolean; }
-export interface StartOrigin { actor:string;commentId?:number;initialCursor?:number;source:"github-comment"|"control"; }
+export interface StartOrigin { actor:string;commentId?:number;initialCursor?:number;guidance?:string;source:"github-comment"|"control"; }
 
 export class WorkflowIntake {
  constructor(private store:Store) {}
@@ -28,7 +29,8 @@ export class WorkflowIntake {
   const run=this.store.db.transaction(()=>{
    this.store.db.prepare(`INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context,stage,status,attempt,revision,presentation_revision,correction_cycles)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,issue.number,repo,`factory/issue-${issue.number}-${id.slice(0,8)}`,now,now,JSON.stringify(context),"DESIGN","QUEUED",0,0,0,0);
-   const initial=new WorkflowProjections(this.store).get(id),reason={code:"work-started",summary:"Issue accepted into the factory"};this.store.event("workflow.transition",{schemaVersion:1,eventId,type:"workflow.transition",workItemId:id,occurredAt:now,actor:{type:origin.source==="github-comment"?"human":"orchestrator",id:origin.actor},source:{commentId:origin.commentId},from:null,to:initial,reason,recordIds:[],specVersion:0},id);this.store.db.prepare("INSERT INTO notifications(body,work_item_id) VALUES(?,?)").run(workflowNotificationText(this.store,id,initial,reason),id);
+   const recordIds:string[]=[];if(origin.guidance)recordIds.push(new WorkflowRecords(this.store).create({workItemId:id,specVersion:0,scope:"issue",payload:{kind:"instruction",text:origin.guidance},sourceType:origin.source==="control"?"orchestrator":origin.source,sourceId:String(origin.commentId??"start"),actor:origin.actor}).id);
+   const initial=new WorkflowProjections(this.store).get(id),reason={code:"work-started",summary:"Issue accepted into the factory"};this.store.event("workflow.transition",{schemaVersion:1,eventId,type:"workflow.transition",workItemId:id,occurredAt:now,actor:{type:origin.source==="github-comment"?"human":"orchestrator",id:origin.actor},source:{commentId:origin.commentId},from:null,to:initial,reason,recordIds,specVersion:0},id);this.store.db.prepare("INSERT INTO notifications(body,work_item_id) VALUES(?,?)").run(workflowNotificationText(this.store,id,initial,reason),id);
    return {id,created:true};
   });
   return run.immediate();

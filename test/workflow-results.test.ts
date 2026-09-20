@@ -81,7 +81,7 @@ test("late agent results are discarded after a concurrent workflow change",()=>{
  const s=setup("BUILD",true);
  try {
   running(s,"developer","run-b");
-  new WorkflowCommands(s.store).apply({kind:"cancel"},{workItemId:"work-1",login:"owner",commentId:9,specVersion:1});
+  new WorkflowCommands(s.store).apply({kind:"cancel",reason:""},{workItemId:"work-1",login:"owner",commentId:9,specVersion:1});
   const applied=s.results.apply({workItemId:"work-1",executionId:"run-b",role:"developer",result:result("pass")});
   assert.equal(applied.discarded,true);assert.equal(s.projections.get("work-1").status,"CANCELLED");
   assert.equal((s.store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='execution.discarded'").get() as {count:number}).count,1);

@@ -34,6 +34,13 @@ Implementation details and commit hashes are recorded below as each item lands.
 - Files: `src/factory-command.ts`, `test/factory-command.test.ts`, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
 - Change: all commands are now recognized only on the first non-empty line. Text commands consume inline and following text; no-text commands ignore following prose. Commands after prose and quoted commands remain inert, and the former last-line answer/retry form was removed.
 - Tests: `parses lifecycle commands strictly` covers trailing prose and inert embedded commands; `answer and retry accept inline or following multiline guidance` covers the shared payload rule.
+- Commit: `f6ff018`.
+
+### C4 — command guidance and reasons
+
+- Files: `src/factory-command.ts`, `src/workflow-inbox.ts`, `src/workflow-orchestrator.ts`, `src/workflow-commands.ts`, `src/workflow-status.ts`, `src/daemon.ts`, affected typed tests, `docs/CONTEXT_AND_WORKFLOW_DESIGN.md`.
+- Change: start guidance is stored before Design begins; approval guidance becomes a spec instruction; retry shares note's scope/role selectors; pause and cancel text is transition evidence only. Retry CTAs explain guidance lifetime and visibility.
+- Tests: `start guidance exists before the first Architect execution`; `approval guidance becomes a spec-scoped instruction`; `retry guidance accepts role and issue scopes`; `pause and cancel reasons are transition evidence rather than guidance records`; parser assertions cover every new form.
 - Commit: recorded after commit creation.
 
 ## Removed or changed behavior
@@ -50,6 +57,7 @@ To be completed after implementation.
 - After C1: `npm test` — 115 tests, 115 passed, 0 failed.
 - After C2: `npm test` — 116 tests, 116 passed, 0 failed.
 - After C3: focused parser tests — 3 passed; `npm test` — 116 tests, 116 passed, 0 failed.
+- After C4: focused command/parser/inbox tests — 27 passed; `npm test` — 120 tests, 120 passed, 0 failed.
 
 ## Documentation
 

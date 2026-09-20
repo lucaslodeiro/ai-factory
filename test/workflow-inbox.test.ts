@@ -7,6 +7,7 @@ import { WorkflowProjections } from "../src/workflow-projection.js";
 import type { Comment } from "../src/adapters/github.js";
 import { config } from "../src/config.js";
 import { workflowStatusMarkdown } from "../src/workflow-status.js";
+import { ContextAssembler } from "../src/context-assembly.js";
 
 const issue={number:7,title:"Inbox",body:"Build it",url:"https://github.com/owner/demo/issues/7",state:"OPEN" as const};
 const comment=(id:number,body:string,login="owner",type="User"):Comment=>({id,body,user:{login,type}});
@@ -19,6 +20,17 @@ test("intake creates one initialized V3 item and audits its initial transition",
   const projection=new WorkflowProjections(store).get(first.id);assert.deepEqual({stage:projection.stage,status:projection.status,revision:projection.revision},{stage:"DESIGN",status:"QUEUED",revision:0});
   const event=JSON.parse((store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition'").get(first.id) as {payload:string}).payload);
   assert.equal(event.from,null);assert.equal(event.reason.code,"work-started");assert.equal(event.source.commentId,10);
+ } finally {store.db.close();}
+});
+
+test("start guidance exists before the first Architect execution",()=>{
+ const store=new Store(":memory:");
+ try {
+  const started=new WorkflowIntake(store).start(issue,{actor:"owner",commentId:10,guidance:"Keep the design dependency-free",source:"github-comment"});
+  const record=new WorkflowRecords(store).active(started.id,0,"product-architect").find(candidate=>candidate.payload.kind==="instruction");
+  assert.equal(record?.scope,"issue");assert.equal(record?.payload.kind==="instruction"&&record.payload.text,"Keep the design dependency-free");
+  const prompt=new ContextAssembler(store).assemble({workItemId:started.id,role:"product-architect",specVersion:0,budgetBytes:100_000,budgetSource:"default",issue:{title:issue.title,body:issue.body}});
+  assert.match(prompt.markdown,/Keep the design dependency-free/);
  } finally {store.db.close();}
 });
 
@@ -177,7 +189,7 @@ test("command outcomes are persisted and visible in the status comment",()=>{
   assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `approve v1` by @owner — rejected: Approval is for v1; active specification is v2/);
   comments.push(comment(12,"/factory aprove v2"));inbox.poll(started.id);
   assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `unparsed` by @owner — rejected: Unknown or malformed \/factory command/);
-  comments.push(comment(13,"/factory cancel thanks"));inbox.poll(started.id);
+  comments.push(comment(13,"/factory revoke"));inbox.poll(started.id);
   assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `unparsed` by @owner — rejected/);
   comments.push(comment(14,"/factory replace missing replacement"));inbox.poll(started.id);
   assert.match(workflowStatusMarkdown(store,started.id),/Last command \| `replace missing` by @owner — rejected: Record missing was not found/);
