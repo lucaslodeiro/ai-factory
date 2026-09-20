@@ -11,7 +11,7 @@ export type V3Stage = "DESIGN" | "BUILD" | "TEST" | "REVIEW" | "DELIVERY";
 export type WorkflowRecordPayload =
  | { kind:"instruction"; text:string; supersedes?:string[] }
  | { kind:"decision"; category:"human"|"tactical"; decision:string; rationale:string; supersedes:string[] }
- | { kind:"finding"; classification:"auto-fix"|"decision-required"|"defer"; originRole:AgentRole; criterionId?:string; evidence:string }
+ | { kind:"finding"; classification:"auto-fix"|"decision-required"|"defer"|"environment-blocked"; originRole:AgentRole; criterionId?:string; evidence:string }
  | { kind:"request"; type:RequestType; owner:"human"|"architect"; originatingStage:V3Stage; allowedReturnStages:V3Stage[]; openedAfterCommentId:number; questions?:string[]; findingIds?:string[]; prClosed?:boolean };
 
 export interface WorkflowRecord<T extends WorkflowRecordPayload = WorkflowRecordPayload> {

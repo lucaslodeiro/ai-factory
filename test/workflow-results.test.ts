@@ -88,11 +88,15 @@ test("late agent results are discarded after a concurrent workflow change",()=>{
  } finally {s.store.db.close();}
 });
 
-test('mixed tactical findings preserve deferred work and pause unresolved prerequisites',()=>{
+test('optional deferred findings do not pause a tactical resolution',()=>{
  const s=setup('BUILD',true);try{
   running(s,'developer','builder');s.results.apply({workItemId:'work-1',executionId:'builder',role:'developer',result:result('decision',{findings:[{classification:'decision-required',evidence:'Chrome cannot start'},{classification:'defer',evidence:'Preview cleanup pending'}]})});
   const request=s.records.activeRequest('work-1')!;const deferred=s.records.active('work-1',1,'product-architect').find(row=>row.payload.kind==='finding'&&row.payload.classification==='defer')!;
-  running(s,'product-architect','architect');const applied=s.results.apply({workItemId:'work-1',executionId:'architect',role:'product-architect',result:result('resolved',{nextRole:'developer',findings:[{classification:'defer',evidence:'A working browser is still required'}]})});
-  assert.equal(applied.projection.status,'PAUSED');assert.equal(applied.projection.stage,'BUILD');assert.equal(s.records.get(request.id)?.status,'resolved');assert.equal(s.records.get(deferred.id)?.status,'open');
+  running(s,'product-architect','architect');const applied=s.results.apply({workItemId:'work-1',executionId:'architect',role:'product-architect',result:result('resolved',{nextRole:'developer',findings:[{classification:'defer',evidence:'Optional documentation cleanup can follow later'}]})});
+  assert.equal(applied.projection.status,'QUEUED');assert.equal(applied.projection.stage,'BUILD');assert.equal(s.records.get(request.id)?.status,'resolved');assert.equal(s.records.get(deferred.id)?.status,'open');
  }finally{s.store.db.close();}
+});
+
+test('environment blocker fails Build directly without sending another Architect consultation',()=>{
+ const s=setup('BUILD',true);try{running(s,'developer','blocked-builder');const applied=s.results.apply({workItemId:'work-1',executionId:'blocked-builder',role:'developer',result:result('decision',{findings:[{classification:'environment-blocked',evidence:'Chrome cannot start. Fix the browser runtime before Retry.'}]})});assert.equal(applied.projection.status,'FAILED');assert.equal(applied.projection.stage,'BUILD');assert.equal(s.records.activeRequest('work-1'),undefined);assert.equal((s.store.db.prepare("SELECT class FROM failures WHERE work_item_id='work-1'").get() as any).class,'environment');}finally{s.store.db.close();}
 });

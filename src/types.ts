@@ -2,7 +2,7 @@ export type AgentRole = "product-architect" | "developer" | "qa" | "reviewer";
 export type AgentProvider = "codex" | "claude";
 export type DeliveryStage = "BUILD" | "TEST" | "REVIEW";
 export interface Criterion { id: string; description: string; }
-export interface Finding { classification: "auto-fix" | "decision-required" | "defer"; evidence: string; }
+export interface Finding { classification: "auto-fix" | "decision-required" | "defer" | "environment-blocked"; evidence: string; }
 export interface Decision { kind: "tactical" | "major"; decision: string; rationale: string; conflictsWithHuman: boolean; supersedes?: string[]; }
 export interface TaskAssessment { complexity: "low" | "medium" | "high"; risk: "low" | "medium" | "high"; rationale: string; }
 export type ModelProfile = "fast" | "balanced" | "strong";

@@ -10,7 +10,7 @@ import {WorkflowRecords} from "./workflow-records.js";
 import {controllerAttribution,type LeaseObservation} from "./controller-lease.js";
 import type {GitHubPort} from "./adapters/github.js";
 
-function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:number,pullRequestUrl?:string) {
+export function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:number,pullRequestUrl?:string) {
  const heading=role==="product-architect"&&result.outcome==="questions"?"Architect — questions":role==="product-architect"&&result.outcome==="resolved"?"Architect — tactical decision":role==="product-architect"?`Specification v${specVersion} — awaiting approval`:`${roleFullName(role)} report`;
  const sections=[`# ${heading}`,`## Summary\n\n${result.summary}`];
  if(role==="product-architect"&&result.outcome==="spec")sections.push(result.spec.replace(/^(#{1,5})(?=\s)/gm,"#$1"),`## Acceptance criteria\n\n| ID | Criterion |\n| --- | --- |\n${result.acceptanceCriteria.map(criterion=>`| ${criterion.id} | ${criterion.description.replaceAll("|","\\|")} |`).join("\n")}`,`## Next action\n\n**Approve SPEC v${specVersion}**\n\n\`/factory approve v${specVersion} [guidance]\`\n\nOptional guidance becomes a SPEC-scoped instruction.\n\n**Request changes**\n\n\`/factory answer <feedback>\`\n\nFeedback becomes a human decision for Architect.`);
@@ -20,7 +20,7 @@ function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:number,pul
  if(result.changedFiles.length)sections.push(`## Changed files\n\n${result.changedFiles.map(file=>`- \`${file}\``).join("\n")}`);
  if(result.findings.length)sections.push(`## Findings\n\n${result.findings.map(finding=>`- **${finding.classification}** — ${finding.evidence}`).join("\n")}`);
  if(result.decisions.length)sections.push(`## Decisions\n\n${result.decisions.map(decision=>`- **${decision.kind}** — ${decision.decision}: ${decision.rationale}`).join("\n")}`);
- if(!result.questions.length&&result.outcome!=="spec"){const action=role==="product-architect"&&result.outcome==="resolved"?`No human action is required; ${roleShortName(result.nextRole!)} continues.`:role==="product-architect"?"Review the specification and use the command shown in the AI Factory status comment.":role==="qa"&&result.outcome==="decision"?"Architect will resolve this decision; no human action is required.":role==="reviewer"?`Review and merge the pull request${pullRequestUrl?` (${pullRequestUrl})`:""} when it is ready.`:`${roleShortName(role)} finished. The next workflow stage is queued automatically.`;sections.push(`## Next action\n\n> ${action}`);}
+ if(!result.questions.length&&result.outcome!=="spec"){const action=result.findings.some(f=>f.classification==="environment-blocked")?"Work failed because a required execution capability is unavailable. Fix the reported environment issue, then Retry this stage. No next agent has been queued.":role==="product-architect"&&result.outcome==="resolved"?`No human action is required; ${roleShortName(result.nextRole!)} continues.`:role==="product-architect"?"Review the specification and use the command shown in the AI Factory status comment.":role==="qa"&&result.outcome==="decision"?"Architect will resolve this decision; no human action is required.":role==="reviewer"?`Review and merge the pull request${pullRequestUrl?` (${pullRequestUrl})`:""} when it is ready.`:`${roleShortName(role)} finished. The next workflow stage is queued automatically.`;sections.push(`## Next action\n\n> ${action}`);}
  return sections.join("\n\n");
 }
 

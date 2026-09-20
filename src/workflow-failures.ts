@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Store } from "./storage.js";
 import type { V3Stage } from "./workflow-records.js";
 
-export type FailureClass = "execution"|"invalid-result"|"invalid-context"|"recovery"|"integration"|"configuration";
+export type FailureClass = "execution"|"invalid-result"|"invalid-context"|"recovery"|"integration"|"configuration"|"environment";
 export interface WorkflowFailure { id:string;workItemId:string;executionId?:string;class:FailureClass;message:string;stage:V3Stage;attempt:number;createdAt:string;resolvedAt?:string;resolvedBy?:string; }
 type Row={id:string;work_item_id:string;execution_id:string|null;class:FailureClass;message:string;stage:V3Stage;attempt:number;created_at:string;resolved_at:string|null;resolved_by:string|null};
 const parse=(row:Row):WorkflowFailure=>({id:row.id,workItemId:row.work_item_id,executionId:row.execution_id??undefined,class:row.class,message:row.message,stage:row.stage,attempt:row.attempt,createdAt:row.created_at,resolvedAt:row.resolved_at??undefined,resolvedBy:row.resolved_by??undefined});

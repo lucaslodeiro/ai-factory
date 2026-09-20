@@ -1,3 +1,4 @@
+import {WorkflowFailures} from "./workflow-failures.js";
 import { config } from "./config.js";
 import { InvalidResultError,validateCoverage } from "./results.js";
 import type { Store } from "./storage.js";
@@ -18,6 +19,14 @@ export class WorkflowResults {
    this.store.event("execution.discarded",{executionId:input.executionId,role:input.role,reason:"Workflow changed before the result was applied",projection:current},input.workItemId,input.executionId);return {discarded:true,projection:current};
   }
   const specVersion=this.specVersion(input.workItemId),ids:string[]=[];
+  const blockers=input.result.findings.filter(finding=>finding.classification==="environment-blocked");
+  if(blockers.length){
+   const message=blockers.map(finding=>finding.evidence).join("\n");
+   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:current.revision,stage:current.stage,status:"FAILED",actor:{type:"agent",id:input.role},source:{executionId:input.executionId},reason:{code:"environment-failure",summary:message},recordIds:ids},()=>{
+    this.resultEvent(input);for(const finding of blockers)ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"finding",...finding,originRole:input.role},sourceType:"agent-result",sourceId:input.executionId,actor:input.role}).id);
+    new WorkflowFailures(this.store).open({workItemId:input.workItemId,executionId:input.executionId,class:"environment",message,stage:current.stage,attempt:current.attempt});
+   });return {discarded:false,projection,recordIds:ids};
+  }
   if(input.role==="product-architect")return this.architect(input,current.revision,specVersion,ids);
   const spec=this.store.db.prepare("SELECT criteria,approved_by FROM specs WHERE work_item_id=? AND version=?").get(input.workItemId,specVersion) as {criteria:string;approved_by:string|null}|undefined;
   if(!spec?.approved_by)throw new InvalidResultError("Delivery result requires an approved current specification");
@@ -42,9 +51,8 @@ export class WorkflowResults {
   }
   if(result.outcome!=="resolved"||!active||active.payload.kind!=="request"||active.payload.type!=="tactical-decision"||active.payload.owner!=="architect")throw new InvalidResultError("Architect resolution requires an active tactical request");
   const requestPayload=active.payload,target=result.nextRole?nextRoleStage[result.nextRole]:undefined;if(!target||!requestPayload.allowedReturnStages.includes(target))throw new InvalidResultError(`Tactical result cannot return to ${target??"an unknown stage"}`);
-  const blocked=result.findings.some(finding=>finding.classification==="defer"||finding.classification==="decision-required");
   const continuing=target==="BUILD"?"developer":target==="TEST"?"qa":"reviewer";
-  const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status:blocked?"PAUSED":"QUEUED",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"tactical-resolved",summary:blocked?"Architect reported unresolved prerequisites; work paused for review":`Architect resolved the decision; ${roleShortName(continuing)} continues`},recordIds:ids},()=>{
+  const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status:"QUEUED",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"tactical-resolved",summary:`Architect resolved the decision; ${roleShortName(continuing)} continues`},recordIds:ids},()=>{
    this.resultEvent(input);
    for(const decision of result.decisions)ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"decision",category:"tactical",decision:decision.decision,rationale:decision.rationale,supersedes:decision.supersedes??[]},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
    const findingIds=(requestPayload.findingIds??[]).filter(id=>{const record=this.records.get(id);return record?.payload.kind==="finding"&&record.payload.classification!=="defer";});if(findingIds.length)this.records.settleFindings(findingIds,"resolved",input.executionId);

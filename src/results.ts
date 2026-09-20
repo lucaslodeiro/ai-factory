@@ -12,7 +12,7 @@ export const resultSchema = object({
   taskAssessment: { ...object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), rationale: text() }), type: ["object", "null"] },
   outcome: enumeration("spec", "questions", "resolved", "pass", "changes", "decision"),
   summary: text(10000), spec: { type: "string", maxLength: 30000 }, questions: list(text()),
-  findings: list(object({ classification: enumeration("auto-fix", "decision-required", "defer"), evidence: text() })),
+  findings: list(object({ classification: enumeration("auto-fix", "decision-required", "defer", "environment-blocked"), evidence: text() })),
   acceptanceCriteria: list(object({ id: text(100), description: text() })),
   coverage: list(object({ criterionId: text(100), status: enumeration("passed", "failed", "not-run"), evidence: text() })),
   tests: list(object({ command: text(), exitCode: { type: ["integer", "null"] }, evidence: text() })),
@@ -89,7 +89,8 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
     if (allowedNextRoles && !allowedNextRoles.includes(r.nextRole)) throw new Error(tacticalRouteError(r.nextRole, allowedNextRoles, consultationFrom));
   } else if (r.nextRole !== null) throw new Error("Only a tactical resolution may select nextRole");
   if (r.outcome === "changes" && !r.findings.some(f => f.classification === "auto-fix")) throw new Error("Changes require an auto-fix finding");
-  if (r.outcome === "decision" && !r.findings.some(f => f.classification === "decision-required")) throw new Error("Decision requires an explicit finding");
+  if (r.outcome === "decision" && !r.findings.some(f => ["decision-required","environment-blocked"].includes(f.classification))) throw new Error("Decision requires an explicit finding");
+  if(r.findings.some(f=>f.classification==="environment-blocked")&&!["decision","resolved"].includes(r.outcome))throw new Error("Environment blockers require decision or resolved, never PASS or a specification");
   if (r.outcome === "pass") {
     if (r.findings.some(f => f.classification !== "defer") || r.questions.length || r.decisions.some(d => d.kind === "major" || d.conflictsWithHuman)) throw new Error("PASS contradicts a blocking finding or decision");
     if (role === "developer" || role === "qa") {
