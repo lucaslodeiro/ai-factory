@@ -3,12 +3,13 @@ import { config } from "./config.js";
 import type { Issue } from "./adapters/github.js";
 import type { Store } from "./storage.js";
 import { WorkflowIntake,WorkflowInbox,type ExecutionControl } from "./workflow-inbox.js";
-import { WorkflowGitHubPublisher } from "./workflow-github.js";
+import { WorkflowGitHubPublisher,readIssueState } from "./workflow-github.js";
 import { WorkflowRunner } from "./workflow-runner.js";
 import { WorkflowProjections } from "./workflow-projection.js";
 import { WorkflowRecords } from "./workflow-records.js";
 import { deliverNotifications,type NotificationPort } from "./notifications.js";
 import {pruneExecutionArtifacts} from "./artifact-retention.js";
+import {adoptIssueState,type ReadIssueState} from "./workflow-state.js";
 
 type GitHub=RuntimeGitHub;
 type ItemRow={id:string;issue_number:number;issue_id:number|null;repo:string;stage:string;status:string;revision:number;archived_at:string|null;context:string};
@@ -37,6 +38,7 @@ export class WorkflowOrchestrator {
  }
  async startIssue(reference:string){const number=this.issueNumber(reference),issue=await this.github.issue(number),login=this.store.metadata<string>("runtime:factory-account")??await this.github.authenticatedLogin();if(issue.state!=="OPEN"||issue.pullRequest)throw new Error(`#${number} is not an open issue`);const own=`factory-instance:${config.instanceName}`;await this.github.ensureLabel(own,"0969da",`AI Factory instance ${config.instanceName}`);await this.github.assign(number,[login]);await this.github.replaceInstanceLabel(number,own);return{issue:number,claimed:true,instance:config.instanceName};}
  async claimIssue(reference:string){const number=this.issueNumber(reference),own=`factory-instance:${config.instanceName}`;await this.github.ensureLabel(own,"0969da",`AI Factory instance ${config.instanceName}`);await this.github.replaceInstanceLabel(number,own);return{issue:number,claimed:true,instance:config.instanceName};}
+ async continueIssue(reference:string){const issue=await this.github.issue(this.issueNumber(reference)),state=await readIssueState(this.github,issue.number);if(!state)throw new Error("No readable Factory state is published for this issue");if(state.index.instance===config.instanceName)throw new Error("The published state already belongs to this instance");const projection=adoptIssueState(this.store,state,{issue});this.store.event("issue.continued",{issue:issue.number,instance:state.index.instance,revision:state.index.projection.revision,forced:true},state.index.workflowId);return{issue:issue.number,workItemId:state.index.workflowId,status:projection.status,sourceInstance:state.index.instance};}
  private async reconcileAssignments(login:string){
   const own=`factory-instance:${config.instanceName}`,view:Array<Record<string,unknown>>=[];
   await this.github.ensureLabel(own,"0969da",`AI Factory instance ${config.instanceName}`);
@@ -47,13 +49,13 @@ export class WorkflowOrchestrator {
     if(local.archived_at){view.push({issue:issue.number,state:"worked-here",instances});continue;}
     if(["COMPLETED","CANCELLED"].includes(local.status)){if(!this.released(local)){await this.github.unassign(local.issue_number,[login]);await this.github.removeLabel(local.issue_number,own);this.updateContext(local.id,{releasedAt:new Date().toISOString()});}view.push({issue:issue.number,state:"released",instances:[]});continue;}
     if(!instances.length){await this.github.addLabel(issue.number,own);this.store.event("issue.claimed",{issue:issue.number,instance:config.instanceName},local.id);view.push({issue:issue.number,state:"claiming",instances:[own]});continue;}
-    if(instances.length===1&&instances[0]===own){if(local.status==="PAUSED"&&["unassigned","moved","claim-conflict"].includes(this.lastReason(local.id))){const current=this.projections.get(local.id),status=this.projections.resumeStatus(local.id);this.projections.transition({workItemId:local.id,expectedRevision:current.revision,stage:current.stage,status,attemptDelta:status==="QUEUED"?1:0,actor:{type:"github",id:login},source:{},reason:{code:"reassigned",summary:"Issue reassigned to this Factory instance"}});}view.push({issue:issue.number,state:"worked-here",instances});continue;}
+    if(instances.length===1&&instances[0]===own){if(local.status==="PAUSED"&&["unassigned","moved","claim-conflict","continued"].includes(this.lastReason(local.id))){await this.adoptNewerState(local,issue);const current=this.projections.get(local.id),status=this.projections.resumeStatus(local.id);this.projections.transition({workItemId:local.id,expectedRevision:current.revision,stage:current.stage,status,attemptDelta:status==="QUEUED"?1:0,actor:{type:"github",id:login},source:{},reason:{code:"reassigned",summary:"Issue reassigned to this Factory instance"}});}view.push({issue:issue.number,state:"worked-here",instances});continue;}
     await this.pauseOwned(local,instances.includes(own)?"claim-conflict":"moved");view.push({issue:issue.number,state:instances.includes(own)?"claim-conflict":"other-instance",instances});continue;
    }
    if(!instances.length){await this.github.addLabel(issue.number,own);this.store.event("issue.claimed",{issue:issue.number,instance:config.instanceName});view.push({issue:issue.number,state:"claiming",instances:[own]});continue;}
    if(instances.includes(own)&&instances.length===1){
     const comments=await this.github.comments(issue.number),foreign=comments.some(comment=>comment.body.includes("<!-- ai-factory:workflow-status"));
-    if(foreign){this.eventOnce(`continuation:${issue.id}`,"issue.continuation_pending",{issue:issue.number,instance:config.instanceName});view.push({issue:issue.number,state:"continuation-pending",instances});continue;}
+    if(foreign){let state:ReadIssueState|null=null;try{state=await readIssueState(this.github,issue.number);}catch{}if(!state){this.eventOnce(`continuation:${issue.id}`,"issue.continuation_pending",{issue:issue.number,instance:config.instanceName});view.push({issue:issue.number,state:"continuation-pending",instances});continue;}if(state.index.instance===config.instanceName){view.push({issue:issue.number,state:"continuation-pending",instances,sourceInstance:state.index.instance});continue;}if(["RUNNING","QUEUED"].includes(state.index.projection.status)){this.eventOnce(`continuation-waiting:${issue.id}:${state.index.instance}:${state.index.projection.revision}`,"issue.continuation_waiting",{issue:issue.number,instance:state.index.instance,revision:state.index.projection.revision});view.push({issue:issue.number,state:"continuation-waiting",instances,sourceInstance:state.index.instance});continue;}const continued=adoptIssueState(this.store,state,{issue});this.store.event("issue.continued",{issue:issue.number,instance:state.index.instance,revision:state.index.projection.revision},state.index.workflowId);view.push({issue:issue.number,state:"continued",instances,sourceInstance:state.index.instance,status:continued.status});continue;}
     const cursor=Math.max(0,...comments.map(comment=>comment.id));this.intake.start(issue,{actor:login,initialCursor:cursor,source:"assignment"});view.push({issue:issue.number,state:"worked-here",instances});continue;
    }
    if(instances.includes(own)){const key=`conflict:${issue.id}:${[...instances].sort().join(",")}`;this.eventOnce(key,"issue.claim_conflict",{issue:issue.number,instances:[...instances].sort()});view.push({issue:issue.number,state:"claim-conflict",instances});}
@@ -74,6 +76,7 @@ export class WorkflowOrchestrator {
   try{await this.runner.preserve(item.id);}catch(error){this.store.event("workflow.preserve_failed",{reason,error:String(error)},item.id,current.activeRunId);}
  }
  private lastReason(id:string){const row=this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(id) as {payload:string}|undefined;return row?(JSON.parse(row.payload) as {reason?:{code?:string}}).reason?.code??"":"";}
+ private async adoptNewerState(local:ItemRow,issue:Issue){try{const state=await readIssueState(this.github,issue.number);if(state&&state.index.instance!==config.instanceName&&state.index.projection.revision>local.revision){adoptIssueState(this.store,state,{issue});this.store.event("issue.continued",{issue:issue.number,instance:state.index.instance,revision:state.index.projection.revision},state.index.workflowId);}}catch(error){this.store.event("issue.continuation_failed",{issue:issue.number,error:String(error)},local.id);}}
  private released(item:ItemRow){return Boolean((JSON.parse(item.context||"{}") as {releasedAt?:string}).releasedAt);}
  private eventOnce(key:string,type:string,payload:Record<string,unknown>){const metadata=`ownership:${config.repo}:${key}`;if(this.store.metadata(metadata))return;this.store.event(type,payload);this.store.setMetadata(metadata,true);}
  async refreshIssueList(){
