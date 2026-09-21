@@ -56,9 +56,6 @@ const stateClass=value=>`state-${String(value).toLowerCase().replaceAll('_','-')
 let lastSnapshot=null;
 function applyQueueAvailability(){
  const stopped=lastSnapshot?.daemon?.running===false;
- const note=$('#list-writing-note');
- note.textContent=stopped?'Daemon stopped. Start it from Runtime controls.':'List updates paused while you write';
- note.hidden=!stopped&&![...document.querySelectorAll('#items .thread-composer')].some(form=>form.querySelector('textarea')?.value);
  for(const button of document.querySelectorAll('#items button[onclick^="factoryControl"], #items button[onclick^="sendWorkflowMessage"], #items button[onclick^="workHere"], #items button[onclick^="continueHere"], #add-issue, #refresh-issue-list, #start-issue-form button[type="submit"]')){
   if(stopped){if(button.dataset.daemonDisabled===undefined)button.dataset.daemonDisabled=String(button.disabled);button.disabled=true;}
   else if(button.dataset.daemonDisabled!==undefined){button.disabled=button.dataset.daemonDisabled==='true';delete button.dataset.daemonDisabled;}
