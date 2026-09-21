@@ -1,0 +1,32 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {Store} from "../src/storage.js";
+import {config} from "../src/config.js";
+import {WorkflowOrchestrator} from "../src/workflow-orchestrator.js";
+import {WorkflowRunner} from "../src/workflow-runner.js";
+import {WorkflowProjections} from "../src/workflow-projection.js";
+import {Workspaces,git} from "../src/worktrees.js";
+import type {Issue} from "../src/adapters/github.js";
+
+class SharedGitHub {
+ labels:string[]=[];assigned=true;staleClaims=2;commentsByIssue:any[]=[];unassigned:string[]=[];
+ issueRow():Issue{return{id:1,nodeId:"I_1",number:1,title:"Shared work",body:"Implement it",url:"https://github.com/owner/demo/issues/1",state:"OPEN",labels:this.labels.map(name=>({name})),assignees:this.assigned?["factory"]:[],createdAt:"now",updatedAt:"now",author:{login:"owner",type:"User"}};}
+ authenticatedLogin(){return"factory";}assignedIssues(){if(!this.assigned)return[];const row=this.issueRow();if(this.staleClaims-->0)row.labels=[];return[row];}issue(){return this.issueRow();}comments(){return this.commentsByIssue;}ensureLabel(){}addLabel(_n:number,name:string){if(!this.labels.includes(name))this.labels.push(name);}removeLabel(_n:number,name:string){this.labels=this.labels.filter(value=>value!==name);}replaceInstanceLabel(_n:number,name:string){this.labels=this.labels.filter(value=>!value.startsWith("factory-instance:"));this.labels.push(name);}assignees(){return this.assigned?["factory"]:[];}assign(){this.assigned=true;}unassign(_n:number,logins:string[]){this.assigned=false;this.unassigned.push(...logins);}syncWorkflow(){}publishWorkflowComment(){}pullRequestState(){return{state:"OPEN",mergedAt:null,mergeCommit:null} as const;}repository(){return{id:1,nodeId:"R_1",fullName:"owner/demo",defaultBranch:"main"};}ensurePR(){return"https://github.com/owner/demo/pull/1";}
+}
+
+function repository(root:string){const repo=path.join(root,"repo"),origin=path.join(root,"origin.git");fs.mkdirSync(repo,{recursive:true});fs.mkdirSync(origin,{recursive:true});git(origin,["init","--bare"]);git(repo,["init"]);git(repo,["config","user.name","Factory"]);git(repo,["config","user.email","factory@example.test"]);fs.writeFileSync(path.join(repo,"README.md"),"base\n");git(repo,["add","."]);git(repo,["commit","-m","base"]);git(repo,["branch","-M","main"]);git(repo,["remote","add","origin",origin]);git(repo,["push","-u","origin","main"]);return{repo,origin};}
+
+test("two instances conflict safely, move ownership, preserve partial work and release terminal issues",async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"factory-ownership-")),previous={repo:config.repo,instance:config.instanceName,repoDir:config.repoDir,dataDir:config.dataDir,base:config.defaultBranch,git:config.gitCommand};config.gitCommand="/usr/bin/git";const gitRepo=repository(root);config.repo="owner/demo";config.repoDir=gitRepo.repo;config.dataDir=path.join(root,"data");config.defaultBranch="main";
+ const github=new SharedGitHub(),aStore=new Store(":memory:"),bStore=new Store(":memory:");aStore.setMetadata("runtime:factory-account","factory");bStore.setMetadata("runtime:factory-account","factory");const workspaces=new Workspaces(),aRunner=new WorkflowRunner(aStore,{},workspaces,github),bRunner={reconcileFinished(){},async run(){return false;},async preserve(){}} as any;const a=new WorkflowOrchestrator(aStore,github,aRunner,{enabled:false,async notify(){}}),b=new WorkflowOrchestrator(bStore,github,bRunner,{enabled:false,async notify(){}});
+ try{
+  config.instanceName="a";await a.syncRemote();config.instanceName="b";await b.syncRemote();assert.deepEqual(new Set(github.labels),new Set(["factory-instance:a","factory-instance:b"]));config.instanceName="a";await a.syncRemote();config.instanceName="b";await b.syncRemote();assert.equal((aStore.db.prepare("SELECT COUNT(*) n FROM work_items").get() as any).n,0);assert.equal((bStore.db.prepare("SELECT COUNT(*) n FROM work_items").get() as any).n,0);
+  github.labels=["factory-instance:b"];config.instanceName="b";await b.syncRemote();const bItem=bStore.db.prepare("SELECT id FROM work_items").get() as {id:string};assert.ok(bItem);config.instanceName="a";await a.syncRemote();assert.equal((aStore.db.prepare("SELECT COUNT(*) n FROM work_items").get() as any).n,0);
+  github.labels=["factory-instance:a"];config.instanceName="b";await b.syncRemote();assert.equal(new WorkflowProjections(bStore).get(bItem.id).status,"PAUSED");config.instanceName="a";await a.syncRemote();const aItem=aStore.db.prepare("SELECT id,branch FROM work_items").get() as {id:string;branch:string};const cwd=workspaces.ensure(aItem.id,aItem.branch);aStore.db.prepare("UPDATE work_items SET stage='BUILD',context=json_set(context,'$.cwd',?) WHERE id=?").run(cwd,aItem.id);fs.writeFileSync(path.join(cwd,"partial.txt"),"preserved\n");
+  github.assigned=false;config.instanceName="a";await a.syncRemote();assert.equal(new WorkflowProjections(aStore).get(aItem.id).status,"PAUSED");assert.equal(git(gitRepo.origin,["show",`${aItem.branch}:partial.txt`]),"preserved");
+  github.assigned=true;github.labels=["factory-instance:a"];await a.syncRemote();let projection=new WorkflowProjections(aStore).get(aItem.id);assert.equal(projection.status,"QUEUED");assert.equal(projection.attempt,1);new WorkflowProjections(aStore).transition({workItemId:aItem.id,expectedRevision:projection.revision,stage:projection.stage,status:"CANCELLED",actor:{type:"human",id:"owner"},source:{},reason:{code:"cancel",summary:"Cancelled"}});await a.syncRemote();assert.deepEqual(github.unassigned,["factory"]);assert.equal(github.labels.includes("factory-instance:a"),false);
+ }finally{aStore.db.close();bStore.db.close();config.repo=previous.repo;config.instanceName=previous.instance;config.repoDir=previous.repoDir;config.dataDir=previous.dataDir;config.defaultBranch=previous.base;config.gitCommand=previous.git;fs.rmSync(root,{recursive:true,force:true});}
+});
