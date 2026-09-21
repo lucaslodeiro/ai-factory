@@ -24,6 +24,13 @@ export class WorkflowRunner {
   const rows=this.store.db.prepare("SELECT w.id,e.id execution_id,e.status FROM work_items w JOIN executions e ON e.id=w.active_run_id WHERE w.archived_at IS NULL AND w.status='RUNNING' AND e.status<>'running'").all() as {id:string;execution_id:string;status:string}[];
   for(const row of rows){this.scheduler.fail(row.id,row.execution_id,new Error(`The agent execution ended (${row.status}), but its result was not applied. Review execution evidence before retrying.`),"recovery");}
  }
+ async preserve(workItemId:string){
+  const row=this.store.db.prepare("SELECT issue_number,branch,stage,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;stage:DeliveryStage;context:string};
+  const context=JSON.parse(row.context||"{}") as {cwd?:string};if(!context.cwd)return;
+  const role=({DESIGN:"product-architect",BUILD:"developer",TEST:"qa",REVIEW:"reviewer",DELIVERY:"reviewer"} as Record<string,AgentRole>)[row.stage];
+  const synchronization=this.workspaces.sync(context.cwd,row.branch,config.defaultBranch,role);if(synchronization.skipped)this.store.event("workflow.sync_skipped",{branch:row.branch,error:sanitizeFailureEvidence(synchronization.skipped,1600)},workItemId);
+  try{if(this.workspaces.publishAsync)await this.workspaces.publishAsync(context.cwd,row.branch);else this.workspaces.publish(context.cwd,row.branch);}catch(error){this.store.event("workflow.push_failed",{branch:row.branch,error:sanitizeFailureEvidence(error instanceof Error?error.message:String(error),1600)},workItemId);}
+ }
  async run(workItemId:string) {
   const projection=new WorkflowProjections(this.store).get(workItemId);if(projection.status!=="QUEUED")return false;
   if(projection.stage==="DELIVERY")return this.publish(workItemId);

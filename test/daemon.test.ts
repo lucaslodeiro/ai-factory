@@ -28,7 +28,7 @@ test("full daemon and CLI integration with local Git remote and deterministic pr
 const fs=require('node:fs');const file=${JSON.stringify(stateFile)};const a=process.argv.slice(2);const s=JSON.parse(fs.readFileSync(file));
 const save=()=>fs.writeFileSync(file,JSON.stringify(s));const out=x=>console.log(JSON.stringify(x));
 if(a[0]==='auth'){process.exit(0)}
-if(a[0]==='api'){const endpoint=a.at(-1);if(a.includes('--method')){const id=Number(a[1].split('/').pop());s.comments.find(c=>c.id===id).body=JSON.parse(fs.readFileSync(0,'utf8')).body;save();out({});}else if(endpoint==='user'){out({login:'factory'});}else if(endpoint==='repos/owner/demo'){out({id:1,node_id:'R_1',full_name:'owner/demo',default_branch:'main'});}else if(endpoint==='repos/owner/demo/issues/1'){out({id:100,node_id:'I_100',number:1,title:'Add greet',body:'Add greet function and tests',html_url:'https://github.com/owner/demo/issues/1',state:'open',created_at:'2026-09-20T00:00:00Z',updated_at:'2026-09-20T00:00:00Z',user:{login:'owner',type:'User'}});}else if(endpoint.startsWith('repos/owner/demo/issues?'))out([[]]);else out([s.comments])}
+if(a[0]==='api'){const endpoint=a.at(-1),issue={id:100,node_id:'I_100',number:1,title:'Add greet',body:'Add greet function and tests',html_url:'https://github.com/owner/demo/issues/1',state:'open',labels:[{name:'factory-instance:test'}],assignees:[{login:'factory'}],created_at:'2026-09-20T00:00:00Z',updated_at:'2026-09-20T00:00:00Z',user:{login:'owner',type:'User'}};if(a.includes('--method')){const id=Number(a[1].split('/').pop());s.comments.find(c=>c.id===id).body=JSON.parse(fs.readFileSync(0,'utf8')).body;save();out({});}else if(endpoint==='user'){out({login:'factory'});}else if(endpoint==='repos/owner/demo'){out({id:1,node_id:'R_1',full_name:'owner/demo',default_branch:'main'});}else if(endpoint==='repos/owner/demo/issues/1'){out(issue);}else if(endpoint.startsWith('repos/owner/demo/issues?'))out([[issue]]);else out([s.comments])}
 else if(a[0]==='label'){}
 else if(a[0]==='issue'&&a[1]==='list'){out([{number:1,title:'Add greet',body:'Add greet function and tests',url:'https://github.com/owner/demo/issues/1'}])}
 else if(a[0]==='issue'&&a[1]==='view'){out({labels:[{name:s.label}]})}
@@ -62,7 +62,7 @@ if(codex){
 }
 `);
  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, AI_FACTORY_HOME:root, FACTORY_DATA_DIR: data, FACTORY_REPO_DIR: repo,
-  GITHUB_REPOSITORY: "owner/demo", GITHUB_DEFAULT_BRANCH: "main", FACTORY_APPROVERS: "owner", FACTORY_POLL_INTERVAL_MS: "50",
+  GITHUB_REPOSITORY: "owner/demo", GITHUB_DEFAULT_BRANCH: "main", FACTORY_APPROVERS: "owner", FACTORY_INSTANCE_NAME:"test", FACTORY_POLL_INTERVAL_MS: "50",
   CODEX_COMMAND: provider, CLAUDE_COMMAND: provider, PRODUCT_ARCHITECT_PROVIDER:"codex", DEVELOPER_PROVIDER:"claude",
   QA_PROVIDER:"claude", REVIEWER_PROVIDER:"codex", SLACK_WEBHOOK_URL: "", AI_FACTORY_CONTROLLER_REMOTE:origin };
  const cli = path.resolve("src/cli.ts");
