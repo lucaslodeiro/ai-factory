@@ -56,7 +56,7 @@ export async function applyMessageControl(store:Store,github:RuntimeGitHub,contr
  }catch(error){const reason=error instanceof Error?error.message:String(error),marker=`<!-- ai-factory:workflow-comment:${config.repo}:${issue}:${key} -->`;if(!github.editComment)throw new Error(`${reason}; the published GitHub comment could not be marked rejected`);await github.editComment(commentId,`${body}\n\nRejected: ${reason}\n\n${marker}`);throw error;}
 }
 
-export async function applyInterruptRetryControl(store:Store,github:RuntimeGitHub,executions:ExecutionManager,runner:WorkflowRunner,control:{id:number;target:string},login:string){
+export async function applyInterruptRetryControl(store:Store,github:RuntimeGitHub,executions:ExecutionManager,runner:WorkflowRunner,control:{id:number;target:string},login:string,waitMs=30_000){
  const input=JSON.parse(control.target) as {workItemId?:string;text?:string;action?:MessageAction},workItemId=String(input.workItemId??""),text=String(input.text??"").trim();
  if(!workItemId||input.action!=="interrupt-retry"||!text)throw new Error("Interrupt and retry requires guidance text");
  const records=new WorkflowRecords(store),projection=new WorkflowProjections(store),current=projection.get(workItemId);
@@ -66,11 +66,11 @@ export async function applyInterruptRetryControl(store:Store,github:RuntimeGitHu
  if(!Number.isSafeInteger(commentId)||commentId<=0)throw new Error("GitHub did not return the published message id");
  try{
   const interruptedAt=new Date().toISOString();
-  projection.transition({workItemId,expectedRevision:current.revision,stage:current.stage,status:"PAUSED",actor:{type:"human",id:login},source:{commentId,executionId:current.activeRunId},reason:{code:"interrupted-for-guidance",summary:"Human interrupted the active attempt with new guidance"}});
   executions.interrupt(current.activeRunId,"interrupted-for-guidance");
-  const deadline=Date.now()+30_000;while(Date.now()<deadline){const execution=store.db.prepare("SELECT status FROM executions WHERE id=?").get(current.activeRunId) as {status:string}|undefined;if(!execution||execution.status!=="running")break;await new Promise(resolve=>setTimeout(resolve,25));}
-  const execution=store.db.prepare("SELECT status FROM executions WHERE id=?").get(current.activeRunId) as {status:string}|undefined;if(execution?.status==="running")throw new Error("The active process did not stop within 30 seconds");
-  await runner.preserve(workItemId);runner.recordPreviousAttempt(workItemId,current.activeRunId,interruptedAt,"interrupted-for-guidance");
+  const deadline=Date.now()+waitMs;while(Date.now()<deadline){const execution=store.db.prepare("SELECT status FROM executions WHERE id=?").get(current.activeRunId) as {status:string}|undefined;if(!execution||execution.status!=="running")break;await new Promise(resolve=>setTimeout(resolve,Math.min(25,waitMs)));}
+  const execution=store.db.prepare("SELECT status FROM executions WHERE id=?").get(current.activeRunId) as {status:string}|undefined;if(execution?.status==="running")throw new Error(`The active process did not stop within ${Math.round(waitMs/1000)} seconds`);
+  projection.transition({workItemId,expectedRevision:current.revision,stage:current.stage,status:"PAUSED",actor:{type:"human",id:login},source:{commentId,executionId:current.activeRunId},reason:{code:"interrupted-for-guidance",summary:"Human interrupted the active attempt with new guidance"}});
+  await runner.preserve(workItemId);
   const result=new WorkflowCommands(store).apply(messageCommand("retry",text,specVersion),{workItemId,login,commentId,specVersion});
   if(result.recordIds.length)store.db.prepare(`UPDATE records SET source_type='dashboard' WHERE work_item_id=? AND source_id=?`).run(workItemId,String(commentId));
   runner.recordPreviousAttempt(workItemId,current.activeRunId,interruptedAt,"interrupted-for-guidance",result.recordIds.at(-1));

@@ -60,6 +60,16 @@ test("approval guidance becomes a spec-scoped instruction",()=>{
  } finally {s.store.db.close();}
 });
 
+test("specification feedback becomes an active human decision for Architect",()=>{
+ const s=setup("DESIGN","WAITING");
+ try {
+  s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:10},sourceType:"agent-result",sourceId:"run-1",actor:"product-architect"});s.initialize();
+  const applied=s.commands.apply({kind:"answer",text:"Use the existing public API"},context(11)),decision=s.records.get(applied.recordIds.at(-1)!)!;
+  assert.equal(decision.payload.kind,"decision");assert.equal(decision.payload.kind==="decision"&&decision.payload.category,"human");assert.equal(decision.payload.kind==="decision"&&decision.payload.decision,"Use the existing public API");
+  const prompt=new ContextAssembler(s.store).assemble({workItemId:"work-1",role:"product-architect",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"}});assert.match(prompt.markdown,/Active human decisions/);assert.match(prompt.markdown,/Use the existing public API/);
+ }finally{s.store.db.close();}
+});
+
 test("answer resolves the human child, preserves the Architect parent and records guidance",()=>{
  const s=setup("DESIGN","WAITING");
  try {

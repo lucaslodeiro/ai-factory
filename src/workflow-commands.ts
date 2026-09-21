@@ -52,7 +52,7 @@ export class WorkflowCommands {
     const ids:string[]=[request.id];
     const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:"DESIGN",status:"QUEUED",actor,source,reason:{code:"spec-feedback",summary:"Human requested specification changes"},recordIds:ids},()=>{
      this.records.resolveRequest(request.id);
-     ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:"spec",payload:{kind:"instruction",text:command.text},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
+     ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:"spec",payload:{kind:"decision",category:"human",decision:command.text,rationale:`Specification feedback from @${context.login}`,supersedes:[]},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
     });
     return {projection:result,recordIds:ids};
    }
