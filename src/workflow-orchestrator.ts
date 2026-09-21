@@ -20,7 +20,7 @@ export class WorkflowOrchestrator {
  async syncRemote(){
   const since=(this.store.db.prepare("SELECT COALESCE(MAX(id),0) id FROM events").get() as {id:number}).id;
   const login=this.store.metadata<string>("runtime:factory-account")??await this.github.authenticatedLogin();this.assigned=await this.github.assignedIssues(login);
-  await this.reconcileIssueVisibility();await this.reconcilePullRequests();
+  await this.reconcileAssignments(login);await this.reconcileIssueVisibility();await this.reconcilePullRequests();
   for(const item of this.rows())if(!item.archived_at){const comments=await this.github.comments(item.issue_number);if(!this.row(item.id).archived_at)this.inbox.poll(item.id,comments);}
   await this.flush();
   if(this.store.db.prepare("SELECT 1 FROM events WHERE id>? AND type IN ('github.pr_poll_failed','github.issue_state_failed') LIMIT 1").get(since))throw new Error("Some GitHub checks failed; inspect daemon logs. Local processing remains independent.");
@@ -43,6 +43,24 @@ export class WorkflowOrchestrator {
   const initialCursor=origin?.commentId??Math.max(0,...(await this.github.comments(number)).map(comment=>comment.id));const started=this.intake.start(issue,{actor:origin?.login??requestedBy,commentId:origin?.commentId,initialCursor,guidance:origin?.guidance,source:origin?.source==="comment"?"github-comment":origin?.source==="description"?"github-description":"control"});
   return {issue:number,...started,stage:"DESIGN",status:"QUEUED"};
  }
+ private async reconcileAssignments(login:string){
+  const own=`factory-instance:${config.instanceName}`,view:Array<Record<string,unknown>>=[];
+  await this.github.ensureLabel(own,"0969da",`AI Factory instance ${config.instanceName}`);
+  for(const issue of this.assigned){
+   const labels=(issue.labels??[]).map(label=>label.name),instances=labels.filter(label=>label.startsWith("factory-instance:")),local=this.rows().find(item=>!item.archived_at&&item.issue_id===issue.id);
+   if(local){view.push({issue:issue.number,state:"worked-here",instances});continue;}
+   if(!instances.length){await this.github.addLabel(issue.number,own);this.store.event("issue.claimed",{issue:issue.number,instance:config.instanceName});view.push({issue:issue.number,state:"claiming",instances:[own]});continue;}
+   if(instances.includes(own)&&instances.length===1){
+    const comments=await this.github.comments(issue.number),foreign=comments.some(comment=>comment.body.includes("<!-- ai-factory:workflow-status"));
+    if(foreign){this.eventOnce(`continuation:${issue.id}`,"issue.continuation_pending",{issue:issue.number,instance:config.instanceName});view.push({issue:issue.number,state:"continuation-pending",instances});continue;}
+    const cursor=Math.max(0,...comments.map(comment=>comment.id));this.intake.start(issue,{actor:login,initialCursor:cursor,source:"assignment"});view.push({issue:issue.number,state:"worked-here",instances});continue;
+   }
+   if(instances.includes(own)){const key=`conflict:${issue.id}:${[...instances].sort().join(",")}`;this.eventOnce(key,"issue.claim_conflict",{issue:issue.number,instances:[...instances].sort()});view.push({issue:issue.number,state:"claim-conflict",instances});}
+   else view.push({issue:issue.number,state:"other-instance",instances});
+  }
+  this.store.setMetadata("runtime:assigned-issues",view);
+ }
+ private eventOnce(key:string,type:string,payload:Record<string,unknown>){const metadata=`ownership:${config.repo}:${key}`;if(this.store.metadata(metadata))return;this.store.event(type,payload);this.store.setMetadata(metadata,true);}
  async refreshIssueList(){
   let updated=0;for(const item of this.rows()){let remote:Issue;try{remote=await this.github.issue(item.issue_number);}catch(error){this.store.event("github.issue_state_failed",{issue:item.issue_number,error:String(error)},item.id);continue;}await this.reconcileIssue(item,remote);if(remote.state==="OPEN"&&!this.row(item.id).archived_at){this.inbox.poll(item.id,await this.github.comments(item.issue_number));updated++;}}
   const found=this.rows().filter(item=>!item.archived_at).length;this.store.event("github.issue_list_refreshed",{found,added:0,updated});return {found,added:0,updated};
