@@ -19,6 +19,7 @@ export function doctor(existingStore?:Store,github:Pick<GitHubPort,"repository">
  try { check("Claude authentication", auth.status === 0 && JSON.parse(auth.stdout).loggedIn === true); } catch { check("Claude authentication", false); }
  check("GITHUB_REPOSITORY", /^[^/]+\/[^/]+$/.test(config.repo));
  check("FACTORY_APPROVERS", config.approvers.length > 0);
+ console.log(`Instance: ${config.instanceName}`);
  const checkoutExists=fs.existsSync(config.repoDir)&&fs.statSync(config.repoDir).isDirectory();
  check(`Target checkout directory exists: ${config.repoDir}`,checkoutExists);
  if(checkoutExists){

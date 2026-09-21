@@ -62,6 +62,7 @@ function render(data){
   if(data.logs)renderDaemonLogs(data.logs);
   if(data.naming)naming=data.naming;
   document.title=data.repository?`${data.repository} · AI Factory`:'AI Factory · Dashboard';
+  $('#factory-instance').textContent=`Instance: ${data.instanceName||'factory'}`;
   $('#repository').innerHTML=`${brandIcon('github')}<span>${escapeHtml(data.repository||'No repository configured')} · ${escapeHtml(data.branch)}</span>`;
   $('#queued-count').textContent=metric(data.items,['QUEUED']);$('#running-count').textContent=metric(data.items.filter(item=>!item.activity?.stalled),['RUNNING']);$('#waiting-count').textContent=metric(data.items,['WAITING']);$('#paused-count').textContent=metric(data.items,['PAUSED']);$('#completed-count').textContent=metric(data.items,['COMPLETED']);$('#failed-count').textContent=metric(data.items,['FAILED']);$('#cancelled-count').textContent=metric(data.items,['CANCELLED']);$('#updated').textContent=`Updated ${relative(data.generatedAt)}`;
   const sync=data.githubSync;$('#workflow-sync').textContent=sync?sync.state==='syncing'?'Syncing GitHub…':sync.state==='failed'?'GitHub sync delayed':`GitHub synced ${relative(sync.at)}`:'';

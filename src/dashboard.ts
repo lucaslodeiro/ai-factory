@@ -165,7 +165,7 @@ function buildSnapshot(store: Store) {
     }
   }
   const maintenance=(store.db.prepare("SELECT id,operation,actor,status,requested_at,confirmed_at,finished_at,error FROM maintenance_operations ORDER BY requested_at DESC LIMIT 10").all() as any[]).map(operation=>({...operation,affected:(store.db.prepare("SELECT work_item_id,paused_at,resumed_at FROM maintenance_items WHERE maintenance_id=?").all(operation.id) as any[])}));
-  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), githubSync:store.metadata("runtime:github-sync")??null,issueRefresh, items, executions, usage, events,maintenance };
+  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, instanceName:config.instanceName, daemon:daemonState(store), githubSync:store.metadata("runtime:github-sync")??null,issueRefresh, items, executions, usage, events,maintenance };
 }
 function remoteIssuesView(store:Store,settingsRoot:string){
  const configuredRepository=readDashboardSetting(settingsRoot,"GITHUB_REPOSITORY").trim();

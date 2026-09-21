@@ -1,4 +1,5 @@
 import path from "node:path";
+import os from "node:os";
 import { config as loadEnvironment } from "dotenv";
 import { factoryHome } from "./home.js";
 const home=factoryHome();
@@ -42,6 +43,7 @@ function contextBudgetOverrides() {
   }
   return result;
 }
+export function normalizeInstanceName(input:string){const value=input.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,40).replace(/-+$/g,"");return value||"factory";}
 function role(prefix: string, fallback: "codex" | "claude", fallbackModel: string) {
   const selected = provider(`${prefix}_PROVIDER`,fallback);
   return { provider:selected,model:model(`${prefix}_MODEL`,fallbackModel) };
@@ -54,6 +56,7 @@ export const config = {
     reviewer:role("REVIEWER","claude","auto"),
   },
   home,
+  instanceName:normalizeInstanceName(process.env.FACTORY_INSTANCE_NAME?.trim()||os.hostname()),
   dataDir: path.resolve(home,process.env.FACTORY_DATA_DIR ?? "data"),
   repoDir: path.resolve(home,process.env.FACTORY_REPO_DIR ?? "."),
   pollMs: positive("FACTORY_POLL_INTERVAL_MS", 15000),

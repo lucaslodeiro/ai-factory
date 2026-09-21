@@ -27,6 +27,7 @@ const modelField = (section: string, role: string): Omit<Field,"key"> => ({label
 const descriptions: Record<string,Omit<Field,"key">> = {
   FACTORY_DATA_DIR:{label:"Data directory",description:"SQLite database, logs and retained worktrees.",group:"runtime",required:true,restart:"all"},
   FACTORY_REPO_DIR:{label:"Target checkout",description:"Path to the application checkout. Startup clones it if missing and initializes an empty remote.",group:"project",required:true,restart:"all",setup:true},
+  FACTORY_INSTANCE_NAME:{label:"Instance name",description:"Name used to identify this Factory in GitHub issue labels. Empty uses the machine hostname.",group:"runtime",restart:"daemon"},
   FACTORY_POLL_INTERVAL_MS:{label:"GitHub polling interval",description:"How often the daemon checks issues and comments.",group:"runtime",type:"number",unit:"milliseconds",restart:"daemon"},
   FACTORY_EXECUTION_TIMEOUT_MS:{label:"Agent execution timeout",description:"Maximum duration of one agent process.",group:"runtime",type:"number",unit:"milliseconds",restart:"daemon"},
   FACTORY_MAX_FIX_CYCLES:{label:"Automatic correction cycles",description:"Maximum Builder and Tester correction loops before human input.",group:"runtime",type:"number",unit:"cycles",restart:"daemon"},
@@ -77,6 +78,7 @@ export function validateSetting(key: string, value: string) {
   if (key === "FACTORY_DASHBOARD_HOST" && !["127.0.0.1","localhost","::1"].includes(value)) throw new Error(`${key}: use 127.0.0.1, localhost or ::1`);
   if (key === "GITHUB_REPOSITORY" && value && !/^[\w.-]+\/[\w.-]+$/.test(value)) throw new Error(`${key}: use owner/repository`);
   if (key === "FACTORY_APPROVERS" && value && !value.split(",").every(item => /^[a-zA-Z0-9-]+$/.test(item.trim()))) throw new Error(`${key}: use comma-separated GitHub usernames`);
+  if(key==="FACTORY_INSTANCE_NAME"&&value&&!/^[a-zA-Z0-9-]{1,40}$/.test(value))throw new Error(`${key}: use at most 40 letters, numbers or hyphens`);
   if (key === "AGENT_SECRET_ALLOWLIST" && value && !value.split(",").every(item => /^[A-Za-z_][A-Za-z0-9_]*$/.test(item.trim()))) throw new Error(`${key}: use comma-separated environment variable names`);
   if (key.includes("_MODEL") && !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(value)) throw new Error(`${key}: enter a model identifier`);
   if (key.endsWith("_PROVIDER") && !["codex","claude"].includes(value)) throw new Error(`${key}: choose codex or claude`);
