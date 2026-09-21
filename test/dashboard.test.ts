@@ -346,12 +346,15 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.ok(fs.existsSync(path.join(settingsRoot,"daemon-service-state")));
     store.db.prepare("DELETE FROM daemon_lock").run();
     const stoppedRefresh = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"refresh-list"})});
+    const stoppedRetry=await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"retry"})});
+    assert.equal(stoppedRetry.status,409);assert.deepEqual(await stoppedRetry.json(),{error:"Start the daemon before sending controls."});
     assert.equal(stoppedRefresh.status,409); assert.match(await stoppedRefresh.text(),/Start the daemon/);
     const actionsBeforeStoppedDashboardChange = fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8");
     const changedStoppedDashboard = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_DASHBOARD_PORT:"4174"}})});
     assert.equal(changedStoppedDashboard.status,200);
     assert.equal((await changedStoppedDashboard.json() as any).dashboardRestarting,false);
     assert.equal(fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8"),actionsBeforeStoppedDashboardChange);
+    store.db.prepare("INSERT INTO daemon_lock VALUES(1,?,?)").run(process.pid,"dashboard-controls-test");
     const workControl=(kind:string)=>fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind,target:"owner-demo-7"})});
     assert.equal((await workControl("pause")).status,409);
     store.db.prepare("UPDATE work_items SET status='QUEUED' WHERE id='owner-demo-7'").run();
@@ -370,6 +373,7 @@ echo "$*" >> "$PWD/update-actions.log"
     store.setMetadata("runtime:factory-account","viewer");const controlsBefore=(store.db.prepare("SELECT COUNT(*) count FROM controls").get() as {count:number}).count;const deniedMessage=await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"message",target:"owner-demo-7",text:"approve",action:"approve"})});assert.equal(deniedMessage.status,403);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM controls").get() as {count:number}).count,controlsBefore);store.setMetadata("runtime:factory-account","demo-user");
     const failedTarget=JSON.stringify({workItemId:"owner-demo-7",text:"stale",action:"approve"}),failedControl=store.request("message",failedTarget);store.db.prepare("UPDATE controls SET handled=1 WHERE id=?").run(failedControl);store.event("control.failed",{id:failedControl,kind:"message",target:failedTarget,error:"Command is stale"});const failedSnapshot=await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(result=>result.json()) as any;assert.equal(failedSnapshot.items[0].control.error,"Command is stale");
     store.db.prepare("DELETE FROM records WHERE id='approval'").run();store.db.prepare("UPDATE work_items SET stage='TEST',status='FAILED' WHERE id='owner-demo-7'").run();
+    store.db.prepare("DELETE FROM daemon_lock").run();
     fs.rmSync(path.join(settingsRoot,"daemon-service-state"),{force:true});
     fs.writeFileSync(path.join(settingsRoot,"fail-next-daemon-start"),"");
     const failedFirstSetupSave = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({
