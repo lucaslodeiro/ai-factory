@@ -7,7 +7,7 @@ import { deliveryStageName } from "./tactical-routing.js";
 import type { TacticalNextRole } from "./tactical-routing.js";
 const root = new URL("../", import.meta.url);
 const read = (p: string) => fs.readFileSync(fileURLToPath(new URL(p, root)), "utf8");
-export interface PromptContractOptions {architecturalReview?:boolean;tacticalRoute?:{from:import("./types.js").DeliveryStage;allowedNextRoles:TacticalNextRole[]};}
+export interface PromptContractOptions {tacticalRoute?:{from:import("./types.js").DeliveryStage;allowedNextRoles:TacticalNextRole[]};}
 export function promptContractParts(role:AgentRole,selectedProvider:AgentProvider,options:PromptContractOptions={}) {
   const provider = selectedProvider === "codex" ? "codex/AGENTS.md" : "claude/CLAUDE.md";
   const template = role === "product-architect" ? "SPEC" : role === "qa" ? "QA_REPORT" : role === "reviewer" ? "REVIEW_REPORT" : null;
@@ -23,9 +23,6 @@ export function promptContractParts(role:AgentRole,selectedProvider:AgentProvide
       ? "Initially return spec or questions. During a consultation under an approved spec you may return resolved, tactical decisions with rationale, and nextRole, without altering the approved spec or criteria. Major product/architecture/scope/risk decisions or conflicts with human decisions require questions or a revised spec and human approval. Do not route past unfinished Test/Review gates."
       : "Implement/verify only the approved spec and documented tactical decisions. Return pass, changes or decision. PASS requires evidence for every acceptance criterion; Builder/Tester must report actual successful test commands. Raise major decisions with a decision-required finding.",
     role === "reviewer" ? "Delivery Reviewer operates read-only. Independently inspect the implementation and test quality. qaExecutionEvidence contains Tester-reported commands, exit codes and criterion evidence for this approved delivery. You may use that evidence for execution-dependent criteria, explicitly attributing it to the Tester; never claim you personally executed those commands. Your tests array lists only commands you personally ran (empty if none). If Tester evidence is missing or insufficient, return decision/changes with an actionable finding, not PASS with not-run coverage." : "",
-    role === "product-architect" && options.architecturalReview
-      ? "You are performing an additional architectural review of an unapproved draft with high complexity or risk. Inspect the repository and draft independently, correct and finalize the complete specification and its assessment, or return questions if human input is needed. Do not use resolved. The draft has not been approved. Explain any revised complexity/risk in the assessment rationale."
-      : "",
     options.tacticalRoute
       ? `TACTICAL RETURN ROUTE — REQUIRED\nThis consultation originated in ${deliveryStageName(options.tacticalRoute.from)}. Allowed nextRole value${options.tacticalRoute.allowedNextRoles.length === 1 ? "" : "s"}: ${options.tacticalRoute.allowedNextRoles.join(", ")}. If you return resolved, choose exactly one of these values. A later role would skip an unfinished delivery gate and will be rejected.`
       : ""].filter(Boolean).join("\n\n");

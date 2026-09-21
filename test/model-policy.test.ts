@@ -6,22 +6,12 @@ import { parseResult } from "../src/results.js";
 import { result } from "./fixtures.js";
 import type { TaskAssessment, AgentRole } from "../src/types.js";
 const assessment = (complexity: TaskAssessment["complexity"], risk: TaskAssessment["risk"]): TaskAssessment => ({ complexity, risk, rationale: "Inspected task scope" });
-test("balanced policy selects profiles by approved complexity, risk and independent role floors", () => {
- const roles: AgentRole[] = ["product-architect", "developer", "qa", "reviewer"];
- for (const role of roles) {
-  assert.equal(selectModel(role, assessment("low", "low")).profile, role === "developer" ? "fast" : "balanced");
-  assert.equal(selectModel(role, assessment("medium", "low")).profile, "balanced");
-  assert.equal(selectModel(role, assessment("low", "medium")).profile, "balanced");
-  assert.equal(selectModel(role, assessment("high", "low")).profile, "strong");
-  assert.equal(selectModel(role, assessment("low", "high")).profile, "strong");
+test("configured routing is unchanged by assessment, corrections or consultations",()=>{
+ for(const role of ["product-architect","developer","qa","reviewer"] as AgentRole[]){
+  const selection=selectModel(role);assert.equal("profile" in selection,false);
+  for(const level of ["low","medium","high"] as const)assert.deepEqual(selectModel(role,assessment(level,level),2,true),selection);
+  assert.match(selection.reason,/Configured routing/);
  }
-});
-test("initial assessment is balanced; missing assessment and corrections are conservative", () => {
- assert.equal(selectModel("product-architect").profile, "balanced");
- assert.equal(selectModel("developer").profile, "strong");
- assert.equal(selectModel("qa").profile, "strong");
- assert.equal(selectModel("developer", assessment("low", "low"), 1).profile, "strong");
- assert.equal(selectModel("product-architect", assessment("low", "low"), 0, true).profile, "strong");
 });
 test("policy uses each role's configured provider and model IDs", () => {
  const saved = structuredClone(config.roles.developer);
@@ -30,7 +20,7 @@ test("policy uses each role's configured provider and model IDs", () => {
   config.roles.developer.model = "custom-claude";
   const choice = selectModel("developer", assessment("low", "low"));
   assert.equal(choice.model, "custom-claude"); assert.equal(choice.provider, "claude");
-  assert.equal(choice.policy, "direct-v1"); assert.match(choice.reason, /low-risk/);
+  assert.equal(choice.policy, "direct-v1"); assert.match(choice.reason, /claude\/custom-claude/);
   assert.equal(selectModel("developer", assessment("high", "high")).model, "custom-claude");
   config.roles.developer.model = "auto";
   assert.equal(selectModel("developer", assessment("low", "low")).model, "auto");

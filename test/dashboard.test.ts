@@ -95,7 +95,7 @@ echo "$*" >> "$PWD/update-actions.log"
   store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,finished_at,exit_code,input_tokens,output_tokens,cached_tokens,total_tokens) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")
     .run("run-12345678","owner-demo-7","qa","TEST","succeeded","2026-01-02T00:00:00.000Z","2026-01-02T00:01:05.000Z",0,1000,250,500,1750);
   config.dataDir=path.join(settingsRoot,"runtime");fs.mkdirSync(path.join(config.dataDir,"runs","run-12345678"),{recursive:true});fs.writeFileSync(path.join(config.dataDir,"runs","run-12345678","prompt.md"),"sensitive prompt",{mode:0o600});
-  store.event("execution.started",{role:"qa",selection:{provider:"claude",model:"sonnet",profile:"balanced"}},"owner-demo-7","run-12345678");
+  store.event("execution.started",{role:"qa",selection:{provider:"claude",model:"sonnet"}},"owner-demo-7","run-12345678");
   store.event("execution.finished",{status:"succeeded",code:0,usage:{inputTokens:1000,outputTokens:250,cachedTokens:500,totalTokens:1750}},"owner-demo-7","run-12345678");
   const server = await startDashboard(store,"127.0.0.1",0,settingsRoot);
   const port = (server.address() as AddressInfo).port;

@@ -22,6 +22,7 @@ test("Architect distinguishes a required Design blocker from an optional researc
 
 test("architect receives an explicit, machine-aligned tactical return route", () => {
  const output=promptContract("product-architect","claude",{tacticalRoute:{from:"BUILD",allowedNextRoles:["developer"]}});
+ assert.doesNotMatch(output,/additional architectural review of an unapproved draft/);
  assert.match(output,/TACTICAL RETURN ROUTE — REQUIRED/);
  assert.match(output,/originated in Build/);
  assert.match(output,/Allowed nextRole value: developer/);

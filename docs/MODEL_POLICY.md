@@ -2,22 +2,11 @@
 
 Each agent role has exactly two routing settings: a provider and a model. The model can be a concrete provider model ID or `auto`. A concrete ID is passed to the provider CLI for every invocation of that role. With `auto`, the factory omits the model override and lets the provider choose its recommended default.
 
-The factory does not translate task complexity into `fast`, `balanced`, or `strong` model names. Product Architect still assesses complexity and risk because those values control workflow safeguards and make the human approval explicit; they never replace the model selected for the role.
+The factory does not translate task complexity into `fast`, `balanced`, or `strong` model names. Product Architect still assesses complexity and risk because those values inform human approval; they never replace the model selected for the role.
 
 ## Workflow assessment rules
 
-| Condition | Internal workflow tier |
-|---|---|
-| Architect has an unapproved high-complexity/high-risk draft awaiting review | strong |
-| A correction/decision cycle has occurred, or Architect is handling a consultation | strong |
-| Approved complexity or risk is high | strong |
-| Delivery item with a missing assessment | strong |
-| Builder on low complexity AND low risk | fast |
-| All other cases, including initial Architect, Tester and Reviewer | balanced |
-
-These internal tiers describe workflow treatment only. For example, a high-complexity or high-risk draft receives a fresh Architect review before publication for approval. The review uses the same provider and model configured for Product Architect. The tier is retained in audit events so the reason for additional review remains visible.
-
-Complexity considers scope, algorithms, architecture and concurrency. Risk considers authentication/authorization, secrets, payments, destructive migrations and security boundaries. Unknown scope should prompt clarification or a conservative assessment. Product Architect supplies the semantic assessment; the deterministic orchestrator applies the workflow rules.
+Complexity considers scope, algorithms, architecture and concurrency. Risk considers authentication/authorization, secrets, payments, destructive migrations and security boundaries. Unknown scope should prompt clarification or a conservative assessment. Product Architect supplies the semantic assessment; the human approves that assessment with the specification.
 
 The assessment and rationale are published with SPEC vN and stored in its immutable snapshot. Approving the spec approves the assessment. Use `/factory answer ...` to request a correction before approval. Tactical resolutions and delivery results cannot replace it; a new assessment requires a new spec version and approval.
 
@@ -39,7 +28,7 @@ Both providers receive the same canonical role contract. Product Architect and D
 ## Inspecting and auditing
 
 - `npm run factory -- models`: show the configured provider and model for every role without running an agent.
-- `npm run factory -- models <work-item-id>`: preview the same configured model with the workflow assessment and reason for each role.
-- `npm run factory -- events <work-item-id>`: inspect `model.selected` and `execution.started`. Each run records policy version, provider, configured model, internal workflow tier and reason. With `auto`, the provider's resolved backend model is not independently attested.
+- `npm run factory -- models <work-item-id>`: preview the configured model and routing reason for each role.
+- `npm run factory -- events <work-item-id>`: inspect `model.selected` and `execution.started`. Each run records policy version, provider, configured model, reason. With `auto`, the provider's resolved backend model is not independently attested.
 
-Missing assessments retain conservative workflow handling. No prices, token budgets or automatic provider switching are inferred. Real model availability and quality require acceptance runs; subprocess fixtures verify routing and arguments only.
+No prices, token budgets or automatic provider switching are inferred. Real model availability and quality require acceptance runs; subprocess fixtures verify routing and arguments only.

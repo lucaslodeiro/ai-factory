@@ -75,7 +75,7 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
     if(type==="workflow.transition"){const from=value.from,to=value.to;return{title:`Workflow moved to ${stateLabel(to?.stage)} · ${stateLabel(to?.status)}`,details:from?`Previous: ${stateLabel(from.stage)} · ${stateLabel(from.status)}. ${value.reason?.summary??""}`:`${value.reason?.summary??"Work started"}.`,severity:to?.status==="FAILED"?"error":["WAITING","PAUSED","CANCELLED"].includes(to?.status)?"warning":["COMPLETED"].includes(to?.status)?"success":"info",category:"Workflow"};}
     if (type === "execution.started") {
       const selection=value.selection;
-      return { title:`${role} execution started`,details:selection ? `${selection.model} · ${selection.profile} profile` : "The agent process is running.",severity:"info",category:"Agent",brand:selection?.provider };
+      return { title:`${role} execution started`,details:selection ? `${selection.model}` : "The agent process is running.",severity:"info",category:"Agent",brand:selection?.provider };
     }
     if (type === "execution.finished") { const result=value.code === null || value.code === undefined ? "The process finished without an exit code." : `Process exit code: ${value.code}.`;const usage=value.usage?.totalTokens === null || value.usage?.totalTokens === undefined ? " Token usage was not reported." : ` Tokens reported: ${Number(value.usage.totalTokens).toLocaleString("en-US")}.`;return { title:`${role} execution ${value.status ?? "finished"}`,details:result+usage,severity:value.status === "succeeded" ? "success" : value.status === "cancelled" ? "warning" : "error",category:"Agent" };}
     if (type === "execution.interrupted") return { title:`${role} execution interrupted`,details:value.reason ?? "The daemon stopped before this stage was recorded as complete.",severity:"error",category:"Agent" };
@@ -133,7 +133,7 @@ function buildSnapshot(store: Store) {
     const end=run.finished_at ? new Date(run.finished_at).getTime() : Date.now(),start=new Date(run.started_at).getTime();
     return { id:run.id,workItemId:run.work_item_id,role:run.role,workflowState:run.stage,status:run.status,pid:run.pid,startedAt:run.started_at,finishedAt:run.finished_at,exitCode:run.exit_code,durationMs:Number.isFinite(start) ? Math.max(0,end-start) : null,
       inputTokens:run.input_tokens,outputTokens:run.output_tokens,cachedTokens:run.cached_tokens,totalTokens:run.total_tokens,interruptionReason:run.interruption_reason,maintenanceId:run.maintenance_id,
-      issue:item?.issue_number ?? null,title:item?.context.title ?? "Unknown issue",url:item?.context.url ?? null,provider:selection?.provider ?? null,model:selection?.model ?? null,profile:selection?.profile ?? null };
+      issue:item?.issue_number ?? null,title:item?.context.title ?? "Unknown issue",url:item?.context.url ?? null,provider:selection?.provider ?? null,model:selection?.model ?? null };
   });
   const usageRows=(store.db.prepare("SELECT work_item_id,role,stage,status,started_at,finished_at,input_tokens,output_tokens,cached_tokens,total_tokens FROM executions ORDER BY started_at").all() as any[]).filter(run=>!itemById.get(run.work_item_id)?.archived_at);
   const usageMap=new Map<string,{workItemId:string;runs:number;durationMs:number;inputTokens:number;outputTokens:number;cachedTokens:number;totalTokens:number;unreportedTokenRuns:number;stages:Map<string,any>}>();

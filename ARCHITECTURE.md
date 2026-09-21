@@ -53,6 +53,6 @@ Multiple Factory installations can share a repository through per-issue `factory
 
 ## Adapters and observability
 
-Claude, Codex, GitHub and Slack are isolated behind adapters. Each role selects one provider and direct model ID or `auto`; the deterministic policy uses the approved complexity/risk assessment for safeguards without translating model names into arbitrary tiers.
+Claude, Codex, GitHub and Slack are isolated behind adapters. Each role selects one provider and direct model ID or `auto`; the policy uses that configured routing directly. Architect records complexity and risk for human approval of the specification.
 
 The dashboard and CLI read the same V3 projection. Recent executions expose stage, role, model, duration, token usage and interruption reason. Prompt content requires an explicit local sensitive-content acknowledgement. Exact prompts and logs are pruned 30 days after completion/cancellation by default while manifests and hashes remain. Slack and GitHub delivery use independent durable queues.
