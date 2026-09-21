@@ -33,7 +33,7 @@ async function lifecycle() {
  const started=intake.start(issue,{actor:"dashboard",source:"control"}),workItemId=started.id;
  const statuses=new Map<string,string>(),milestones=new Map<string,string>(),assignments=new Map<string,string[]>();
  const publish=async(name:string)=>{const before=port.publishedComments.length;await publisher.publishResults();await publisher.publishChanged();const status=port.statuses.at(-1)?.body??"";statuses.set(name,status);assignments.set(name,[...port.assigned]);oneNextAction(status);for(const comment of port.publishedComments.slice(before))milestones.set(name,comment.body);};
- const run=(role:AgentRole,agentResult:AgentResult)=>{const execution=scheduler.begin(workItemId);store.db.prepare("UPDATE executions SET status='succeeded',finished_at='2026-09-20T01:00:00Z',exit_code=0 WHERE id=?").run(execution.executionId);return results.apply({workItemId,executionId:execution.executionId,role,result:agentResult});};
+ const run=(role:AgentRole,agentResult:AgentResult)=>{const execution=scheduler.begin(workItemId);store.db.prepare("UPDATE executions SET status='succeeded',finished_at='2026-09-20T01:00:00Z',exit_code=0 WHERE id=?").run(execution.executionId);return results.apply({head:"head",workItemId,executionId:execution.executionId,role,result:agentResult});};
  await publish("start");
  run("product-architect",result("questions",{summary:"I need two product choices",questions:["Which audience is primary?","Should results be cached?"]}));await publish("questions");
  port.reply(1,"/factory answer\n1. Support fans.\n2. Cache for five minutes.");inbox.poll(workItemId);await publish("answer");

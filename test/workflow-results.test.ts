@@ -27,7 +27,7 @@ test("Architect specification creates a versioned approval request",()=>{
  const s=setup();
  try {
   running(s,"product-architect","run-a");
-  const applied=s.results.apply({workItemId:"work-1",executionId:"run-a",role:"product-architect",result:result("spec")});
+  const applied=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-a",role:"product-architect",result:result("spec")});
   assert.equal(applied.discarded,false);assert.deepEqual({stage:applied.projection.stage,status:applied.projection.status},{stage:"DESIGN",status:"WAITING"});
   assert.equal((s.store.db.prepare("SELECT body FROM specs WHERE work_item_id='work-1' AND version=1").get() as {body:string}).body,"# Specification\nAC1: returns 42");
   const request=s.records.activeRequest("work-1");assert.equal(request?.payload.kind==="request"&&request.payload.type,"spec-approval");
@@ -39,9 +39,14 @@ test("delivery pass advances the stored stage and accepts role-owned deferred fi
  try {
   const deferred=s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"finding",classification:"defer",originRole:"developer",evidence:"Optional cleanup"},sourceType:"agent-result",sourceId:"old",actor:"developer"});
   running(s,"developer","run-b");
-  const applied=s.results.apply({workItemId:"work-1",executionId:"run-b",role:"developer",result:result("pass")});
+  const applied=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-b",role:"developer",result:result("pass")});
   assert.deepEqual({stage:applied.projection.stage,status:applied.projection.status},{stage:"TEST",status:"QUEUED"});assert.equal(s.records.get(deferred.id)?.status,"accepted-defer");
  } finally {s.store.db.close();}
+});
+
+test("Tester and Reviewer passes record the exact verified heads",()=>{
+ const qa=setup("TEST",true);try{running(qa,"qa","run-q");qa.results.apply({head:"test-head",workItemId:"work-1",executionId:"run-q",role:"qa",result:result("pass")});assert.equal((JSON.parse((qa.store.db.prepare("SELECT context FROM work_items WHERE id='work-1'").get() as {context:string}).context) as {verifiedHeads:Record<string,string>}).verifiedHeads.TEST,"test-head");}finally{qa.store.db.close();}
+ const review=setup("REVIEW",true);try{running(review,"reviewer","run-r");review.results.apply({head:"review-head",workItemId:"work-1",executionId:"run-r",role:"reviewer",result:result("pass")});assert.equal((JSON.parse((review.store.db.prepare("SELECT context FROM work_items WHERE id='work-1'").get() as {context:string}).context) as {verifiedHeads:Record<string,string>}).verifiedHeads.REVIEW,"review-head");}finally{review.store.db.close();}
 });
 
 test("a delivery decision routes through Architect and returns only to an allowed stage",()=>{
@@ -49,11 +54,11 @@ test("a delivery decision routes through Architect and returns only to an allowe
  try {
   const prior=s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"decision",category:"tactical",decision:"Use fixture v1",rationale:"Initial tactic",supersedes:[]},sourceType:"agent-result",sourceId:"old",actor:"product-architect"});
   running(s,"qa","run-q");
-  const decision=s.results.apply({workItemId:"work-1",executionId:"run-q",role:"qa",result:result("decision")});
+  const decision=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-q",role:"qa",result:result("decision")});
   assert.deepEqual({stage:decision.projection.stage,status:decision.projection.status},{stage:"DESIGN",status:"QUEUED"});
   const request=s.records.activeRequest("work-1");assert.equal(request?.payload.kind==="request"&&request.payload.type,"tactical-decision");
   running(s,"product-architect","run-a");
-  const resolved=s.results.apply({workItemId:"work-1",executionId:"run-a",role:"product-architect",result:result("resolved",{decisions:[{kind:"tactical",decision:"Keep the fixture",rationale:"Within SPEC",conflictsWithHuman:false,supersedes:[prior.id]}],nextRole:"qa"})});
+  const resolved=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-a",role:"product-architect",result:result("resolved",{decisions:[{kind:"tactical",decision:"Keep the fixture",rationale:"Within SPEC",conflictsWithHuman:false,supersedes:[prior.id]}],nextRole:"qa"})});
   assert.deepEqual({stage:resolved.projection.stage,status:resolved.projection.status},{stage:"TEST",status:"QUEUED"});assert.equal(s.records.get(request!.id)?.status,"resolved");
   assert.equal(s.records.active("work-1",1,"qa").some(record=>record.payload.kind==="decision"&&record.payload.category==="tactical"),true);
   assert.equal(s.records.get(prior.id)?.status,"superseded");
@@ -65,10 +70,10 @@ test("correction cycles count changes, stop at the limit and preserve the tactic
  const s=setup("TEST",true);
  try {
   running(s,"qa","run-1");
-  const first=s.results.apply({workItemId:"work-1",executionId:"run-1",role:"qa",result:result("changes",{coverage:[{criterionId:"AC1",status:"failed",evidence:"Mismatch"}],findings:[{classification:"auto-fix",evidence:"Fix it"}]})});
+  const first=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-1",role:"qa",result:result("changes",{coverage:[{criterionId:"AC1",status:"failed",evidence:"Mismatch"}],findings:[{classification:"auto-fix",evidence:"Fix it"}]})});
   assert.deepEqual({stage:first.projection.stage,status:first.projection.status,cycles:first.projection.correctionCycles},{stage:"BUILD",status:"QUEUED",cycles:1});
   running(s,"developer","run-2");
-  const second=s.results.apply({workItemId:"work-1",executionId:"run-2",role:"developer",result:result("changes",{coverage:[{criterionId:"AC1",status:"failed",evidence:"Still wrong"}],findings:[{classification:"auto-fix",evidence:"Try again"}]})});
+  const second=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-2",role:"developer",result:result("changes",{coverage:[{criterionId:"AC1",status:"failed",evidence:"Still wrong"}],findings:[{classification:"auto-fix",evidence:"Try again"}]})});
   assert.deepEqual({stage:second.projection.stage,status:second.projection.status,cycles:second.projection.correctionCycles},{stage:"BUILD",status:"WAITING",cycles:2});
   const limit=s.records.activeRequest("work-1");assert.equal(limit?.payload.kind==="request"&&limit.payload.type,"correction-limit");
   const answered=new WorkflowCommands(s.store).apply({kind:"answer",text:"Use deterministic data"},{workItemId:"work-1",login:"owner",commentId:6,specVersion:1});
@@ -82,7 +87,7 @@ test("late agent results are discarded after a concurrent workflow change",()=>{
  try {
   running(s,"developer","run-b");
   new WorkflowCommands(s.store).apply({kind:"cancel",reason:""},{workItemId:"work-1",login:"owner",commentId:9,specVersion:1});
-  const applied=s.results.apply({workItemId:"work-1",executionId:"run-b",role:"developer",result:result("pass")});
+  const applied=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-b",role:"developer",result:result("pass")});
   assert.equal(applied.discarded,true);assert.equal(s.projections.get("work-1").status,"CANCELLED");
   assert.equal((s.store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='execution.discarded'").get() as {count:number}).count,1);
  } finally {s.store.db.close();}
@@ -90,13 +95,13 @@ test("late agent results are discarded after a concurrent workflow change",()=>{
 
 test('optional deferred findings do not pause a tactical resolution',()=>{
  const s=setup('BUILD',true);try{
-  running(s,'developer','builder');s.results.apply({workItemId:'work-1',executionId:'builder',role:'developer',result:result('decision',{findings:[{classification:'decision-required',evidence:'Chrome cannot start'},{classification:'defer',evidence:'Preview cleanup pending'}]})});
+  running(s,'developer','builder');s.results.apply({head:"head",workItemId:'work-1',executionId:'builder',role:'developer',result:result('decision',{findings:[{classification:'decision-required',evidence:'Chrome cannot start'},{classification:'defer',evidence:'Preview cleanup pending'}]})});
   const request=s.records.activeRequest('work-1')!;const deferred=s.records.active('work-1',1,'product-architect').find(row=>row.payload.kind==='finding'&&row.payload.classification==='defer')!;
-  running(s,'product-architect','architect');const applied=s.results.apply({workItemId:'work-1',executionId:'architect',role:'product-architect',result:result('resolved',{nextRole:'developer',findings:[{classification:'defer',evidence:'Optional documentation cleanup can follow later'}]})});
+  running(s,'product-architect','architect');const applied=s.results.apply({head:"head",workItemId:'work-1',executionId:'architect',role:'product-architect',result:result('resolved',{nextRole:'developer',findings:[{classification:'defer',evidence:'Optional documentation cleanup can follow later'}]})});
   assert.equal(applied.projection.status,'QUEUED');assert.equal(applied.projection.stage,'BUILD');assert.equal(s.records.get(request.id)?.status,'resolved');assert.equal(s.records.get(deferred.id)?.status,'open');
  }finally{s.store.db.close();}
 });
 
 test('environment blocker fails Build directly without sending another Architect consultation',()=>{
- const s=setup('BUILD',true);try{running(s,'developer','blocked-builder');const applied=s.results.apply({workItemId:'work-1',executionId:'blocked-builder',role:'developer',result:result('decision',{findings:[{classification:'environment-blocked',evidence:'Chrome cannot start. Fix the browser runtime before Retry.'}]})});assert.equal(applied.projection.status,'FAILED');assert.equal(applied.projection.stage,'BUILD');assert.equal(s.records.activeRequest('work-1'),undefined);assert.equal((s.store.db.prepare("SELECT class FROM failures WHERE work_item_id='work-1'").get() as any).class,'environment');}finally{s.store.db.close();}
+ const s=setup('BUILD',true);try{running(s,'developer','blocked-builder');const applied=s.results.apply({head:"head",workItemId:'work-1',executionId:'blocked-builder',role:'developer',result:result('decision',{findings:[{classification:'environment-blocked',evidence:'Chrome cannot start. Fix the browser runtime before Retry.'}]})});assert.equal(applied.projection.status,'FAILED');assert.equal(applied.projection.stage,'BUILD');assert.equal(s.records.activeRequest('work-1'),undefined);assert.equal((s.store.db.prepare("SELECT class FROM failures WHERE work_item_id='work-1'").get() as any).class,'environment');}finally{s.store.db.close();}
 });

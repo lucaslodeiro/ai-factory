@@ -369,6 +369,7 @@ interface Projection { stage: Stage; status: Status; attempt: number; revision: 
 | DESIGN/RUNNING | Architect `resolved` for open tactical request | allowed return stage/QUEUED | tactical decisions created (with `supersedes`); request resolved; `decision-required` findings resolved | Decision milestone |
 | BUILD/RUNNING | `pass` | TEST/QUEUED | commit; Builder findings `defer` → accepted-defer | Status update |
 | TEST/RUNNING | `pass` | REVIEW/QUEUED | commit; open Builder `auto-fix` → resolved | Status update |
+| REVIEW or DELIVERY/QUEUED | synchronized HEAD differs from the last Tester pass | TEST/QUEUED | invalidate stale verification before running another agent or publishing | Status update |
 | TEST/RUNNING | `changes` | BUILD/QUEUED | findings `auto-fix` opened; correction_cycles + 1 | Status update with findings |
 | REVIEW/RUNNING | `changes` | BUILD/QUEUED | findings opened; correction_cycles + 1 | Status update |
 | REVIEW/RUNNING | `pass` | DELIVERY/QUEUED | Reviewer result and evidence stored; no provider work remains | Status shows deterministic Delivery next |

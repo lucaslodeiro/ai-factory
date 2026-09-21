@@ -13,7 +13,7 @@ import { SyncConflictError,type WorkspacePort } from "../src/worktrees.js";
 import { InvalidResultError } from "../src/results.js";
 
 class Workspace implements WorkspacePort {
- commits:string[]=[];cleanupCalls=0;publishCalls=0;pushError:Error|undefined;syncError:Error|undefined;ensure(){return "/tmp/factory-work";}assertBranch(){}sync(){if(this.syncError)throw this.syncError;return{before:"abc",after:"abc",merged:[]};}head(){return "abc";}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){this.publishCalls++;}
+ commits:string[]=[];cleanupCalls=0;publishCalls=0;pushError:Error|undefined;syncError:Error|undefined;currentHead="abc";ensure(){return "/tmp/factory-work";}assertBranch(){}sync(){if(this.syncError)throw this.syncError;return{before:this.currentHead,after:this.currentHead,merged:[]};}head(){return this.currentHead;}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){this.publishCalls++;}
  async publishAsync(){this.publishCalls++;if(this.pushError)throw this.pushError;}
  changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/factory-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){this.cleanupCalls++;}
 }
@@ -74,7 +74,7 @@ test("runner classifies failures by typed result errors rather than message text
 test("reviewer context is cleaned when maintenance blocks scheduler begin",async()=>{
  const store=new Store(":memory:"),workspace=new Workspace();
  try {
-  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context) VALUES('work-review',1,'owner/demo','factory/review','now','now',?)").run(JSON.stringify({title:"Review",body:"Check it",cwd:"/tmp/factory-work"}));
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context) VALUES('work-review',1,'owner/demo','factory/review','now','now',?)").run(JSON.stringify({title:"Review",body:"Check it",cwd:"/tmp/factory-work",verifiedHeads:{TEST:"abc"}}));
   store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment,approved_by) VALUES('work-review',1,'SPEC',?,?, 'owner')").run(JSON.stringify([{id:"AC1",description:"Works"}]),JSON.stringify({complexity:"medium",risk:"low",rationale:"standard"}));
   new WorkflowProjections(store).initialize("work-review","REVIEW","QUEUED");
   store.db.prepare("INSERT INTO maintenance_operations(id,operation,actor,status,requested_at,confirmed_at) VALUES('maintenance','update','owner','confirmed','now','now')").run();
@@ -87,7 +87,7 @@ test("reviewer context is cleaned when maintenance blocks scheduler begin",async
 test("review succeeds before deterministic Delivery publication and retry does not rerun Reviewer",async()=>{
  const store=new Store(":memory:"),workspace=new Workspace();let reviewerRuns=0,prAttempts=0,failPublication=true;
  try {
-  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context) VALUES('work-review',1,'owner/demo','factory/review','now','now',?)").run(JSON.stringify({title:"Review",body:"Check it",cwd:"/tmp/factory-work"}));
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context) VALUES('work-review',1,'owner/demo','factory/review','now','now',?)").run(JSON.stringify({title:"Review",body:"Check it",cwd:"/tmp/factory-work",verifiedHeads:{TEST:"abc"}}));
   store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment,approved_by) VALUES('work-review',1,'SPEC',?,?, 'owner')").run(JSON.stringify([{id:"AC1",description:"Works"}]),JSON.stringify({complexity:"medium",risk:"low",rationale:"standard"}));
   new WorkflowProjections(store).initialize("work-review","REVIEW","QUEUED");
   const runner=new WorkflowRunner(store,{reviewer:{async run(request){reviewerRuns++;store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return result("pass");}}},workspace,{ensurePR(){prAttempts++;if(failPublication)throw new Error("Pull request create failed: Base ref must be a branch");return "https://github.com/owner/demo/pull/1";}});
@@ -96,6 +96,19 @@ test("review succeeds before deterministic Delivery publication and retry does n
   new WorkflowCommands(store).apply({kind:"retry",guidance:"",scope:"spec",appliesTo:[]},{workItemId:"work-review",login:"owner",commentId:9,specVersion:1});failPublication=false;
   assert.equal(await runner.run("work-review"),true);assert.deepEqual({stage:new WorkflowProjections(store).get("work-review").stage,status:new WorkflowProjections(store).get("work-review").status},{stage:"DELIVERY",status:"WAITING"});assert.equal(reviewerRuns,1);assert.equal(prAttempts,2);assert.equal(workspace.publishCalls,2);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM executions WHERE work_item_id='work-review'").get() as {count:number}).count,1);
  } finally {store.db.close();}
+});
+
+test("code changed after Tester verification returns Review to Test exactly once",async()=>{
+ const store=new Store(":memory:"),workspace=new Workspace();workspace.currentHead="new-head";let testerRuns=0,reviewerRuns=0;
+ try{
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context) VALUES('work-changed',1,'owner/demo','factory/issue-1','now','now',?)").run(JSON.stringify({title:"Review",body:"Check it",cwd:"/tmp/factory-work",verifiedHeads:{TEST:"old-head"}}));
+  store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment,approved_by) VALUES('work-changed',1,'SPEC',?,?, 'owner')").run(JSON.stringify([{id:"AC1",description:"Works"}]),JSON.stringify({complexity:"medium",risk:"low",rationale:"standard"}));new WorkflowProjections(store).initialize("work-changed","REVIEW","QUEUED");
+  const complete=(role:"qa"|"reviewer")=>({async run(request:AgentRunRequest){if(role==="qa")testerRuns++;else reviewerRuns++;store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return result("pass");}});
+  const runner=new WorkflowRunner(store,{qa:complete("qa"),reviewer:complete("reviewer")},workspace,{ensurePR(){return "unused";}});
+  assert.equal(await runner.run("work-changed"),true);assert.deepEqual({stage:new WorkflowProjections(store).get("work-changed").stage,status:new WorkflowProjections(store).get("work-changed").status},{stage:"TEST",status:"QUEUED"});assert.equal(reviewerRuns,0);
+  assert.equal(await runner.run("work-changed"),true);assert.equal(testerRuns,1);assert.equal((JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id='work-changed'").get() as {context:string}).context) as {verifiedHeads:Record<string,string>}).verifiedHeads.TEST,"new-head");
+  assert.equal(await runner.run("work-changed"),true);assert.equal(reviewerRuns,1);assert.equal(new WorkflowProjections(store).get("work-changed").stage,"DELIVERY");
+ }finally{store.db.close();}
 });
 
 test('review preparation errors fail the preserved stage once instead of remaining queued forever',async()=>{
