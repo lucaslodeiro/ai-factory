@@ -118,7 +118,8 @@ function buildSnapshot(store: Store) {
   const visibleItems=storedItems.filter(item=>!item.archived_at);
   const latestControls=new Map<string,{id:number;kind:string;pending:boolean;error?:string}>();
   for(const control of store.db.prepare("SELECT id,kind,target,handled FROM controls WHERE kind IN ('pause','resume','retry','cancel','message') ORDER BY id DESC").all() as Array<{id:number;kind:string;target:string;handled:number}>){let target=control.target,kind=control.kind;if(control.kind==="message")try{const message=JSON.parse(control.target) as {workItemId?:string;action?:string};target=message.workItemId??"";kind=message.action??"message";}catch{}if(!target||latestControls.has(target))continue;const failure=control.handled?store.db.prepare("SELECT payload FROM events WHERE type='control.failed' AND json_extract(payload,'$.id')=? ORDER BY id DESC LIMIT 1").get(control.id) as {payload:string}|undefined:undefined;latestControls.set(target,{id:control.id,kind,pending:!control.handled,...(failure?{error:sanitizeFailureEvidence(JSON.parse(failure.payload).error,500)}:{})});}
-  const items = visibleItems.slice().reverse().map(item => ({
+  const priority:Record<string,number>={WAITING:0,FAILED:1,PAUSED:2,RUNNING:3,QUEUED:4};
+  const items = visibleItems.slice().sort((a,b)=>(priority[a.status]??5)-(priority[b.status]??5)||b.updated_at.localeCompare(a.updated_at)).map(item => ({
     control:latestControls.get(item.id)??null,id:item.id,issue:item.issue_number,repo:item.repo,stage:item.stage,status:item.status,attempt:item.attempt,revision:item.revision,title:item.context.title,
     nextStep:workflowNextStep(store,item.id,item.status,item.context.pr),activity:workflowActivity(store,item.id,item.status),actions:workActions(item.status),url:item.context.url,pr:item.context.pr??null,updatedAt:item.updated_at,continuity:item.context.continuedFrom??null,
   }));

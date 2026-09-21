@@ -345,6 +345,11 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),beforeFailedRestart);
     assert.ok(fs.existsSync(path.join(settingsRoot,"daemon-service-state")));
     store.db.prepare("DELETE FROM daemon_lock").run();
+    const statuses=["COMPLETED","QUEUED","RUNNING","PAUSED","FAILED","WAITING","CANCELLED","WAITING"];
+    statuses.forEach((status,index)=>store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,status) VALUES(?,?,?,'now',?,'{}',?)").run(`order-${index}`,100+index,"owner/demo",`2026-09-21T12:00:0${index}Z`,status));
+    const ordered=await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response=>response.json()) as any;
+    assert.deepEqual(ordered.items.filter((item:any)=>item.id.startsWith("order-")).map((item:any)=>item.id),["order-7","order-5","order-4","order-3","order-2","order-1","order-6","order-0"]);
+    store.db.prepare("DELETE FROM work_items WHERE id LIKE 'order-%'").run();
     const stoppedRefresh = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"refresh-list"})});
     const stoppedRetry=await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"retry"})});
     assert.equal(stoppedRetry.status,409);assert.deepEqual(await stoppedRetry.json(),{error:"Start the daemon before sending controls."});
