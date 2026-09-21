@@ -16,6 +16,8 @@ test('pending merge exposes its PR and next action before status history',async(
  const markdown=workflowStatusMarkdown(store,'w');assert.ok(markdown.indexOf('## Next action')<markdown.indexOf('| Detail'));assert.match(markdown,/\[Open pull request\]\(https:\/\/github.com\/owner\/demo\/pull\/3\)/);assert.equal(markdown.split('## Next action').length,2);
  store.db.prepare('UPDATE work_items SET published_presentation_revision=presentation_revision').run();
  let published=0;const publisher=new WorkflowGitHubPublisher(store,{syncWorkflow(){published++},publishWorkflowComment(){},assignees(){return[]},assign(){},unassign(){}});
+ await publisher.publishChanged();assert.equal(published,0,'opening a publisher must not migrate existing comments');
+ store.db.prepare('UPDATE work_items SET presentation_revision=presentation_revision+1').run();
  await publisher.publishChanged();assert.equal(published,1);await publisher.publishChanged();assert.equal(published,1);
 
  }finally{store.db.close()}

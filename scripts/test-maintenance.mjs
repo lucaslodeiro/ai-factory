@@ -64,12 +64,10 @@ run('bash',[path.join(source,'scripts/update-job.sh'),oneShotState,oneShotUpdate
 run('bash',[path.join(source,'scripts/update-job.sh'),oneShotState,oneShotUpdate,'com.ai-factory.update.test']);
 assert.equal(fs.readFileSync(oneShotRuns,'utf8').trim(),'run');
 assert.match(fs.readFileSync(env.AI_FACTORY_LAUNCHCTL_LOG,'utf8'),/remove com\.ai-factory\.update\.test/);
-const legacyState=path.join(temp,'legacy-update-state.json'),legacyRuns=path.join(temp,'legacy-update-runs'),legacyUpdate=path.join(temp,'legacy-update.sh');
-fs.writeFileSync(legacyState,JSON.stringify({status:'updating'}));
-fs.writeFileSync(legacyUpdate,`#!/bin/sh\necho run >> '${legacyRuns}'\nprintf '{"status":"completed"}' > "$AI_FACTORY_UPDATE_STATE_FILE"\n`,{mode:0o755});
-const legacy=spawnSync('/bin/bash',[path.join(source,'scripts/update-job.sh'),legacyState,legacyUpdate],{cwd:source,env:{HOME:home,PATH:'/usr/bin:/bin'},encoding:'utf8'});
-assert.equal(legacy.status,0,legacy.stderr+legacy.stdout);
-assert.equal(fs.readFileSync(legacyRuns,'utf8').trim(),'run');
+const missingLabel=spawnSync('/bin/bash',[path.join(source,'scripts/update-job.sh'),'unused-state','unused-script'],{cwd:source,env,encoding:'utf8'});
+assert.notEqual(missingLabel.status,0);assert.match(missingLabel.stderr,/launchd job label required/);
+const removedDefaults=spawnSync('/bin/bash',[path.join(source,'scripts/update.sh'),'--defaults'],{cwd:source,env,encoding:'utf8'});
+assert.notEqual(removedDefaults.status,0);assert.match(removedDefaults.stderr,/Unexpected arguments/);
 env.AI_FACTORY_SKIP_SERVICES='1';
 run('bash',[path.join(source,'scripts/install-core.sh'),'--repo',remote,'--dir',dest],temp,false);
 

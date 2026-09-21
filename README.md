@@ -165,3 +165,7 @@ Projects can declare other artifact directories and additional test entrypoints 
 ```
 
 Paths are explicit repository-relative names, without glob patterns or parent/hidden segments. The policy is pinned at execution start; the Tester cannot expand its own permissions. Review this file as part of project configuration. Artifact directories must be dedicated to verification, not application assets or configuration. Evidence from prior executions is not proof that the current execution passed its acceptance criteria.
+
+### Current-format policy
+
+Factory accepts only the current database schema, workflow identities and structured agent result contract. It does not migrate stored workflows, repair results from older formats, or republish unchanged GitHub comments on version upgrades. Unsupported data is reported rather than silently converted. Update no longer accepts the deprecated `--defaults` option; `configure --defaults` remains a supported non-interactive configuration action. The installation validator checks a disposable database copy and never migrates the live database.

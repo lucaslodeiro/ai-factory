@@ -40,11 +40,6 @@ export class WorkflowGitHubPublisher {
   return true;
  }
  async publishChanged() {
-  // Re-render existing status comments once when their presentation format changes.
-  if(this.store.metadata<number>("github:status-format")!==3)this.store.db.transaction(()=>{
-   this.store.db.prepare("UPDATE work_items SET presentation_revision=presentation_revision+1 WHERE archived_at IS NULL AND published_presentation_revision IS NOT NULL").run();
-   this.store.setMetadata("github:status-format",3);
-  })();
   let count=0;for(const row of this.store.db.prepare("SELECT id FROM work_items WHERE archived_at IS NULL AND presentation_revision>COALESCE(published_presentation_revision,-1)").all() as Array<{id:string}>)if(await this.publish(row.id))count++;return count;}
  async publishHelp() {
   let count=0;const rows=this.store.db.prepare("SELECT DISTINCT e.work_item_id,w.issue_number,w.archived_at FROM events e JOIN work_items w ON w.id=e.work_item_id WHERE e.type='command.help' ORDER BY e.id").all() as Array<{work_item_id:string;issue_number:number;archived_at:string|null}>;

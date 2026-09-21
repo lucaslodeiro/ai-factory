@@ -53,3 +53,8 @@ if(codex) {
  ]);
  assert.equal((s.db.prepare("SELECT payload FROM events WHERE type='execution.started'").all() as Array<{payload:string}>).map(row=>JSON.parse(row.payload).selection.model).includes("auto"),true);s.db.close();
 });
+
+test('Claude requires the configured structured output instead of accepting an old result envelope',async()=>{
+ const execution={async run(){return {stdout:JSON.stringify({is_error:false,result:JSON.stringify(result('spec'))})};}};
+ await assert.rejects(new ClaudeAdapter(execution as any).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'test',selection:{...selectModel('product-architect'),provider:'claude',model:'auto'}}),/missing structured_output/);
+});

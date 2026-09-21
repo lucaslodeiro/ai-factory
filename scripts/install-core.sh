@@ -66,7 +66,7 @@ if [[ -e $engine ]]; then echo "An incomplete engine already exists: $engine" >&
 if [[ -e $dest ]]; then
   while IFS= read -r entry; do
     name=${entry##*/}
-    if [[ $name == .env || $name == .env.backup-* || $name == repos || $name == instance.json ]]; then
+    if [[ $name == .env || $name == .env.backup-* || $name == repos ]]; then
       continue
     fi
     if [[ $name == .uninstall && -d $entry ]]; then continue; fi

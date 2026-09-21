@@ -43,7 +43,7 @@ async function lifecycle() {
  run("qa",result("changes",{summary:"Standings need a deterministic sort",coverage:[{criterionId:"AC1",status:"failed",evidence:"Oldest row appears first"}],findings:[{classification:"auto-fix",evidence:"Sort standings newest first"}]}));await publish("tester-changes");
  run("developer",result("pass",{summary:"Corrected standings ordering"}));await publish("builder-pass-2");
  run("qa",result("decision",{summary:"The provider leaves postponed matches ambiguous",coverage:[{criterionId:"AC1",status:"not-run",evidence:"Decision blocks final verification"}],findings:[{classification:"decision-required",evidence:"Choose whether postponed matches appear"}]}));await publish("tester-decision");
- run("product-architect",result("resolved",{summary:"Show postponed matches with a status badge",decisions:[{kind:"tactical",decision:"Keep postponed matches visible",rationale:"Preserves schedule completeness",conflictsWithHuman:false}],nextRole:"qa"}));await publish("architect-resolved");
+ run("product-architect",result("resolved",{summary:"Show postponed matches with a status badge",decisions:[{kind:"tactical",decision:"Keep postponed matches visible",rationale:"Preserves schedule completeness",conflictsWithHuman:false,supersedes:[]}],nextRole:"qa"}));await publish("architect-resolved");
  run("qa",result("pass",{summary:"All acceptance checks now pass"}));await publish("tester-pass");
  run("reviewer",result("pass",{summary:"Delivery is ready for human review"}));results.published({workItemId,pullRequestUrl:"https://github.com/owner/demo/pull/7"});await publish("delivery-waiting");
  port.reply(3,"/factory pause lunch");inbox.poll(workItemId);await publish("delivery-paused");

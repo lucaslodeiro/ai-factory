@@ -1,4 +1,3 @@
-import {recoverLegacyResultPauses} from "./legacy-result-pauses.js";
 import { ContextAssembler,InvalidContextError } from "./context-assembly.js";
 import { resolveContextBudget } from "./context-budget.js";
 import { selectModel } from "./model-policy.js";
@@ -19,7 +18,6 @@ export class WorkflowRunner {
  private scheduler:WorkflowScheduler;private results:WorkflowResults;private records:WorkflowRecords;private assembler:ContextAssembler;
  constructor(private store:Store,private agents:Partial<Record<AgentRole,AgentAdapter>>,private workspaces:WorkspacePort,private delivery:DeliveryPort){this.scheduler=new WorkflowScheduler(store);this.results=new WorkflowResults(store);this.records=new WorkflowRecords(store);this.assembler=new ContextAssembler(store);}
  reconcileFinished(){
-  recoverLegacyResultPauses(this.store);
   const rows=this.store.db.prepare("SELECT w.id,e.id execution_id,e.status FROM work_items w JOIN executions e ON e.id=w.active_run_id WHERE w.archived_at IS NULL AND w.status='RUNNING' AND e.status<>'running'").all() as {id:string;execution_id:string;status:string}[];
   for(const row of rows){this.scheduler.fail(row.id,row.execution_id,new Error(`The agent execution ended (${row.status}), but its result was not applied. Review execution evidence before retrying.`),"recovery");}
  }

@@ -7,7 +7,6 @@ for argument in "$@"; do
 if [[ $argument == -h || $argument == --help ]]; then
   echo 'Usage: bash scripts/update.sh [--restart-services|--start-services]'
   echo '  Configuration is preserved and remains editable in the dashboard.'
-  echo '  --defaults is accepted as a deprecated no-op.'
   echo '  --restart-services  stop loaded services, update, then restore them'
   echo '  --start-services    recovery mode: stop services, update, then start both'
   echo 'Run `ai-factory help` for every command.'
@@ -16,7 +15,6 @@ fi
 done
 while (($#)); do
   case $1 in
-    --defaults) ;;
     --restart-services) restart_services=true;;
     --start-services) start_services=true;;
     *) echo 'Unexpected arguments; see --help.' >&2; exit 1;;

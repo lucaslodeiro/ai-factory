@@ -62,13 +62,6 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
   // Provider structured-output implementations do not all enforce enum/maxItems
   // constraints consistently. Delivery roles never own these fields, so force
   // their inert values rather than letting a report attempt rewrite approved scope.
-  // Older saved reports may omit supersedes. Keep that input compatibility
-  // without weakening the strict schema sent to either provider.
-  if(raw!==null&&typeof raw==="object"&&!Array.isArray(raw)){
-   const record=raw as Record<string,unknown>;
-   if(Array.isArray(record.decisions))raw={...record,decisions:record.decisions.map(decision=>
-    decision!==null&&typeof decision==="object"&&!Array.isArray(decision)&&!("supersedes" in decision)?{...decision,supersedes:[]}:decision)};
-  }
   const candidate = role !== "product-architect" && raw !== null && typeof raw === "object" && !Array.isArray(raw)
     ? { ...(raw as Record<string, unknown>), spec:"", acceptanceCriteria:[], taskAssessment:null, nextRole:null }
     : raw;

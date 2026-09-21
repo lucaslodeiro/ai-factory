@@ -41,7 +41,7 @@ test("architect consultation schema and validation enforce the exact tactical re
  assert.deepEqual(schema.nextRole.enum,["developer",null]);
  const resolved=result("resolved",{
   nextRole:"reviewer",
-  decisions:[{kind:"tactical",decision:"Human confirmed the UI",rationale:"AC-6 is satisfied",conflictsWithHuman:false}],
+  decisions:[{kind:"tactical",decision:"Human confirmed the UI",rationale:"AC-6 is satisfied",conflictsWithHuman:false,supersedes:[]}],
  });
  assert.throws(
   () => parseResult(resolved,"product-architect",["developer"],"BUILD"),
@@ -78,9 +78,9 @@ test("every provider result schema requires all object properties recursively",(
  for(const role of ["product-architect","developer","qa","reviewer"] as const)inspect(resultSchemaFor(role));
  for(const next of ["developer","qa","reviewer"] as const)inspect(resultSchemaFor("product-architect",[next]));
 });
-test("legacy decisions gain empty supersedes without mutating the saved report",()=>{
- const raw=result("resolved",{nextRole:"qa",decisions:[{kind:"tactical",decision:"Keep the cache",rationale:"Within scope",conflictsWithHuman:false}]});
- const parsed=parseResult(raw,"product-architect",["qa"],"TEST");
- assert.deepEqual(parsed.decisions[0].supersedes,[]);assert.equal(raw.decisions[0].supersedes,undefined);
+test("decisions must include supersedes in the current result format",()=>{
+ const raw=result("resolved",{nextRole:"qa",decisions:[{kind:"tactical",decision:"Keep the cache",rationale:"Within scope",conflictsWithHuman:false,supersedes:[]}]});
+ delete (raw.decisions[0] as Partial<typeof raw.decisions[0]>).supersedes;
+ assert.throws(()=>parseResult(raw,"product-architect",["qa"],"TEST"),/supersedes/);
  assert.throws(()=>parseResult({...raw,decisions:[{...raw.decisions[0],supersedes:null}]},"product-architect",["qa"],"TEST"),/supersedes/);
 });

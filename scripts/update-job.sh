@@ -2,14 +2,12 @@
 set -uo pipefail
 state_file=${1:?update state file required}
 update_script=${2:?update script required}
-# Keep the label optional so a job started by an older dashboard can continue
-# after update.mjs replaces this script underneath the running shell.
-job_label=${3:-}
+job_label=${3:?launchd job label required}
 
 cleanup() {
   # A submitted launchd job can otherwise be relaunched after its program
   # exits. Remove this exact transient label after persisting the final state.
-  [[ -z $job_label ]] || launchctl remove "$job_label" >/dev/null 2>&1 || true
+  launchctl remove "$job_label" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
