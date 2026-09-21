@@ -5,7 +5,7 @@ import {WorkflowIntake,WorkflowInbox} from "../src/workflow-inbox.js";
 import {WorkflowRecords} from "../src/workflow-records.js";
 import {WorkflowFailures} from "../src/workflow-failures.js";
 import {adoptIssueState,issueStateIndex,type SpecificationFact} from "../src/workflow-state.js";
-import {readIssueState,withPayload} from "../src/workflow-github.js";
+import {WorkflowGitHubPublisher,payloadOf,readIssueState,withPayload} from "../src/workflow-github.js";
 
 const issue={id:41,nodeId:"I_41",number:4,title:"Portable workflow",body:"Body stays on GitHub",url:"https://github.com/owner/demo/issues/4",state:"OPEN" as const,labels:[],assignees:["factory"],createdAt:"now",updatedAt:"now",author:{login:"owner",type:"User"}};
 const identity={id:7,nodeId:"R_7",fullName:"owner/demo"};
@@ -21,4 +21,8 @@ test("continuation validates identity, preserves waiting freshness and pauses un
 
 test("reading issue state refuses a missing referenced specification comment",async()=>{
  const source=stateSource();try{const index=issueStateIndex(source.store,source.item.id),status=withPayload("status",index)+"\n<!-- ai-factory:workflow-status:owner/demo:4 -->",github={comments:async()=>[{id:1,body:status,user:{login:"factory",type:"User"},updatedAt:"now"}]};await assert.rejects(()=>readIssueState(github,4),/specification v1 is missing/);const spec=withPayload("spec",source.fact)+"\n<!-- ai-factory:workflow-comment:owner/demo:4:result-run-spec -->";github.comments=async()=>[{id:1,body:status,user:{login:"factory",type:"User"},updatedAt:"now"},{id:2,body:spec,user:{login:"factory",type:"User"},updatedAt:"now"}];assert.deepEqual(await readIssueState(github,4),{index,specs:[source.fact]});}finally{source.store.db.close();}
+});
+
+test("published specification markers survive two continuation hops and a return to the first installation",async()=>{
+ const a=stateSource(),b=new Store(":memory:"),c=new Store(":memory:");try{for(const store of [b,c])store.setMetadata("repository_identity",identity);const specComment=withPayload("spec",a.fact)+"\n<!-- ai-factory:workflow-comment:owner/demo:4:result-run-spec -->",aIndex=issueStateIndex(a.store,a.item.id);adoptIssueState(b,{index:aIndex,specs:[a.fact]},{issue});let bStatus="";await new WorkflowGitHubPublisher(b,{syncWorkflow(_issue,_labels,body){bStatus=body;},publishWorkflowComment(){return 2;}}).publish(a.item.id);const bIndex=payloadOf(bStatus) as typeof aIndex;assert.equal(bIndex.specs[0].marker,"result-run-spec");const bComments={comments:async()=>[{id:1,body:bStatus+"\n<!-- ai-factory:workflow-status:owner/demo:4 -->",user:{login:"factory",type:"User"},updatedAt:"now"},{id:2,body:specComment,user:{login:"factory",type:"User"},updatedAt:"now"}]};const readByC=await readIssueState(bComments,4);assert.ok(readByC);adoptIssueState(c,readByC,{issue});assert.equal(issueStateIndex(c,a.item.id).specs[0].marker,"result-run-spec");b.db.prepare("UPDATE work_items SET revision=revision+2,presentation_revision=presentation_revision+2,published_presentation_revision=NULL WHERE id=?").run(a.item.id);await new WorkflowGitHubPublisher(b,{syncWorkflow(_issue,_labels,body){bStatus=body;},publishWorkflowComment(){return 2;}}).publish(a.item.id);const readBack=await readIssueState(bComments,4);assert.ok(readBack);adoptIssueState(a.store,readBack,{issue});assert.equal(issueStateIndex(a.store,a.item.id).specs[0].marker,"result-run-spec");}finally{a.store.db.close();b.db.close();c.db.close();}
 });

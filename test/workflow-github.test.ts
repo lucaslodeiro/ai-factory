@@ -19,7 +19,7 @@ const stableState=(value:any)=>{const copy=structuredClone(value);delete copy.pu
 function setup() {
  const store=new Store(":memory:");
  store.setMetadata("repository_identity",{id:1,nodeId:"R_1",fullName:"owner/demo"});
- store.db.prepare("INSERT INTO work_items(id,issue_number,issue_id,repo,branch,created_at,updated_at,context) VALUES('work-1',7,700,'owner/demo','factory/issue-7','now','now',?)").run(JSON.stringify({title:"Readable workflow",issueNodeId:"I_700"}));
+ store.db.prepare("INSERT INTO work_items(id,issue_number,issue_id,repo,branch,created_at,updated_at,context) VALUES('work-1',7,700,'owner/demo','factory/issue-7','now','now',?)").run(JSON.stringify({title:"Readable workflow",issueNodeId:"I_700",specMarkers:{"2":"result-spec-fixture"}}));
  store.db.prepare("INSERT INTO specs(work_item_id,version,body) VALUES('work-1',2,'SPEC')").run();
  return {store,records:new WorkflowRecords(store),projections:new WorkflowProjections(store)};
 }
@@ -124,6 +124,10 @@ test("an oversized state index is omitted and reported once",async()=>{
  const s=setup();try{s.projections.initialize("work-1","BUILD","QUEUED");s.records.create({workItemId:"work-1",specVersion:2,scope:"issue",payload:{kind:"instruction",text:"x".repeat(61_000)},sourceType:"github-comment",sourceId:"1",actor:"owner"});let body="";const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(_issue,_labels,value){body=value;},publishWorkflowComment(){return 1;}});await publisher.publishChanged();assert.equal(payloadOf(body),null);assert.equal((s.store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='github.state_too_large'").get() as {n:number}).n,1);}finally{s.store.db.close();}
 });
 
+test("a state with an unpublished specification is omitted and reported once",async()=>{
+ const s=setup();try{s.projections.initialize("work-1","DESIGN","QUEUED");s.store.db.prepare("UPDATE work_items SET context=json_remove(context,'$.specMarkers') WHERE id='work-1'").run();let body="";const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(_issue,_labels,value){body=value;},publishWorkflowComment(){return 1;}});await publisher.publishChanged();assert.equal(payloadOf(body),null);assert.equal((s.store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='github.state_incomplete'").get() as {n:number}).n,1);s.store.db.prepare("UPDATE work_items SET published_presentation_revision=NULL WHERE id='work-1'").run();await publisher.publishChanged();assert.equal((s.store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='github.state_incomplete'").get() as {n:number}).n,1);}finally{s.store.db.close();}
+});
+
 test("publisher keeps intermediate delivery results in status and publishes only milestone comments",async()=>{
  const s=setup();
  try {
@@ -137,6 +141,7 @@ test("publisher keeps intermediate delivery results in status and publishes only
   assert.deepEqual(comments.map(comment=>comment.key),["result-run-architect"]);
   assert.equal(await publisher.publishResults(),0);
   assert.deepEqual(payloadOf(comments[0].body),{kind:"spec",version:3,body:"Stored specification",criteria:[{id:"AC-1",description:"Works"}],assessment:{complexity:"medium",risk:"low",rationale:"Bounded"}});
+  assert.equal(JSON.parse((s.store.db.prepare("SELECT context FROM work_items WHERE id='work-1'").get() as {context:string}).context).specMarkers["3"],"result-run-architect");
   assert.match(workflowStatusMarkdown(s.store,"work-1"),/Latest delivery summary[\s\S]*Builder completed implementation/);
  } finally {s.store.db.close();}
 });
