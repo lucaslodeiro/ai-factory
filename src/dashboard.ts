@@ -370,7 +370,7 @@ function slackStatus(root: string, store: Store) {
   const last = store.db.prepare("SELECT last_error FROM notifications WHERE last_error IS NOT NULL ORDER BY id DESC LIMIT 1").get() as { last_error:string } | undefined;
   return { configured,pending:counts.pending ?? 0,failed:counts.failed ?? 0,sent:counts.sent ?? 0,lastError:last?.last_error ?? null };
 }
-type SetupRequirement = { id: string; label: string; group: "credentials" | "project" | "access" };
+type SetupRequirement = { id: string; label: string; group: "connections" | "project" };
 function normalizedRepository(value: string) {
   return value.trim().replace(/^https?:\/\/github\.com\//,"https://github.com/").replace(/^git@github\.com:/,"https://github.com/").replace(/\.git$/i,"").replace(/\/$/,"").toLowerCase();
 }
@@ -386,19 +386,19 @@ function setupReadiness(root: string, credentials: ReturnType<typeof credentialS
   const github = credential("github");
 
   require(Boolean(github?.installed && github.connected),{
-    id:"github-credential",label:github?.installed ? "Connect GitHub." : "Install the GitHub CLI and connect GitHub.",group:"credentials",
+    id:"github-credential",label:github?.installed ? "Connect GitHub." : "Install the GitHub CLI and connect GitHub.",group:"connections",
   });
   const selectedProviders = new Set(["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"].map(role => readDashboardSetting(root,`${role}_PROVIDER`) as CredentialProvider));
   for (const provider of ["claude","codex"] as const) {
     if (!selectedProviders.has(provider)) continue;
     const status = credential(provider), label = provider === "claude" ? "Claude" : "Codex";
     require(Boolean(status?.installed && status.connected),{
-      id:`${provider}-credential`,label:status?.installed ? `Connect ${label}; at least one agent role uses it.` : `Install and connect ${label}; at least one agent role uses it.`,group:"credentials",
+      id:`${provider}-credential`,label:status?.installed ? `Connect ${label}; at least one agent role uses it.` : `Install and connect ${label}; at least one agent role uses it.`,group:"connections",
     });
   }
 
   require(/^[\w.-]+\/[\w.-]+$/.test(repository),{id:"repository",label:"Choose the GitHub repository to process.",group:"project"});
-  require(Boolean(approvers.length),{id:"approvers",label:"Add at least one authorized approver.",group:"access"});
+  require(Boolean(approvers.length),{id:"approvers",label:"Add at least one authorized approver.",group:"project"});
   const checkoutExists = Boolean(repoDir && fs.existsSync(repoDir) && fs.statSync(repoDir).isDirectory());
   if (!repoDir || (fs.existsSync(repoDir) && !checkoutExists)) {
     require(false,{id:"checkout",label:"Choose a local checkout path; a missing checkout will be cloned at startup.",group:"project"});
@@ -429,7 +429,7 @@ function dashboardSettings(root: string) {
   } : {});
   const providers=["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"].map(role=>readDashboardSetting(root,`${role}_PROVIDER`));
   const setupProvider=providers.every(value=>value===providers[0])?providers[0]:"codex";
-  settings.fields.push({key:"AGENT_PROVIDER",label:"Agent provider",description:"Use one provider for all four roles during first-time setup.",group:"credentials",type:"select",options:[{value:"codex",label:"Codex"},{value:"claude",label:"Claude"}],value:setupProvider,required:true,restart:"daemon",setup:true,setupOnly:true} as any);
+  settings.fields.push({key:"AGENT_PROVIDER",label:"Agent provider",description:"Use one provider for all four roles during first-time setup.",group:"connections",type:"select",options:[{value:"codex",label:"Codex"},{value:"claude",label:"Claude"}],value:setupProvider,required:true,restart:"daemon",setup:true,setupOnly:true} as any);
   return {...settings,readiness:setupReadiness(root,credentials)};
 }
 function expandSetupProvider(values:Record<string,unknown>){const result={...values};if("AGENT_PROVIDER" in result){const provider=result.AGENT_PROVIDER;if(provider!=="codex"&&provider!=="claude")throw new Error("AGENT_PROVIDER: choose codex or claude");for(const role of["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"])result[`${role}_PROVIDER`]=provider;delete result.AGENT_PROVIDER;}return result;}

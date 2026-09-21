@@ -255,12 +255,13 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.ok(settings.readiness.missing.some((item: any) => item.id === "checkout"));
     assert.ok(settings.readiness.missing.some((item: any) => item.id === "repository"));
     assert.ok(settings.readiness.missing.some((item: any) => item.id === "approvers"));
-    assert.deepEqual(settings.groups.map((group: any) => group.id),["credentials","project","runtime","dashboard","models","tools","access","notifications"]);
-    assert.deepEqual(settings.fields.filter((field:any)=>field.setup).map((field:any)=>field.key).sort(),["AGENT_PROVIDER","FACTORY_APPROVERS","FACTORY_REPO_DIR","GITHUB_REPOSITORY"]);
+    assert.deepEqual(settings.groups.map((group: any) => group.id),["connections","project","workflow","agents","service","advanced"]);
+    assert.ok(settings.fields.every((field: any) => settings.groups.some((group: any) => group.id===field.group)));
+    assert.deepEqual(settings.fields.filter((field:any)=>field.setup).map((field:any)=>field.key).sort(),["AGENT_PROVIDER","FACTORY_APPROVERS","FACTORY_INSTANCE_NAME","FACTORY_REPO_DIR","GITHUB_REPOSITORY"]);
     const dashboardHost = settings.fields.find((field: any) => field.key === "FACTORY_DASHBOARD_HOST");
     assert.equal(dashboardHost.type,"select"); assert.deepEqual(dashboardHost.options.map((option: any) => option.value),["127.0.0.1","localhost","::1"]);
     const developerProvider = settings.fields.find((field: any) => field.key === "DEVELOPER_PROVIDER");
-    assert.equal(developerProvider.group,"models"); assert.equal(developerProvider.type,"select"); assert.deepEqual(developerProvider.options.map((option: any) => option.value),["codex","claude"]);
+    assert.equal(developerProvider.group,"agents"); assert.equal(developerProvider.type,"select"); assert.deepEqual(developerProvider.options.map((option: any) => option.value),["codex","claude"]);
     const developerModel = settings.fields.find((field: any) => field.key === "DEVELOPER_MODEL");
     assert.equal(developerModel.kind,"role-model"); assert.equal(developerModel.section,"Implementation Engineer");
     assert.equal(developerModel.value,"custom-codex-model");
@@ -270,7 +271,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.ok(settings.modelCatalog.codex.options.some((option: any) => option.value === "gpt-5.6-luna"));
     assert.equal(settings.fields.some((field: any) => field.key === "CODEX_MODEL_FAST"),false);
     const slackWebhook = settings.fields.find((field: any) => field.key === "SLACK_WEBHOOK_URL");
-    assert.equal(slackWebhook.group,"notifications"); assert.equal(slackWebhook.secret,true); assert.equal(slackWebhook.configured,true); assert.equal(slackWebhook.value,"");
+    assert.equal(slackWebhook.group,"connections"); assert.equal(slackWebhook.secret,true); assert.equal(slackWebhook.configured,true); assert.equal(slackWebhook.value,"");
     assert.ok(!JSON.stringify(settings).includes("private"));
     const slack = await fetch(`http://127.0.0.1:${port}/api/slack`).then(response => response.json()) as any;
     assert.deepEqual({configured:slack.configured,pending:slack.pending,failed:slack.failed,sent:slack.sent},{configured:true,pending:0,failed:0,sent:0});

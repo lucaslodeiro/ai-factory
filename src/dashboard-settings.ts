@@ -8,43 +8,41 @@ type Option = { value: string; label: string };
 type Field = { key: string; label: string; description: string; group: string; secret?: boolean; required?: boolean; type?: "number" | "text" | "select"; options?: Option[]; unit?: string; restart?: "daemon" | "dashboard" | "all"; hidden?: boolean; section?: string; role?: string; kind?: "provider" | "role-model"; setup?: boolean };
 
 const groups = [
-  {id:"credentials",label:"Credentials",description:"Authentication for the services used by the factory."},
-  {id:"project",label:"Project",description:"Repository connector, checkout and delivery workflow."},
-  {id:"runtime",label:"Runtime",description:"Storage, polling and execution limits."},
-  {id:"dashboard",label:"Dashboard",description:"Local administration server."},
-  {id:"models",label:"Agent roles",description:"Provider and direct model selection for every factory role."},
-  {id:"tools",label:"Agent tools",description:"Executables used by workers and Git operations."},
-  {id:"access",label:"Access & secrets",description:"Human approvers and environment exposure."},
-  {id:"notifications",label:"Notifications",description:"Optional outbound integrations."},
+  {id:"connections",label:"Connections",description:"GitHub, agent providers and Slack."},
+  {id:"project",label:"Project",description:"Repository, checkout, approvers and this installation's identity."},
+  {id:"workflow",label:"Workflow",description:"Verification, correction loop and execution limits."},
+  {id:"agents",label:"Agents",description:"Provider and model per role, and the executables that run them."},
+  {id:"service",label:"Service",description:"Storage, polling and the local dashboard server."},
+  {id:"advanced",label:"Advanced",description:"Prompt budgets and worker environment. Only for debugging."},
 ];
 const automaticModel = {value:"auto",label:"Auto (provider recommended)"};
 const codexModels = [automaticModel,...["gpt-5.6-luna","gpt-5.6-terra","gpt-5.6-sol","gpt-6-astra","gpt-5.5"].map(value => ({value,label:value}))];
 const claudeModels = [automaticModel,...["haiku","sonnet","opus"].map(value => ({value,label:value}))];
 const providerOptions = [{value:"codex",label:"Codex"},{value:"claude",label:"Claude"}];
-const roleField = (section: string, role: string, label: string): Omit<Field,"key"> => ({label:"Provider",description:`CLI that executes the ${label} role.`,group:"models",type:"select",options:providerOptions,required:true,restart:"daemon",section,role,kind:"provider"});
-const modelField = (section: string, role: string): Omit<Field,"key"> => ({label:"Model",description:"Exact model used by this role. Auto delegates model choice to the provider.",group:"models",type:"select",required:true,restart:"daemon",section,role,kind:"role-model"});
+const roleField = (section: string, role: string, label: string): Omit<Field,"key"> => ({label:"Provider",description:`CLI that executes the ${label} role.`,group:"agents",type:"select",options:providerOptions,required:true,restart:"daemon",section,role,kind:"provider"});
+const modelField = (section: string, role: string): Omit<Field,"key"> => ({label:"Model",description:"Exact model used by this role. Auto delegates model choice to the provider.",group:"agents",type:"select",required:true,restart:"daemon",section,role,kind:"role-model"});
 
 const descriptions: Record<string,Omit<Field,"key">> = {
-  FACTORY_DATA_DIR:{label:"Data directory",description:"SQLite database, logs and retained worktrees.",group:"runtime",required:true,restart:"all"},
+  FACTORY_DATA_DIR:{label:"Data directory",description:"SQLite database, logs and retained worktrees.",group:"service",required:true,restart:"all"},
   FACTORY_REPO_DIR:{label:"Target checkout",description:"Path to the application checkout. Startup clones it if missing and initializes an empty remote.",group:"project",required:true,restart:"all",setup:true},
-  FACTORY_INSTANCE_NAME:{label:"Instance name",description:"Name used to identify this Factory in GitHub issue labels. Empty uses the machine hostname.",group:"runtime",restart:"daemon"},
-  FACTORY_POLL_INTERVAL_MS:{label:"GitHub polling interval",description:"How often the daemon checks issues and comments.",group:"runtime",type:"number",unit:"milliseconds",restart:"daemon"},
-  FACTORY_EXECUTION_TIMEOUT_MS:{label:"Agent execution timeout",description:"Maximum duration of one agent process.",group:"runtime",type:"number",unit:"milliseconds",restart:"daemon"},
-  FACTORY_VERIFY_COMMAND:{label:"Verification command",description:"Shell command the factory runs after the Tester stage. Empty disables factory verification.",group:"runtime",restart:"daemon"},
-  FACTORY_MAX_FIX_CYCLES:{label:"Automatic correction cycles",description:"Maximum Builder and Tester correction loops before human input.",group:"runtime",type:"number",unit:"cycles",restart:"daemon"},
-  FACTORY_CONTEXT_BUDGET_BYTES:{label:"Default context budget",description:"Maximum prompt bytes before optional context is omitted.",group:"runtime",type:"number",unit:"bytes",restart:"daemon"},
-  FACTORY_ARTIFACT_RETENTION_DAYS:{label:"Artifact retention",description:"Days to retain exact prompt and execution output after completion or cancellation. Use 0 to disable pruning.",group:"runtime",type:"number",unit:"days",restart:"daemon"},
-  FACTORY_CONTEXT_BUDGET_OVERRIDES:{label:"Context budget overrides",description:'Optional JSON object keyed by role or "provider/model". Provider/model wins over role.',group:"runtime",restart:"daemon"},
-  FACTORY_DASHBOARD_HOST:{label:"Listen address",description:"Loopback address used by the administration UI.",group:"dashboard",type:"select",options:["127.0.0.1","localhost","::1"].map(value => ({value,label:value})),required:true,restart:"dashboard"},
-  FACTORY_DASHBOARD_PORT:{label:"HTTP port",description:"Local port for the administration UI.",group:"dashboard",type:"number",unit:"port",required:true,restart:"dashboard"},
+  FACTORY_INSTANCE_NAME:{label:"Instance name",description:"Name used to identify this Factory in GitHub issue labels. Empty uses the machine hostname.",group:"project",restart:"daemon",setup:true},
+  FACTORY_POLL_INTERVAL_MS:{label:"GitHub polling interval",description:"How often the daemon checks issues and comments.",group:"service",type:"number",unit:"milliseconds",restart:"daemon"},
+  FACTORY_EXECUTION_TIMEOUT_MS:{label:"Agent execution timeout",description:"Maximum duration of one agent process.",group:"workflow",type:"number",unit:"milliseconds",restart:"daemon"},
+  FACTORY_VERIFY_COMMAND:{label:"Verification command",description:"Shell command the factory runs after the Tester stage. Empty disables factory verification.",group:"workflow",restart:"daemon"},
+  FACTORY_MAX_FIX_CYCLES:{label:"Automatic correction cycles",description:"Maximum Builder and Tester correction loops before human input.",group:"workflow",type:"number",unit:"cycles",restart:"daemon"},
+  FACTORY_CONTEXT_BUDGET_BYTES:{label:"Default context budget",description:"Maximum prompt bytes before optional context is omitted.",group:"advanced",type:"number",unit:"bytes",restart:"daemon"},
+  FACTORY_ARTIFACT_RETENTION_DAYS:{label:"Artifact retention",description:"Days to retain exact prompt and execution output after completion or cancellation. Use 0 to disable pruning.",group:"service",type:"number",unit:"days",restart:"daemon"},
+  FACTORY_CONTEXT_BUDGET_OVERRIDES:{label:"Context budget overrides",description:'Optional JSON object keyed by role or "provider/model". Provider/model wins over role.',group:"advanced",restart:"daemon"},
+  FACTORY_DASHBOARD_HOST:{label:"Listen address",description:"Loopback address used by the administration UI.",group:"service",type:"select",options:["127.0.0.1","localhost","::1"].map(value => ({value,label:value})),required:true,restart:"dashboard"},
+  FACTORY_DASHBOARD_PORT:{label:"HTTP port",description:"Local port for the administration UI.",group:"service",type:"number",unit:"port",required:true,restart:"dashboard"},
   GITHUB_REPOSITORY:{label:"Repository",description:"GitHub owner/name used for issues and pull requests.",group:"project",required:true,restart:"all",setup:true},
   GITHUB_DEFAULT_BRANCH:{label:"Default branch (auto-filled)",description:"Filled from GitHub when the repository changes; editable later for troubleshooting.",group:"project",required:true,restart:"all"},
-  FACTORY_APPROVERS:{label:"Authorized approvers",description:"Comma-separated GitHub logins allowed to answer and approve.",group:"access",required:true,restart:"daemon",setup:true},
-  SLACK_WEBHOOK_URL:{label:"Slack webhook",description:"Optional HTTPS Incoming Webhook URL. Leave it blank to preserve the configured secret.",group:"notifications",secret:true,restart:"daemon"},
-  CODEX_COMMAND:{label:"CLI",description:"Absolute path or command used to start the OpenAI coding agent.",group:"tools",required:true,restart:"all"},
-  CLAUDE_COMMAND:{label:"Claude CLI",description:"Absolute path or command used to start Claude.",group:"tools",required:true,restart:"all"},
-  GIT_COMMAND:{label:"Git executable",description:"Absolute path or command used for Git operations.",group:"tools",required:true,restart:"all"},
-  AGENT_SECRET_ALLOWLIST:{label:"Agent environment allowlist",description:"Extra environment variable names forwarded to worker processes.",group:"access",restart:"daemon"},
+  FACTORY_APPROVERS:{label:"Authorized approvers",description:"Comma-separated GitHub logins allowed to answer and approve.",group:"project",required:true,restart:"daemon",setup:true},
+  SLACK_WEBHOOK_URL:{label:"Slack webhook",description:"Optional HTTPS Incoming Webhook URL. Leave it blank to preserve the configured secret.",group:"connections",secret:true,restart:"daemon"},
+  CODEX_COMMAND:{label:"CLI",description:"Absolute path or command used to start the OpenAI coding agent.",group:"agents",required:true,restart:"all"},
+  CLAUDE_COMMAND:{label:"Claude CLI",description:"Absolute path or command used to start Claude.",group:"agents",required:true,restart:"all"},
+  GIT_COMMAND:{label:"Git executable",description:"Absolute path or command used for Git operations.",group:"agents",required:true,restart:"all"},
+  AGENT_SECRET_ALLOWLIST:{label:"Agent environment allowlist",description:"Extra environment variable names forwarded to worker processes.",group:"advanced",restart:"daemon"},
   PRODUCT_ARCHITECT_PROVIDER:roleField(roleFullName("product-architect"),"product-architect",roleFullName("product-architect")),
   PRODUCT_ARCHITECT_MODEL:modelField(roleFullName("product-architect"),"product-architect"),
   DEVELOPER_PROVIDER:roleField(roleFullName("developer"),"developer",roleFullName("developer")),
@@ -54,6 +52,8 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   REVIEWER_PROVIDER:roleField(roleFullName("reviewer"),"reviewer",roleFullName("reviewer")),
   REVIEWER_MODEL:modelField(roleFullName("reviewer"),"reviewer"),
 };
+const fieldOrder=["SLACK_WEBHOOK_URL","GITHUB_REPOSITORY","FACTORY_REPO_DIR","GITHUB_DEFAULT_BRANCH","FACTORY_APPROVERS","FACTORY_INSTANCE_NAME","FACTORY_VERIFY_COMMAND","FACTORY_MAX_FIX_CYCLES","FACTORY_EXECUTION_TIMEOUT_MS","PRODUCT_ARCHITECT_PROVIDER","PRODUCT_ARCHITECT_MODEL","DEVELOPER_PROVIDER","DEVELOPER_MODEL","QA_PROVIDER","QA_MODEL","REVIEWER_PROVIDER","REVIEWER_MODEL","CODEX_COMMAND","CLAUDE_COMMAND","GIT_COMMAND","FACTORY_DATA_DIR","FACTORY_POLL_INTERVAL_MS","FACTORY_ARTIFACT_RETENTION_DAYS","FACTORY_DASHBOARD_HOST","FACTORY_DASHBOARD_PORT","FACTORY_CONTEXT_BUDGET_BYTES","FACTORY_CONTEXT_BUDGET_OVERRIDES","AGENT_SECRET_ALLOWLIST"];
+const fieldRank=new Map(fieldOrder.map((key,index)=>[key,index]));
 
 function encode(value: string) {
   if (/[\r\n\0]/.test(value)) throw new Error("Use a single line");
@@ -151,7 +151,7 @@ export function readDashboardSettings(root: string, suggestions: Record<string,s
     }
     const options = baseOptions && value && !baseOptions.some(option => option.value === value) ? [...baseOptions,{value,label:`${value} (current custom value)`}] : baseOptions;
     return {key,...meta,options,value,suggested:Boolean(value && suggestions[key] === value && !saved[key]),configured:meta.secret ? Boolean(values[key]) : undefined};
-  }).filter(field => !field.hidden);
+  }).filter(field => !field.hidden).sort((a,b)=>(fieldRank.get(a.key)??fieldOrder.length)-(fieldRank.get(b.key)??fieldOrder.length));
   return { groups,fields,modelCatalog:providerCatalog };
 }
 export function saveDashboardSettings(root: string, changes: Record<string,unknown>, clearSecrets: string[] = []) {
