@@ -96,6 +96,7 @@ test("publisher writes only changed presentation revisions and retries after del
   const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(issue,labels,body){calls.push({issue,labels:labels.map(label=>label.name),body});},publishWorkflowComment(){},assignees(){return[];},assign(){},unassign(){}});
   assert.equal(await publisher.publishChanged(),1);assert.equal(await publisher.publishChanged(),0);assert.equal(calls.length,1);
   assert.match(calls[0].body,/workflow-rev:0 · presentation-rev:0/);
+  assert.match(calls[0].body,/Instance \|/);assert.match(calls[0].body,/<sub>instance:/);
   s.projections.present({workItemId:"work-1",expectedRevision:0,actor:{type:"orchestrator",id:"observer"},source:{},reason:{code:"evidence",summary:"Evidence changed"}});
   assert.equal(await publisher.publishChanged(),1);assert.equal(calls.length,2);assert.match(calls[1].body,/presentation-rev:1/);
 

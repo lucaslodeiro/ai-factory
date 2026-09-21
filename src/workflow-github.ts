@@ -5,6 +5,7 @@ import { workflowStatusMarkdown,workflowLabels } from "./workflow-status.js";
 import type { AgentResult,AgentRole } from "./types.js";
 import { roleFullName,roleShortName } from "./names.js";
 import { factoryHelpMarkdown } from "./factory-help.js";
+import {config} from "./config.js";
 
 export function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:number,pullRequestUrl?:string) {
  const heading=role==="product-architect"&&result.outcome==="questions"?"Architect — questions":role==="product-architect"&&result.outcome==="resolved"?"Architect — tactical decision":role==="product-architect"?`Specification v${specVersion} — awaiting approval`:`${roleFullName(role)} report`;
@@ -29,7 +30,7 @@ export class WorkflowGitHubPublisher {
   const revision=row.revision,presentationRevision=row.presentation_revision;
   const lastEvent=this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(workItemId) as {payload:string}|undefined;
   let eventId:string|undefined;try{eventId=lastEvent?(JSON.parse(lastEvent.payload) as {eventId?:string}).eventId:undefined;}catch{}
-  const body=`${workflowStatusMarkdown(this.store,workItemId)}\n\n<sub>workflow-rev:${revision} · presentation-rev:${presentationRevision}${eventId?` · event:${eventId}`:""}</sub>`;
+  const body=`${workflowStatusMarkdown(this.store,workItemId)}\n\n<sub>workflow-rev:${revision} · presentation-rev:${presentationRevision}${eventId?` · event:${eventId}`:""}</sub>\n\n<sub>instance:${config.instanceName}</sub>`;
   await this.github.syncWorkflow(row.issue_number,workflowLabels(this.store,workItemId),body);
   this.store.db.prepare("UPDATE work_items SET published_presentation_revision=? WHERE id=? AND (published_presentation_revision IS NULL OR published_presentation_revision<?)").run(presentationRevision,workItemId,presentationRevision);
   return true;
@@ -49,7 +50,7 @@ export class WorkflowGitHubPublisher {
    const payload=JSON.parse(row.payload) as {role:AgentRole;result:AgentResult;specVersion:number};
    if(!this.isMilestone(row,payload)) {this.store.setMetadata(`github:result:${row.id}`,true);continue;}
    const version=payload.specVersion||((this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(row.work_item_id) as {version:number|null}).version??0);
-   const context=JSON.parse(row.context||"{}") as {pr?:string};await this.github.publishWorkflowComment(row.issue_number,`result-${row.run_id}`,`${resultMarkdown(payload.role,payload.result,version,context.pr)}`);
+   const context=JSON.parse(row.context||"{}") as {pr?:string};await this.github.publishWorkflowComment(row.issue_number,`result-${row.run_id}`,`${resultMarkdown(payload.role,payload.result,version,context.pr)}\n\n<sub>instance:${config.instanceName}</sub>`);
    this.store.setMetadata(`github:result:${row.id}`,true);count++;
   }
   return count;
