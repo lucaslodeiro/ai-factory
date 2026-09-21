@@ -218,7 +218,7 @@ At daemon start, `prepareRepository` verifies the target checkout and clones it 
 
 Use one Factory installation per repository. For different projects, use separate `.env` files, target clones and `FACTORY_DATA_DIR` values. Factory no longer acquires or renews repository control, enters standby, or exposes takeover commands.
 
-The retired `repository_controller` table is removed transactionally when an existing database opens. Workflow data and audit history are preserved. Remote lease refs from older versions are ignored; no remote deletion is required. New installations no longer create a controller instance identity. The update preserves local workflow data and files. It does not import another installation's database or unpublished work. Stop the former installation before starting work on another machine; there is no automatic coordination between installations.
+Obsolete controller data is no longer created or used. The product contains no cleanup migration for that data. The update preserves local workflow data and files. It does not import another installation's database or unpublished work. Stop the former installation before starting work on another machine; there is no automatic coordination between installations.
 
 ## Manual installation
 

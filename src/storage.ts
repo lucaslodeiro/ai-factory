@@ -25,9 +25,6 @@ export class Store {
     let version:unknown;
     try { version=stored ? JSON.parse(stored.value) : undefined; } catch { version=undefined; }
     if (tables.length && version !== schemaVersion) throw new Error("Unsupported AI Factory database schema. The completed V3 runtime requires a fresh data directory. Stop services and run the supported uninstaller, or select an empty FACTORY_DATA_DIR. Existing data was not changed.");
-    // Retired coordination cache: safe for existing schema-6 databases and
-    // serialized with schema initialization. Workflow/audit data is untouched.
-    this.db.exec("DROP TABLE IF EXISTS repository_controller");
     this.db.exec(`CREATE TABLE IF NOT EXISTS work_items(
         id TEXT PRIMARY KEY,issue_number INTEGER NOT NULL,issue_id INTEGER,issue_node_id TEXT,issue_created_at TEXT,repo TEXT NOT NULL,branch TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
         context TEXT NOT NULL DEFAULT '{}',stage TEXT,status TEXT,attempt INTEGER NOT NULL DEFAULT 0,revision INTEGER NOT NULL DEFAULT 0,
