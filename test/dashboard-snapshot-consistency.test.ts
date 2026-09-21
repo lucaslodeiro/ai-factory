@@ -60,10 +60,14 @@ test('snapshot preserves a composer draft and skips unchanged issue lists',()=>{
 
 test('stopped daemon controls recover without adding status noise to the issue list',()=>{
  const button={disabled:false,dataset:{}},readonly={disabled:true,dataset:{}};
- const context=vm.createContext({document:{querySelectorAll:()=>[button,readonly]}});
+ const note={textContent:'List updates paused while you write',hidden:true},textarea={value:''};
+ const context=vm.createContext({$:(id:string)=>{assert.equal(id,'#list-writing-note');return note;},document:{querySelectorAll:(selector:string)=>selector==='#items .thread-composer'?[{querySelector:()=>textarea}]:[button,readonly]}});
  vm.runInContext(source.slice(source.indexOf('let lastSnapshot=null;'),source.indexOf('const pendingControls=')),context);
  vm.runInContext('lastSnapshot={daemon:{running:false}};applyQueueAvailability();applyQueueAvailability()',context);
- assert.equal(button.disabled,true);assert.equal(readonly.disabled,true);
+ assert.equal(button.disabled,true);assert.equal(readonly.disabled,true);assert.equal(note.textContent,'Daemon stopped. Start it from Runtime controls.');assert.equal(note.hidden,false);
  vm.runInContext('lastSnapshot.daemon.running=true;applyQueueAvailability()',context);
- assert.equal(button.disabled,false);assert.equal(readonly.disabled,true);
+ assert.equal(button.disabled,false);assert.equal(readonly.disabled,true);assert.equal(note.textContent,'List updates paused while you write');assert.equal(note.hidden,true);
+ textarea.value='Keep this draft';vm.runInContext('lastSnapshot.daemon.running=false;applyQueueAvailability()',context);assert.equal(note.textContent,'Daemon stopped. Start it from Runtime controls.');assert.equal(note.hidden,false);
+ vm.runInContext('lastSnapshot.daemon.running=true;applyQueueAvailability()',context);assert.equal(note.textContent,'List updates paused while you write');assert.equal(note.hidden,false);
+ textarea.value='';vm.runInContext('applyQueueAvailability()',context);assert.equal(note.hidden,true);
 });
