@@ -20,7 +20,7 @@ Installer options:
 |---|---|---|
 | `--dir PATH` | `$HOME/ai-factory` | Installation home; the engine checkout is created under `engine/` |
 | `--repo URL` | This GitHub repository | Engine source repository |
-| `--branch NAME` | `main` | Engine branch to install (`develop` opts into unreleased changes) |
+| `--branch NAME` | `main` | Engine branch to install; only for testing an unmerged branch |
 | `--dashboard-host LOOPBACK` | `127.0.0.1` | Initial dashboard address: `127.0.0.1`, `localhost` or `::1` |
 | `--dashboard-port PORT` | `4173` | Initial dashboard port |
 If the selected port is already occupied, installation chooses the next available port, saves it in `.env`, prints the change and opens the effective URL. For example:

@@ -121,7 +121,7 @@ Factory commands include `doctor`, `start`, `start-issue`, `issue show`, `status
 
 Each installation executes agent stages sequentially and is identified by `FACTORY_INSTANCE_NAME`, which defaults to its hostname. Multiple installations may share a repository and GitHub account: assignment to that account offers work, while the single `factory-instance:<name>` label selects the installation. Unassign to pause for a human, reassign to resume, or change the instance label to move work. The issue itself carries the current state index, specifications and milestone facts needed by another installation; stable work continues automatically, while remotely active work waits for the explicit **Continue anyway** action. The local daemon lock still prevents duplicate processes using the same data directory.
 
-This repository uses two long-lived branches: `develop` for ongoing work and `main` for stable releases. The installer defaults to `main`; pass `--branch develop` only when intentionally testing unreleased factory changes.
+This repository has one long-lived branch, `main`; the installer installs it by default and `--branch NAME` exists only for testing an unmerged branch.
 
 See [installation and operations](INSTALL.md), [GitHub setup](docs/GITHUB_SETUP.md), [validation evidence and operational boundaries](docs/VALIDATION.md), and the [end-to-end run playbook](docs/E2E_RUN_PLAYBOOK.md).
 
@@ -137,7 +137,7 @@ Merged PRs reconcile to `DELIVERY/COMPLETED`; a closed unmerged PR remains `DELI
 
 ### Product tests and installation checks
 
-CI runs `npm run test:all` on macOS for pull requests and pushes to `develop` and `main`. Product tests use controlled configuration and simulated providers; they do not depend on the operator's role settings. Installation and updates never run `npm test` or the functional suite, including when `AI_FACTORY_INSTALL_TESTS` was set by an older installer.
+The CI workflow template in `docs/ci.example.yml` is not active; when enabled, it targets `main` only. Product tests use controlled configuration and simulated providers; they do not depend on the operator's role settings. Installation and updates never run `npm test` or the functional suite, including when `AI_FACTORY_INSTALL_TESTS` was set by an older installer.
 
 `node scripts/validate-installation.mjs` checks the local Node runtime, compiled assets, writable storage, native SQLite and CLI loading without calling providers or GitHub. During updates it checks database compatibility on a backup copy, not the live database. The updater builds and validates a detached candidate before activating it; preparation failures preserve the installed checkout and dependencies. If service restoration fails after activation, the update remains failed and the daemon is left stopped rather than reporting success or restarting it repeatedly. The backup path remains in the log for recovery.
 
