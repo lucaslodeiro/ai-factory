@@ -24,9 +24,9 @@ async function terminate(status, reason, escalate) {
   if(escalate)force=setTimeout(()=>{try{process.kill(-worker.pid,"SIGKILL");}catch{}},1000);
 }
 process.on("disconnect", () => terminate("interrupted","unexpected-shutdown",true));
-process.on("SIGTERM", () => terminate("cancelled","user-cancel",true));
-process.on("SIGINT", () => terminate("cancelled","user-cancel",true));
-process.on("message", message=>{if(message?.type==="interrupt")terminate("interrupted",message.reason??"planned-maintenance",false);else if(message?.type==="cancel")terminate("cancelled","user-cancel",true);});
+process.on("SIGTERM", () => terminate("interrupted","host-interrupted",true));
+process.on("SIGINT", () => terminate("interrupted","host-interrupted",true));
+process.on("message", message=>{if(message?.type==="interrupt")terminate("interrupted",message.reason??"planned-maintenance",false);else if(message?.type==="cancel")terminate("cancelled",message.reason??"user-cancel",true);});
 let request = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", chunk => { request += chunk; });

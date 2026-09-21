@@ -26,6 +26,7 @@ import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {GitHubAdapter} from "./adapters/github.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {availableMessageActions,promptArtifact,workflowThread,type MessageAction} from "./workflow-chat.js";
+import {executionOutcomeText,workflowExecutionSummary} from "./execution-presentation.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
 const types: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
@@ -72,13 +73,13 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
   try {
     const value = JSON.parse(payload) as any;
     const role=roleLabel(value.role ?? runRole);
-    if(type==="workflow.transition"){const from=value.from,to=value.to;return{title:`Workflow moved to ${stateLabel(to?.stage)} · ${stateLabel(to?.status)}`,details:from?`Previous: ${stateLabel(from.stage)} · ${stateLabel(from.status)}. ${value.reason?.summary??""}`:`${value.reason?.summary??"Work started"}.`,severity:to?.status==="FAILED"?"error":["WAITING","PAUSED","CANCELLED"].includes(to?.status)?"warning":["COMPLETED"].includes(to?.status)?"success":"info",category:"Workflow"};}
+    if(type==="workflow.transition"){const from=value.from,to=value.to,summary=workflowExecutionSummary(value.reason?.summary??"Work started",to?.stage);return{title:`Workflow moved to ${stateLabel(to?.stage)} · ${stateLabel(to?.status)}`,details:from?`Previous: ${stateLabel(from.stage)} · ${stateLabel(from.status)}. ${summary}`:`${summary}.`,severity:to?.status==="FAILED"?"error":["WAITING","PAUSED","CANCELLED"].includes(to?.status)?"warning":["COMPLETED"].includes(to?.status)?"success":"info",category:"Workflow"};}
     if (type === "execution.started") {
       const selection=value.selection;
       return { title:`${role} execution started`,details:selection ? `${selection.model}` : "The agent process is running.",severity:"info",category:"Agent",brand:selection?.provider };
     }
-    if (type === "execution.finished") { const result=value.code === null || value.code === undefined ? "The process finished without an exit code." : `Process exit code: ${value.code}.`;const usage=value.usage?.totalTokens === null || value.usage?.totalTokens === undefined ? " Token usage was not reported." : ` Tokens reported: ${Number(value.usage.totalTokens).toLocaleString("en-US")}.`;return { title:`${role} execution ${value.status ?? "finished"}`,details:result+usage,severity:value.status === "succeeded" ? "success" : value.status === "cancelled" ? "warning" : "error",category:"Agent" };}
-    if (type === "execution.interrupted") return { title:`${role} execution interrupted`,details:value.reason ?? "The daemon stopped before this stage was recorded as complete.",severity:"error",category:"Agent" };
+    if (type === "execution.finished") { const result=value.code === null || value.code === undefined ? "The process finished without an exit code." : `Process exit code: ${value.code}.`;const usage=value.usage?.totalTokens === null || value.usage?.totalTokens === undefined ? " Token usage was not reported." : ` Tokens reported: ${Number(value.usage.totalTokens).toLocaleString("en-US")}.`;const explanation=executionOutcomeText(value.status,value.interruptionReason,value.role??runRole);return { title:explanation??`${role} execution ${value.status ?? "finished"}`,details:explanation?result+usage:result+usage,severity:value.status === "succeeded" ? "success" : value.status === "cancelled" ? "warning" : "error",category:"Agent" };}
+    if (type === "execution.interrupted") return { title:`${role} execution interrupted`,details:executionOutcomeText("interrupted",value.reason,value.role??runRole)??"The daemon stopped before this stage was recorded as complete.",severity:"error",category:"Agent" };
     if (type === "agent.result") {
       const result=value.result ?? {},coverage=Array.isArray(result.coverage) ? result.coverage : [];
       const passed=coverage.filter((item:any)=>item.status === "passed").length;
