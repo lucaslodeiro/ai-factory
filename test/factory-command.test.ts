@@ -1,3 +1,4 @@
+import {factoryCommandReference} from "../src/factory-help.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseFactoryCommand } from "../src/factory-command.js";
@@ -44,4 +45,9 @@ test("note and replace parse scope and human-facing role aliases",()=>{
  assert.deepEqual(parseFactoryCommand("/factory replace #2 Use WebKit"),{kind:"replace",recordId:"#2",scope:"spec",appliesTo:[],text:"Use WebKit"});
  assert.throws(()=>parseFactoryCommand("/factory note --for manager Do it"),/Unknown role manager/);
  assert.throws(()=>parseFactoryCommand("/factory replace abc"),/requires replacement text/);
+});
+
+test("every documented factory verb is accepted by the parser",()=>{
+ const args:Record<string,string>={approve:" v1",answer:" feedback",note:" guidance",replace:" #1 guidance",revoke:" #1"};
+ for(const verb of new Set([...factoryCommandReference.matchAll(/`\/factory (\w+)/g)].map(match=>match[1])))assert.equal(parseFactoryCommand(`/factory ${verb}${args[verb]??""}`)?.kind,verb);
 });

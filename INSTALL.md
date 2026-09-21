@@ -33,7 +33,7 @@ bash /tmp/ai-factory-install-macos.sh --dashboard-host localhost --dashboard-por
 
 The installer supports Apple Silicon and Intel Macs. It downloads the latest Node 22 archive from Node.js and the latest GitHub CLI macOS archive from GitHub Releases, verifies both SHA-256 checksums published by their projects, and links their executables into `~/.local/bin`. Codex and Claude are installed with their official native installers in non-interactive mode. It then invokes the private installation stage and forwards options such as `--dir` and `--branch`. There is no Homebrew installer or compatibility entry point.
 
-The runtime test suite runs during installation by default. Set `AI_FACTORY_INSTALL_TESTS=0` only when deliberately skipping that install-time gate; run `npm test` in the installed checkout before relying on the factory.
+Installation runs the required validation gates; there is no supported environment variable to skip them.
 
 Git comes from Apple's Command Line Tools. Installing those tools is an operating-system action that can require an administrator and a graphical confirmation, so the factory installer never launches it automatically. If they are absent, installation stops before downloading anything and prints the one-time `xcode-select --install` prerequisite; rerun the same factory command afterward. Existing regular files in `~/.local/bin` are never overwritten. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile for later terminals.
 
@@ -106,14 +106,11 @@ the incomplete engine and prints a retry command that preserves its logs.
 
 The service launcher exposes the same operation and flags: `ai-factory service uninstall [--purge] [--yes] [--force]`. Shared Node, Git, `gh`, Codex and Claude installations are never removed.
 
-To update an existing installation, first stop its daemon and wait for it to exit:
+To update an existing installation, let the updater stop services and restore their previous running state:
 
 ```sh
-ai-factory stop
-# After the daemon has exited:
 ai-factory update
 ai-factory doctor
-ai-factory service restart all
 ```
 
 The installation home contains `engine/` (the removable Git checkout), `repos/` (factory-managed target clones), `data/` (SQLite, logs, worktrees and the install marker), `.env` and `.env.backup-*`. Set `AI_FACTORY_HOME` to override the default `$HOME/ai-factory`. A developer checkout not named `engine` treats its own root as the home, so source development remains self-contained. Existing installations are not migrated: uninstall the old installation, reinstall, and enter saved configuration values again.
@@ -234,7 +231,7 @@ npm run service -- start dashboard
 
 Open Dashboard → Configuration. Set `FACTORY_REPO_DIR` to a clone of the **target application**, `GITHUB_REPOSITORY` to its owner/name, `GITHUB_DEFAULT_BRANCH` to its base branch and `FACTORY_APPROVERS` to the comma-separated GitHub logins who can make decisions. Use a different `FACTORY_DATA_DIR` per target. The local target clone needs origin configured, the base branch pushed, and Git author name/email configured. Worktrees start at the fetched remote base; uncommitted changes in the source checkout are not included.
 
-The daemon reads `.env` from its working directory. Run commands from the factory checkout. `CODEX_COMMAND`, `CLAUDE_COMMAND` and `GIT_COMMAND` accept absolute executable paths (not shell command strings). Ensure Node 22+ and the working Git executable are first in PATH so worker tools find them too. On Macs with multiple Git installations, an Xcode license error can be avoided by selecting a separately installed Git.
+The daemon reads `.env` from the factory home (`AI_FACTORY_HOME`, or the parent of an installed `engine/` checkout). A developer checkout uses its root as the factory home. `CODEX_COMMAND`, `CLAUDE_COMMAND` and `GIT_COMMAND` accept absolute executable paths (not shell command strings). Ensure Node 22+ and the working Git executable are first in PATH so worker tools find them too. On Macs with multiple Git installations, an Xcode license error can be avoided by selecting a separately installed Git.
 
 ```sh
 npm run factory -- doctor

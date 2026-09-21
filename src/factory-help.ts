@@ -1,4 +1,5 @@
-export const factoryCommandReference=`- \`/factory start [guidance]\` — start an open issue; optional guidance is issue-wide. Example: \`/factory start Keep the API small\`.
+export const factoryCommandReference=`To start work, assign the issue to the Factory account, or use Add Issue in the dashboard.
+
 - \`/factory help\` — publish this command reference. Example: \`/factory help\`.
 - \`/factory approve vN [guidance]\` — approve SPEC vN; optional guidance applies to that SPEC. Example: \`/factory approve v2 Preserve the public API\`.
 - \`/factory answer <text>\` — answer the active question or request PR changes. Example: \`/factory answer Use SQLite\`.

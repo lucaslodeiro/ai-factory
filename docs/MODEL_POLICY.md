@@ -25,10 +25,10 @@ The assessment and rationale are published with SPEC vN and stored in its immuta
 
 | Role | Short name | Stage | Default provider | Default model |
 |---|---|---|---|---|
-| Product Architect | Architect | Design | Claude | sonnet |
-| Implementation Engineer | Builder | Build | Codex | gpt-5.6-terra |
-| Verification Engineer | Tester | Test | Codex | gpt-5.6-terra |
-| Delivery Reviewer | Reviewer | Review | Claude | sonnet |
+| Product Architect | Architect | Design | Claude | auto |
+| Implementation Engineer | Builder | Build | Codex | auto |
+| Verification Engineer | Tester | Test | Codex | auto |
+| Delivery Reviewer | Reviewer | Review | Claude | auto |
 
 Dashboard → Configuration → Agent roles exposes one card per role. Each card writes `<ROLE>_PROVIDER` and `<ROLE>_MODEL`, where `<ROLE>` is `PRODUCT_ARCHITECT`, `DEVELOPER`, `QA`, or `REVIEWER`. The model selector offers `Auto (provider recommended)`, known model IDs for the selected provider, and preserves an existing custom ID.
 
