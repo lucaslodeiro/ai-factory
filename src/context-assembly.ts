@@ -17,10 +17,7 @@ export interface ContextAssemblyInput {
   changedFiles?:string[];
   diffStat?:string;
   diffPath?:string;
-  previousAttempt?:unknown;
-  builderSummary?:unknown;
   qaEvidence?:unknown;
-  recovery?:string;
 }
 
 export interface ContextManifest {
@@ -80,11 +77,8 @@ export class ContextAssembler {
       ...(input.role === "product-architect" ? [{name:"Active request chain",value:requestChain.map(payload),protected:true}] : []),
       {name:"Open findings required by this role",value:openFindings.map(payload),protected:true},
       ...(activeFailure ? [{name:"Active failure",value:activeFailure,protected:true}] : []),
-      ...(input.previousAttempt ? [{name:"Previous attempt",value:input.previousAttempt,protected:false}] : []),
-      ...(input.role === "product-architect" && input.builderSummary ? [{name:"Builder summary",value:input.builderSummary,protected:false}] : []),
       ...(["developer","qa","reviewer"].includes(input.role) && (input.changedFiles || input.diffStat) ? [{name:"Changed files",value:{files:input.changedFiles??[],diffStat:input.diffStat??"",...(input.role==="reviewer"&&input.diffPath?{diffPath:input.diffPath}:{})},protected:false}] : []),
       ...(input.role === "reviewer" && input.qaEvidence ? [{name:"Tester execution evidence",value:input.qaEvidence,protected:false}] : []),
-      ...(input.recovery ? [{name:"Recovery note",value:input.recovery,protected:false}] : []),
     ];
     const protectedSections=sections.filter(section=>section.protected);
     const protectedMarkdown=render(protectedSections);

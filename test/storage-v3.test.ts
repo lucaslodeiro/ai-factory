@@ -20,8 +20,9 @@ test("a fresh completed-V3 database enables foreign keys and creates only projec
    assert.ok(store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table));
   }
   const columns=new Set((store.db.prepare("PRAGMA table_info(work_items)").all() as Array<{name:string}>).map(column=>column.name));
-  assert.equal(columns.has("state"),false);
-  for (const column of ["issue_id","issue_node_id","issue_created_at","stage","status","attempt","revision","presentation_revision","published_presentation_revision","active_run_id","active_request_id","active_failure_id","correction_cycles","archived_at"]) assert.ok(columns.has(column),column);
+  for (const retired of ["state","issue_node_id","issue_created_at"]) assert.equal(columns.has(retired),false);
+  assert.equal(store.db.prepare("SELECT name FROM sqlite_master WHERE name='repository_controller'").get(),undefined);
+  for (const column of ["issue_id","stage","status","attempt","revision","presentation_revision","published_presentation_revision","active_run_id","active_request_id","active_failure_id","correction_cycles","archived_at"]) assert.ok(columns.has(column),column);
   const identity=store.db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name='issue_identity'").get() as {sql:string};
   assert.match(identity.sql,/WHERE archived_at IS NULL/i);
   const executionColumns=new Set((store.db.prepare("PRAGMA table_info(executions)").all() as Array<{name:string}>).map(column=>column.name));
@@ -69,7 +70,7 @@ test("an unversioned existing database is rejected without mutation",()=>{
 });
 
 test("stored schema versions older or newer than current are refused without changing file bytes",()=>{
- for(const version of [5,7]){
+ for(const version of [schemaVersion-1,schemaVersion+1]){
   const root=fs.mkdtempSync(path.join(os.tmpdir(),`factory-schema-${version}-`)),file=path.join(root,"factory.db");
   try{
    const database=new Database(file);database.exec(`CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE preserved(value TEXT); INSERT INTO metadata VALUES('schema_version','${version}'); INSERT INTO preserved VALUES('unchanged');`);database.close();

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { config } from "./config.js";
-export const schemaVersion=6;
+export const schemaVersion=7;
 export class Store {
   db: Database.Database;
   constructor(filename = path.join(config.dataDir, "factory.db")) {
@@ -26,7 +26,7 @@ export class Store {
     try { version=stored ? JSON.parse(stored.value) : undefined; } catch { version=undefined; }
     if (tables.length && version !== schemaVersion) throw new Error("Unsupported AI Factory database schema. The completed V3 runtime requires a fresh data directory. Stop services and run the supported uninstaller, or select an empty FACTORY_DATA_DIR. Existing data was not changed.");
     this.db.exec(`CREATE TABLE IF NOT EXISTS work_items(
-        id TEXT PRIMARY KEY,issue_number INTEGER NOT NULL,issue_id INTEGER,issue_node_id TEXT,issue_created_at TEXT,repo TEXT NOT NULL,branch TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
+        id TEXT PRIMARY KEY,issue_number INTEGER NOT NULL,issue_id INTEGER,repo TEXT NOT NULL,branch TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
         context TEXT NOT NULL DEFAULT '{}',stage TEXT,status TEXT,attempt INTEGER NOT NULL DEFAULT 0,revision INTEGER NOT NULL DEFAULT 0,
         presentation_revision INTEGER NOT NULL DEFAULT 0,published_presentation_revision INTEGER,active_run_id TEXT,active_request_id TEXT,
         active_failure_id TEXT,correction_cycles INTEGER NOT NULL DEFAULT 0,archived_at TEXT

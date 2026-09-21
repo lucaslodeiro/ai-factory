@@ -38,8 +38,8 @@ test("optional sections are omitted deterministically when the budget is exhaust
   const {store,assembler}=setup();
   try {
     const baseline=assembler.assemble({workItemId:"work-1",role:"reviewer",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"}});
-    const result=assembler.assemble({workItemId:"work-1",role:"reviewer",specVersion:1,budgetBytes:Buffer.byteLength(baseline.markdown)+20,budgetSource:"provider/model",issue:{title:"Issue",body:"Body"},previousAttempt:{summary:"x".repeat(200)},diffStat:"large",qaEvidence:{tests:["large"]},recovery:"resume"});
-    assert.deepEqual(result.manifest.excludedSections,["Previous attempt","Changed files","Tester execution evidence","Recovery note"]);
+    const result=assembler.assemble({workItemId:"work-1",role:"reviewer",specVersion:1,budgetBytes:Buffer.byteLength(baseline.markdown)+20,budgetSource:"provider/model",issue:{title:"Issue",body:"Body"},diffStat:"large",qaEvidence:{tests:["large"]}});
+    assert.deepEqual(result.manifest.excludedSections,["Changed files","Tester execution evidence"]);
     assert.equal(result.manifest.budgetSource,"provider/model");
     assert.ok(Buffer.byteLength(result.markdown)<=result.manifest.budgetBytes);
   } finally { store.db.close(); }

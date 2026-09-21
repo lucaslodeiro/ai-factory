@@ -17,6 +17,13 @@ try{
  const incompatible=spawnSync(process.execPath,[script,database],{env,encoding:'utf8'});
  assert.notEqual(incompatible.status,0);assert.equal(incompatible.stderr.trim(),'Incompatible database schema: uninstall and reinstall with an empty data directory');
  assert.deepEqual(fs.readFileSync(database),before);
- assert.deepEqual(fs.readdirSync(root),['live.db']);
+ const {schemaVersion}=await import('../dist/src/storage.js');
+ const previous=path.join(root,'previous.db'),previousDb=new Database(previous);
+ previousDb.exec(`CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL); INSERT INTO metadata VALUES('schema_version','${schemaVersion-1}'); CREATE TABLE keep(value TEXT); INSERT INTO keep VALUES('previous workflow');`);previousDb.close();
+ const previousBytes=fs.readFileSync(previous);
+ const outdated=spawnSync(process.execPath,[script,previous],{env,encoding:'utf8'});
+ assert.notEqual(outdated.status,0);assert.match(outdated.stderr,/Incompatible database schema/);
+ assert.deepEqual(fs.readFileSync(previous),previousBytes);
+ assert.deepEqual(fs.readdirSync(root).sort(),['live.db','previous.db']);
  console.log('PASS: installation checks use disposable storage, refuse incompatible schemas cleanly and preserve the live database.');
 }finally{fs.rmSync(root,{recursive:true,force:true});}

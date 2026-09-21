@@ -13,7 +13,7 @@ import {pruneExecutionArtifacts} from "./artifact-retention.js";
 import {createHash} from "node:crypto";
 
 type GitHub=RuntimeGitHub;
-type ItemRow={id:string;issue_number:number;issue_id:number|null;issue_created_at:string|null;repo:string;stage:string;status:string;revision:number;archived_at:string|null;context:string};
+type ItemRow={id:string;issue_number:number;issue_id:number|null;repo:string;stage:string;status:string;revision:number;archived_at:string|null;context:string};
 
 export class WorkflowOrchestrator {
  private intake:WorkflowIntake;private inbox:WorkflowInbox;private publisher:WorkflowGitHubPublisher;private projections:WorkflowProjections;private records:WorkflowRecords;
@@ -91,7 +91,7 @@ export class WorkflowOrchestrator {
  private updateIssueContext(id:string,issue:Issue){const row=this.row(id),context=JSON.parse(row.context||"{}") as {title?:string;body?:string;url?:string};if(context.title===issue.title&&context.body===issue.body&&context.url===issue.url)return;if(context.title!==issue.title){const current=this.projections.get(id);this.projections.present({workItemId:id,expectedRevision:current.revision,actor:{type:"github",id:"issue"},source:{},reason:{code:"issue-title-updated",summary:"GitHub issue title updated"}},()=>this.updateContext(id,{title:issue.title,body:issue.body,url:issue.url}));}else this.updateContext(id,{title:issue.title,body:issue.body,url:issue.url});}
  private updateContext(id:string,values:Record<string,unknown>){const item=this.row(id),context=JSON.parse(item.context||"{}");this.store.db.prepare("UPDATE work_items SET context=?,updated_at=? WHERE id=?").run(JSON.stringify({...context,...values}),new Date().toISOString(),id);}
  private cursor(item:ItemRow){return (JSON.parse(item.context||"{}") as {cursor?:number}).cursor??0;}
- private rows(){return this.store.db.prepare("SELECT id,issue_number,issue_id,issue_created_at,repo,stage,status,revision,archived_at,context FROM work_items ORDER BY created_at").all() as ItemRow[];}
- private row(id:string){const row=this.store.db.prepare("SELECT id,issue_number,issue_id,issue_created_at,repo,stage,status,revision,archived_at,context FROM work_items WHERE id=?").get(id) as ItemRow|undefined;if(!row)throw new Error("Unknown work item");return row;}
+ private rows(){return this.store.db.prepare("SELECT id,issue_number,issue_id,repo,stage,status,revision,archived_at,context FROM work_items ORDER BY created_at").all() as ItemRow[];}
+ private row(id:string){const row=this.store.db.prepare("SELECT id,issue_number,issue_id,repo,stage,status,revision,archived_at,context FROM work_items WHERE id=?").get(id) as ItemRow|undefined;if(!row)throw new Error("Unknown work item");return row;}
  private issueNumber(reference:string){const value=reference.trim(),direct=value.match(/^#?(\d+)$/)?.[1];if(direct)return Number(direct);const escaped=config.repo.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),url=value.match(new RegExp(`^https://github\\.com/${escaped}/issues/(\\d+)/?`));if(url)return Number(url[1]);throw new Error(`Use an issue number or a URL from ${config.repo}`);}
 }

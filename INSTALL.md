@@ -373,3 +373,7 @@ The fallback supports `ai-factory configure --defaults` to save existing/templat
 
 Configuration regression checks: `node scripts/test-configure.mjs`.
 Uninstall regression check: `node scripts/test-uninstall.mjs`.
+
+### Database schema
+
+The current schema is 7. It no longer stores the redundant issue node ID or the creation-date fallback for issue identity. Numeric GitHub issue identity remains authoritative. Earlier schema versions are rejected without modification; no upgrade migration is shipped. Use a fresh data directory for this schema. An update from an earlier schema fails candidate validation and preserves the installed version and data.
