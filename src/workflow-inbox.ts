@@ -25,7 +25,7 @@ export class WorkflowIntake {
   if(existing)return {id:existing.id,created:false};
   const id=randomUUID(),now=new Date().toISOString(),repo=issue.url.match(/github\.com\/([^/]+\/[^/]+)/)?.[1];
   if(!repo)throw new Error("Issue URL does not identify a GitHub repository");
-  const eventId=randomUUID(),context={title:issue.title,body:issue.body,url:issue.url,cursor:origin.initialCursor??origin.commentId??0,
+  const eventId=randomUUID(),context={title:issue.title,body:issue.body,url:issue.url,issueNodeId:issue.nodeId,cursor:origin.initialCursor??origin.commentId??0,
     ...(origin.source==="github-comment"&&origin.commentId?{lastCommand:{commentId:origin.commentId,login:origin.actor,kind:"start",outcome:"applied",at:now} satisfies LastCommandOutcome}:{})};
   const run=this.store.db.transaction(()=>{
    this.store.db.prepare(`INSERT INTO work_items(id,issue_number,issue_id,repo,branch,created_at,updated_at,context,stage,status,attempt,revision,presentation_revision,correction_cycles)

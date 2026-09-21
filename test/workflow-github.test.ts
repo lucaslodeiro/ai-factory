@@ -9,14 +9,17 @@ import { workflowLabels,workflowStatusMarkdown } from "../src/workflow-status.js
 import { WorkflowFailures } from "../src/workflow-failures.js";
 import { result } from "./fixtures.js";
 import { WorkflowInbox } from "../src/workflow-inbox.js";
+import {issueStateIndex} from "../src/workflow-state.js";
 
 const stagesForTest={DESIGN:"Design",BUILD:"Build",TEST:"Test",REVIEW:"Review",DELIVERY:"Delivery"} as const;
 const statusesForTest={QUEUED:"Queued",RUNNING:"Running",WAITING:"Waiting for you",FAILED:"Failed",PAUSED:"Paused",CANCELLED:"Cancelled",COMPLETED:"Completed"} as const;
 const nextAction=(body:string)=>body.match(/^## Next action\n\n([\s\S]*?)(?=\n\n<details><summary>All commands<\/summary>)/m)?.[0]??"";
+const stableState=(value:any)=>{const copy=structuredClone(value);delete copy.publishedAt;return copy;};
 
 function setup() {
  const store=new Store(":memory:");
- store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context) VALUES('work-1',7,'owner/demo','now','now',?)").run(JSON.stringify({title:"Readable workflow"}));
+ store.setMetadata("repository_identity",{id:1,nodeId:"R_1",fullName:"owner/demo"});
+ store.db.prepare("INSERT INTO work_items(id,issue_number,issue_id,repo,branch,created_at,updated_at,context) VALUES('work-1',7,700,'owner/demo','factory/issue-7','now','now',?)").run(JSON.stringify({title:"Readable workflow",issueNodeId:"I_700"}));
  store.db.prepare("INSERT INTO specs(work_item_id,version,body) VALUES('work-1',2,'SPEC')").run();
  return {store,records:new WorkflowRecords(store),projections:new WorkflowProjections(store)};
 }
@@ -99,10 +102,11 @@ test("publisher writes only changed presentation revisions and retries after del
   const calls:Array<{issue:number;labels:string[];body:string}>=[];
   const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(issue,labels,body){calls.push({issue,labels:labels.map(label=>label.name),body});},publishWorkflowComment(){},assignees(){return[];},assign(){},unassign(){}});
   assert.equal(await publisher.publishChanged(),1);assert.equal(await publisher.publishChanged(),0);assert.equal(calls.length,1);
+  assert.deepEqual(stableState(payloadOf(calls[0].body)),stableState(issueStateIndex(s.store,"work-1")));assert.equal("cwd" in ((payloadOf(calls[0].body) as any).context),false);
   assert.match(calls[0].body,/workflow-rev:0 · presentation-rev:0/);
   assert.match(calls[0].body,/Instance \|/);assert.match(calls[0].body,/<sub>instance:/);
   s.projections.present({workItemId:"work-1",expectedRevision:0,actor:{type:"orchestrator",id:"observer"},source:{},reason:{code:"evidence",summary:"Evidence changed"}});
-  assert.equal(await publisher.publishChanged(),1);assert.equal(calls.length,2);assert.match(calls[1].body,/presentation-rev:1/);
+  assert.equal(await publisher.publishChanged(),1);assert.equal(calls.length,2);assert.match(calls[1].body,/presentation-rev:1/);assert.deepEqual(stableState(payloadOf(calls[1].body)),stableState(issueStateIndex(s.store,"work-1")));
 
   s.projections.transition({workItemId:"work-1",expectedRevision:0,stage:"BUILD",status:"RUNNING",activeRunId:"run",actor:{type:"orchestrator",id:"scheduler"},source:{executionId:"run"},reason:{code:"start",summary:"Builder started"}});
   const failing=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){throw new Error("GitHub unavailable");},publishWorkflowComment(){throw new Error("GitHub unavailable");},assignees(){return[];},assign(){},unassign(){}});
@@ -110,6 +114,10 @@ test("publisher writes only changed presentation revisions and retries after del
   assert.equal(s.projections.get("work-1").publishedPresentationRevision,1);
   assert.equal(await publisher.publishChanged(),1);assert.match(calls.at(-1)!.body,/event:[0-9a-f-]{36}/);
  } finally {s.store.db.close();}
+});
+
+test("an oversized state index is omitted and reported once",async()=>{
+ const s=setup();try{s.projections.initialize("work-1","BUILD","QUEUED");s.records.create({workItemId:"work-1",specVersion:2,scope:"issue",payload:{kind:"instruction",text:"x".repeat(61_000)},sourceType:"github-comment",sourceId:"1",actor:"owner"});let body="";const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(_issue,_labels,value){body=value;},publishWorkflowComment(){return 1;}});await publisher.publishChanged();assert.equal(payloadOf(body),null);assert.equal((s.store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='github.state_too_large'").get() as {n:number}).n,1);}finally{s.store.db.close();}
 });
 
 test("publisher keeps intermediate delivery results in status and publishes only milestone comments",async()=>{

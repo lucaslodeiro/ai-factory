@@ -24,7 +24,7 @@ class GitHub {
  private advanceIssueUpdatedAt(){this.updatedAt=new Date(Date.parse(this.updatedAt)+1000).toISOString();}
 }
 
-async function startAssigned(orchestrator:WorkflowOrchestrator,store:Store){await orchestrator.startIssue("1");await orchestrator.syncRemote();const row=store.db.prepare("SELECT id,stage,status FROM work_items WHERE archived_at IS NULL ORDER BY created_at DESC LIMIT 1").get() as {id:string;stage:string;status:string};return{issue:1,id:row.id,created:true,stage:row.stage,status:row.status};}
+async function startAssigned(orchestrator:WorkflowOrchestrator,store:Store){store.setMetadata("repository_identity",{id:1,nodeId:"R_1",fullName:"owner/demo"});await orchestrator.startIssue("1");await orchestrator.syncRemote();const row=store.db.prepare("SELECT id,stage,status FROM work_items WHERE archived_at IS NULL ORDER BY created_at DESC LIMIT 1").get() as {id:string;stage:string;status:string};return{issue:1,id:row.id,created:true,stage:row.stage,status:row.status};}
 
 test("V3 orchestrator completes Design, Build, Test, Review and merge with one authoritative CTA",async()=>{
  const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
@@ -90,7 +90,7 @@ test("visibility reconciliation refreshes issue content and presents only title 
 
 test("assignment claim waits one poll, then starts; conflicts and foreign status wait",async()=>{
  const previousRepo=config.repo,previousInstance=config.instanceName;config.repo="owner/demo";config.instanceName="local";
- const store=new Store(":memory:"),github=new GitHub();github.issueLabels=[];const orchestrator=new WorkflowOrchestrator(store,github,new WorkflowRunner(store,{},new Workspace(),github),{enabled:false,async notify(){}});store.setMetadata("runtime:factory-account","factory");
+ const store=new Store(":memory:"),github=new GitHub();github.issueLabels=[];const orchestrator=new WorkflowOrchestrator(store,github,new WorkflowRunner(store,{},new Workspace(),github),{enabled:false,async notify(){}});store.setMetadata("runtime:factory-account","factory");store.setMetadata("repository_identity",{id:1,nodeId:"R_1",fullName:"owner/demo"});
  try{
   await orchestrator.syncRemote();assert.deepEqual(github.labelEdits,["factory-instance:local"]);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,0);
   await orchestrator.syncRemote();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM work_items").get() as {count:number}).count,1);
@@ -101,7 +101,7 @@ test("assignment claim waits one poll, then starts; conflicts and foreign status
 
 test("unassignment pauses and preserves local work; reassignment resumes; terminal work releases ownership",async()=>{
  const previousRepo=config.repo,previousInstance=config.instanceName;config.repo="owner/demo";config.instanceName="local";
- const store=new Store(":memory:"),github=new GitHub();github.issueLabels=[{name:"factory-instance:local"}];store.setMetadata("runtime:factory-account","factory");let preserved=0;const runner={reconcileFinished(){},async preserve(){preserved++;},async run(){return false;}} as any;const orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
+ const store=new Store(":memory:"),github=new GitHub();github.issueLabels=[{name:"factory-instance:local"}];store.setMetadata("runtime:factory-account","factory");store.setMetadata("repository_identity",{id:1,nodeId:"R_1",fullName:"owner/demo"});let preserved=0;const runner={reconcileFinished(){},async preserve(){preserved++;},async run(){return false;}} as any;const orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
  try{
   await orchestrator.syncRemote();const row=store.db.prepare("SELECT id FROM work_items").get() as {id:string};github.assigned=false;await orchestrator.syncRemote();let projection=new WorkflowProjections(store).get(row.id);assert.equal(projection.status,"PAUSED");assert.equal(preserved,1);assert.deepEqual(github.removedLabels,["factory-instance:local"]);
   github.assigned=true;github.issueLabels=[{name:"factory-instance:local"}];await orchestrator.syncRemote();projection=new WorkflowProjections(store).get(row.id);assert.equal(projection.status,"QUEUED");assert.equal(projection.attempt,1);

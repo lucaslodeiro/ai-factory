@@ -6,9 +6,9 @@ import {workflowNextStep} from '../src/workflow-next-step.js';
 import {WorkflowGitHubPublisher} from '../src/workflow-github.js';
 import {workflowStatusMarkdown} from '../src/workflow-status.js';
 test('pending merge exposes its PR and next action before status history',async()=>{
- const store=new Store(':memory:');try{
+ const store=new Store(':memory:');try{store.setMetadata('repository_identity',{id:1,nodeId:'R_1',fullName:'owner/demo'});
  const pr='https://github.com/owner/demo/pull/3';
- store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status) VALUES('w',2,'owner/demo','now','now',?,'DELIVERY','WAITING')").run(JSON.stringify({pr,title:'Portal'}));
+ store.db.prepare("INSERT INTO work_items(id,issue_number,issue_id,repo,branch,created_at,updated_at,context,stage,status) VALUES('w',2,200,'owner/demo','factory/issue-2','now','now',?,'DELIVERY','WAITING')").run(JSON.stringify({pr,title:'Portal',issueNodeId:'I_200'}));
  const records=new WorkflowRecords(store);records.create({workItemId:'w',specVersion:1,scope:'spec',payload:{kind:'request',type:'merge',owner:'human',originatingStage:'DELIVERY',allowedReturnStages:['DELIVERY'],openedAfterCommentId:0},sourceType:'orchestrator',sourceId:'delivery',actor:'orchestrator'});
  const next=workflowNextStep(store,'w','WAITING',pr);assert.equal(next?.url,pr);assert.match(next!.title,/ready for your review/);assert.equal(next?.command,'/factory answer <changes>');
  for(const status of ['FAILED','PAUSED','COMPLETED','QUEUED'])assert.equal(workflowNextStep(store,'w',status,pr),null);

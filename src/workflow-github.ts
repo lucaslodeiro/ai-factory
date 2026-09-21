@@ -6,6 +6,7 @@ import type { AgentResult,AgentRole } from "./types.js";
 import { roleFullName,roleShortName } from "./names.js";
 import { factoryHelpMarkdown } from "./factory-help.js";
 import {config} from "./config.js";
+import {issueStateIndex} from "./workflow-state.js";
 
 const payloadMarker=/<!-- ai-factory:payload:v1 ([\s\S]*?) -->/;
 export function withPayload(body:string,value:unknown){const json=JSON.stringify(value).replaceAll("--","-\\u002d");return `${body}\n\n<!-- ai-factory:payload:v1 ${json} -->`;}
@@ -34,7 +35,8 @@ export class WorkflowGitHubPublisher {
   const revision=row.revision,presentationRevision=row.presentation_revision;
   const lastEvent=this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(workItemId) as {payload:string}|undefined;
   let eventId:string|undefined;try{eventId=lastEvent?(JSON.parse(lastEvent.payload) as {eventId?:string}).eventId:undefined;}catch{}
-  const body=`${workflowStatusMarkdown(this.store,workItemId)}\n\n<sub>workflow-rev:${revision} · presentation-rev:${presentationRevision}${eventId?` · event:${eventId}`:""}</sub>\n\n<sub>instance:${config.instanceName}</sub>`;
+  const status=`${workflowStatusMarkdown(this.store,workItemId)}\n\n<sub>workflow-rev:${revision} · presentation-rev:${presentationRevision}${eventId?` · event:${eventId}`:""}</sub>\n\n<sub>instance:${config.instanceName}</sub>`,indexed=withPayload(status,issueStateIndex(this.store,workItemId)),body=indexed.length<=60_000?indexed:status;
+  if(indexed.length>60_000){const key=`github:state-too-large:${workItemId}:${presentationRevision}`;if(!this.store.metadata(key)){this.store.event("github.state_too_large",{issue:row.issue_number,bytes:indexed.length,revision},workItemId);this.store.setMetadata(key,true);}}
   await this.github.syncWorkflow(row.issue_number,workflowLabels(this.store,workItemId),body);
   this.store.db.prepare("UPDATE work_items SET published_presentation_revision=? WHERE id=? AND (published_presentation_revision IS NULL OR published_presentation_revision<?)").run(presentationRevision,workItemId,presentationRevision);
   return true;
