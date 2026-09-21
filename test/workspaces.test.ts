@@ -51,3 +51,16 @@ test("real Git worktree isolation, QA boundaries, commit and branch publication"
 
  } finally { fs.rmSync(root,{recursive:true,force:true}); }
 });
+
+test("ensure restores a deterministic branch that exists only in the remote",()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"factory-remote-branch-")),old={repoDir:config.repoDir,dataDir:config.dataDir};
+ try {
+  const origin=path.join(root,"origin.git"),seed=path.join(root,"seed"),checkout=path.join(root,"checkout"),branch="factory/issue-9";
+  fs.mkdirSync(origin);fs.mkdirSync(seed);git(origin,["init","--bare"]);git(seed,["init"]);git(seed,["config","user.name","Factory Test"]);git(seed,["config","user.email","factory@example.test"]);
+  fs.writeFileSync(path.join(seed,"base.txt"),"base\n");git(seed,["add","."]);git(seed,["commit","-m","base"]);git(seed,["branch","-M","main"]);git(seed,["remote","add","origin",origin]);git(seed,["push","-u","origin","main"]);
+  git(seed,["checkout","-b",branch]);fs.writeFileSync(path.join(seed,"continued.txt"),"remote work\n");git(seed,["add","."]);git(seed,["commit","-m","continued work"]);git(seed,["push","origin",branch]);
+  git(root,["clone","--branch","main",origin,checkout]);git(checkout,["config","user.name","Factory Test"]);git(checkout,["config","user.email","factory@example.test"]);
+  config.repoDir=checkout;config.dataDir=path.join(root,"data");const cwd=new Workspaces().ensure("new-item",branch);
+  assert.equal(git(cwd,["branch","--show-current"]),branch);assert.equal(fs.readFileSync(path.join(cwd,"continued.txt"),"utf8"),"remote work\n");assert.equal(git(cwd,["rev-parse","HEAD"]),git(origin,["rev-parse",`refs/heads/${branch}`]));
+ } finally {config.repoDir=old.repoDir;config.dataDir=old.dataDir;fs.rmSync(root,{recursive:true,force:true});}
+});
