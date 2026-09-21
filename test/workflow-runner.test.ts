@@ -171,12 +171,12 @@ for(const code of [3,0])test(`factory verification exit ${code} controls the Tes
  workspace.ensure=()=>process.cwd();config.verifyCommand=`exit ${code}`;
  const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded' WHERE id=?").run(request.executionId);return value;}});
  try{
-  const runner=new WorkflowRunner(store,{"product-architect":adapter(result("spec")),developer:adapter(result("pass")),qa:adapter(result("pass"))},workspace,{ensurePR(){return "unused";}});
+  const runner=new WorkflowRunner(store,{"product-architect":adapter(result("spec")),developer:adapter(result("pass")),qa:adapter(result("pass",{findings:[{classification:"defer",evidence:"Optional follow-up"}]}))},workspace,{ensurePR(){return "unused";}});
   await runner.run(item.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});await runner.run(item.id);await runner.run(item.id);
   const projection=new WorkflowProjections(store).get(item.id);assert.equal(projection.stage,code?"BUILD":"REVIEW");assert.equal(projection.status,"QUEUED");
   const event=store.db.prepare("SELECT payload,run_id FROM events WHERE type='verification.completed'").get() as {payload:string;run_id:string};assert.equal(JSON.parse(event.payload).exitCode,code);assert.ok(event.run_id);
   const applied=JSON.parse((store.db.prepare("SELECT payload FROM events WHERE type='agent.result' ORDER BY id DESC LIMIT 1").get() as {payload:string}).payload).result;
-  assert.equal(applied.outcome,code?"changes":"pass");if(code){assert.equal(applied.findings.length,1);assert.equal(applied.findings[0].classification,"auto-fix");assert.match(applied.findings[0].evidence,/`exit 3` exited 3/);}
+  assert.equal(applied.outcome,code?"changes":"pass");if(code){assert.equal(applied.findings.length,2);assert.deepEqual(applied.findings[0],{classification:"defer",evidence:"Optional follow-up"});assert.equal(applied.findings[1].classification,"auto-fix");assert.match(applied.findings[1].evidence,/`exit 3` exited 3/);}
   const context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(item.id) as {context:string}).context);assert.deepEqual(context.verification,{head:"abc",command:`exit ${code}`,exitCode:code});
  }finally{config.verifyCommand=previous;store.db.close();}
 });

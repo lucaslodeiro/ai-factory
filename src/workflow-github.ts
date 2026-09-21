@@ -1,4 +1,4 @@
-import {sanitizeFailureEvidence} from "./failure-report.js";
+import {redactSecrets} from "./failure-report.js";
 import type {RuntimeGitHub} from "./github-runtime.js";
 import type { Store } from "./storage.js";
 import type { WorkflowGitHubPort } from "./adapters/github.js";
@@ -9,7 +9,7 @@ import { factoryHelpMarkdown } from "./factory-help.js";
 import {config} from "./config.js";
 import {IncompleteIssueStateError,issueStateIndex,validateIssueState,validateSpecificationFact,type ReadIssueState} from "./workflow-state.js";
 
-export function publishedText(value:string){return sanitizeFailureEvidence(value,60000).replaceAll("<!--","<!-\u200b-");}
+export function publishedText(value:string){return redactSecrets(value).replaceAll("<!--","<!-\u200b-");}
 function publishedAgentData<T>(value:T):T{return JSON.parse(JSON.stringify(value),(_key,leaf)=>typeof leaf==="string"?publishedText(leaf):leaf) as T;}
 const payloadMarker=/<!-- ai-factory:payload:v1 ([\s\S]*?) -->/;
 export function withPayload(body:string,value:unknown){const json=JSON.stringify(value).replaceAll("--","-\\u002d");return `${body}\n\n<!-- ai-factory:payload:v1 ${json} -->`;}

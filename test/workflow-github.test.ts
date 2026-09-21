@@ -1,8 +1,9 @@
+import {config} from "../src/config.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import { Store } from "../src/storage.js";
-import { WorkflowGitHubPublisher,payloadOf,withPayload,resultMarkdown,readIssueState } from "../src/workflow-github.js";
+import { WorkflowGitHubPublisher,payloadOf,withPayload,resultMarkdown,readIssueState,publishedText } from "../src/workflow-github.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
 import { workflowLabels,workflowStatusMarkdown } from "../src/workflow-status.js";
@@ -201,4 +202,22 @@ test("published agent text cannot leak tokens or forge workflow markers",async()
   await publisher.publishResults();await publisher.publish("work-1");
   for(const body of comments){assert.ok(!body.includes(secret));assert.ok(!body.includes("<!-- ai-factory:workflow-status:x"));}
  }finally{s.store.db.close();}
+});
+
+test("published specifications preserve code fences, paths and whitespace through continuation",async()=>{
+ const s=setup(),previous=config.repoDir;config.repoDir="/Users/x/app";
+ const body=` \nAC1: preserve source examples.\n\n\`\`\`ts\nconst checkout = "/Users/x/app";\nconst home = "${os.homedir()}";\n\`\`\`\n  `;
+ const spec=result("spec",{spec:body});
+ try{
+  assert.ok(resultMarkdown("product-architect",spec,2).includes(body));
+  const long=` \n${"x".repeat(60001)}\n `;assert.equal(publishedText(long),long);
+  s.store.db.prepare("UPDATE specs SET body=?,criteria=?,assessment=? WHERE work_item_id='work-1'").run(body,JSON.stringify(spec.acceptanceCriteria),JSON.stringify(spec.taskAssessment));
+  s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:0},sourceType:"agent-result",sourceId:"spec-fixture",actor:"product-architect"});
+  s.projections.initialize("work-1","DESIGN","WAITING");s.store.event("agent.result",{role:"product-architect",result:spec,specVersion:2},"work-1","spec-fixture");
+  const comments:Array<{body:string}>=[];
+  const publisher=new WorkflowGitHubPublisher(s.store,{async publishWorkflowComment(_issue:number,marker:string,text:string){comments.push({body:`${text}\n<!-- ai-factory:workflow-comment:${marker} -->`});},async syncWorkflow(_issue:number,_labels:unknown,text:string){comments.push({body:`${text}\n<!-- ai-factory:workflow-status:work-1 -->`});}} as any);
+  await publisher.publishResults();await publisher.publish("work-1");
+  assert.ok(comments[0].body.includes(body));
+  const state=await readIssueState({comments:async()=>comments as any},7);assert.equal(state?.specs[0].body,body);
+ }finally{config.repoDir=previous;s.store.db.close();}
 });

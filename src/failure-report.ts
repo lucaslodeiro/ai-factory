@@ -7,11 +7,8 @@ import type { AgentRole } from "./types.js";
 import { roleShortName } from "./names.js";
 import type { WorkflowFailure } from "./workflow-failures.js";
 
-export function sanitizeFailureEvidence(value: unknown, limit = 4000) {
-  let text=String(value ?? "")
-    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g,"")
-    .replace(/\x1B[@-_]/g,"")
-    .replace(/\r/g,"")
+export function redactSecrets(text:string):string {
+  text=text
     .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi,"Bearer [REDACTED]")
     .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|sk-ant-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{16,}|npm_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{30,})\b/g,"[REDACTED]")
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,"[REDACTED]")
@@ -22,6 +19,15 @@ export function sanitizeFailureEvidence(value: unknown, limit = 4000) {
     if (!secret || secret.length<6 || !/(?:KEY|TOKEN|SECRET|PASSWORD|WEBHOOK)/i.test(name)) continue;
     text=text.split(secret).join("[REDACTED]");
   }
+  return text;
+}
+
+export function sanitizeFailureEvidence(value: unknown, limit = 4000) {
+  let text=String(value ?? "")
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g,"")
+    .replace(/\x1B[@-_]/g,"")
+    .replace(/\r/g,"");
+  text=redactSecrets(text);
   for (const [local,replacement] of [[config.dataDir,"<factory-data>"],[config.repoDir,"<target-checkout>"],[os.homedir(),"~"]] as const) {
     if (local) text=text.split(local).join(replacement);
   }
