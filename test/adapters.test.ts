@@ -58,3 +58,11 @@ test('Claude requires the configured structured output instead of accepting an o
  const execution={async run(){return {stdout:JSON.stringify({is_error:false,result:JSON.stringify(result('spec'))})};}};
  await assert.rejects(new ClaudeAdapter(execution as any).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'test',selection:{...selectModel('product-architect'),provider:'claude',model:'auto'}}),/missing structured_output/);
 });
+
+test("Codex sandbox follows each role's write contract",async()=>{
+ for(const role of ["product-architect","reviewer","developer","qa"] as const){
+  let args:string[]=[];const execution={async run(_id:string,_role:string,_command:string,argv:string[]){args=argv;fs.writeFileSync(argv[argv.indexOf("--output-last-message")+1],JSON.stringify(result(role==="product-architect"?"spec":"pass")));}};
+  await new CodexAdapter(execution as any).run({workItemId:"w",role,cwd:root,instructions:"test",selection:{...selectModel(role),provider:"codex"}});
+  const writable=["developer","qa"].includes(role);assert.equal(args[args.indexOf("--sandbox")+1],writable?"workspace-write":"read-only");assert.equal(args.includes("sandbox_workspace_write.network_access=true"),writable);
+ }
+});
