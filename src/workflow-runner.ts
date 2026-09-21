@@ -1,3 +1,5 @@
+import {publishedText,resultMarkdown} from "./workflow-github.js";
+import {roleShortName} from "./names.js";
 import { ContextAssembler,InvalidContextError } from "./context-assembly.js";
 import { resolveContextBudget } from "./context-budget.js";
 import { selectModel } from "./model-policy.js";
@@ -71,7 +73,8 @@ export class WorkflowRunner {
    const current=new WorkflowProjections(this.store).get(workItemId);if(current.status!=="RUNNING"||current.activeRunId!==started.executionId){this.store.event("execution.discarded",{executionId:started.executionId,reason:"Workflow changed before worktree validation"},workItemId,started.executionId);return true;}
    const changed=this.workspaces.check(cwd,role,before,row.branch,baseline);
    if(role==="developer"||role==="qa"){
-    this.workspaces.commit(cwd,`factory: ${role} for #${row.issue_number}`,row.branch,changed??undefined);
+    const summaryLine=result.summary.trim().split(/\r?\n/)[0].trim().slice(0,72);
+    this.workspaces.commit(cwd,summaryLine?`factory(${roleShortName(role)}): ${summaryLine} (#${row.issue_number})`:`factory: ${role} for #${row.issue_number}`,row.branch,changed??undefined);
     try {if(this.workspaces.publishAsync)await this.workspaces.publishAsync(cwd,row.branch);else this.workspaces.publish(cwd,row.branch);}
     catch(error){this.store.event("workflow.push_failed",{branch:row.branch,error:sanitizeFailureEvidence(error instanceof Error?error.message:String(error),1600)},workItemId,started.executionId);}
    }
@@ -99,5 +102,15 @@ export class WorkflowRunner {
  private latestResult(workItemId:string,role:AgentRole):AgentResult|PublishedLatestResult|undefined{for(const row of this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='agent.result' ORDER BY id DESC").all(workItemId) as Array<{payload:string}>){const payload=JSON.parse(row.payload) as {role:AgentRole;result:AgentResult};if(payload.role===role)return payload.result;}const row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string},adopted=(JSON.parse(row.context||"{}") as {latestResults?:PublishedLatestResult[]}).latestResults;return adopted?.find(result=>result.role===role);}
  private route(origin:"DESIGN"|"BUILD"|"TEST"|"REVIEW"|"DELIVERY",allowed:Array<"DESIGN"|"BUILD"|"TEST"|"REVIEW"|"DELIVERY">){const roleByStage:{[key:string]:TacticalNextRole}={BUILD:"developer",TEST:"qa",REVIEW:"reviewer"},fromByStage:{[key:string]:DeliveryStage}={BUILD:"BUILD",TEST:"TEST",REVIEW:"REVIEW"};return {from:fromByStage[origin],allowedNextRoles:allowed.map(stage=>roleByStage[stage]).filter(Boolean)};}
  private updateContext(workItemId:string,values:Record<string,unknown>,remove:string[]=[]){const row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string},context={...JSON.parse(row.context||"{}"),...values};for(const key of remove)delete context[key];this.store.db.prepare("UPDATE work_items SET context=? WHERE id=?").run(JSON.stringify(context),workItemId);}
- private prBody(workItemId:string,issueNumber:number,result:Pick<AgentResult,"summary">){const spec=this.store.db.prepare("SELECT version,body,approved_by FROM specs WHERE work_item_id=? ORDER BY version DESC LIMIT 1").get(workItemId) as {version:number;body:string;approved_by:string};return `Closes #${issueNumber}\n\nApproved SPEC v${spec.version} by ${spec.approved_by}.\n\n${spec.body}\n\n## Review\n${result.summary}`;}
+ private prBody(workItemId:string,issueNumber:number,result:Pick<AgentResult,"summary">){
+  const spec=this.store.db.prepare("SELECT version,approved_by FROM specs WHERE work_item_id=? ORDER BY version DESC LIMIT 1").get(workItemId) as {version:number;approved_by:string};
+  const row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string},context=JSON.parse(row.context||"{}") as {verification?:{head:string;command:string;exitCode:number|null};verifiedHeads?:Record<string,string>};
+  const verification=context.verification,verified=verification&&verification.head===context.verifiedHeads?.TEST&&verification.command===config.verifyCommand;
+  const sections=[`Closes #${issueNumber}`,`Approved SPEC v${spec.version} by ${spec.approved_by}. Specification v${spec.version} is in the issue.`,`## Summary\n\n${publishedText(result.summary)}`,`## Factory verification\n\n${verified?`Factory verification: \`${publishedText(verification.command)}\` exited ${verification.exitCode}.`:config.verifyCommand?`Factory verification: \`${publishedText(config.verifyCommand)}\` has no recorded result for the tested head.`:"Factory verification: not configured"}`];
+  const qa=this.latestResult(workItemId,"qa");
+  if(qa)sections.push(resultMarkdown("qa",{spec:"",acceptanceCriteria:[],questions:[],taskAssessment:null,dependencies:[],nextRole:null,reviewChecks:[],...qa},spec.version,undefined,{reportOnly:true}));
+  const findings=this.store.db.prepare("SELECT payload FROM records WHERE work_item_id=? AND spec_version=? AND kind='finding' AND json_extract(payload,'$.classification')='defer' ORDER BY sequence").all(workItemId,spec.version) as Array<{payload:string}>;
+  if(findings.length)sections.push(`## Deferred findings\n\n${[...new Set(findings.map(row=>publishedText(JSON.parse(row.payload).evidence)))].map(evidence=>`- ${evidence}`).join("\n")}`);
+  return sections.join("\n\n");
+ }
 }

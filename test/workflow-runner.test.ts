@@ -185,3 +185,19 @@ test("factory verification bounds combined output and times out asynchronously",
  let ticks=0;const timer=setInterval(()=>ticks++,5);
  try{const evidence=await runVerification({cwd:process.cwd(),command:"printf '%05000d' 0; printf 'error evidence' >&2; sleep 10",timeoutMs:100});assert.equal(evidence.exitCode,null);assert.equal(evidence.outputTail.length,4000);assert.match(evidence.outputTail,/error evidence/);assert.ok(evidence.durationMs>=90);assert.ok(ticks>0);}finally{clearInterval(timer);}
 });
+
+test("delivery body summarizes tests and verification while commits describe the change",{skip:spawnSync("sh",["-c","exit 0"]).status!==0},async()=>{
+ const previous=config.verifyCommand;
+ try{for(const command of [undefined,"exit 0"]){
+  config.verifyCommand=command;const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace=new Workspace();workspace.ensure=()=>process.cwd();let body="";
+  const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded' WHERE id=?").run(request.executionId);return value;}});
+  try{
+   const runner=new WorkflowRunner(store,{"product-architect":adapter(result("spec")),developer:adapter(result("pass",{summary:"  Implement the requested behavior\nFurther details"})),qa:adapter(result("pass",{changedFiles:["src/app.ts"]})),reviewer:adapter(result("pass",{summary:"Review confirms the criteria",findings:[{classification:"defer",evidence:"Optional polish"}]}))},workspace,{ensurePR(_branch,_title,value){body=value;return "https://github.com/owner/demo/pull/2";}});
+   await runner.run(item.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});for(let stage=0;stage<4;stage++)await runner.run(item.id);
+   assert.equal(new WorkflowProjections(store).get(item.id).stage,"DELIVERY");assert.equal(new WorkflowProjections(store).get(item.id).status,"WAITING");
+   assert.equal(workspace.commits[0],"factory(Builder): Implement the requested behavior (#1)");assert.ok(workspace.commits[1].startsWith("factory(Tester):"));
+   assert.match(body,/Closes #1/);assert.match(body,/Approved SPEC v1 by owner/);assert.match(body,/## Tests[\s\S]*node --test[\s\S]*0/);assert.match(body,/## Acceptance evidence/);assert.match(body,/src\/app.ts/);assert.match(body,/## Deferred findings\n\n- Optional polish/);
+   assert.ok(body.includes(command?"Factory verification: `exit 0` exited 0.":"Factory verification: not configured"));assert.ok(!body.includes(result("spec").spec));assert.doesNotMatch(body,/# Verification Engineer.*report|## Next action/);
+  }finally{store.db.close();}
+ }}finally{config.verifyCommand=previous;}
+});

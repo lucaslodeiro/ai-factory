@@ -16,7 +16,7 @@ export function withPayload(body:string,value:unknown){const json=JSON.stringify
 export function payloadOf(body:string):unknown|null {const match=body.match(payloadMarker);if(!match)return null;try{return JSON.parse(match[1]);}catch{return null;}}
 export async function readIssueState(github:Pick<RuntimeGitHub,"comments">,issue:number):Promise<ReadIssueState|null>{const comments=await github.comments(issue),status=comments.find(comment=>comment.body.includes("<!-- ai-factory:workflow-status:")),value=status?payloadOf(status.body):null;if(!value)return null;const index=validateIssueState(value),specs=[];for(const reference of index.specs){const comment=comments.find(candidate=>candidate.body.includes(`:${reference.marker} -->`));if(!comment)throw new Error(`Published specification v${reference.version} is missing`);const spec=validateSpecificationFact(payloadOf(comment.body));if(spec.version!==reference.version)throw new Error(`Published specification marker does not match v${reference.version}`);specs.push(spec);}return{index,specs};}
 
-export function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:number,pullRequestUrl?:string) {
+export function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:number,pullRequestUrl?:string,options:{reportOnly?:boolean}={}) {
  result=publishedAgentData(result);
  const environmentBlocked=result.findings.some(finding=>finding.classification==="environment-blocked");
  const heading=role==="product-architect"&&result.outcome==="questions"?(environmentBlocked?"Architect — blocked":"Architect — questions"):role==="product-architect"&&result.outcome==="resolved"?"Architect — tactical decision":role==="product-architect"?`Specification v${specVersion} — awaiting approval`:`${roleFullName(role)} report`;
@@ -29,7 +29,7 @@ export function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:num
  if(result.findings.length)sections.push(`## Findings\n\n${result.findings.map(finding=>`- **${finding.classification}** — ${finding.evidence}`).join("\n")}`);
  if(result.decisions.length)sections.push(`## Decisions\n\n${result.decisions.map(decision=>`- **${decision.kind}** — ${decision.decision}: ${decision.rationale}`).join("\n")}`);
  if(!result.questions.length&&result.outcome!=="spec"){const action=result.findings.some(f=>f.classification==="environment-blocked")?"Work failed because a required execution capability is unavailable. Fix the reported environment issue, then Retry this stage. No next agent has been queued.":role==="product-architect"&&result.outcome==="resolved"?`No human action is required; ${roleShortName(result.nextRole!)} continues.`:role==="product-architect"?"Review the specification and use the command shown in the AI Factory status comment.":role==="qa"&&result.outcome==="decision"?"Architect will resolve this decision; no human action is required.":role==="reviewer"?`Review and merge the pull request${pullRequestUrl?` (${pullRequestUrl})`:""} when it is ready.`:`${roleShortName(role)} finished. The next workflow stage is queued automatically.`;sections.push(`## Next action\n\n> ${action}`);}
- return sections.join("\n\n");
+ return sections.filter(section=>!options.reportOnly||!section.startsWith("# ")&&!section.startsWith("## Next action")).join("\n\n");
 }
 
 export class WorkflowGitHubPublisher {
