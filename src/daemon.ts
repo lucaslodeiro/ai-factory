@@ -23,6 +23,7 @@ import { WorkflowOrchestrator } from "./workflow-orchestrator.js";
 import { WorkflowCommands } from "./workflow-commands.js";
 import { WorkflowMaintenance } from "./workflow-maintenance.js";
 import { WorkflowScheduler } from "./workflow-scheduler.js";
+import {applyMessageControl} from "./workflow-chat.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
 export function acquireLock(store: Store) {
  fs.mkdirSync(config.dataDir, { recursive: true });
@@ -112,6 +113,7 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
     if (r.kind === "stop") result=await stop();
     else if(r.kind==="maintenance-confirm")result=await maintenance.confirm(r.target);
     else if (["pause","resume","retry","cancel"].includes(r.kind)) result=applyWorkControl(store,commands,executions,r);
+    else if(r.kind==="message") {const login=store.metadata<string>("runtime:factory-account");if(!login||!config.approvers.includes(login))throw new Error("The authenticated GitHub operator is not an authorized approver");result=await applyMessageControl(store,remote.github,r,login);}
     else if(r.kind==="maintenance-resume")result=maintenance.resume(r.target);
     else throw new Error(`Unknown control: ${r.kind}`);
     store.event("control.applied",{id:r.id,kind:r.kind,target:r.target,result});

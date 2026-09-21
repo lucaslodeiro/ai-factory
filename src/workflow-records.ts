@@ -16,7 +16,7 @@ export type WorkflowRecordPayload =
 
 export interface WorkflowRecord<T extends WorkflowRecordPayload = WorkflowRecordPayload> {
  id:string; workItemId:string; sequence:number; kind:T["kind"]; specVersion:number; scope:RecordScope; status:RecordStatus;
- appliesTo:AgentRole[]; payload:T; sourceType:"github-comment"|"agent-result"|"orchestrator"; sourceId:string; actor:string;
+ appliesTo:AgentRole[]; payload:T; sourceType:"github-comment"|"dashboard"|"agent-result"|"orchestrator"; sourceId:string; actor:string;
  parentId?:string; supersededBy?:string; resolvedBy?:string; createdAt:string; updatedAt:string;
 }
 

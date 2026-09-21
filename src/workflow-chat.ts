@@ -6,8 +6,52 @@ import type {AgentResult,AgentRole} from "./types.js";
 import {resultMarkdown} from "./workflow-github.js";
 import {WorkflowFailures} from "./workflow-failures.js";
 import {workflowFailureEvidence} from "./failure-report.js";
+import type {WorkflowProjection} from "./workflow-projection.js";
+import {WorkflowRecords,type WorkflowRecord} from "./workflow-records.js";
+import {WorkflowCommands} from "./workflow-commands.js";
+import type {FactoryCommand} from "./factory-command.js";
+import type {RuntimeGitHub} from "./github-runtime.js";
 
 export type WorkflowThreadTurn={id:number;at:string;kind:"prompt"|"result"|"event"|"human";executionId?:string;[key:string]:unknown};
+export type MessageAction="answer"|"approve"|"retry"|"note"|"interrupt-retry";
+type ActiveRequest=WorkflowRecord<Extract<WorkflowRecord["payload"],{kind:"request"}>>|undefined;
+
+export function messageActions(projection:Pick<WorkflowProjection,"status">,request?:ActiveRequest):MessageAction[]{
+ if(projection.status==="WAITING"&&request?.payload.kind==="request"){
+  if(["clarification","correction-limit","merge"].includes(request.payload.type))return["answer"];
+  if(request.payload.type==="spec-approval")return["approve","answer"];
+ }
+ if(["FAILED","PAUSED","CANCELLED"].includes(projection.status))return["retry","note"];
+ if(projection.status==="RUNNING")return["note","interrupt-retry"];
+ if(projection.status==="QUEUED")return["note"];
+ return[];
+}
+
+export function availableMessageActions(store:Store,workItemId:string){const row=store.db.prepare("SELECT status FROM work_items WHERE id=? AND archived_at IS NULL").get(workItemId) as {status:WorkflowProjection["status"]}|undefined;if(!row)throw Object.assign(new Error("Unknown work item"),{statusCode:404});return messageActions(row,new WorkflowRecords(store).activeRequest(workItemId) as ActiveRequest);}
+
+function messageCommand(action:Exclude<MessageAction,"interrupt-retry">,text:string,specVersion:number):FactoryCommand{
+ if(action==="answer")return{kind:"answer",text};
+ if(action==="approve")return{kind:"approve",version:specVersion,guidance:text};
+ if(action==="retry")return{kind:"retry",guidance:text,scope:"spec",appliesTo:[]};
+ return{kind:"note",text,scope:"spec",appliesTo:[]};
+}
+function commandBody(action:Exclude<MessageAction,"interrupt-retry">,text:string,specVersion:number,login:string){const line=action==="approve"?`/factory approve v${specVersion}`:`/factory ${action}`;return `${line}${text?`\n\n${text}`:""}\n\nby @${login} from ${config.instanceName}`;}
+
+export async function applyMessageControl(store:Store,github:RuntimeGitHub,control:{id:number;target:string},login:string){
+ const input=JSON.parse(control.target) as {workItemId?:string;text?:string;action?:MessageAction},workItemId=String(input.workItemId??""),text=String(input.text??"").trim(),action=input.action;
+ if(!workItemId||!action||action==="interrupt-retry")throw new Error("Invalid message control");
+ if(!messageActions({status:(store.db.prepare("SELECT status FROM work_items WHERE id=?").get(workItemId) as {status:WorkflowProjection["status"]}|undefined)?.status??"COMPLETED"},new WorkflowRecords(store).activeRequest(workItemId) as ActiveRequest).includes(action))throw new Error(`Cannot ${action} in the current workflow state`);
+ if(["answer","note"].includes(action)&&!text)throw new Error(`${action} requires message text`);
+ const issue=(store.db.prepare("SELECT issue_number FROM work_items WHERE id=?").get(workItemId) as {issue_number:number}|undefined)?.issue_number;if(!issue)throw new Error("Unknown work item");
+ const specVersion=(store.db.prepare("SELECT COALESCE(MAX(version),0) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number}).version,key=`message-${control.id}`,body=commandBody(action,text,specVersion,login),commentId=Number(await github.publishWorkflowComment(issue,key,body));
+ if(!Number.isSafeInteger(commentId)||commentId<=0)throw new Error("GitHub did not return the published message id");
+ try{
+  const result=new WorkflowCommands(store).apply(messageCommand(action,text,specVersion),{workItemId,login,commentId,specVersion});
+  if(result.recordIds.length)store.db.prepare(`UPDATE records SET source_type='dashboard' WHERE work_item_id=? AND source_id=?`).run(workItemId,String(commentId));
+  store.event("command.applied",{commentId,login,command:action,text,source:"dashboard"},workItemId);
+  return{...result,commentId};
+ }catch(error){const reason=error instanceof Error?error.message:String(error),marker=`<!-- ai-factory:workflow-comment:${config.repo}:${issue}:${key} -->`;if(!github.editComment)throw new Error(`${reason}; the published GitHub comment could not be marked rejected`);await github.editComment(commentId,`${body}\n\nRejected: ${reason}\n\n${marker}`);throw error;}
+}
 const safeJson=(file:string)=>{try{return JSON.parse(fs.readFileSync(file,"utf8")) as Record<string,unknown>;}catch{return{};}};
 export function promptArtifact(executionId:string){const root=path.join(config.dataDir,"runs",path.basename(executionId)),file=path.join(root,"prompt.md");if(path.basename(executionId)!==executionId||!fs.existsSync(file))return{available:false};const bytes=fs.readFileSync(file),limit=512*1024;return{available:true,prompt:bytes.subarray(0,limit).toString("utf8"),truncated:bytes.length>limit};}
 
