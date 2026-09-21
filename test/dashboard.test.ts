@@ -145,6 +145,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(html,/Enter the number or URL of an open GitHub issue/);
     assert.match(html,/ACTION REQUIRED/);
     assert.match(html,/Complete the required setup/);
+    assert.doesNotMatch(html,/daemon-stopped-banner|issue-refresh-status|The daemon is stopped/);
     assert.ok(html.indexOf('class="metrics"')<html.indexOf('Runtime controls'));
     assert.ok(html.indexOf('Runtime controls')<html.indexOf('Local issues'));
     assert.match(html,/<details class="panel settings-panel">/);
