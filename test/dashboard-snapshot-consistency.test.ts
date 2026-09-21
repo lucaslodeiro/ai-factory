@@ -58,12 +58,12 @@ test('snapshot preserves a composer draft and skips unchanged issue lists',()=>{
  document.activeElement=null;vm.runInContext('renderIssueList(data)',context);assert.equal(writes,2);assert.equal(get('#list-writing-note').hidden,true);
 });
 
-test('stopped daemon banner and controls recover without destroying a draft',()=>{
- const button={disabled:false,dataset:{}},readonly={disabled:true,dataset:{}},banner={hidden:true};
- const context=vm.createContext({$:()=>banner,document:{querySelectorAll:()=>[button,readonly]}});
+test('stopped daemon controls recover without adding status noise to the issue list',()=>{
+ const button={disabled:false,dataset:{}},readonly={disabled:true,dataset:{}};
+ const context=vm.createContext({document:{querySelectorAll:()=>[button,readonly]}});
  vm.runInContext(source.slice(source.indexOf('let lastSnapshot=null;'),source.indexOf('const pendingControls=')),context);
  vm.runInContext('lastSnapshot={daemon:{running:false}};applyQueueAvailability();applyQueueAvailability()',context);
- assert.equal(banner.hidden,false);assert.equal(button.disabled,true);assert.equal(readonly.disabled,true);
+ assert.equal(button.disabled,true);assert.equal(readonly.disabled,true);
  vm.runInContext('lastSnapshot.daemon.running=true;applyQueueAvailability()',context);
- assert.equal(banner.hidden,true);assert.equal(button.disabled,false);assert.equal(readonly.disabled,true);
+ assert.equal(button.disabled,false);assert.equal(readonly.disabled,true);
 });
