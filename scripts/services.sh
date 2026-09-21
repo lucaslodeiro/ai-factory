@@ -167,4 +167,4 @@ for service in "${services[@]}"; do
     status) status_one "$service";;
   esac
 done
-if [[ ${AI_FACTORY_HIDE_SERVICE_SUMMARY:-0} != 1 && ( $action == install || $action == start || $action == restart ) ]]; then node scripts/service-summary.mjs; fi
+if [[ ${AI_FACTORY_HIDE_SERVICE_SUMMARY:-0} != 1 && ( $action == install || $action == start || $action == restart ) ]]; then node "$root/scripts/service-summary.mjs"; fi

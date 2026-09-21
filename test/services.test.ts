@@ -23,7 +23,7 @@ esac
   const factoryHome=path.join(root,"factory-home");fs.mkdirSync(factoryHome);fs.writeFileSync(path.join(factoryHome,".env"),"GITHUB_REPOSITORY=owner/repo\nFACTORY_APPROVERS=owner\nFACTORY_REPO_DIR=/tmp/target\n");
   const env = {...process.env,HOME:home,AI_FACTORY_HOME:factoryHome,AI_FACTORY_SERVICE_WAIT_ATTEMPTS:"2",SERVICE_STATE:state,PATH:`${bin}:${path.dirname(process.execPath)}:/usr/bin:/bin`};
   const run = (...args: string[]) => {
-    const result = spawnSync("bash",["scripts/services.sh",...args],{cwd:process.cwd(),env,encoding:"utf8"});
+    const result = spawnSync("bash",[path.join(process.cwd(),"scripts/services.sh"),...args],{cwd:root,env,encoding:"utf8"});
     assert.equal(result.status,0,result.stderr + result.stdout);
     return result.stdout;
   };
@@ -43,10 +43,10 @@ esac
     assert.match(run("status","daemon"),/daemon: stopped/);
     assert.match(run("status","dashboard"),/dashboard: loaded/);
     fs.writeFileSync(path.join(factoryHome,".env"),"GITHUB_REPOSITORY=owner/repo\nFACTORY_APPROVERS=owner\nFACTORY_REPO_DIR=\n");
-    const rejected=spawnSync("bash",["scripts/services.sh","start","daemon"],{cwd:process.cwd(),env,encoding:"utf8"});
+    const rejected=spawnSync("bash",[path.join(process.cwd(),"scripts/services.sh"),"start","daemon"],{cwd:root,env,encoding:"utf8"});
     assert.notEqual(rejected.status,0);assert.match(rejected.stderr,/Daemon was not started.*FACTORY_REPO_DIR/);assert.equal(fs.existsSync(path.join(state,"com.ai-factory.daemon")),false);
     const stickyEnv={...env,SERVICE_STICKY:"com.ai-factory.dashboard"};
-    const sticky=spawnSync("bash",["scripts/services.sh","stop","dashboard"],{cwd:process.cwd(),env:stickyEnv,encoding:"utf8"});
+    const sticky=spawnSync("bash",[path.join(process.cwd(),"scripts/services.sh"),"stop","dashboard"],{cwd:root,env:stickyEnv,encoding:"utf8"});
     assert.notEqual(sticky.status,0);assert.match(sticky.stderr,/launchd still reports it as loaded/);
   } finally { fs.rmSync(root,{recursive:true,force:true}); }
 });
