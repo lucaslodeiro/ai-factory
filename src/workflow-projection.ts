@@ -51,6 +51,7 @@ export class WorkflowProjections {
   return run.immediate();
  }
  resumeStatus(workItemId:string):V3Status { return requestOwner(this.records.activeRequest(workItemId)) === "human" ? "WAITING" : "QUEUED"; }
+ validateCurrent(workItemId:string) {const current=this.get(workItemId);this.validate(current.status,this.records.activeRequest(workItemId),this.failures.active(workItemId),current.activeRunId);return current;}
  transition(input:TransitionInput,mutations?:()=>void) {
   const run=this.store.db.transaction(()=>{
    const from=this.get(input.workItemId);

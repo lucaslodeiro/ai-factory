@@ -6,11 +6,12 @@ import type { AgentResult,AgentRole } from "./types.js";
 import { roleFullName,roleShortName } from "./names.js";
 import { factoryHelpMarkdown } from "./factory-help.js";
 import {config} from "./config.js";
-import {issueStateIndex} from "./workflow-state.js";
+import {issueStateIndex,validateIssueState,validateSpecificationFact,type ReadIssueState} from "./workflow-state.js";
 
 const payloadMarker=/<!-- ai-factory:payload:v1 ([\s\S]*?) -->/;
 export function withPayload(body:string,value:unknown){const json=JSON.stringify(value).replaceAll("--","-\\u002d");return `${body}\n\n<!-- ai-factory:payload:v1 ${json} -->`;}
 export function payloadOf(body:string):unknown|null {const match=body.match(payloadMarker);if(!match)return null;try{return JSON.parse(match[1]);}catch{return null;}}
+export async function readIssueState(github:Pick<RuntimeGitHub,"comments">,issue:number):Promise<ReadIssueState|null>{const comments=await github.comments(issue),status=comments.find(comment=>comment.body.includes("<!-- ai-factory:workflow-status:")),value=status?payloadOf(status.body):null;if(!value)return null;const index=validateIssueState(value),specs=[];for(const reference of index.specs){const comment=comments.find(candidate=>candidate.body.includes(`:${reference.marker} -->`));if(!comment)throw new Error(`Published specification v${reference.version} is missing`);const spec=validateSpecificationFact(payloadOf(comment.body));if(spec.version!==reference.version)throw new Error(`Published specification marker does not match v${reference.version}`);specs.push(spec);}return{index,specs};}
 
 export function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:number,pullRequestUrl?:string) {
  const heading=role==="product-architect"&&result.outcome==="questions"?"Architect — questions":role==="product-architect"&&result.outcome==="resolved"?"Architect — tactical decision":role==="product-architect"?`Specification v${specVersion} — awaiting approval`:`${roleFullName(role)} report`;
