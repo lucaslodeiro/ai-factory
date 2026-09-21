@@ -25,7 +25,7 @@ test('KPIs reflect live transitions; delayed snapshots and remote responses cann
 
 test('unified issue list deduplicates GitHub rows and never replaces live local state',()=>{
  const nodes=new Map<string,any>(),get=(id:string)=>{if(!nodes.has(id))nodes.set(id,{});return nodes.get(id)};
- const context=vm.createContext({$:get,document:{querySelectorAll:()=>[]},escapeHtml:(v:any)=>String(v??''),relative:()=> 'just now',brandIcon:()=>'',githubLink:(_url:string,label:string)=>label,statusName:(v:any)=>v,stateClass:()=>'',loadWorkflowThread:()=>{}});
+ const context=vm.createContext({$:get,document:{querySelectorAll:()=>[]},escapeHtml:(v:any)=>String(v??''),applyQueueAvailability:()=>{},relative:()=> 'just now',brandIcon:()=>'',githubLink:(_url:string,label:string)=>label,statusName:(v:any)=>v,stateClass:()=>'',loadWorkflowThread:()=>{}});
  const start=source.indexOf('function renderIssueList('),end=source.indexOf('\nasync function refresh()',start);
  vm.runInContext("const pendingControls=new Map(),threadDrafts=new Map(),threadScroll=new Map(),expandedWorkDetails=new Set(),collapsedWorkDetails=new Set();let remoteIssueData=null,remoteIssueCheckedAt=null,remoteIssueError='',lastSnapshot=null,lastIssueListSignature='';",context);vm.runInContext(source.split('\n').find(line=>line.startsWith('function workDetails('))!,context);vm.runInContext(source.slice(start,end),context);vm.runInContext(source.split('\n').find(line=>line.startsWith('function renderRemoteIssues('))!,context);
  context.local={repository:'owner/demo',controller:{state:'active'},items:[{id:'local',issue:2,title:'Local title',stage:'REVIEW',status:'RUNNING',actions:['pause','cancel'],continuity:{instance:'old-mac',revision:9}}]};vm.runInContext('lastSnapshot=local;renderIssueList(local)',context);
@@ -40,3 +40,21 @@ test('unified issue list deduplicates GitHub rows and never replaces live local 
 test('unchanged issue snapshots do not repaint the list',()=>{
  let paints=0,html='';const itemsNode={get innerHTML(){return html},set innerHTML(value){html=value;paints++}},statusNode:any={};const context=vm.createContext({$:(id:string)=>id==='#items'?itemsNode:statusNode,document:{querySelectorAll:()=>[]},escapeHtml:(v:any)=>String(v??''),relative:()=> 'now',brandIcon:()=>'',githubLink:(_url:string,label:string)=>label,statusName:(v:any)=>v,stateClass:()=>'',loadWorkflowThread:()=>{}});const start=source.indexOf('function renderIssueList('),end=source.indexOf('\nasync function refresh()',start);vm.runInContext("const pendingControls=new Map(),threadDrafts=new Map(),threadScroll=new Map(),expandedWorkDetails=new Set(),collapsedWorkDetails=new Set();let remoteIssueData=null,remoteIssueCheckedAt=null,remoteIssueError='',lastIssueListSignature='';",context);vm.runInContext(source.split('\n').find(line=>line.startsWith('function workDetails('))!,context);vm.runInContext(source.slice(start,end),context);context.snapshot={repository:'owner/demo',items:[{id:'w',issue:1,title:'Stable',stage:'DESIGN',status:'FAILED',attempt:0,actions:['retry'],activity:{diagnosis:{summary:'Cause',evidence:'Evidence',nextAction:'Retry'}}}]};vm.runInContext('renderIssueList(snapshot);renderIssueList(snapshot)',context);assert.equal(paints,1);
 });
+
+test('snapshot preserves a composer draft and skips unchanged issue lists',()=>{
+ const nodes=new Map<string,any>(),textarea={value:''};let writes=0,forms:any[]=[];
+ const items={get innerHTML(){return ''},set innerHTML(_value:string){writes++;forms=[];}};
+ const get=(id:string)=>{if(id==='#items')return items;if(!nodes.has(id))nodes.set(id,{});return nodes.get(id)};
+ const document={activeElement:null as any,querySelectorAll:(selector:string)=>selector==='#items .thread-composer'?forms:[]};
+ const context=vm.createContext({$:get,document,escapeHtml:(v:any)=>String(v??''),relative:()=>'',brandIcon:()=>'',githubLink:()=>'',statusName:(v:any)=>v,stateClass:()=>''});
+ vm.runInContext("const pendingControls=new Map(),threadDrafts=new Map(),threadScroll=new Map(),expandedWorkDetails=new Set(),collapsedWorkDetails=new Set();let remoteIssueData=null,remoteIssueCheckedAt=null,remoteIssueError='',lastIssueListSignature='';",context);
+ vm.runInContext(source.split('\n').find(line=>line.startsWith('function workDetails('))!,context);
+ vm.runInContext(source.slice(source.indexOf('function renderIssueList('),source.indexOf('\nasync function refresh()')),context);
+ context.data={items:[{id:'one',revision:1,status:'RUNNING'}]};vm.runInContext('renderIssueList(data)',context);assert.equal(writes,1);
+ vm.runInContext('renderIssueList(data)',context);assert.equal(writes,1);
+ const form={contains:(element:any)=>element===textarea,querySelector:()=>textarea};forms=[form];textarea.value='Keep this guidance';context.data.items[0].revision=2;
+ vm.runInContext('renderIssueList(data)',context);assert.equal(writes,1);assert.equal(forms[0].querySelector(),textarea);assert.equal(textarea.value,'Keep this guidance');assert.equal(get('#list-writing-note').hidden,false);
+ textarea.value='';document.activeElement=textarea;vm.runInContext('renderIssueList(data)',context);assert.equal(writes,1);
+ document.activeElement=null;vm.runInContext('renderIssueList(data)',context);assert.equal(writes,2);assert.equal(get('#list-writing-note').hidden,true);
+});
+
