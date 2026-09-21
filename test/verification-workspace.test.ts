@@ -19,11 +19,15 @@ test('inherited production is identified separately and scoped commits preserve 
 
 test('QA rejects its own production, manifest, policy, executable and credential changes with filenames',()=>fixture((root,ws)=>{
  const baseline=ws.capture(root);
- for(const file of ['app.ts','evidence/run.js','evidence/tests/evil.js','evidence/package.json','tests/package-lock.json','tests/.env','evidence/credentials.json','.factory/verification.json']){
+ for(const file of ['app.ts','evidence/run.js','evidence/tests/evil.js','evidence/package.json','evidence/.hidden.json','tests/package-lock.json','tests/.env','evidence/credentials.json','.factory/verification.json']){
   write(root,file,file.endsWith('json')?'{}':'changed');assert.throws(()=>ws.check(root,'qa',baseline.head,branch,baseline),error=>String(error).includes(file));if(file==='app.ts')write(root,file,'production');else fs.unlinkSync(path.join(root,file));
  }
  write(root,'evidence/report.md');fs.chmodSync(path.join(root,'evidence/report.md'),0o755);assert.throws(()=>ws.check(root,'qa',baseline.head,branch,baseline),/executable evidence.*report.md/);fs.unlinkSync(path.join(root,'evidence/report.md'));
  fs.symlinkSync(path.join(root,'app.ts'),path.join(root,'evidence/report.md'));assert.throws(()=>ws.check(root,'qa',baseline.head,branch,baseline),/links.*report.md/);
+}));
+test('QA accepts the Factory browser runner completion record as evidence',()=>fixture((root,ws)=>{
+ const baseline=ws.capture(root);write(root,'evidence/browser/.last-run.json','{}');
+ assert.deepEqual(ws.check(root,'qa',baseline.head,branch,baseline),['evidence/browser/.last-run.json']);
 }));
 test('changed inherited production and production renamed into tests cannot bypass validation',()=>fixture((root,ws)=>{
  write(root,'app.ts','inherited');const baseline=ws.capture(root);write(root,'app.ts','new QA edit');assert.throws(()=>ws.check(root,'qa',baseline.head,branch,baseline),/non-test.*app.ts/);write(root,'app.ts','inherited');fs.mkdirSync(path.join(root,'tests'));git(root,['mv','app.ts','tests/app.test.ts']);assert.throws(()=>ws.check(root,'qa',baseline.head,branch,baseline),/non-test.*app.ts/);

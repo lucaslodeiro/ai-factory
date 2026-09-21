@@ -243,7 +243,6 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .input-wrap { position:relative }
 .input-wrap:has(span) input { padding-right:6.8rem }
 .input-wrap>span { position:absolute; top:50%; right:.65rem; transform:translateY(-50%); color:var(--muted); font-size:.65rem; pointer-events:none }
-.setting-card code { color:var(--muted); font-size:.64rem; overflow-wrap:anywhere }
 .setting-card em { display:flex; align-items:center; gap:.4rem; color:var(--danger); font-size:.72rem; font-style:normal; font-weight:500 }
 .setting-card em input[type="checkbox"] { width:1rem; height:1rem; margin:0; padding:0; accent-color:var(--accent); cursor:pointer }
 .settings-actions { display:flex; align-items:center; gap:1rem; margin-top:1.25rem; padding-top:1.25rem; border-top:1px solid var(--line) }

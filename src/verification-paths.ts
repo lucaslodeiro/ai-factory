@@ -15,9 +15,10 @@ export function verificationPolicy(cwd:string):VerificationPolicy{
 }
 export function secretPath(file:string){return /(^|\/)(\.env($|\.)|auth\.json$|credentials)/i.test(file);}
 export function protectedVerificationPath(file:string){return secretPath(file)||file===verificationPolicyFile||/(^|\/)(package(?:-lock)?\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|deno\.jsonc?|deno\.lock|pyproject\.toml|poetry\.lock|requirements[^/]*\.txt|Cargo\.(toml|lock)|go\.(mod|sum)|Gemfile(?:\.lock)?|composer\.(json|lock))$/i.test(file)||file.split('/').some(part=>part.startsWith('.'));}
-export function verificationArtifactAllowed(file:string,policy:VerificationPolicy){return !protectedVerificationPath(file)&&policy.evidenceDirectories.some(dir=>file.startsWith(dir+'/'))&&/\.(json|md|txt|csv|png|jpe?g|webp)$/i.test(file);}
+const transientBrowserEvidence=(file:string,policy:VerificationPolicy)=>policy.evidenceDirectories.some(dir=>file===`${dir}/browser/.last-run.json`);
+export function verificationArtifactAllowed(file:string,policy:VerificationPolicy){return (transientBrowserEvidence(file,policy)||!protectedVerificationPath(file))&&policy.evidenceDirectories.some(dir=>file.startsWith(dir+'/'))&&/\.(json|md|txt|csv|png|jpe?g|webp)$/i.test(file);}
 export function verificationPathAllowed(file:string,policy:VerificationPolicy){
- if(protectedVerificationPath(file))return false;
  if(policy.evidenceDirectories.some(dir=>file.startsWith(dir+'/')))return verificationArtifactAllowed(file,policy);
+ if(protectedVerificationPath(file))return false;
  return policy.testFiles.includes(file)||/(^|\/)(__tests__|tests?|specs?)\/|\.(test|spec)\.[^/]+$/.test(file);
 }

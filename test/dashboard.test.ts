@@ -255,13 +255,15 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.ok(settings.readiness.missing.some((item: any) => item.id === "checkout"));
     assert.ok(settings.readiness.missing.some((item: any) => item.id === "repository"));
     assert.ok(settings.readiness.missing.some((item: any) => item.id === "approvers"));
-    assert.deepEqual(settings.groups.map((group: any) => group.id),["connections","project","workflow","agents","service","advanced"]);
+    assert.deepEqual(settings.groups.map((group: any) => group.id),["connections","project","workflow","agents","tools","service","advanced"]);
     assert.ok(settings.fields.every((field: any) => settings.groups.some((group: any) => group.id===field.group)));
     assert.deepEqual(settings.fields.filter((field:any)=>field.setup).map((field:any)=>field.key).sort(),["AGENT_PROVIDER","FACTORY_APPROVERS","FACTORY_INSTANCE_NAME","FACTORY_REPO_DIR","GITHUB_REPOSITORY"]);
     const dashboardHost = settings.fields.find((field: any) => field.key === "FACTORY_DASHBOARD_HOST");
     assert.equal(dashboardHost.type,"select"); assert.deepEqual(dashboardHost.options.map((option: any) => option.value),["127.0.0.1","localhost","::1"]);
     const developerProvider = settings.fields.find((field: any) => field.key === "DEVELOPER_PROVIDER");
     assert.equal(developerProvider.group,"agents"); assert.equal(developerProvider.type,"select"); assert.deepEqual(developerProvider.options.map((option: any) => option.value),["codex","claude"]);
+    assert.equal(developerProvider.description,"Provider used for the Implementation Engineer role.");
+    assert.equal(settings.fields.find((field:any)=>field.key==="CODEX_COMMAND")?.group,"tools");
     const developerModel = settings.fields.find((field: any) => field.key === "DEVELOPER_MODEL");
     assert.equal(developerModel.kind,"role-model"); assert.equal(developerModel.section,"Implementation Engineer");
     assert.equal(developerModel.value,"custom-codex-model");

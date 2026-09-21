@@ -11,7 +11,8 @@ const groups = [
   {id:"connections",label:"Connections",description:"GitHub, agent providers and Slack."},
   {id:"project",label:"Project",description:"Repository, checkout, approvers and this installation's identity."},
   {id:"workflow",label:"Workflow",description:"Verification, correction loop and execution limits."},
-  {id:"agents",label:"Agents",description:"Provider and model per role, and the executables that run them."},
+  {id:"agents",label:"Agents",description:"Provider and model selection for each workflow role."},
+  {id:"tools",label:"Tools",description:"Commands used to run Codex, Claude and Git."},
   {id:"service",label:"Service",description:"Storage, polling and the local dashboard server."},
   {id:"advanced",label:"Advanced",description:"Prompt budgets and worker environment. Only for debugging."},
 ];
@@ -19,8 +20,8 @@ const automaticModel = {value:"auto",label:"Auto (provider recommended)"};
 const codexModels = [automaticModel,...["gpt-5.6-luna","gpt-5.6-terra","gpt-5.6-sol","gpt-6-astra","gpt-5.5"].map(value => ({value,label:value}))];
 const claudeModels = [automaticModel,...["haiku","sonnet","opus"].map(value => ({value,label:value}))];
 const providerOptions = [{value:"codex",label:"Codex"},{value:"claude",label:"Claude"}];
-const roleField = (section: string, role: string, label: string): Omit<Field,"key"> => ({label:"Provider",description:`CLI that executes the ${label} role.`,group:"agents",type:"select",options:providerOptions,required:true,restart:"daemon",section,role,kind:"provider"});
-const modelField = (section: string, role: string): Omit<Field,"key"> => ({label:"Model",description:"Exact model used by this role. Auto delegates model choice to the provider.",group:"agents",type:"select",required:true,restart:"daemon",section,role,kind:"role-model"});
+const roleField = (section: string, role: string, label: string): Omit<Field,"key"> => ({label:"Provider",description:`Provider used for the ${label} role.`,group:"agents",type:"select",options:providerOptions,required:true,restart:"daemon",section,role,kind:"provider"});
+const modelField = (section: string, role: string): Omit<Field,"key"> => ({label:"Model",description:"Model selected for this role. Auto lets the provider choose.",group:"agents",type:"select",required:true,restart:"daemon",section,role,kind:"role-model"});
 
 const descriptions: Record<string,Omit<Field,"key">> = {
   FACTORY_DATA_DIR:{label:"Data directory",description:"SQLite database, logs and retained worktrees.",group:"service",required:true,restart:"all"},
@@ -39,9 +40,9 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   GITHUB_DEFAULT_BRANCH:{label:"Default branch (auto-filled)",description:"Filled from GitHub when the repository changes; editable later for troubleshooting.",group:"project",required:true,restart:"all"},
   FACTORY_APPROVERS:{label:"Authorized approvers",description:"Comma-separated GitHub logins allowed to answer and approve.",group:"project",required:true,restart:"daemon",setup:true},
   SLACK_WEBHOOK_URL:{label:"Slack webhook",description:"Optional HTTPS Incoming Webhook URL. Leave it blank to preserve the configured secret.",group:"connections",secret:true,restart:"daemon"},
-  CODEX_COMMAND:{label:"CLI",description:"Absolute path or command used to start the OpenAI coding agent.",group:"agents",required:true,restart:"all"},
-  CLAUDE_COMMAND:{label:"Claude CLI",description:"Absolute path or command used to start Claude.",group:"agents",required:true,restart:"all"},
-  GIT_COMMAND:{label:"Git executable",description:"Absolute path or command used for Git operations.",group:"agents",required:true,restart:"all"},
+  CODEX_COMMAND:{label:"Codex command",description:"Absolute path or command used to start Codex.",group:"tools",required:true,restart:"all"},
+  CLAUDE_COMMAND:{label:"Claude command",description:"Absolute path or command used to start Claude.",group:"tools",required:true,restart:"all"},
+  GIT_COMMAND:{label:"Git command",description:"Absolute path or command used for Git operations.",group:"tools",required:true,restart:"all"},
   AGENT_SECRET_ALLOWLIST:{label:"Agent environment allowlist",description:"Extra environment variable names forwarded to worker processes.",group:"advanced",restart:"daemon"},
   PRODUCT_ARCHITECT_PROVIDER:roleField(roleFullName("product-architect"),"product-architect",roleFullName("product-architect")),
   PRODUCT_ARCHITECT_MODEL:modelField(roleFullName("product-architect"),"product-architect"),
