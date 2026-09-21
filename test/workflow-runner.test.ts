@@ -201,3 +201,16 @@ test("delivery body summarizes tests and verification while commits describe the
   }finally{store.db.close();}
  }}finally{config.verifyCommand=previous;}
 });
+
+test("Builder receives its changed files only when returning for automatic correction",async()=>{
+ const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace:WorkspacePort=new Workspace(),prompts:string[]=[];
+ const previousVerify=config.verifyCommand,previousMaxCycles=config.maxCycles;config.verifyCommand=undefined;config.maxCycles=3;
+ workspace.changeSummary=()=>({files:["src/a.ts"],stat:"1 file changed"});
+ const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){if(request.role==="developer")prompts.push(request.instructions);store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return value;}});
+ try{
+  const runner=new WorkflowRunner(store,{"product-architect":adapter(result("spec")),developer:adapter(result("pass")),qa:adapter(result("changes",{findings:[{classification:"auto-fix",evidence:"Correct the acceptance behavior"}]}))},workspace,{ensurePR(){return "unused";}});
+  await runner.run(item.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});await runner.run(item.id);await runner.run(item.id);
+  const projection=new WorkflowProjections(store).get(item.id);assert.equal(projection.stage,"BUILD");assert.equal(projection.status,"QUEUED");assert.equal(projection.attempt,0);assert.equal(projection.correctionCycles,1);
+  await runner.run(item.id);assert.equal(prompts.length,2);assert.doesNotMatch(prompts[0],/src\/a\.ts|1 file changed/);assert.match(prompts[1],/src\/a\.ts/);assert.match(prompts[1],/1 file changed/);
+ }finally{config.verifyCommand=previousVerify;config.maxCycles=previousMaxCycles;store.db.close();}
+});
