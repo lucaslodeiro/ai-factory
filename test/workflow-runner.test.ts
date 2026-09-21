@@ -214,3 +214,18 @@ test("Builder receives its changed files only when returning for automatic corre
   await runner.run(item.id);assert.equal(prompts.length,2);assert.doesNotMatch(prompts[0],/src\/a\.ts|1 file changed/);assert.match(prompts[1],/src\/a\.ts/);assert.match(prompts[1],/1 file changed/);
  }finally{config.verifyCommand=previousVerify;config.maxCycles=previousMaxCycles;store.db.close();}
 });
+
+test("first human Builder retry includes changed files with attempt one",async()=>{
+ const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace:WorkspacePort=new Workspace(),prompts:string[]=[];
+ workspace.changeSummary=()=>({files:["src/a.ts"],stat:"1 file changed"});
+ const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){if(request.role==="developer")prompts.push(request.instructions);store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return value;}});
+ try{
+  const runner=new WorkflowRunner(store,{"product-architect":adapter(result("spec")),developer:adapter(result("pass"))},workspace,{ensurePR(){return "unused";}}),commands=new WorkflowCommands(store),projections=new WorkflowProjections(store);
+  await runner.run(item.id);commands.apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});await runner.run(item.id);
+  // Exercise retry from a paused Builder with existing changes and no automatic corrections.
+  projections.transition({workItemId:item.id,expectedRevision:projections.get(item.id).revision,stage:"BUILD",status:"PAUSED",actor:{type:"human",id:"owner"},source:{},reason:{code:"test-paused-build",summary:"Paused Builder fixture"}});
+  commands.apply({kind:"retry",guidance:"",scope:"spec",appliesTo:[]},{workItemId:item.id,login:"owner",commentId:2,specVersion:1});
+  const retried=projections.get(item.id);assert.equal(retried.stage,"BUILD");assert.equal(retried.status,"QUEUED");assert.equal(retried.attempt,1);assert.equal(retried.correctionCycles,0);
+  await runner.run(item.id);assert.equal(prompts.length,2);assert.doesNotMatch(prompts[0],/src\/a\.ts/);assert.match(prompts[1],/src\/a\.ts/);assert.match(prompts[1],/1 file changed/);
+ }finally{store.db.close();}
+});

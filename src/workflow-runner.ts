@@ -57,7 +57,7 @@ export class WorkflowRunner {
   const policyText=role==="qa"&&baseline?`\n\nVerification write policy for this execution: ${JSON.stringify(baseline.policy)}. Evidence directories allow regular, non-executable JSON, Markdown, text, CSV and raster images only. Production, dependency, credential and policy changes are forbidden.`:"";
   const contract=promptContract(role,selection.provider,{tacticalRoute:route})+policyText,contractBytes=Buffer.byteLength(contract);
   const summary=["qa","reviewer"].includes(role)?this.workspaces.changeSummary(cwd):undefined;
-  const retrySummary=role==="developer"&&(projection.attempt>1||projection.correctionCycles>0)?this.workspaces.changeSummary(cwd):undefined;
+  const retrySummary=role==="developer"&&(projection.attempt>0||projection.correctionCycles>0)?this.workspaces.changeSummary(cwd):undefined;
   reviewerContext=role==="reviewer"?this.workspaces.prepareReviewerContext(cwd,workItemId):undefined;
 
    if(contractBytes+2>=budget.bytes)throw new InvalidContextError(`Protected prompt contract requires ${contractBytes} bytes but the budget is ${budget.bytes}`);
