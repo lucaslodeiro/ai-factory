@@ -264,6 +264,8 @@ Agent timeouts are configurable. SIGTERM escalates to SIGKILL after one second f
 
 When a workflow enters FAILED, its issue receives a structured troubleshooting comment with the failed stage, matching agent execution, provider/model, process result, sanitized reason and up to 30 recent `stderr` lines. Common credential patterns, configured secret environment values, ANSI control codes and local checkout paths are removed or replaced before publication. The full local logs remain available in the dashboard and under `FACTORY_DATA_DIR`.
 
+Every issue uses the deterministic work branch `factory/issue-<n>`. The orchestrator pushes it after each Builder or Tester commit without force. Before every execution it commits preserved partial work, fetches and merges human commits from the work branch and new commits from the configured base. A merge conflict is reported as an integration failure with the affected files; resolve it in the preserved branch and Retry. Tester and Reviewer passes record the exact verified commit, and any later code change returns Review or Delivery to Test before work continues.
+
 When an issue is recovered after its previous worktree directory disappeared, Retry prunes stale Git worktree registrations and reuses the issue's existing local or remote `factory/issue-*` branch. A branch is never recreated over existing work; if Git reports that the branch is actively checked out elsewhere, inspect that checkout before retrying.
 
 ## First end-to-end run
