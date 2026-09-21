@@ -212,13 +212,11 @@ On a Mac where the Tailscale application is installed but its CLI is not in `PAT
 
 ## Projects and concurrency
 
-The engine repository and target application repository are separate. Set `GITHUB_REPOSITORY=owner/application` and `FACTORY_REPO_DIR=/absolute/path/to/application`; issues and PRs belong to that target. Start an open issue from the dashboard, with `ai-factory start-issue <number-or-url>`, or with a standalone `/factory start` comment from a configured approver.
+The engine repository and target application repository are separate. Set `GITHUB_REPOSITORY=owner/application` and `FACTORY_REPO_DIR=/absolute/path/to/application`; issues and PRs belong to that target. Assign an open issue to the authenticated Factory account, or use the dashboard or `ai-factory start-issue <number-or-url>` to assign it and add this installation's instance label.
 
 At daemon start, `prepareRepository` verifies the target checkout and clones it when the configured path does not exist. If the remote repository is empty, it creates a README, makes the bootstrap commit and pushes the configured base branch before orchestration begins. A nonempty path, a mismatched origin or local changes are refused rather than overwritten.
 
-Use one Factory installation per repository. For different projects, use separate `.env` files, target clones and `FACTORY_DATA_DIR` values. Factory no longer acquires or renews repository control, enters standby, or exposes takeover commands.
-
-Obsolete controller data is no longer created or used. The product contains no cleanup migration for that data. The update preserves local workflow data and files. It does not import another installation's database or unpublished work. Stop the former installation before starting work on another machine; there is no automatic coordination between installations.
+Multiple installations can share a repository and authenticated GitHub account. Give each one a distinct `FACTORY_INSTANCE_NAME` (hostname by default), target clone and data directory. Assignment to the Factory account offers an issue; the sole `factory-instance:<name>` label selects the installation. Unassigning pauses and preserves work, while changing the instance label moves it. Existing remote status from another installation is shown as continuation pending because database/context import is outside this release.
 
 ## Manual installation
 
@@ -270,20 +268,14 @@ When an issue is recovered after its previous worktree directory disappeared, Re
 
 ## First end-to-end run
 
-Create an open feature issue, then put this command on the first or last non-empty line of its description or of a comment as a configured approver:
-
-```text
-/factory start
-```
-
-You can instead enter its number or URL in the dashboard's **Start tracking issue** field or run `ai-factory start-issue <number-or-url>`. The daemon validates the issue and caller, creates the workflow labels itself, and starts the Product Architect (Architect) in a fresh process using its configured provider. Questions are posted on the issue; answer with a standalone command:
+Create an open feature issue and assign it to the GitHub account authenticated in `gh`. Add this installation's `factory-instance:<name>` label, or enter the issue number/URL in Dashboard **Add Issue** or run `ai-factory start-issue <number-or-url>` to perform both operations. The daemon claims on one poll and begins only after a later poll verifies that its label is the sole instance label. Questions are posted on the issue; answer with a standalone command:
 
 ```text
 /factory answer
 <your answer or requested changes, which may span multiple lines>
 ```
 
-A comment already processed as a command is frozen and must be replaced by a new comment. A prose or unrecognized comment may be edited into a valid command until a later command is applied. On an untracked issue, editing its description or a comment to add `/factory start` is detected through GitHub's update timestamp.
+A comment already processed as a command is frozen and must be replaced by a new comment. A prose or unrecognized comment may be edited into a valid command until a later command is applied. Assignment and the instance label are the only intake mechanism; editing issue text does not start work.
 
 Each `FACTORY_DATA_DIR` is bound to one stable GitHub repository id. If the target repository is deleted and recreated, stop both services and select an empty data directory before starting again. If only an issue is deleted and recreated with the same number, the factory archives the old work item and leaves the replacement untracked until you start it explicitly.
 
