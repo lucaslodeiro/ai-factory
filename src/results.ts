@@ -83,7 +83,7 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
   } else if (r.nextRole !== null) throw new Error("Only a tactical resolution may select nextRole");
   if (r.outcome === "changes" && !r.findings.some(f => f.classification === "auto-fix")) throw new Error("Changes require an auto-fix finding");
   if (r.outcome === "decision" && !r.findings.some(f => ["decision-required","environment-blocked"].includes(f.classification))) throw new Error("Decision requires an explicit finding");
-  if(r.findings.some(f=>f.classification==="environment-blocked")&&!["decision","resolved"].includes(r.outcome))throw new Error("Environment blockers require decision or resolved, never PASS or a specification");
+  if(r.findings.some(f=>f.classification==="environment-blocked")&&!["decision","resolved"].includes(r.outcome)&&!(role==="product-architect"&&r.outcome==="questions"))throw new Error("Environment blockers require Architect questions, a delivery decision or a tactical resolution");
   if (r.outcome === "pass") {
     if (r.findings.some(f => f.classification !== "defer") || r.questions.length || r.decisions.some(d => d.kind === "major" || d.conflictsWithHuman)) throw new Error("PASS contradicts a blocking finding or decision");
     if (role === "developer" || role === "qa") {

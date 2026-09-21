@@ -63,10 +63,20 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
     "**Evidence:** Context assembly stopped before invoking a provider rather than silently dropping protected information.",
     "**Recommended action:** Remove or replace obsolete guidance, or increase the matching context budget in Configuration → Runtime, then retry.",
   ].join("\n\n");
+  if (kind==="invalid-result"&&/Environment blockers require/i.test(reason)) return [
+    "**Summary:** Architect returned useful clarification questions and also reported that a required capability was unavailable, but the previous result contract could not represent both facts together.",
+    `**Evidence:** The provider completed successfully; validation rejected the combined \`questions\` and \`environment-blocked\` result: ${reason.replace(/^Error:\s*/,"")}`,
+    "**Recommended action:** Update AI Factory, restore the reported capability when it is required, then retry. If the unavailable check is optional, say which available equivalent is acceptable in the retry guidance.",
+  ].join("\n\n");
   if (kind==="invalid-result") return [
     "**Summary:** The agent returned output that did not satisfy the workflow contract for this role or stage.",
     "**Evidence:** The provider completed, but schema, acceptance-coverage or stage-transition validation rejected its result.",
     "**Recommended action:** Review the exact validation message and retry with clarifying guidance if the intended behavior is ambiguous.",
+  ].join("\n\n");
+  if (kind==="environment") return [
+    "**Summary:** A capability required to complete this stage was unavailable.",
+    `**Evidence:** ${reason.replace(/^Error:\s*/,"")}`,
+    "**Recommended action:** Restore the reported capability, then retry the saved stage. If that capability is optional for the requested scope, retry with explicit guidance to use an available equivalent and treat the limitation as non-blocking.",
   ].join("\n\n");
   if (kind==="recovery") return [
     "**Summary:** The daemon stopped before it could record a safe completion for this execution.",

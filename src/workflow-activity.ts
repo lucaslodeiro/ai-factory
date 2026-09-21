@@ -1,4 +1,5 @@
 import type {Store} from './storage.js';
+import {diagnoseWorkItem} from './failure-diagnostics.js';
 export function workflowActivity(store:Store,id:string,status:string,now=Date.now()){
  const run=store.db.prepare('SELECT e.status,e.started_at,e.finished_at FROM executions e JOIN work_items w ON w.active_run_id=e.id WHERE w.id=?').get(id) as {status:string;started_at:string;finished_at:string|null}|undefined;
  const failure=store.db.prepare('SELECT message FROM failures WHERE work_item_id=? AND resolved_at IS NULL').get(id) as {message:string}|undefined;
@@ -18,7 +19,7 @@ export function workflowActivity(store:Store,id:string,status:string,now=Date.no
   }
   return {label:'Agent running',detail:'Agent execution is in progress.',since:run.started_at,stalled:false};
  }
- if(failure)return {label:'Failed',detail:failure.message,stalled:false};
+ if(failure){const diagnosis=diagnoseWorkItem(store,id);return {label:'Failed',detail:failure.message,diagnosis:{summary:diagnosis.summary,evidence:diagnosis.evidence,nextAction:diagnosis.nextAction},stalled:false};}
  const last=store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(id) as {payload:string}|undefined;
  let reason='';try{reason=JSON.parse(last?.payload??'{}').reason?.summary??'';}catch{}
  const findings=status==='PAUSED'?store.db.prepare("SELECT payload FROM records WHERE work_item_id=? AND kind='finding' AND status='open' ORDER BY sequence DESC LIMIT 3").all(id) as {payload:string}[]:[];
