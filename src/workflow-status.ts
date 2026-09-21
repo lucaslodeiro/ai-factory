@@ -57,7 +57,7 @@ function requestLabel(request:ReturnType<WorkflowRecords["activeRequest"]>) {
 export function workflowStatusMarkdown(store:Store,workItemId:string) {
  const item=store.db.prepare("SELECT issue_number,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;context:string}|undefined;
  if(!item)throw new Error("Unknown work item");
- const context=JSON.parse(item.context||"{}") as {title?:string;pr?:string;observedComments?:Array<{id:number;updatedAt:string}>;lastCommand?:LastCommandOutcome};
+ const context=JSON.parse(item.context||"{}") as {title?:string;pr?:string;observedComments?:Array<{id:number;updatedAt:string}>;lastCommand?:LastCommandOutcome;continuedFrom?:{instance:string;revision:number}};
  const projection=new WorkflowProjections(store).get(workItemId),records=new WorkflowRecords(store),request=records.activeRequest(workItemId),failure=new WorkflowFailures(store).active(workItemId);
  const spec=(store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;
  const actor=request?.payload.kind==="request"?(request.payload.owner==="human"?"Human":"Architect"):["FAILED","PAUSED","CANCELLED"].includes(projection.status)?"Human":projection.status==="RUNNING"||projection.status==="QUEUED"?stageActors[projection.stage]:"None";
@@ -65,6 +65,7 @@ export function workflowStatusMarkdown(store:Store,workItemId:string) {
  if(request?.payload.kind==="request")rows.push(["Open request",requestLabel(request)]);
  if(failure)rows.push(["Failure",sanitizeFailureEvidence(failure.message,240)]);
  if(context.pr)rows.push(["Pull request",context.pr]);
+ if(context.continuedFrom)rows.push(["Continuity",`Continued from ${context.continuedFrom.instance} at revision ${context.continuedFrom.revision}`]);
  if(context.observedComments?.length)rows.push(["Approver comments since last command",`${context.observedComments.length} — use \`/factory note\` to make guidance actionable`]);
  if(context.lastCommand){const last=context.lastCommand,reason=last.outcome==="deferred"?"waiting for the interrupted execution to exit":last.reason;rows.push(["Last command",`\`${last.kind}\` by @${last.login} — ${last.outcome}${reason?`: ${reason}`:""}`]);}
  const allHumanGuidance=records.humanGuidance(workItemId,false),ordinals=new Map(allHumanGuidance.map((record,index)=>[record.id,index+1])),humanGuidance=allHumanGuidance.filter(record=>record.status==="active");

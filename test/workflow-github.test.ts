@@ -28,6 +28,10 @@ test("hidden workflow payloads round trip text that could close an HTML comment"
  const value={summary:"keep --> literal"},body=withPayload("Readable",value);assert.match(body,/keep -\\u002d> literal/);assert.deepEqual(payloadOf(body),value);
 });
 
+test("continued work identifies its source instance and revision in the status comment",()=>{
+ const s=setup();try{s.store.db.prepare("UPDATE work_items SET context=json_set(context,'$.continuedFrom.instance','old-mac','$.continuedFrom.revision',12) WHERE id='work-1'").run();s.projections.initialize("work-1","BUILD","PAUSED");assert.match(workflowStatusMarkdown(s.store,"work-1"),/Continuity \| Continued from old-mac at revision 12/);}finally{s.store.db.close();}
+});
+
 test("status projection has one current CTA and derives it from the active request",async()=>{
  const s=setup();
  try {

@@ -18,6 +18,7 @@ import {WorkflowRecords} from "./workflow-records.js";
 import type {TaskAssessment} from "./types.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
+import {readIssueState} from "./workflow-github.js";
 const p = new Command().name("factory").description("Local AI Software Factory").version("0.2.0");
 p.command("models").argument("[id]").description("Show model policy or preview role selections for a work item").action(id => {
  console.log(`Model policy: ${modelPolicyVersion}`);
@@ -47,6 +48,8 @@ p.command("refresh-list").description("Reconcile GitHub issues and evaluate only
 p.command("start-issue").argument("<number-or-url>").description("Assign an open GitHub issue to this Factory instance").action(reference => {
  const store=new Store(); store.request("start-issue",reference); store.db.close(); console.log(`Issue ${reference} queued for assignment to this Factory instance.`);
 });
+const issueCommand=p.command("issue").description("Inspect published Factory issue state");
+issueCommand.command("show").argument("<number>").description("Show the state index carried by a GitHub issue").action(async raw=>{const number=Number.parseInt(raw,10);if(!Number.isSafeInteger(number)||number<1)throw new Error("Issue number must be a positive integer");const state=await readIssueState(new GitHubAdapter(),number);if(!state)throw new Error(`Issue #${number} does not carry a readable Factory state`);console.log(JSON.stringify(state.index,null,2));});
 p.command("stop").option("--pause-active","Pause active tasks before stopping").action(options => { const s = new Store();const count=(s.db.prepare("SELECT COUNT(*) count FROM work_items WHERE status IN ('QUEUED','RUNNING')").get() as {count:number}).count;if(count&&!options.pauseActive){s.db.close();throw new Error(`${count} active task${count===1?"":"s"}; rerun with --pause-active to preserve and pause them`);}s.request("stop");s.db.close();console.log("Stop queued."); });
 p.command("events").argument("[id]").action(id => {
  const s = new Store(); console.table(id ? s.db.prepare("SELECT * FROM events WHERE work_item_id=? ORDER BY id DESC LIMIT 50").all(id) : s.db.prepare("SELECT * FROM events ORDER BY id DESC LIMIT 50").all()); s.db.close();

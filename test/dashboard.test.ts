@@ -216,6 +216,8 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.deepEqual(store.db.prepare("SELECT kind,target FROM controls WHERE kind='start-issue'").get(),{kind:"start-issue",target:"#19"});
     const claimIssue = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"claim-issue",target:"19"})});
     assert.equal(claimIssue.status,202);assert.deepEqual(store.db.prepare("SELECT kind,target FROM controls WHERE kind='claim-issue'").get(),{kind:"claim-issue",target:"19"});
+    const continueIssue = await fetch(`http://127.0.0.1:${port}/api/control`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"continue-issue",target:"19"})});
+    assert.equal(continueIssue.status,202);assert.deepEqual(store.db.prepare("SELECT kind,target FROM controls WHERE kind='continue-issue'").get(),{kind:"continue-issue",target:"19"});
     fs.mkdirSync(path.join(settingsRoot,"data"),{recursive:true});
     fs.writeFileSync(path.join(settingsRoot,"data","update-state.json"),JSON.stringify({status:"updating",phase:"stale",pid:process.pid,startedAt:"2026-01-01T00:00:00.000Z"}));
     const staleUpdate = await fetch(`http://127.0.0.1:${port}/api/services`).then(response => response.json()) as any;
