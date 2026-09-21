@@ -93,7 +93,7 @@ An observed prose comment or near-miss such as `/fatcory note` may be edited int
 
 - `/factory help` publishes the complete command reference once.
 - `/factory approve vN [guidance]` approves the posted SPEC version.
-- `/factory answer <text>` answers a question or requests PR changes.
+- `/factory answer <text>` answers a question, requests PR changes or requests a revised SPEC after an invalid result.
 - `/factory retry [--issue] [--for <roles>] [guidance]` resumes failed, paused or cancelled work.
 - `/factory note [--issue] [--for <roles>] <text>` adds guidance without changing state.
 - `/factory replace <#N|id-prefix> [--issue] [--for <roles>] <text>` replaces guidance.

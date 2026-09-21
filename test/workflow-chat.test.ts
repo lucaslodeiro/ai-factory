@@ -41,7 +41,7 @@ test("message actions are derived only from workflow state and active request",(
  assert.deepEqual(messageActions({status:"WAITING"},request("correction-limit")),["answer"]);
  assert.deepEqual(messageActions({status:"WAITING"},request("spec-approval")),["approve","answer"]);
  assert.deepEqual(messageActions({status:"WAITING"},request("merge")),["answer"]);
- for(const status of ["FAILED","PAUSED","CANCELLED"] as const)assert.deepEqual(messageActions({status}),["retry","note"]);
+ assert.deepEqual(messageActions({status:"FAILED"}),["retry","note"]);assert.deepEqual(messageActions({status:"FAILED"},undefined,true),["answer","retry","note"]);for(const status of ["PAUSED","CANCELLED"] as const)assert.deepEqual(messageActions({status}),["retry","note"]);
  assert.deepEqual(messageActions({status:"RUNNING"}),["note","interrupt-retry"]);assert.deepEqual(messageActions({status:"QUEUED"}),["note"]);assert.deepEqual(messageActions({status:"COMPLETED"}),[]);
 });
 

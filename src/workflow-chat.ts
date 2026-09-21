@@ -21,18 +21,19 @@ export type WorkflowThreadTurn={id:number;at:string;kind:"prompt"|"result"|"even
 export type MessageAction="answer"|"approve"|"retry"|"note"|"interrupt-retry";
 type ActiveRequest=WorkflowRecord<Extract<WorkflowRecord["payload"],{kind:"request"}>>|undefined;
 
-export function messageActions(projection:Pick<WorkflowProjection,"status">,request?:ActiveRequest):MessageAction[]{
+export function messageActions(projection:Pick<WorkflowProjection,"status">,request?:ActiveRequest,canReviseSpecification=false):MessageAction[]{
  if(projection.status==="WAITING"&&request?.payload.kind==="request"){
   if(["clarification","correction-limit","merge"].includes(request.payload.type))return["answer"];
   if(request.payload.type==="spec-approval")return["approve","answer"];
  }
- if(["FAILED","PAUSED","CANCELLED"].includes(projection.status))return["retry","note"];
+ if(projection.status==="FAILED")return canReviseSpecification?["answer","retry","note"]:["retry","note"];
+ if(["PAUSED","CANCELLED"].includes(projection.status))return["retry","note"];
  if(projection.status==="RUNNING")return["note","interrupt-retry"];
  if(projection.status==="QUEUED")return["note"];
  return[];
 }
 
-export function availableMessageActions(store:Store,workItemId:string){const row=store.db.prepare("SELECT status FROM work_items WHERE id=? AND archived_at IS NULL").get(workItemId) as {status:WorkflowProjection["status"]}|undefined;if(!row)throw Object.assign(new Error("Unknown work item"),{statusCode:404});return messageActions(row,new WorkflowRecords(store).activeRequest(workItemId) as ActiveRequest);}
+export function availableMessageActions(store:Store,workItemId:string){const row=store.db.prepare("SELECT status FROM work_items WHERE id=? AND archived_at IS NULL").get(workItemId) as {status:WorkflowProjection["status"]}|undefined;if(!row)throw Object.assign(new Error("Unknown work item"),{statusCode:404});return messageActions(row,new WorkflowRecords(store).activeRequest(workItemId) as ActiveRequest,new WorkflowFailures(store).active(workItemId)?.class==="invalid-result");}
 
 function messageCommand(action:Exclude<MessageAction,"interrupt-retry">,text:string,specVersion:number):FactoryCommand{
  if(action==="answer")return{kind:"answer",text};
@@ -45,7 +46,7 @@ function commandBody(action:Exclude<MessageAction,"interrupt-retry">,text:string
 export async function applyMessageControl(store:Store,github:RuntimeGitHub,control:{id:number;target:string},login:string){
  const input=JSON.parse(control.target) as {workItemId?:string;text?:string;action?:MessageAction},workItemId=String(input.workItemId??""),text=String(input.text??"").trim(),action=input.action;
  if(!workItemId||!action||action==="interrupt-retry")throw new Error("Invalid message control");
- if(!messageActions({status:(store.db.prepare("SELECT status FROM work_items WHERE id=?").get(workItemId) as {status:WorkflowProjection["status"]}|undefined)?.status??"COMPLETED"},new WorkflowRecords(store).activeRequest(workItemId) as ActiveRequest).includes(action))throw new Error(`Cannot ${action} in the current workflow state`);
+ if(!availableMessageActions(store,workItemId).includes(action))throw new Error(`Cannot ${action} in the current workflow state`);
  if(["answer","note"].includes(action)&&!text)throw new Error(`${action} requires message text`);
  const issue=(store.db.prepare("SELECT issue_number FROM work_items WHERE id=?").get(workItemId) as {issue_number:number}|undefined)?.issue_number;if(!issue)throw new Error("Unknown work item");
  const specVersion=(store.db.prepare("SELECT COALESCE(MAX(version),0) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number}).version,key=`message-${control.id}`,body=commandBody(action,text,specVersion,login),commentId=Number(await github.publishWorkflowComment(issue,key,body));

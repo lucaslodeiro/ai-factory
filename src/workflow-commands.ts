@@ -47,6 +47,16 @@ export class WorkflowCommands {
    return {projection:result,recordIds:ids};
   }
   if(command.kind==="answer") {
+   const failure=this.failures.active(context.workItemId);
+   if(current.status==="FAILED"&&failure?.class==="invalid-result") {
+    assertExecutionStopped(this.store,context.workItemId);
+    const ids:string[]=[];
+    const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:"DESIGN",status:"QUEUED",attemptDelta:1,actor,source,reason:{code:"spec-revision-requested",summary:"Human requested specification revision"},recordIds:ids},()=>{
+     ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:"spec",payload:{kind:"decision",category:"human",decision:command.text,rationale:`Specification revision from @${context.login}`,supersedes:[]},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
+     this.failures.resolve(failure.id,`comment:${context.commentId}`);
+    });
+    return {projection:result,recordIds:ids};
+   }
    const request=this.requireHumanRequest(context);
    if(request.payload.kind==="request"&&request.payload.type==="spec-approval"){
     const ids:string[]=[request.id];

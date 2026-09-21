@@ -2,7 +2,7 @@ export const factoryCommandReference=`To start work, assign the issue to the Fac
 
 - \`/factory help\` — publish this command reference. Example: \`/factory help\`.
 - \`/factory approve vN [guidance]\` — approve SPEC vN; optional guidance applies to that SPEC. Example: \`/factory approve v2 Preserve the public API\`.
-- \`/factory answer <text>\` — answer the active question or request PR changes. Example: \`/factory answer Use SQLite\`.
+- \`/factory answer <text>\` — answer the active question, request PR changes or request a revised SPEC after an invalid result. Example: \`/factory answer Use SQLite\`.
 - \`/factory retry [--issue] [--for <roles>] [guidance]\` — resume failed, paused or cancelled work and optionally add guidance. Example: \`/factory retry --for tester Do not use Chromium\`.
 - \`/factory note [--issue] [--for <roles>] <text>\` — add guidance without changing state. Example: \`/factory note --issue Keep dependencies minimal\`.
 - \`/factory replace <#N|id-prefix> [--issue] [--for <roles>] <text>\` — replace active guidance. Example: \`/factory replace #2 Use WebKit\`.

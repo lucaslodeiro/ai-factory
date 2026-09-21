@@ -116,6 +116,17 @@ test("retry guidance accepts role and issue scopes",()=>{
  } finally {s.store.db.close();}
 });
 
+test("answer on an invalid result requests a new specification instead of retrying the failed stage",()=>{
+ const s=setup("BUILD","FAILED");
+ try {
+  const failure=s.failures.open({workItemId:"work-1",class:"invalid-result",message:"PASS must cover every approved acceptance criterion with evidence",stage:"BUILD",attempt:2});
+  s.initialize();const result=s.commands.apply({kind:"answer",text:"AC-6 may use a mailto fallback. AC-10 does not require native zoom testing."},context());
+  assert.deepEqual({stage:result.projection.stage,status:result.projection.status,attempt:result.projection.attempt},{stage:"DESIGN",status:"QUEUED",attempt:1});assert.equal(s.failures.get(failure.id)?.resolvedBy,"comment:20");
+  const decision=s.records.get(result.recordIds[0]);assert.equal(decision?.payload.kind,"decision");assert.match(decision?.payload.kind==="decision"?decision.payload.decision:"",/mailto fallback/);
+  const prompt=new ContextAssembler(s.store).assemble({workItemId:"work-1",role:"product-architect",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"}});assert.match(prompt.markdown,/AC-6 may use a mailto fallback/);
+ } finally {s.store.db.close();}
+});
+
 test("pause and cancel reasons are transition evidence rather than guidance records",()=>{
  for(const command of [{kind:"pause",reason:"Waiting for legal review"} as const,{kind:"cancel",reason:"Product direction changed"} as const]){
   const s=setup("BUILD","QUEUED");
