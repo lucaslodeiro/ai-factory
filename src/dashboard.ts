@@ -94,7 +94,8 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
     if (type === "control.failed") return { title:`${value.kind === "refresh-list" ? "Issue list refresh" : value.kind === "refresh" ? "Issue refresh" : value.kind ?? "Control"} failed`,details:value.error ?? "Unknown error",severity:"error",category:"Control" };
     if (type === "control.applied") {
       if (value.kind === "refresh-list") return { title:"Issue list refresh completed",details:value.result ? `${value.result.found ?? 0} found · ${value.result.added ?? 0} added · ${value.result.updated ?? 0} updated` : "GitHub issues are synchronized.",severity:"success",category:"Control" };
-      if (value.kind === "start-issue") return { title:value.result?.created ? `Issue #${value.result.issue} started` : `Issue #${value.result?.issue ?? "?"} already tracked`,details:value.result?.created ? `Work item ${value.result.id} was created and Architect will begin Design.` : `Existing work item ${value.result?.id ?? "unknown"} remains ${stateLabel(value.result?.stage)} · ${stateLabel(value.result?.status)}.`,severity:"success",category:"Control" };
+      if (value.kind === "start-issue") return { title:`Issue #${value.result?.issue ?? "?"} assigned`,details:`GitHub assignment and instance claim were requested. Work begins after the next verified poll.`,severity:"success",category:"Control" };
+      if (value.kind === "claim-issue") return { title:`Issue #${value.result?.issue ?? "?"} moved here`,details:`The instance label now targets this installation. The previous installation will pause on its next poll.`,severity:"success",category:"Control" };
       if (value.kind === "pause") return {title:"Work paused",details:"Stage and context were preserved.",severity:"warning",category:"Control"};
       if (value.kind === "resume") return {title:"Work resumed",details:"The workflow resumed from its saved stage.",severity:"success",category:"Control"};
       if (value.kind === "retry") return { title:"Retry started",details:"The workflow resumed from its saved stage.",severity:"success",category:"Control" };
@@ -172,7 +173,7 @@ function remoteIssuesView(store:Store,settingsRoot:string){
  if(!configuredRepository)return{state:"unconfigured",issues:[]};
  const github=new GitHubAdapter(undefined,configuredRepository),repository=verifyRepositoryIdentity(store,github,false);
  const tracked=new Set((store.db.prepare("SELECT issue_id FROM work_items WHERE archived_at IS NULL AND issue_id IS NOT NULL").all() as Array<{issue_id:number}>).map(row=>row.issue_id));
- const issues=github.assignedIssues(github.authenticatedLogin()).map(issue=>{const labels=(issue.labels??[]).map(label=>label.name),stage=labels.find(label=>["factory:design","factory:build","factory:test","factory:review","factory:delivery","factory:done"].includes(label)),status=labels.find(label=>["factory:waiting","factory:failed","factory:paused","factory:cancelled"].includes(label));return{id:issue.id,number:issue.number,title:issue.title,url:issue.url,stage:stage?.slice(8)??"unknown",status:status?.slice(8)??"active",trackedHere:tracked.has(issue.id)};});
+ const own=`factory-instance:${config.instanceName}`;const issues=github.assignedIssues(github.authenticatedLogin()).map(issue=>{const labels=(issue.labels??[]).map(label=>label.name),instances=labels.filter(label=>label.startsWith("factory-instance:")),stage=labels.find(label=>["factory:design","factory:build","factory:test","factory:review","factory:delivery","factory:done"].includes(label)),status=labels.find(label=>["factory:waiting","factory:failed","factory:paused","factory:cancelled"].includes(label)),trackedHere=tracked.has(issue.id),ownership=trackedHere||instances.length===1&&instances[0]===own?"here":instances.includes(own)?"conflict":instances.length?"other":"unclaimed";return{id:issue.id,number:issue.number,title:issue.title,url:issue.url,stage:stage?.slice(8)??"unknown",status:status?.slice(8)??"active",trackedHere,ownership,instances:instances.map(label=>label.slice("factory-instance:".length)),canWorkHere:ownership!=="here"};});
  return{repository:repository.fullName,issues};
 }
 async function readBody(req: http.IncomingMessage) {
@@ -564,9 +565,9 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       }
       if (req.method === "POST" && url.pathname === "/api/control") {
         const body = await readBody(req) as { kind?: string; target?: string };
-        if (!["stop","cancel","retry","pause","resume","refresh-list","start-issue"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});
+        if (!["stop","cancel","retry","pause","resume","refresh-list","start-issue","claim-issue"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});
         if (!["stop","refresh-list"].includes(body.kind ?? "") && !body.target) return json(res,400,{error:body.kind === "start-issue" ? "An issue number or URL is required" : "A work item or run id is required"});
-        if (["refresh-list","start-issue"].includes(body.kind ?? "") && !daemonState(store).running) return json(res,409,{error:"Start the daemon before synchronizing GitHub issues."});
+        if (["refresh-list","start-issue","claim-issue"].includes(body.kind ?? "") && !daemonState(store).running) return json(res,409,{error:"Start the daemon before synchronizing GitHub issues."});
         if (["pause","resume","retry","cancel"].includes(body.kind??"")) {try{validateWorkControl(store,body.kind!,body.target!);}catch(error){return json(res,409,{error:(error as Error).message});}}
         const requestId=store.request(body.kind!,body.target ?? "");
         return json(res,202,{ok:true,requestId,message:body.kind === "refresh-list" ? "GitHub issue refresh queued." : body.kind === "start-issue" ? "Issue start queued." : `${body.kind} queued`});

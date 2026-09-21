@@ -44,8 +44,8 @@ for (const name of ["cancel", "retry"] as const) p.command(name).argument("<id>"
 p.command("refresh-list").description("Reconcile GitHub issues and evaluate only each issue's newest comment").action(() => {
  const store = new Store(); store.request("refresh-list"); store.db.close(); console.log("Issue-list refresh queued; processed by factory start.");
 });
-p.command("start-issue").argument("<number-or-url>").description("Start an open GitHub issue in the factory").action(reference => {
- const store=new Store(); store.request("start-issue",reference); store.db.close(); console.log(`Issue ${reference} queued for factory start.`);
+p.command("start-issue").argument("<number-or-url>").description("Assign an open GitHub issue to this Factory instance").action(reference => {
+ const store=new Store(); store.request("start-issue",reference); store.db.close(); console.log(`Issue ${reference} queued for assignment to this Factory instance.`);
 });
 p.command("stop").option("--pause-active","Pause active tasks before stopping").action(options => { const s = new Store();const count=(s.db.prepare("SELECT COUNT(*) count FROM work_items WHERE status IN ('QUEUED','RUNNING')").get() as {count:number}).count;if(count&&!options.pauseActive){s.db.close();throw new Error(`${count} active task${count===1?"":"s"}; rerun with --pause-active to preserve and pause them`);}s.request("stop");s.db.close();console.log("Stop queued."); });
 p.command("events").argument("[id]").action(id => {

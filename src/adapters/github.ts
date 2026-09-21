@@ -11,7 +11,7 @@ export interface GitHubPort {
  assignees(n:number):string[];assign(n:number,logins:string[]):void;unassign(n:number,logins:string[]):void;
  ensurePR(branch: string, title: string, body: string): string;
 }
-export interface WorkflowGitHubPort { syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,body:string):void; publishWorkflowComment(n:number,key:string,body:string):void; assignees(n:number):string[];assign(n:number,logins:string[]):void;unassign(n:number,logins:string[]):void; }
+export interface WorkflowGitHubPort { syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,body:string):void; publishWorkflowComment(n:number,key:string,body:string):void; }
 function gh(args: string[], input?: unknown) {
  const r = spawnSync(process.env.GH_COMMAND??"gh", args, { input: input === undefined ? undefined : JSON.stringify(input), encoding: "utf8", timeout: 60000, maxBuffer: 10_000_000 });
  if (r.status !== 0) throw new Error(r.stderr || r.error?.message || "gh failed"); return r.stdout.trim();

@@ -106,7 +106,7 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
   reconcileUpdateMaintenanceFile(store,path.join(factoryHome(),"data","update-state.json"));
   const rows = store.db.prepare("SELECT * FROM controls WHERE handled=0 ORDER BY id").all() as { id: number; kind: string; target: string }[];
   for (const r of rows) {
-   if(remoteControlIds.has(r.id)||["start-issue","refresh-list"].includes(r.kind))continue;
+   if(remoteControlIds.has(r.id)||["start-issue","claim-issue","refresh-list"].includes(r.kind))continue;
    try {
     let result: unknown;
     if (r.kind === "stop") result=await stop();
@@ -134,8 +134,8 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
   while(!stopping){
    if(!stopRequested){
     if(!localTask)localTask=o.runLocal().then(worked=>{if(worked)nextRemote=0;}).catch(error=>daemonLog("error","daemon.local_failed",{error:String(error)})).finally(()=>{audit();localTask=undefined;});
-    if(!remoteTask&&(Date.now()>=nextRemote||store.db.prepare("SELECT 1 FROM controls WHERE handled=0 AND kind IN ('start-issue','refresh-list') LIMIT 1").get())){mark("syncing");remoteTask=(async()=>{
-      for(const r of store.db.prepare("SELECT id,kind,target FROM controls WHERE handled=0 AND kind IN ('start-issue','refresh-list') ORDER BY id").all() as Array<{id:number;kind:string;target:string}>){if((store.db.prepare("SELECT handled FROM controls WHERE id=?").get(r.id) as {handled:number}).handled)continue;remoteControlIds.add(r.id);try{const result=r.kind==='start-issue'?await o.startIssue(r.target):await o.refreshIssueList();store.event('control.applied',{id:r.id,kind:r.kind,target:r.target,result});}catch(error){store.event('control.failed',{id:r.id,kind:r.kind,error:String(error)});}store.db.prepare('UPDATE controls SET handled=1 WHERE id=?').run(r.id);remoteControlIds.delete(r.id);}
+    if(!remoteTask&&(Date.now()>=nextRemote||store.db.prepare("SELECT 1 FROM controls WHERE handled=0 AND kind IN ('start-issue','claim-issue','refresh-list') LIMIT 1").get())){mark("syncing");remoteTask=(async()=>{
+      for(const r of store.db.prepare("SELECT id,kind,target FROM controls WHERE handled=0 AND kind IN ('start-issue','claim-issue','refresh-list') ORDER BY id").all() as Array<{id:number;kind:string;target:string}>){if((store.db.prepare("SELECT handled FROM controls WHERE id=?").get(r.id) as {handled:number}).handled)continue;remoteControlIds.add(r.id);try{const result=r.kind==='start-issue'?await o.startIssue(r.target):r.kind==='claim-issue'?await o.claimIssue(r.target):await o.refreshIssueList();store.event('control.applied',{id:r.id,kind:r.kind,target:r.target,result});}catch(error){store.event('control.failed',{id:r.id,kind:r.kind,error:String(error)});}store.db.prepare('UPDATE controls SET handled=1 WHERE id=?').run(r.id);remoteControlIds.delete(r.id);}
       await o.syncRemote();
      })().then(()=>mark("idle")).catch(error=>{mark("failed",String(error));daemonLog("error","daemon.sync_failed",{error:String(error)});}).finally(()=>{audit();nextRemote=Date.now()+config.pollMs;remoteTask=undefined;});}
    }

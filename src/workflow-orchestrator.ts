@@ -35,14 +35,8 @@ export class WorkflowOrchestrator {
   const last=this.store.metadata<number>("artifact-retention:last")??0;if(Date.now()-last>3_600_000){pruneExecutionArtifacts(this.store);this.store.setMetadata("artifact-retention:last",Date.now());}
   return Boolean(item);
  }
- async startIssue(reference:string,requestedBy="Dashboard or CLI",origin?:{source:"comment"|"description";commentId?:number;login:string;guidance?:string},knownIssue?:Issue){
-  const number=this.issueNumber(reference),issue=knownIssue??await this.github.issue(number),candidate=this.rows().find(item=>item.repo===config.repo&&item.issue_number===number&&!item.archived_at);
-  if(candidate&&this.replaced(candidate,issue))await this.reconcileIssue(candidate,issue);
-  const existing=this.rows().find(item=>item.repo===config.repo&&item.issue_number===number&&!item.archived_at&&item.issue_id===issue.id);
-  if(existing)return {issue:number,id:existing.id,created:false,stage:existing.stage,status:existing.status};
-  const initialCursor=origin?.commentId??Math.max(0,...(await this.github.comments(number)).map(comment=>comment.id));const started=this.intake.start(issue,{actor:origin?.login??requestedBy,commentId:origin?.commentId,initialCursor,guidance:origin?.guidance,source:origin?.source==="comment"?"github-comment":origin?.source==="description"?"github-description":"control"});
-  return {issue:number,...started,stage:"DESIGN",status:"QUEUED"};
- }
+ async startIssue(reference:string){const number=this.issueNumber(reference),issue=await this.github.issue(number),login=this.store.metadata<string>("runtime:factory-account")??await this.github.authenticatedLogin();if(issue.state!=="OPEN"||issue.pullRequest)throw new Error(`#${number} is not an open issue`);const own=`factory-instance:${config.instanceName}`;await this.github.ensureLabel(own,"0969da",`AI Factory instance ${config.instanceName}`);await this.github.assign(number,[login]);await this.github.replaceInstanceLabel(number,own);return{issue:number,claimed:true,instance:config.instanceName};}
+ async claimIssue(reference:string){const number=this.issueNumber(reference),own=`factory-instance:${config.instanceName}`;await this.github.ensureLabel(own,"0969da",`AI Factory instance ${config.instanceName}`);await this.github.replaceInstanceLabel(number,own);return{issue:number,claimed:true,instance:config.instanceName};}
  private async reconcileAssignments(login:string){
   const own=`factory-instance:${config.instanceName}`,view:Array<Record<string,unknown>>=[];
   await this.github.ensureLabel(own,"0969da",`AI Factory instance ${config.instanceName}`);
