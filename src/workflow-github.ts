@@ -8,7 +8,6 @@ import { factoryHelpMarkdown } from "./factory-help.js";
 import {config} from "./config.js";
 import {WorkflowProjections} from "./workflow-projection.js";
 import {WorkflowRecords} from "./workflow-records.js";
-import {controllerAttribution,type LeaseObservation} from "./controller-lease.js";
 import type {GitHubPort} from "./adapters/github.js";
 
 export function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:number,pullRequestUrl?:string) {
@@ -34,7 +33,7 @@ export class WorkflowGitHubPublisher {
   const revision=row.revision,presentationRevision=row.presentation_revision;
   const lastEvent=this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(workItemId) as {payload:string}|undefined;
   let eventId:string|undefined;try{eventId=lastEvent?(JSON.parse(lastEvent.payload) as {eventId?:string}).eventId:undefined;}catch{}
-  const controller=controllerAttribution(this.store),body=`${workflowStatusMarkdown(this.store,workItemId)}\n\n<sub>workflow-rev:${revision} · presentation-rev:${presentationRevision}${eventId?` · event:${eventId}`:""}${controller?` · generation:${controller.generation}`:""}</sub>`;
+  const body=`${workflowStatusMarkdown(this.store,workItemId)}\n\n<sub>workflow-rev:${revision} · presentation-rev:${presentationRevision}${eventId?` · event:${eventId}`:""}</sub>`;
   await this.github.syncWorkflow(row.issue_number,workflowLabels(this.store,workItemId),body);
   await this.syncAssignees(workItemId,row.issue_number);
   this.store.db.prepare("UPDATE work_items SET published_presentation_revision=? WHERE id=? AND (published_presentation_revision IS NULL OR published_presentation_revision<?)").run(presentationRevision,workItemId,presentationRevision);
@@ -42,9 +41,9 @@ export class WorkflowGitHubPublisher {
  }
  async publishChanged() {
   // Re-render existing status comments once when their presentation format changes.
-  if(this.store.metadata<number>("github:status-format")!==2)this.store.db.transaction(()=>{
+  if(this.store.metadata<number>("github:status-format")!==3)this.store.db.transaction(()=>{
    this.store.db.prepare("UPDATE work_items SET presentation_revision=presentation_revision+1 WHERE archived_at IS NULL AND published_presentation_revision IS NOT NULL").run();
-   this.store.setMetadata("github:status-format",2);
+   this.store.setMetadata("github:status-format",3);
   })();
   let count=0;for(const row of this.store.db.prepare("SELECT id FROM work_items WHERE archived_at IS NULL AND presentation_revision>COALESCE(published_presentation_revision,-1)").all() as Array<{id:string}>)if(await this.publish(row.id))count++;return count;}
  async publishHelp() {
@@ -60,7 +59,7 @@ export class WorkflowGitHubPublisher {
    const payload=JSON.parse(row.payload) as {role:AgentRole;result:AgentResult;specVersion:number};
    if(!this.isMilestone(row,payload)) {this.store.setMetadata(`github:result:${row.id}`,true);continue;}
    const version=payload.specVersion||((this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(row.work_item_id) as {version:number|null}).version??0);
-   const context=JSON.parse(row.context||"{}") as {pr?:string},controller=controllerAttribution(this.store),footer=controller?`\n\n<sub>${controller.displayName}</sub>`:"";await this.github.publishWorkflowComment(row.issue_number,`result-${row.run_id}`,`${resultMarkdown(payload.role,payload.result,version,context.pr)}${footer}`);
+   const context=JSON.parse(row.context||"{}") as {pr?:string};await this.github.publishWorkflowComment(row.issue_number,`result-${row.run_id}`,`${resultMarkdown(payload.role,payload.result,version,context.pr)}`);
    this.store.setMetadata(`github:result:${row.id}`,true);count++;
   }
   return count;
@@ -80,5 +79,3 @@ export class WorkflowGitHubPublisher {
   const current=new Set(await this.github.assignees(issueNumber)),wanted=new Set(needsHuman?config.approvers:[]),add=config.approvers.filter(login=>wanted.has(login)&&!current.has(login)),remove=config.approvers.filter(login=>!wanted.has(login)&&current.has(login));if(add.length)await this.github.assign(issueNumber,add);if(remove.length)await this.github.unassign(issueNumber,remove);
  }
 }
-
-export function publishTakeoverNotices(store:Store,github:GitHubPort&WorkflowGitHubPort,previous:LeaseObservation,current:LeaseObservation){if(previous.state==="absent"||current.state==="absent")return 0;let count=0;for(const issue of github.listManaged()){const tracked=store.db.prepare("SELECT 1 FROM work_items WHERE issue_id=? AND archived_at IS NULL").get(issue.id);if(tracked)continue;github.publishWorkflowComment(issue.number,`controller-takeover-${issue.id}-${current.record.generation}`,`> Control of this repository moved from ${previous.record.displayName} to ${current.record.displayName}. The status above was written by the previous controller and is no longer maintained. Post \`/factory start\` to continue this issue here.`);count++;}return count;}

@@ -7,17 +7,17 @@ import {Store} from '../src/storage.js';
 import {WorkflowMaintenance} from '../src/workflow-maintenance.js';
 const source=fs.readFileSync(new URL('../src/daemon.ts',import.meta.url),'utf8');
 const controlSource=source.slice(source.indexOf(' const remoteControlIds='),source.indexOf(' const sigint='));
-for(const mode of ['standby','uncertain','fenced'])test(`local update maintenance works in ${mode} without enabling workflow controls`,async()=>{
+test('local maintenance confirms and resumes without repository ownership',async()=>{
  const store=new Store(':memory:');
  try{
   const maintenance=new WorkflowMaintenance(store,{isRunning:()=>false} as any);
   const plan=maintenance.request('update','dashboard');
   store.request('maintenance-confirm',plan.id);store.request('maintenance-resume',plan.id);
   let resumed=false;
-  const context=vm.createContext({store,maintenance:{confirm:(id:string)=>maintenance.confirm(id),resume:()=>{resumed=true;}},controllerMode:mode,reconcileUpdateMaintenanceFile(){},path:{join:()=>''},factoryHome:()=>'',audit(){}});
+  const context=vm.createContext({store,maintenance:{confirm:(id:string)=>maintenance.confirm(id),resume:()=>{resumed=true;}},reconcileUpdateMaintenanceFile(){},path:{join:()=>''},factoryHome:()=>'',audit(){}});
   vm.runInContext(ts.transpile(controlSource),context);await vm.runInContext('controls()',context);
   assert.equal((store.db.prepare('SELECT status FROM maintenance_operations WHERE id=?').get(plan.id) as any).status,'ready');
-  assert.equal(resumed,false);
-  assert.equal((store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='control.failed'").get() as any).n,1);
+  assert.equal(resumed,true);
+  assert.equal((store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='control.failed'").get() as any).n,0);
  }finally{store.db.close();}
 });

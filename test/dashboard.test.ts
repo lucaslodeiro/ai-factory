@@ -11,6 +11,8 @@ import { config } from "../src/config.js";
 
 test("dashboard serves readable state and queues daemon controls", async () => {
   const store = new Store(":memory:");
+  // Upgrade compatibility: obsolete standby metadata cannot disable local controls.
+  store.db.exec("CREATE TABLE repository_controller(repository_id INTEGER PRIMARY KEY,instance_id TEXT,generation INTEGER,remote_sha TEXT,state TEXT,last_verified_at TEXT,last_error TEXT); INSERT INTO repository_controller VALUES(1,'old-instance',1,'old-sha','standby','2099-01-01',NULL)");
   const settingsRoot = fs.mkdtempSync(path.join(os.tmpdir(),"factory-dashboard-settings-"));
   const previousFactoryHome = process.env.AI_FACTORY_HOME;
   process.env.AI_FACTORY_HOME=settingsRoot;
@@ -111,7 +113,7 @@ echo "$*" >> "$PWD/update-actions.log"
     return originalFetch(input,init);
   }) as typeof fetch;
   try {
-    // An idle installation can update without owning the repo or running a daemon.
+    // An idle installation can update without a running daemon.
     const planResponse=await fetch(`http://127.0.0.1:${port}/api/maintenance`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operation:"update"})});
     const plan=await planResponse.json() as {id:string};
     const prepared=await fetch(`http://127.0.0.1:${port}/api/maintenance/${plan.id}/confirm`,{method:"POST"});
@@ -122,11 +124,11 @@ echo "$*" >> "$PWD/update-actions.log"
     try{
       fs.writeFileSync(envPath,savedEnv+"\nGITHUB_REPOSITORY=owner/demo\n");config.repo="";
       assert.deepEqual(validateDashboardSettings(settingsRoot,{GITHUB_DEFAULT_BRANCH:"another-branch"}).restartServices.sort(),["daemon","dashboard"]);
-      const takeover=await fetch(`http://127.0.0.1:${port}/api/controller`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"takeover",force:true,confirmation:"wrong/repository"})});
-      assert.equal(takeover.status,400);assert.match((await takeover.json() as any).error,/Type owner\/demo to confirm/);
-      const live=await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(r=>r.json()) as any;assert.equal(live.repository,"owner/demo");
+      assert.equal((await fetch(`http://127.0.0.1:${port}/api/controller`)).status,404);
+      assert.equal((await fetch(`http://127.0.0.1:${port}/api/controller`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"takeover"})})).status,405);
+      const live=await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(r=>r.json()) as any;assert.equal(live.repository,"owner/demo");assert.equal("controller" in live,false);
       fs.writeFileSync(envPath,savedEnv+"\nGITHUB_REPOSITORY=\n");config.repo="stale/repo";
-      const absent=await fetch(`http://127.0.0.1:${port}/api/controller`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"takeover",force:true,confirmation:"stale/repo"})});assert.equal(absent.status,409);
+      const absent=await fetch(`http://127.0.0.1:${port}/api/issues/remote`);assert.equal(absent.status,200);assert.deepEqual((await absent.json() as any).issues,[]);
     }finally{config.repo=savedRepo;fs.writeFileSync(envPath,savedEnv);}
     const html = await fetch(`http://127.0.0.1:${port}/`).then(response => response.text());
     assert.match(html,/AI Factory/);

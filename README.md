@@ -119,7 +119,7 @@ The global update area checks `origin` before enabling update and runs through a
 
 Factory commands include `doctor`, `start`, `start-issue`, `status`, `events`, `cancel`, `retry`, `refresh-list`, `stop --pause-active`, `notifications`, `slack-test`, `models`, `sync`, and `repo <check|sync|publish|clear|restore>`.
 
-One instance executes agent stages sequentially for one target repository. To run two projects at once, use two installations with separate target clones, `.env` files and data directories. A repository controller lease in `refs/ai-factory/lease` permits only one lease-aware daemon to process or modify a repository; other installations run visibly in standby. The lease does not move SQLite state, worktrees or unpublished commits between machines and cannot fence an old daemon that predates the protocol. See the implemented [repository controller lease specification](docs/REPOSITORY_CONTROLLER_LEASE.md).
+One instance executes agent stages sequentially for one target repository. Run only one Factory installation per repository. There is no cross-installation ownership lock, standby mode or takeover. For different projects, use separate target clones, `.env` files and data directories. The local daemon lock still prevents duplicate processes using the same data directory; repository identity and worktree protections remain enforced. Workflow databases and unpublished files are not transferred between machines.
 
 This repository uses two long-lived branches: `develop` for ongoing work and `main` for stable releases. The installer defaults to `main`; pass `--branch develop` only when intentionally testing unreleased factory changes.
 

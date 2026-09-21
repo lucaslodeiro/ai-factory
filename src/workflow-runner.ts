@@ -12,18 +12,16 @@ import { WorkflowResults } from "./workflow-results.js";
 import { WorkflowRecords } from "./workflow-records.js";
 import type { TacticalNextRole } from "./tactical-routing.js";
 import { InvalidResultError } from "./results.js";
-import type {ControllerFence} from "./controller-fence.js";
 
 export interface DeliveryPort {ensurePR(branch:string,title:string,body:string):string|Promise<string>;}
 
 export class WorkflowRunner {
  private scheduler:WorkflowScheduler;private results:WorkflowResults;private records:WorkflowRecords;private assembler:ContextAssembler;
- private held=new Map<string,{workItemId:string;role:AgentRole;result:AgentResult}>();
- constructor(private store:Store,private agents:Partial<Record<AgentRole,AgentAdapter>>,private workspaces:WorkspacePort,private delivery:DeliveryPort,private fence?:ControllerFence){this.scheduler=new WorkflowScheduler(store);this.results=new WorkflowResults(store);this.records=new WorkflowRecords(store);this.assembler=new ContextAssembler(store);}
+ constructor(private store:Store,private agents:Partial<Record<AgentRole,AgentAdapter>>,private workspaces:WorkspacePort,private delivery:DeliveryPort){this.scheduler=new WorkflowScheduler(store);this.results=new WorkflowResults(store);this.records=new WorkflowRecords(store);this.assembler=new ContextAssembler(store);}
  reconcileFinished(){
   recoverLegacyResultPauses(this.store);
   const rows=this.store.db.prepare("SELECT w.id,e.id execution_id,e.status FROM work_items w JOIN executions e ON e.id=w.active_run_id WHERE w.archived_at IS NULL AND w.status='RUNNING' AND e.status<>'running'").all() as {id:string;execution_id:string;status:string}[];
-  for(const row of rows){if(this.held.has(row.execution_id))continue;this.scheduler.fail(row.id,row.execution_id,new Error(`The agent execution ended (${row.status}), but its result was not applied. Review execution evidence before retrying.`),"recovery");}
+  for(const row of rows){this.scheduler.fail(row.id,row.execution_id,new Error(`The agent execution ended (${row.status}), but its result was not applied. Review execution evidence before retrying.`),"recovery");}
  }
  async run(workItemId:string) {
   const projection=new (await import("./workflow-projection.js")).WorkflowProjections(this.store).get(workItemId);if(projection.status!=="QUEUED")return false;
@@ -56,19 +54,14 @@ export class WorkflowRunner {
    const current=new (await import("./workflow-projection.js")).WorkflowProjections(this.store).get(workItemId);if(current.status!=="RUNNING"||current.activeRunId!==started.executionId){this.store.event("execution.discarded",{executionId:started.executionId,reason:"Workflow changed before worktree validation"},workItemId,started.executionId);return true;}
    const changed=this.workspaces.check(cwd,role,before,row.branch,baseline);
    if(role==="developer"||role==="qa")this.workspaces.commit(cwd,`factory: ${role} for #${row.issue_number}`,row.branch,changed??undefined);
-   const disposition=this.fence?.resultDisposition()??"apply";
-   if(disposition==="hold"){this.held.set(started.executionId,{workItemId,role,result});this.store.event("agent.result.held",{role},workItemId,started.executionId);return true;}
-   if(disposition==="discard"){this.store.event("execution.discarded",{reason:"controller-lost"},workItemId,started.executionId);return true;}
    this.results.apply({workItemId,executionId:started.executionId,role,result});return true;
   } catch(error){if(!started){if(!preparing)throw error;this.scheduler.rejectQueued(workItemId,new Error(`Could not prepare workflow execution: ${error instanceof Error?error.message:String(error)}`),error instanceof InvalidContextError?"invalid-context":"execution");return true;}this.store.event("workflow.result_failed",{error:error instanceof Error?error.message:String(error)},workItemId,started.executionId);this.scheduler.fail(workItemId,started.executionId,error,error instanceof InvalidContextError?"invalid-context":error instanceof InvalidResultError?"invalid-result":"execution");return true;}
   finally{if(reviewerContext&&cwd)try{this.workspaces.cleanupReviewerContext(cwd,workItemId);}catch(error){this.store.event("workflow.context_cleanup_failed",{error:error instanceof Error?error.message:String(error)},workItemId,started?.executionId);}}
  }
- applyHeld(){for(const [executionId,entry] of this.held){try{this.results.apply({workItemId:entry.workItemId,executionId,role:entry.role,result:entry.result});this.store.event("agent.result.held_applied",{role:entry.role},entry.workItemId,executionId);}catch(error){this.scheduler.fail(entry.workItemId,executionId,error,"invalid-result");}finally{this.held.delete(executionId);}}}
- discardHeld(){for(const [executionId,entry] of this.held)this.store.event("agent.result.held_discarded",{role:entry.role,reason:"controller-lost"},entry.workItemId,executionId);this.held.clear();}
  private async publish(workItemId:string) {
   const row=this.store.db.prepare("SELECT issue_number,branch,context,revision FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;context:string;revision:number};const context=JSON.parse(row.context||"{}") as {title?:string;cwd?:string};
-  try {const cwd=context.cwd;if(!cwd)throw new Error("Delivery has no prepared worktree");this.workspaces.assertBranch(cwd,row.branch);const review=this.latestResult(workItemId,"reviewer");if(!review||review.outcome!=="pass")throw new InvalidResultError("Delivery requires a successful Reviewer result");this.fence?.assertController();if(this.workspaces.publishAsync)await this.workspaces.publishAsync(cwd,row.branch);else this.workspaces.publish(cwd,row.branch);this.fence?.assertController();if(this.deliveryInterrupted(workItemId,row.revision))return false;const pullRequestUrl=await this.delivery.ensurePR(row.branch,`#${row.issue_number}: ${context.title??"Factory delivery"}`,this.prBody(workItemId,row.issue_number,review));this.fence?.assertController();if(this.deliveryInterrupted(workItemId,row.revision))return false;this.results.published({workItemId,pullRequestUrl});return true;}
-  catch(error){if(this.deliveryInterrupted(workItemId,row.revision)||(this.fence&&this.fence.resultDisposition()!=="apply"))return false;this.scheduler.rejectQueued(workItemId,error,"integration");return true;}
+  try {const cwd=context.cwd;if(!cwd)throw new Error("Delivery has no prepared worktree");this.workspaces.assertBranch(cwd,row.branch);const review=this.latestResult(workItemId,"reviewer");if(!review||review.outcome!=="pass")throw new InvalidResultError("Delivery requires a successful Reviewer result");if(this.workspaces.publishAsync)await this.workspaces.publishAsync(cwd,row.branch);else this.workspaces.publish(cwd,row.branch);if(this.deliveryInterrupted(workItemId,row.revision))return false;const pullRequestUrl=await this.delivery.ensurePR(row.branch,`#${row.issue_number}: ${context.title??"Factory delivery"}`,this.prBody(workItemId,row.issue_number,review));if(this.deliveryInterrupted(workItemId,row.revision))return false;this.results.published({workItemId,pullRequestUrl});return true;}
+  catch(error){if(this.deliveryInterrupted(workItemId,row.revision))return false;this.scheduler.rejectQueued(workItemId,error,"integration");return true;}
  }
  private deliveryInterrupted(id:string,revision:number){const row=this.store.db.prepare("SELECT stage,status,archived_at,revision FROM work_items WHERE id=?").get(id) as {stage:string;status:string;archived_at:string|null;revision:number};return row.revision!==revision||row.stage!=="DELIVERY"||row.status!=="QUEUED"||Boolean(row.archived_at);}
  private specVersion(workItemId:string){return (this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;}

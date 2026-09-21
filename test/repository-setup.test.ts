@@ -56,14 +56,14 @@ test("managed startup failures stop launchd retries but CLI and runtime errors r
 });
 
 test("doctor reports a missing checkout without misleading identity, origin or branch failures",async()=>{
- const {doctor}=await import("../src/doctor.js"),{config}=await import("../src/config.js"),{Store}=await import("../src/storage.js"),{ControllerLease}=await import("../src/controller-lease.js");
+ const {doctor}=await import("../src/doctor.js"),{config}=await import("../src/config.js"),{Store}=await import("../src/storage.js");
  const f=fixture(),old={repoDir:config.repoDir,repo:config.repo,codexCommand:config.codexCommand,claudeCommand:config.claudeCommand},oldPath=process.env.PATH,log=console.log,lines:string[]=[],store=new Store(":memory:");
  const fake=path.join(f.root,"gh");fs.writeFileSync(fake,'#!/bin/sh\necho \'{"loggedIn":true}\'\n',{mode:0o755});
  try{
   Object.assign(config,{repoDir:f.checkout,repo:"owner/demo",codexCommand:fake,claudeCommand:fake});process.env.PATH=`${f.root}:${oldPath}`;console.log=(...values)=>{lines.push(values.join(" "));};
-  assert.equal(doctor(store,{repository:()=>({id:1,nodeId:"R_1",fullName:"owner/demo",defaultBranch:"main"})},(repository,controllerStore)=>new ControllerLease(repository,controllerStore,{home:f.root,remote:f.remote})),false);
+  assert.equal(doctor(store,{repository:()=>({id:1,nodeId:"R_1",fullName:"owner/demo",defaultBranch:"main"})}),false);
   assert.match(lines.join("\n"),/✗ Target checkout directory exists:/);
   assert.doesNotMatch(lines.join("\n"),/✗ (Git user|Target checkout origin|Remote base branch)/);
-  assert.equal(fs.existsSync(path.resolve("instance.json")),false,"controller tests must not write instance identity into the checkout");
+  assert.equal(fs.existsSync(path.resolve("instance.json")),false,"doctor must not create an instance identity");
  }finally{console.log=log;Object.assign(config,old);process.env.PATH=oldPath;store.db.close();f.close();}
 });

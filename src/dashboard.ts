@@ -25,8 +25,6 @@ import type {ExecutionManager} from "./execution-manager.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {GitHubAdapter} from "./adapters/github.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
-import {cachedControllerState,controllerAttribution,ControllerLease} from "./controller-lease.js";
-import {publishTakeoverNotices} from "./workflow-github.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
 const types: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
@@ -167,16 +165,15 @@ function buildSnapshot(store: Store) {
     }
   }
   const maintenance=(store.db.prepare("SELECT id,operation,actor,status,requested_at,confirmed_at,finished_at,error FROM maintenance_operations ORDER BY requested_at DESC LIMIT 10").all() as any[]).map(operation=>({...operation,affected:(store.db.prepare("SELECT work_item_id,paused_at,resumed_at FROM maintenance_items WHERE maintenance_id=?").all(operation.id) as any[])}));
-  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), controller:{...cachedControllerState(store),...controllerAttribution(store)}, githubSync:store.metadata("runtime:github-sync")??null,issueRefresh, items, executions, usage, events,maintenance };
+  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, daemon:daemonState(store), githubSync:store.metadata("runtime:github-sync")??null,issueRefresh, items, executions, usage, events,maintenance };
 }
-function controllerView(store:Store,settingsRoot:string){
+function remoteIssuesView(store:Store,settingsRoot:string){
  const configuredRepository=readDashboardSetting(settingsRoot,"GITHUB_REPOSITORY").trim();
  if(!configuredRepository)return{state:"unconfigured",issues:[]};
- const github=new GitHubAdapter(undefined,configuredRepository),repository=verifyRepositoryIdentity(store,github,false),lease=new ControllerLease(repository,store);let observation:ReturnType<ControllerLease["readLease"]>|null=null;try{observation=lease.readLease();}catch{}
- const owner=observation&&observation.state!=="absent"?observation.record:null;
+ const github=new GitHubAdapter(undefined,configuredRepository),repository=verifyRepositoryIdentity(store,github,false);
  const tracked=new Set((store.db.prepare("SELECT issue_id FROM work_items WHERE archived_at IS NULL AND issue_id IS NOT NULL").all() as Array<{issue_id:number}>).map(row=>row.issue_id));
- const issues=github.listManaged().map(issue=>{const labels=(issue.labels??[]).map(label=>label.name),stage=labels.find(label=>["factory:design","factory:build","factory:test","factory:review","factory:delivery","factory:done"].includes(label)),status=labels.find(label=>["factory:waiting","factory:failed","factory:paused","factory:cancelled"].includes(label)),statusOwner=github.comments(issue.number).map(comment=>comment.body.match(/^\| Controller \| ([^|]+) \|$/m)?.[1]?.trim()).find(Boolean);return{id:issue.id,number:issue.number,title:issue.title,url:issue.url,stage:stage?.slice(8)??"unknown",status:status?.slice(8)??"active",processedBy:owner?.displayName??statusOwner??"No controller",trackedHere:tracked.has(issue.id)};});
- return{...(observation??{state:"unavailable",instance:lease.instance}),repository:repository.fullName,issues};
+ const issues=github.listManaged().map(issue=>{const labels=(issue.labels??[]).map(label=>label.name),stage=labels.find(label=>["factory:design","factory:build","factory:test","factory:review","factory:delivery","factory:done"].includes(label)),status=labels.find(label=>["factory:waiting","factory:failed","factory:paused","factory:cancelled"].includes(label));return{id:issue.id,number:issue.number,title:issue.title,url:issue.url,stage:stage?.slice(8)??"unknown",status:status?.slice(8)??"active",trackedHere:tracked.has(issue.id)};});
+ return{repository:repository.fullName,issues};
 }
 async function readBody(req: http.IncomingMessage) {
   let body = "";
@@ -504,7 +501,7 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
 
 export function createDashboardServer(store: Store, settingsRoot = process.cwd()) {
   const runtimeVersion = versionInfo(settingsRoot);
-  const servicesView = (services=[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")]) => {const update=updateState(settingsRoot);reconcileUpdateMaintenance(store,update);const resumable=store.db.prepare(`SELECT mo.id FROM maintenance_operations mo WHERE mo.status IN ('ready','running','completed','failed') AND EXISTS(SELECT 1 FROM maintenance_items mi JOIN work_items w ON w.id=mi.work_item_id WHERE mi.maintenance_id=mo.id AND mi.resumed_at IS NULL AND w.status='PAUSED') ORDER BY mo.requested_at DESC LIMIT 1`).get() as {id:string}|undefined;return {services,controller:cachedControllerState(store),update,version:runtimeVersion,maintenance:resumable?maintenanceOperation(store,resumable.id):null};};
+  const servicesView = (services=[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")]) => {const update=updateState(settingsRoot);reconcileUpdateMaintenance(store,update);const resumable=store.db.prepare(`SELECT mo.id FROM maintenance_operations mo WHERE mo.status IN ('ready','running','completed','failed') AND EXISTS(SELECT 1 FROM maintenance_items mi JOIN work_items w ON w.id=mi.work_item_id WHERE mi.maintenance_id=mo.id AND mi.resumed_at IS NULL AND w.status='PAUSED') ORDER BY mo.requested_at DESC LIMIT 1`).get() as {id:string}|undefined;return {services,update,version:runtimeVersion,maintenance:resumable?maintenanceOperation(store,resumable.id):null};};
   const liveSnapshot = (lines:string|null) => {
     const services=[serviceStatus(settingsRoot,"daemon"),serviceStatus(settingsRoot,"dashboard")];
     return store.db.transaction(() => {
@@ -529,15 +526,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if (req.method === "GET" && url.pathname === "/api/credentials") return json(res,200,credentialStatuses(settingsRoot));
       if (req.method === "GET" && url.pathname === "/api/slack") return json(res,200,slackStatus(settingsRoot,store));
       if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,servicesView());
-      if(req.method==="GET"&&url.pathname==="/api/controller")return json(res,200,controllerView(store,settingsRoot));
-      if(req.method==="POST"&&url.pathname==="/api/controller"){
-        const body=await readBody(req) as {action?:string;force?:boolean;confirmation?:string};const configuredRepository=readDashboardSetting(settingsRoot,"GITHUB_REPOSITORY").trim();if(!configuredRepository)return json(res,409,{error:"Configure a repository first"});
-        const github=new GitHubAdapter(undefined,configuredRepository),repository=verifyRepositoryIdentity(store,github,false);
-        if(body.action==="takeover"&&body.force&&body.confirmation!==repository.fullName)return json(res,400,{error:`Type ${repository.fullName} to confirm force takeover`});
-        const lease=new ControllerLease(repository,store);let result;
-        if(body.action==="refresh")result=lease.readLease();else if(body.action==="release")result=lease.release(false);else if(body.action==="takeover"){const previous=lease.readLease();result=lease.takeover(Boolean(body.force),previous);publishTakeoverNotices(store,github,previous,result);}else return json(res,400,{error:"Unknown controller action"});
-        return json(res,200,{...result,repository:repository.fullName});
-      }
+      if(req.method==="GET"&&url.pathname==="/api/issues/remote")return json(res,200,remoteIssuesView(store,settingsRoot));
       if(req.method==="GET"&&url.pathname.startsWith("/api/maintenance/"))return json(res,200,maintenanceOperation(store,url.pathname.split("/").at(-1)!));
       if(req.method==="POST"&&url.pathname==="/api/maintenance"){
         const body=await readBody(req) as {operation?:MaintenanceOperation};const allowed:MaintenanceOperation[]=["update","daemon-stop","daemon-restart","uninstall","configuration-apply","user-pause"];
@@ -556,7 +545,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if (req.method === "GET" && url.pathname === "/api/logs/daemon") return json(res,200,daemonLogs(settingsRoot,url.searchParams.get("lines")));
       if(req.method==="POST"&&url.pathname.match(/^\/api\/executions\/[^/]+\/prompt$/)){const id=url.pathname.split("/")[3],body=await readBody(req) as {acknowledgeSensitive?:boolean};if(body.acknowledgeSensitive!==true)return json(res,400,{error:"Acknowledge that prompts may contain sensitive source and issue context"});if(!store.db.prepare("SELECT 1 FROM executions WHERE id=?").get(id))return json(res,404,{error:"Unknown execution"});const file=path.join(config.dataDir,"runs",id,"prompt.md");if(!fs.existsSync(file))return json(res,410,{error:"Exact prompt content was pruned by retention or is unavailable"});const stat=fs.statSync(file);if(stat.size>2_000_000)return json(res,413,{error:"Prompt is too large to reveal in the dashboard"});return json(res,200,{id,warning:"Sensitive execution context. Do not share without review.",prompt:fs.readFileSync(file,"utf8")});}
       if(req.method==="GET"&&url.pathname==="/api/repository")return json(res,200,new RepositoryMaintenance(store).check());
-      if(req.method==="POST"&&url.pathname==="/api/repository") {const body=await readBody(req) as {action?:string;workItemId?:string;confirmPath?:string;repeatPath?:string;maintenanceId?:string},repository=new RepositoryMaintenance(store);if(body.action==="check")return json(res,200,repository.check());if(["standby","expired","uncertain","fenced"].includes(cachedControllerState(store).state))return json(res,409,{error:"Repository maintenance is read-only while this installation is in controller standby"});if(body.action==="sync")return json(res,200,repository.sync("dashboard"));if(body.action==="publish"&&body.workItemId)return json(res,200,repository.publish(body.workItemId,"dashboard"));if(body.action==="clear"){requireMaintenance(store,body.maintenanceId,["user-pause"]);if(body.maintenanceId)maintenanceCoordinator(store).markStarted(body.maintenanceId);try{return json(res,200,repository.clear(body.confirmPath??"",body.repeatPath??"","dashboard"));}finally{if(body.maintenanceId)maintenanceCoordinator(store).complete(body.maintenanceId);}}if(body.action==="restore")return json(res,200,repository.restore("dashboard"));return json(res,400,{error:"Unknown or incomplete repository action"});}
+      if(req.method==="POST"&&url.pathname==="/api/repository") {const body=await readBody(req) as {action?:string;workItemId?:string;confirmPath?:string;repeatPath?:string;maintenanceId?:string},repository=new RepositoryMaintenance(store);if(body.action==="check")return json(res,200,repository.check());if(body.action==="sync")return json(res,200,repository.sync("dashboard"));if(body.action==="publish"&&body.workItemId)return json(res,200,repository.publish(body.workItemId,"dashboard"));if(body.action==="clear"){requireMaintenance(store,body.maintenanceId,["user-pause"]);if(body.maintenanceId)maintenanceCoordinator(store).markStarted(body.maintenanceId);try{return json(res,200,repository.clear(body.confirmPath??"",body.repeatPath??"","dashboard"));}finally{if(body.maintenanceId)maintenanceCoordinator(store).complete(body.maintenanceId);}}if(body.action==="restore")return json(res,200,repository.restore("dashboard"));return json(res,400,{error:"Unknown or incomplete repository action"});}
       if (req.method === "POST" && url.pathname === "/api/update/check") return json(res,200,checkUpdate(settingsRoot));
       if (req.method === "GET" && url.pathname === "/healthz") return json(res,200,{ok:true});
       if (req.method === "PUT" && url.pathname === "/api/settings") {
@@ -577,7 +566,6 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         const body = await readBody(req) as { kind?: string; target?: string };
         if (!["stop","cancel","retry","pause","resume","refresh-list","start-issue"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});
         if (!["stop","refresh-list"].includes(body.kind ?? "") && !body.target) return json(res,400,{error:body.kind === "start-issue" ? "An issue number or URL is required" : "A work item or run id is required"});
-        if (["refresh-list","start-issue","retry","cancel","pause","resume"].includes(body.kind ?? "")&&["standby","expired","uncertain","fenced"].includes(cachedControllerState(store).state))return json(res,409,{error:"This installation is in controller standby; use the active controller or take over explicitly."});
         if (["refresh-list","start-issue"].includes(body.kind ?? "") && !daemonState(store).running) return json(res,409,{error:"Start the daemon before synchronizing GitHub issues."});
         if (["pause","resume","retry","cancel"].includes(body.kind??"")) {try{validateWorkControl(store,body.kind!,body.target!);}catch(error){return json(res,409,{error:(error as Error).message});}}
         const requestId=store.request(body.kind!,body.target ?? "");

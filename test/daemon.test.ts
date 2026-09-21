@@ -16,6 +16,8 @@ test("full daemon and CLI integration with local Git remote and deterministic pr
  git(repo, ["config", "user.name", "Factory Test"]); git(repo, ["config", "user.email", "factory@example.test"]);
  fs.writeFileSync(path.join(repo, "README.md"), "Demo"); git(repo, ["add", "."]); git(repo, ["commit", "-m", "base"]);
  git(repo, ["branch", "-M", "main"]); git(repo, ["remote", "add", "origin", origin]); git(repo, ["push", "-u", "origin", "main"]);
+ // An obsolete/malformed controller ref must not block startup or be modified.
+ const obsoleteLease=git(repo,["rev-parse","HEAD"]);git(origin,["update-ref","refs/ai-factory/lease",obsoleteLease]);
  git(repo,["remote","set-url","origin","https://github.com/owner/demo.git"]);
  git(repo,["config",`url.${origin}.insteadOf`,"https://github.com/owner/demo.git"]);
  const stateFile = path.join(root, "github.json"); fs.writeFileSync(stateFile, JSON.stringify({ comments: [], label: "bug", prs: 0 }));
@@ -91,6 +93,7 @@ if(codex){
   await waitFor(() => (store!.db.prepare("SELECT status FROM work_items LIMIT 1").get() as any)?.status === "CANCELLED" && (store!.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='running'").get() as any).n === 0);
   assert.equal(command("retry", workId).status, 0);
   await waitFor(() => {const row=store!.db.prepare("SELECT stage,status FROM work_items LIMIT 1").get() as any;return row?.stage==="DELIVERY"&&row?.status==="WAITING";});
+  assert.equal(git(origin,["rev-parse","refs/ai-factory/lease"]),obsoleteLease);
   const workRow=store.db.prepare("SELECT branch,context FROM work_items LIMIT 1").get() as {branch:string;context:string};const w={branch:workRow.branch,context:JSON.parse(workRow.context)}; assert.equal(w.context.pr, "https://example.test/pull/1");
   assert.equal(git(origin, ["show", `${w.branch}:src/greet.mjs`]), 'export const greet = name => "Hello " + name;');
   assert.equal((store.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='succeeded'").get() as any).n, 4);

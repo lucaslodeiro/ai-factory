@@ -1,5 +1,7 @@
 # Solicitud de revisión independiente
 
+> Revisión diferida: la propuesta asociada no es el alcance vigente. Por ahora se elimina el controlador global y se asume una sola Factory por repositorio.
+
 Revisá `docs/ISSUE_OWNERSHIP_AND_RECOVERY_SPEC.md` contra el código actual de AI Factory. Es una propuesta; no está implementada. No modifiques código ni publiques mensajes, commits o PR durante esta revisión.
 
 El objetivo acordado es reemplazar el takeover global por exclusividad por issue, liberación explícita, contexto portable en Git, commits/push parciales y sincronización mediante merge con cambios externos. Debe retomar trabajo de otra Factory, commits humanos posteriores al checkpoint e implementaciones humanas sin checkpoint previo, sin borrar avances ni reiniciar por defecto.

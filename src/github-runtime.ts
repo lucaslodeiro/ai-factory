@@ -5,7 +5,7 @@ import type {GitHubPort,WorkflowGitHubPort} from './adapters/github.js';
 type AsyncCompatible<T> = {[K in keyof T]:T[K] extends (...args:infer A)=>infer R ? (...args:A)=>R|Promise<R>:T[K]};
 export type RuntimeGitHub = AsyncCompatible<GitHubPort & WorkflowGitHubPort>;
 /** Only subprocess I/O moves off-thread. Workflow state stays on the daemon thread. */
-export function backgroundGitHub(guard:()=>void=()=>{}):{github:RuntimeGitHub;close:()=>Promise<number>} {
+export function backgroundGitHub():{github:RuntimeGitHub;close:()=>Promise<number>} {
  let worker:Worker|undefined,closed=false,sequence=0,tail:Promise<unknown>=Promise.resolve();
  const pending=new Map<number,{resolve:(value:any)=>void;reject:(error:Error)=>void}>();
  function start(){
@@ -24,7 +24,7 @@ export function backgroundGitHub(guard:()=>void=()=>{}):{github:RuntimeGitHub;cl
   if(typeof method!=='string'||!methods.has(method))return undefined;
   return (...args:unknown[])=>{
    const result=tail.then(()=>new Promise((resolve,reject)=>{
-    try{guard();const target=start(),id=++sequence;pending.set(id,{resolve,reject});target.postMessage({id,method,args});}catch(error){reject(error);}
+    try{const target=start(),id=++sequence;pending.set(id,{resolve,reject});target.postMessage({id,method,args});}catch(error){reject(error);}
    }));
    tail=result.catch(()=>{});return result;
   };

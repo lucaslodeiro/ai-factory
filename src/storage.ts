@@ -94,15 +94,7 @@ export class Store {
         resumed_at TEXT,
         PRIMARY KEY(maintenance_id,work_item_id)
       );
-      CREATE TABLE IF NOT EXISTS repository_controller(
-        repository_id INTEGER PRIMARY KEY,
-        instance_id TEXT NOT NULL,
-        generation INTEGER,
-        remote_sha TEXT,
-        state TEXT NOT NULL,
-        last_verified_at TEXT,
-        last_error TEXT
-      );`);
+`);
     if (!stored) this.db.prepare("INSERT INTO metadata(key,value) VALUES('schema_version',?)").run(JSON.stringify(schemaVersion));
     }).immediate(); }
     catch (error) { this.db.close();throw error; }

@@ -302,7 +302,6 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .queue-pause-notice h3{margin:.6rem 0 0;color:var(--muted);font-size:.85rem}
 @media(max-width:640px){.queue-pause-notice{align-items:flex-start;flex-direction:column}.queue-pause-notice .state{white-space:normal}}
 
-.controller-actions{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem}
 
 .repository-result{padding:1rem;border:1px solid var(--line);border-radius:10px;background:var(--input);font-size:.8rem;overflow-wrap:anywhere}
 .repository-result dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;margin:.85rem 0}
@@ -331,20 +330,15 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .work-details-content .work-activity{white-space:pre-wrap;margin:0 0 .5rem}
 .work-details-content ul{padding-left:1.2rem}
 
-/* Controller ownership belongs to the work queue, not a second issue list. */
+/* Work queue and remote issue summaries. */
 .queue-heading{align-items:center;flex-wrap:wrap}
 .queue-heading .issue-toolbar{margin-bottom:0}
 .queue-control-bar{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;flex-wrap:wrap}
-.queue-controller{flex:1;min-width:min(100%,20rem)}
-.queue-controller summary{cursor:pointer;font-weight:700}
-.controller-details-label{font-size:.78rem;color:var(--accent);margin-left:.75rem;font-weight:500}
-.controller-detail-body{padding:.8rem 0}
-.controller-detail-body p{margin-bottom:.5rem}
 .queue-control-bar .live-meta{flex-wrap:wrap;padding-top:.2rem}
 .remote-item{grid-template-columns:minmax(0,1fr) auto}
 .remote-issues-updated{font-size:.75rem;margin-top:.9rem}
-#local-issues-note:not(:empty),#issue-refresh-status:not(:empty){margin-bottom:.8rem}
-@media(max-width:760px){.remote-item{grid-template-columns:1fr}.queue-heading .issue-toolbar{justify-content:flex-start}.controller-details-label{display:inline-block;margin-left:.35rem}}
+#issue-refresh-status:not(:empty){margin-bottom:.8rem}
+@media(max-width:760px){.remote-item{grid-template-columns:1fr}.queue-heading .issue-toolbar{justify-content:flex-start}}
 
 .diagnosis-dialog{width:min(44rem,calc(100vw - 2rem));max-height:85vh;overflow:auto}.diagnosis-dialog h4{margin:1rem 0 .4rem}.diagnosis-dialog p{line-height:1.55;margin:.5rem 0;overflow-wrap:anywhere}.diagnosis-dialog pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:18rem;overflow:auto;padding:1rem;background:var(--bg);border:1px solid var(--line);border-radius:10px}.diagnosis-dialog .actions{margin-top:1rem}
 

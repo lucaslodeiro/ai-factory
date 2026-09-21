@@ -1,5 +1,7 @@
 # Repository Controller Lease
 
+> Historical specification. Repository controller protection and takeover have been removed. The supported model is one Factory per repository; this document does not describe current behavior.
+
 **Version:** 2.2 (revised after architecture review; remote issues view and controller attribution added)  
 **Status:** Implemented
 **Scope:** Prevent multiple AI Factory installations from operating the same GitHub repository concurrently  

@@ -1,17 +1,6 @@
 # GitHub setup
 
-The authenticated GitHub credential must be able to push the private custom ref
-namespace `refs/ai-factory/*` in addition to reading and editing issues, pull
-requests and repository contents. The normal `repo` scope provides this access.
-The controller ref is not a branch and does not modify the application checkout
-or trigger branch push workflows.
-
-Before enabling repository control on an existing deployment, stop every older
-factory daemon for the repository. Upgrade or reinstall all installations,
-choose one with `ai-factory controller acquire`, then start the remaining
-daemons and verify `ai-factory controller status` reports standby. Expired leases
-still require explicit `ai-factory controller takeover`; use `--force` only when
-the former controller may still be online and after typing the repository name.
+Use one Factory installation per repository. No custom lease ref access or repository takeover is required. Existing lease refs from older versions are ignored.
 
 Authenticate `gh` with issue, content and pull-request write access to the target repository. Configure `GITHUB_REPOSITORY`, `FACTORY_REPO_DIR`, `GITHUB_DEFAULT_BRANCH` and `FACTORY_APPROVERS` in the dashboard, then validate them with Doctor. The terminal configurator remains available as a recovery path with `npm run configure`.
 

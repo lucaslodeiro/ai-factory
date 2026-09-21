@@ -7,7 +7,6 @@ import {config} from "../src/config.js";
 import {doctor} from "../src/doctor.js";
 
 const repository=(id:number,fullName="owner/demo")=>({repository:()=>({id,nodeId:`R_${id}`,fullName,defaultBranch:"main"})});
-const controller=()=>({readLease:()=>({state:"absent"})}) as any;
 
 test("repository identity is stored once and a different GitHub repository id is refused",()=>{
  const store=new Store(":memory:");
@@ -29,12 +28,12 @@ test("daemon refuses a mismatched repository identity before acquiring its lock"
 
 test("doctor reports a repository identity mismatch",()=>{
  const store=new Store(":memory:"),lines:string[]=[],original=console.log;store.setMetadata("repository_identity",{id:1,nodeId:"R_1",fullName:"owner/original"});console.log=(...values:unknown[])=>lines.push(values.join(" "));
- try {assert.equal(doctor(store,repository(2) as any,controller),false);assert.match(lines.join("\n"),/✗ GitHub repository identity[\s\S]*Data directory belongs to repository owner\/original \(id 1\)/);}
+ try {assert.equal(doctor(store,repository(2) as any),false);assert.match(lines.join("\n"),/✗ GitHub repository identity[\s\S]*Data directory belongs to repository owner\/original \(id 1\)/);}
  finally {console.log=original;store.db.close();}
 });
 
 test("doctor reports a configured base that differs from GitHub",()=>{
  const store=new Store(":memory:"),lines:string[]=[],original=console.log,previous=config.defaultBranch;config.defaultBranch="develop";console.log=(...values:unknown[])=>lines.push(values.join(" "));
- try {doctor(store,repository(1) as any,controller);assert.match(lines.join("\n"),/✓ Repository controller/);assert.match(lines.join("\n"),/✗ GitHub default branch matches configured base/);}
+ try {doctor(store,repository(1) as any);assert.doesNotMatch(lines.join("\n"),/Repository controller/);assert.match(lines.join("\n"),/✗ GitHub default branch matches configured base/);}
  finally {config.defaultBranch=previous;console.log=original;store.db.close();}
 });

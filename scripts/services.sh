@@ -131,10 +131,6 @@ status_one() {
   echo "$service: loaded"
   awk '/state =|pid =|last exit code =/{sub(/^[[:space:]]*/,"  ");print}' <<<"$details"
   echo "  readiness = $readiness"
-  if [[ $service == daemon && $readiness == ready && -f "$root/dist/src/cli.js" ]]; then
-    controller_state=$(node "$root/dist/src/cli.js" controller cached 2>/dev/null || true)
-    if [[ -n $controller_state ]]; then echo "  controller = $controller_state"; fi
-  fi
 }
 logs_for() {
   local service=$1

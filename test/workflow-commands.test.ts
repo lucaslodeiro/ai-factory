@@ -36,7 +36,6 @@ test("note, replace and revoke update presentation without advancing workflow re
  } finally {s.store.db.close();}
 });
 
-test("controller fencing rejects a human command before workflow state changes",()=>{const s=setup();try{s.initialize();const commands=new WorkflowCommands(s.store,{assertController(){throw new Error("controller lost");},resultDisposition(){return"discard";}});assert.throws(()=>commands.apply({kind:"note",text:"continue",scope:"spec",appliesTo:[]},context()),/controller lost/);assert.equal(s.projections.get("work-1").presentationRevision,0);}finally{s.store.db.close();}});
 
 test("approval rejects stale comments and atomically opens build",()=>{
  const s=setup("DESIGN","WAITING");

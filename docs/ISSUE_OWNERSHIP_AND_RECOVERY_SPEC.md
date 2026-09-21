@@ -1,5 +1,7 @@
 # Exclusividad por issue y recuperación entre factories
 
+> Propuesta diferida por decisión del usuario: por ahora se asume una sola Factory por repositorio y se elimina la protección y takeover global sin sustituirlos por reservas por issue. Este documento conserva ideas futuras; no es el alcance de implementación vigente.
+
 Estado: propuesta para revisión; no implementada ni aprobada.
 
 ## 1. Objetivo y decisiones de producto

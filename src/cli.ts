@@ -17,9 +17,7 @@ import {WorkflowOrchestrator} from "./workflow-orchestrator.js";
 import {WorkflowRecords} from "./workflow-records.js";
 import type {TaskAssessment} from "./types.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
-import {cachedControllerState,ControllerLease,formatControllerStatus} from "./controller-lease.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
-import {publishTakeoverNotices} from "./workflow-github.js";
 const p = new Command().name("factory").description("Local AI Software Factory").version("0.2.0");
 p.command("models").argument("[id]").description("Show model policy or preview role selections for a work item").action(id => {
  console.log(`Model policy: ${modelPolicyVersion}`);
@@ -31,7 +29,7 @@ p.command("models").argument("[id]").description("Show model policy or preview r
  } finally { s.db.close(); }
 });
 p.command("sync").description("Reconcile PR lifecycle and publish pending status/reports without running agents").action(async () => {
- const s = new Store(); try { const release = acquireLock(s); try { const github=new GitHubAdapter(),repository=verifyRepositoryIdentity(s,github),lease=new ControllerLease(repository,s),ownership=lease.acquire();if(ownership.state!=="active")throw new Error(`Repository is controlled by ${ownership.state==="absent"?"another installation":ownership.record.displayName}`);const generation=ownership.record.generation,fence={assertController(){lease.assertController(generation);},resultDisposition(){return"apply" as const;}},runner=new WorkflowRunner(s,{},new Workspaces(),github,fence),o=new WorkflowOrchestrator(s,github,runner,new SlackAdapter(),undefined,fence);await o.reconcilePullRequests();await o.flush(); } finally { release(); } } finally { s.db.close(); }
+ const s = new Store(); try { const release = acquireLock(s); try { const github=new GitHubAdapter();verifyRepositoryIdentity(s,github);const runner=new WorkflowRunner(s,{},new Workspaces(),github),o=new WorkflowOrchestrator(s,github,runner,new SlackAdapter());await o.reconcilePullRequests();await o.flush(); } finally { release(); } } finally { s.db.close(); }
 });
 p.command("doctor").action(() => { process.exitCode = doctor() ? 0 : 1; });
 p.command("status").argument("[id]").action(id => {
@@ -73,11 +71,4 @@ repo.command("sync").description("Fetch and fast-forward a clean default branch"
 repo.command("publish").argument("<work-item-id>").description("Commit and push one factory branch").action(id=>{const s=new Store();try{console.log(JSON.stringify(new RepositoryMaintenance(s).publish(id),null,2));}finally{s.db.close();}});
 repo.command("clear").requiredOption("--confirm <absolute-path>").requiredOption("--repeat <absolute-path>").description("Remove all contents of the configured local checkout").action(options=>{const s=new Store();try{console.log(JSON.stringify(new RepositoryMaintenance(s).clear(options.confirm,options.repeat),null,2));}finally{s.db.close();}});
 repo.command("restore").description("Clone the configured repository into an empty checkout directory").action(()=>{const s=new Store();try{console.log(JSON.stringify(new RepositoryMaintenance(s).restore(),null,2));}finally{s.db.close();}});
-const controller=p.command("controller").description("Inspect repository controller ownership");
-controller.command("cached").description("Show the last locally verified controller state").action(()=>{const s=new Store();try{console.log(cachedControllerState(s).state);}finally{s.db.close();}});
-controller.command("status").description("Read the remote repository controller lease").action(()=>{const s=new Store();try{if(!config.repo)throw new Error("Configure GITHUB_REPOSITORY first");const repository=verifyRepositoryIdentity(s,new GitHubAdapter());console.log(formatControllerStatus(new ControllerLease(repository,s).readLease(),repository.fullName));}finally{s.db.close();}});
-const controllerClient=()=>{const store=new Store(),repository=verifyRepositoryIdentity(store,new GitHubAdapter());return{store,repository,lease:new ControllerLease(repository,store)};};
-controller.command("acquire").description("Acquire or reclaim repository control").action(()=>{const {store,repository,lease}=controllerClient();try{console.log(formatControllerStatus(lease.acquire(),repository.fullName));}finally{store.db.close();}});
-controller.command("release").option("--force","Release despite active local work").description("Release repository control").action(options=>{const {store,repository,lease}=controllerClient();try{console.log(formatControllerStatus(lease.release(Boolean(options.force)),repository.fullName));}finally{store.db.close();}});
-controller.command("takeover").option("--force","Take over before expiry").option("--yes","Confirm a scripted force takeover").description("Explicitly take over repository control").action(async options=>{const {store,repository,lease}=controllerClient();try{if(options.force&&!options.yes){if(!process.stdin.isTTY)throw new Error("Force takeover requires an interactive repository-name confirmation or --yes");const readline=(await import("node:readline/promises")).createInterface({input:process.stdin,output:process.stdout}),answer=await readline.question(`Type ${repository.fullName} to force takeover: `);readline.close();if(answer!==repository.fullName)throw new Error("Repository name did not match; takeover cancelled");}const previous=lease.readLease(),current=lease.takeover(Boolean(options.force),previous),github=new GitHubAdapter();publishTakeoverNotices(store,github,previous,current);console.log(formatControllerStatus(current,repository.fullName));}finally{store.db.close();}});
 try { await p.parseAsync(); } catch (e) { console.error(String(e)); process.exitCode = startupExitCode(e); }

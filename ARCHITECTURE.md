@@ -49,10 +49,7 @@ Each work item owns a `factory/*` branch and isolated worktree. Agents cannot co
 
 Repository recovery exposes only Check, Sync from remote, Publish branch, Clear local copy and Restore from remote. Check is read-only; Sync is clean fast-forward only; Publish refuses unrelated/default branches; Clear requires the exact configured path twice and pauses affected work; Restore requires an empty directory.
 
-The local daemon lock and stored repository identity do not coordinate separate
-factory homes or hosts. A remote controller lease enforces one active daemon
-per GitHub repository while other installations remain in standby. The implemented
-protocol is described in [Repository Controller Lease](docs/REPOSITORY_CONTROLLER_LEASE.md).
+The supported model is one Factory installation per repository. The local daemon lock prevents duplicate processes sharing a data directory, and stored repository identity prevents accidentally reusing that directory for another repository. There is no remote ownership lease, standby mode, cross-installation fencing or takeover.
 
 ## Adapters and observability
 
