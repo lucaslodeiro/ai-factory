@@ -18,6 +18,7 @@ export interface ContextAssemblyInput {
   diffStat?:string;
   diffPath?:string;
   qaEvidence?:unknown;
+  previousAttempt?:unknown;
 }
 
 export interface ContextManifest {
@@ -77,6 +78,7 @@ export class ContextAssembler {
       ...(input.role === "product-architect" ? [{name:"Active request chain",value:requestChain.map(payload),protected:true}] : []),
       {name:"Open findings required by this role",value:openFindings.map(payload),protected:true},
       ...(activeFailure ? [{name:"Active failure",value:activeFailure,protected:true}] : []),
+      ...(input.previousAttempt ? [{name:"Previous attempt",value:input.previousAttempt,protected:false}] : []),
       ...(["developer","qa","reviewer"].includes(input.role) && (input.changedFiles || input.diffStat) ? [{name:"Changed files",value:{files:input.changedFiles??[],diffStat:input.diffStat??"",...(input.role==="reviewer"&&input.diffPath?{diffPath:input.diffPath}:{})},protected:false}] : []),
       ...(input.role === "reviewer" && input.qaEvidence ? [{name:"Tester execution evidence",value:input.qaEvidence,protected:false}] : []),
     ];

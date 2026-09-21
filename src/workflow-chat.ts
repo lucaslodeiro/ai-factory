@@ -11,6 +11,9 @@ import {WorkflowRecords,type WorkflowRecord} from "./workflow-records.js";
 import {WorkflowCommands} from "./workflow-commands.js";
 import type {FactoryCommand} from "./factory-command.js";
 import type {RuntimeGitHub} from "./github-runtime.js";
+import {WorkflowProjections} from "./workflow-projection.js";
+import type {ExecutionManager} from "./execution-manager.js";
+import type {WorkflowRunner} from "./workflow-runner.js";
 
 export type WorkflowThreadTurn={id:number;at:string;kind:"prompt"|"result"|"event"|"human";executionId?:string;[key:string]:unknown};
 export type MessageAction="answer"|"approve"|"retry"|"note"|"interrupt-retry";
@@ -51,6 +54,28 @@ export async function applyMessageControl(store:Store,github:RuntimeGitHub,contr
   store.event("command.applied",{commentId,login,command:action,text,source:"dashboard"},workItemId);
   return{...result,commentId};
  }catch(error){const reason=error instanceof Error?error.message:String(error),marker=`<!-- ai-factory:workflow-comment:${config.repo}:${issue}:${key} -->`;if(!github.editComment)throw new Error(`${reason}; the published GitHub comment could not be marked rejected`);await github.editComment(commentId,`${body}\n\nRejected: ${reason}\n\n${marker}`);throw error;}
+}
+
+export async function applyInterruptRetryControl(store:Store,github:RuntimeGitHub,executions:ExecutionManager,runner:WorkflowRunner,control:{id:number;target:string},login:string){
+ const input=JSON.parse(control.target) as {workItemId?:string;text?:string;action?:MessageAction},workItemId=String(input.workItemId??""),text=String(input.text??"").trim();
+ if(!workItemId||input.action!=="interrupt-retry"||!text)throw new Error("Interrupt and retry requires guidance text");
+ const records=new WorkflowRecords(store),projection=new WorkflowProjections(store),current=projection.get(workItemId);
+ if(!messageActions(current,records.activeRequest(workItemId) as ActiveRequest).includes("interrupt-retry")||!current.activeRunId)throw new Error("Cannot interrupt and retry in the current workflow state");
+ const issue=(store.db.prepare("SELECT issue_number FROM work_items WHERE id=?").get(workItemId) as {issue_number:number}|undefined)?.issue_number;if(!issue)throw new Error("Unknown work item");
+ const specVersion=(store.db.prepare("SELECT COALESCE(MAX(version),0) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number}).version,key=`message-${control.id}`,body=commandBody("retry",text,specVersion,login),commentId=Number(await github.publishWorkflowComment(issue,key,body));
+ if(!Number.isSafeInteger(commentId)||commentId<=0)throw new Error("GitHub did not return the published message id");
+ try{
+  const interruptedAt=new Date().toISOString();
+  projection.transition({workItemId,expectedRevision:current.revision,stage:current.stage,status:"PAUSED",actor:{type:"human",id:login},source:{commentId,executionId:current.activeRunId},reason:{code:"interrupted-for-guidance",summary:"Human interrupted the active attempt with new guidance"}});
+  executions.interrupt(current.activeRunId,"interrupted-for-guidance");
+  const deadline=Date.now()+30_000;while(Date.now()<deadline){const execution=store.db.prepare("SELECT status FROM executions WHERE id=?").get(current.activeRunId) as {status:string}|undefined;if(!execution||execution.status!=="running")break;await new Promise(resolve=>setTimeout(resolve,25));}
+  const execution=store.db.prepare("SELECT status FROM executions WHERE id=?").get(current.activeRunId) as {status:string}|undefined;if(execution?.status==="running")throw new Error("The active process did not stop within 30 seconds");
+  await runner.preserve(workItemId);runner.recordPreviousAttempt(workItemId,current.activeRunId,interruptedAt,"interrupted-for-guidance");
+  const result=new WorkflowCommands(store).apply(messageCommand("retry",text,specVersion),{workItemId,login,commentId,specVersion});
+  if(result.recordIds.length)store.db.prepare(`UPDATE records SET source_type='dashboard' WHERE work_item_id=? AND source_id=?`).run(workItemId,String(commentId));
+  runner.recordPreviousAttempt(workItemId,current.activeRunId,interruptedAt,"interrupted-for-guidance",result.recordIds.at(-1));
+  store.event("command.applied",{commentId,login,command:"interrupt-retry",text,source:"dashboard"},workItemId);return{...result,commentId};
+ }catch(error){const reason=error instanceof Error?error.message:String(error),marker=`<!-- ai-factory:workflow-comment:${config.repo}:${issue}:${key} -->`;if(github.editComment)await github.editComment(commentId,`${body}\n\nRejected: ${reason}\n\n${marker}`);throw error;}
 }
 const safeJson=(file:string)=>{try{return JSON.parse(fs.readFileSync(file,"utf8")) as Record<string,unknown>;}catch{return{};}};
 export function promptArtifact(executionId:string){const root=path.join(config.dataDir,"runs",path.basename(executionId)),file=path.join(root,"prompt.md");if(path.basename(executionId)!==executionId||!fs.existsSync(file))return{available:false};const bytes=fs.readFileSync(file),limit=512*1024;return{available:true,prompt:bytes.subarray(0,limit).toString("utf8"),truncated:bytes.length>limit};}

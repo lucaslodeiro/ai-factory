@@ -38,6 +38,7 @@ export interface WorkspacePort {
  publish(cwd: string, branch: string): void;
  publishAsync?(cwd:string,branch:string):Promise<void>;
  changeSummary(cwd:string):{files:string[];stat:string};
+ changeSummarySince?(cwd:string,base:string):{files:string[];stat:string};
  prepareReviewerContext(cwd:string,workItemId:string):{path:string;files:string[];stat:string};
  cleanupReviewerContext(cwd:string,workItemId:string):void;
 }
@@ -144,6 +145,7 @@ export class Workspaces implements WorkspacePort {
   git(cwd, ["push", "--set-upstream", "origin", `HEAD:refs/heads/${branch}`]);
  }
  changeSummary(cwd:string){const range=`origin/${config.defaultBranch}...HEAD`,files=gitOutput(cwd,["diff","--name-only","--no-renames","-z",range]).split("\0").filter(Boolean),stat=gitOutput(cwd,["diff","--stat",range]).trim();return{files,stat};}
+ changeSummarySince(cwd:string,base:string){const range=`${base}..HEAD`,files=gitOutput(cwd,["diff","--name-only","--no-renames","-z",range]).split("\0").filter(Boolean),stat=gitOutput(cwd,["diff","--stat",range]).trim();return{files,stat};}
  prepareReviewerContext(cwd:string,workItemId:string){const directory=path.join(cwd,".factory-context"),owner=path.join(directory,"OWNER"),diff=path.join(directory,"review.diff"),expected=`ai-factory:${workItemId}\n`;
   this.assertContextSafe(cwd,directory,owner,expected,true);if(fs.existsSync(directory))fs.rmSync(directory,{recursive:true});fs.mkdirSync(directory,{mode:0o700});fs.writeFileSync(owner,expected,{mode:0o600});try{const summary=this.changeSummary(cwd);gitFile(cwd,["diff","--no-ext-diff","--no-textconv","--binary",`origin/${config.defaultBranch}...HEAD`],diff);
   const excludeValue=git(cwd,["rev-parse","--git-path","info/exclude"]),exclude=path.isAbsolute(excludeValue)?excludeValue:path.resolve(cwd,excludeValue);fs.mkdirSync(path.dirname(exclude),{recursive:true});const current=fs.existsSync(exclude)?fs.readFileSync(exclude,"utf8"):"";if(!current.split(/\r?\n/).includes("/.factory-context/"))fs.appendFileSync(exclude,`${current&&!current.endsWith("\n")?"\n":""}/.factory-context/\n`);

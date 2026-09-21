@@ -5,9 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import {Store} from "../src/storage.js";
 import {config} from "../src/config.js";
-import {workflowThread,promptArtifact,messageActions,applyMessageControl} from "../src/workflow-chat.js";
+import {workflowThread,promptArtifact,messageActions,applyMessageControl,applyInterruptRetryControl} from "../src/workflow-chat.js";
 import {result} from "./fixtures.js";
 import {WorkflowRecords} from "../src/workflow-records.js";
+import {WorkflowRunner} from "../src/workflow-runner.js";
+import {ContextAssembler} from "../src/context-assembly.js";
 
 test("workflow thread orders prompts, results, transitions, failures and human interventions without paths",()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),"workflow-chat-")),previous=config.dataDir;config.dataDir=root;const store=new Store(":memory:");try{
@@ -48,3 +50,11 @@ test("dashboard messages publish first and apply answer, approve, retry and note
 });
 
 test("a stale dashboard approval edits the published comment and invalid actions publish nothing",async()=>{const previous=config.repo;config.repo="owner/demo";try{const stale=chatItem("WAITING","spec-approval"),github=new ChatGitHub(5);await assert.rejects(applyMessageControl(stale,github as any,{id:1,target:JSON.stringify({workItemId:"w",action:"approve",text:""})},"owner"),/stale/);assert.equal(github.edited.length,1);assert.match(github.edited[0].body,/Rejected: Command is stale/);assert.match(github.edited[0].body,/<!-- ai-factory:/);stale.db.close();const queued=chatItem("QUEUED"),none=new ChatGitHub();await assert.rejects(applyMessageControl(queued,none as any,{id:2,target:JSON.stringify({workItemId:"w",action:"approve",text:""})},"owner"),/Cannot approve/);assert.equal(none.published.length,0);queued.db.close();}finally{config.repo=previous;}});
+
+test("interrupt and retry preserves partial work and adds the previous attempt to the next context",async()=>{
+ const previousRepo=config.repo;config.repo="owner/demo";const store=new Store(":memory:");try{
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context,stage,status,attempt,correction_cycles,active_run_id) VALUES('w',7,'owner/demo','factory/issue-7','now','now',?,'BUILD','RUNNING',1,2,'run')").run(JSON.stringify({cwd:"/work",attemptStart:{executionId:"run",head:"abc",stage:"BUILD",startedAt:"before"}}));store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,approved_by,approved_at) VALUES('w',1,'spec','[]','owner','now')").run();store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at) VALUES('run','w','developer','BUILD','running','now')").run();
+  const calls:string[]=[];const workspaces={sync(){calls.push("sync");return{before:"abc",after:"def",merged:[]};},publish(){calls.push("publish");},head(){return"def";},changeSummary(){return{files:["src/partial.ts"],stat:"1 file changed"};},changeSummarySince(_cwd:string,base:string){assert.equal(base,"abc");return{files:["src/partial.ts"],stat:"1 file changed"};}};const runner=new WorkflowRunner(store,{},workspaces as any,{ensurePR(){return"";}}),executions={interrupt(id:string,reason:string){assert.equal(id,"run");assert.equal(reason,"interrupted-for-guidance");store.db.prepare("UPDATE executions SET status='interrupted',finished_at='now' WHERE id=?").run(id);return true;}};
+  const result=await applyInterruptRetryControl(store,new ChatGitHub() as any,executions as any,runner,{id:40,target:JSON.stringify({workItemId:"w",action:"interrupt-retry",text:"keep the partial implementation"})},"owner");assert.equal(result.projection.status,"QUEUED");assert.equal(result.projection.attempt,2);assert.equal(result.projection.correctionCycles,2);assert.deepEqual(calls,["sync","publish"]);const instruction=store.db.prepare("SELECT id,source_type,payload FROM records WHERE source_id='20'").get() as {id:string;source_type:string;payload:string};assert.equal(instruction.source_type,"dashboard");assert.match(instruction.payload,/keep the partial implementation/);const context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id='w'").get() as {context:string}).context);assert.deepEqual(context.previousAttempt.files,["src/partial.ts"]);assert.equal(context.previousAttempt.guidanceRecordId,instruction.id);const assembled=new ContextAssembler(store).assemble({workItemId:"w",role:"developer",specVersion:1,budgetBytes:100000,budgetSource:"test",issue:{title:"Issue",body:"Body"},previousAttempt:context.previousAttempt,changedFiles:context.previousAttempt.files,diffStat:context.previousAttempt.diffStat});assert.match(assembled.markdown,/## Previous attempt/);assert.match(assembled.markdown,/src\/partial.ts/);assert.match(assembled.markdown,/guidanceRecordId/);
+ }finally{store.db.close();config.repo=previousRepo;}
+});
