@@ -49,6 +49,17 @@ test('repeated update clicks during asynchronous preparation submit only once',a
  release('maintenance-id');await first;assert.equal(submissions,1);
 });
 
+test('a persisted updating state clears an earlier preparation error from the badge',()=>{
+ const ui=dashboard(false,async()=>({}));
+ ui.context.relative=()=> 'just now';
+ vm.runInContext('updatePreparing=false;serviceBusy=false;daemonStartAttention=false;updatePreparationError="Update request did not start";',ui.context);
+ vm.runInContext(source.split('\n').find(line=>line.startsWith('function renderServices('))!,ui.context);
+ ui.context.data={services:[],update:{status:'updating',phase:'Downloading and validating…',startedAt:new Date().toISOString()}};
+ vm.runInContext('renderServices(data)',ui.context);
+ assert.equal(ui.elements.get('#update-status').textContent,'Updating…');
+ assert.equal(vm.runInContext('updatePreparationError',ui.context),'');
+});
+
 test('update diagnostics stay outside the status badge and clear after recovery',()=>{
  const ui=dashboard(false,async()=>({}));
  vm.runInContext('let updatePreparing=false;let serviceBusy=false;let daemonStartAttention=false;',ui.context);

@@ -26,3 +26,13 @@ test('reconciliation requires a known terminal update and preserves newer, runni
   for(const id of ['running','other','new'])assert.notEqual((store.db.prepare('SELECT status FROM maintenance_operations WHERE id=?').get(id) as any).status,'failed');
  }finally{store.db.close();}
 });
+
+test('a terminal update state clears only an empty running update barrier created during that update',()=>{
+ const store=new Store(':memory:');try{
+  const startedAt='2026-09-21T23:52:00.000Z',finishedAt='2026-09-21T23:53:00.000Z';
+  for(const [id,status,requestedAt] of [['orphan','running','2026-09-21T23:52:14.000Z'],['before','running','2026-09-21T23:51:59.000Z'],['after','running','2026-09-21T23:53:01.000Z'],['other','running','2026-09-21T23:52:14.000Z']])store.db.prepare("INSERT INTO maintenance_operations(id,operation,actor,status,requested_at) VALUES(?,?, 'dashboard',?,?)").run(id,id==='other'?'daemon-stop':'update',status,requestedAt);
+  assert.equal(reconcileUpdateMaintenance(store,{status:'completed',startedAt,finishedAt}),1);
+  assert.equal((store.db.prepare("SELECT status FROM maintenance_operations WHERE id='orphan'").get() as any).status,'completed');
+  for(const id of ['before','after','other'])assert.equal((store.db.prepare('SELECT status FROM maintenance_operations WHERE id=?').get(id) as any).status,'running');
+ }finally{store.db.close();}
+});

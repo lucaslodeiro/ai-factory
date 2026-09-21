@@ -1,24 +1,33 @@
 import fs from "node:fs";
 import type {Store} from "./storage.js";
 
-type UpdateOutcome={maintenanceId?:string;status?:string;phase?:string};
+type UpdateOutcome={maintenanceId?:string;status?:string;phase?:string;startedAt?:string;finishedAt?:string};
 
 // A finished update supersedes older preparations that never started. Preserve
 // paused tasks for explicit resume, and never release a newer or running barrier.
 export function reconcileUpdateMaintenance(store:Store,state:UpdateOutcome){
- if(!state?.maintenanceId||!["completed","failed"].includes(state.status??""))return 0;
+ if(!state||!["completed","failed"].includes(state.status??""))return 0;
  return store.db.transaction(()=>{
-  const current=store.db.prepare("SELECT id,status,requested_at FROM maintenance_operations WHERE id=? AND operation='update'").get(state.maintenanceId) as {id:string;status:string;requested_at:string}|undefined;
-  if(!current)return 0;
+  const current=state.maintenanceId?store.db.prepare("SELECT id,status,requested_at FROM maintenance_operations WHERE id=? AND operation='update'").get(state.maintenanceId) as {id:string;status:string;requested_at:string}|undefined:undefined;
   let reconciled=0;
   const finish=(id:string,status:string,error:string|null)=>{
-   store.db.prepare("UPDATE maintenance_operations SET status=?,finished_at=?,error=? WHERE id=?").run(status,new Date().toISOString(),error,id);
-   store.event(`maintenance.${status}`,{maintenanceId:id,operation:"update",error:error??undefined,reconciledBy:current.id});
-   reconciled++;
+    store.db.prepare("UPDATE maintenance_operations SET status=?,finished_at=?,error=? WHERE id=?").run(status,new Date().toISOString(),error,id);
+   store.event(`maintenance.${status}`,{maintenanceId:id,operation:"update",error:error??undefined,reconciledBy:current?.id??"update-state"});
+    reconciled++;
   };
-  if(!["completed","failed"].includes(current.status))finish(current.id,state.status!,state.status==="failed"?state.phase??"Update failed":null);
-  const abandoned=store.db.prepare("SELECT id FROM maintenance_operations WHERE operation='update' AND id<>? AND requested_at<=? AND status IN ('requested','confirmed','pausing','ready')").all(current.id,current.requested_at) as {id:string}[];
-  for(const row of abandoned)finish(row.id,"failed",`Superseded by finished update ${current.id}`);
+  if(current&&!['completed','failed'].includes(current.status))finish(current.id,state.status!,state.status==="failed"?state.phase??"Update failed":null);
+  if(current){
+   const abandoned=store.db.prepare("SELECT id FROM maintenance_operations WHERE operation='update' AND id<>? AND requested_at<=? AND status IN ('requested','confirmed','pausing','ready')").all(current.id,current.requested_at) as {id:string}[];
+   for(const row of abandoned)finish(row.id,"failed",`Superseded by finished update ${current.id}`);
+  }
+  // A dashboard may be replaced while its independent updater finishes. If the
+  // durable state says that update is terminal, an otherwise empty running
+  // update barrier created during that run cannot still be doing work.
+  const started=Date.parse(state.startedAt??''),finished=Date.parse(state.finishedAt??'');
+  if(Number.isFinite(started)&&Number.isFinite(finished)&&finished>=started){
+   const orphaned=store.db.prepare("SELECT id FROM maintenance_operations WHERE operation='update' AND status='running' AND requested_at>=? AND requested_at<=? AND NOT EXISTS(SELECT 1 FROM maintenance_items WHERE maintenance_id=maintenance_operations.id)").all(new Date(started).toISOString(),new Date(finished).toISOString()) as {id:string}[];
+   for(const row of orphaned)if(row.id!==current?.id)finish(row.id,state.status!,state.status==="failed"?state.phase??"Update failed":null);
+  }
   return reconciled;
  }).immediate();
 }
