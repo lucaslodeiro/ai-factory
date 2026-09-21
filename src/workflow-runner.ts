@@ -12,6 +12,7 @@ import { WorkflowRecords } from "./workflow-records.js";
 import type { TacticalNextRole } from "./tactical-routing.js";
 import { InvalidResultError } from "./results.js";
 import { sanitizeFailureEvidence } from "./failure-report.js";
+import { runVerification } from "./verification.js";
 import { config } from "./config.js";
 import { WorkflowProjections } from "./workflow-projection.js";
 import type {PublishedLatestResult} from "./workflow-state.js";
@@ -66,7 +67,7 @@ export class WorkflowRunner {
    preparing=false;started=this.scheduler.begin(workItemId);
    this.updateContext(workItemId,{attemptStart:{executionId:started.executionId,head:before,startedAt:new Date().toISOString(),stage:projection.stage}},currentContext.previousAttempt?["previousAttempt"]:[]);
    this.store.event("model.selected",{role,specVersion,selection,budget},workItemId,started.executionId);
-   const result=await adapter.run({workItemId,role,cwd,instructions,selection,executionId:started.executionId,promptMetadata:{...assembled.manifest,budgetBytes:budget.bytes,budgetSource:budget.source,sectionBytes:{Contract:contractBytes,...assembled.manifest.sectionBytes}},allowedNextRoles:route?.allowedNextRoles,consultationFrom:route?.from});
+   let result=await adapter.run({workItemId,role,cwd,instructions,selection,executionId:started.executionId,promptMetadata:{...assembled.manifest,budgetBytes:budget.bytes,budgetSource:budget.source,sectionBytes:{Contract:contractBytes,...assembled.manifest.sectionBytes}},allowedNextRoles:route?.allowedNextRoles,consultationFrom:route?.from});
    const current=new WorkflowProjections(this.store).get(workItemId);if(current.status!=="RUNNING"||current.activeRunId!==started.executionId){this.store.event("execution.discarded",{executionId:started.executionId,reason:"Workflow changed before worktree validation"},workItemId,started.executionId);return true;}
    const changed=this.workspaces.check(cwd,role,before,row.branch,baseline);
    if(role==="developer"||role==="qa"){
@@ -74,7 +75,15 @@ export class WorkflowRunner {
     try {if(this.workspaces.publishAsync)await this.workspaces.publishAsync(cwd,row.branch);else this.workspaces.publish(cwd,row.branch);}
     catch(error){this.store.event("workflow.push_failed",{branch:row.branch,error:sanitizeFailureEvidence(error instanceof Error?error.message:String(error),1600)},workItemId,started.executionId);}
    }
-   this.results.apply({workItemId,executionId:started.executionId,role,result,head:this.workspaces.head(cwd)});return true;
+   const resultHead=this.workspaces.head(cwd);
+   if(role==="qa"&&config.verifyCommand){
+    const verification=await runVerification({cwd,command:config.verifyCommand,timeoutMs:config.timeoutMs});
+    verification.outputTail=sanitizeFailureEvidence(verification.outputTail);
+    this.store.event("verification.completed",verification,workItemId,started.executionId);
+    this.updateContext(workItemId,{verification:{head:resultHead,command:verification.command,exitCode:verification.exitCode}});
+    if(verification.exitCode!==0&&result.outcome==="pass")result={...result,outcome:"changes",findings:[{classification:"auto-fix",evidence:`Factory verification failed: \`${verification.command}\` exited ${verification.exitCode}.\n\n${verification.outputTail}`}]};
+   }
+   this.results.apply({workItemId,executionId:started.executionId,role,result,head:resultHead});return true;
   } catch(error){if(!started){if(!preparing)throw error;this.scheduler.rejectQueued(workItemId,new Error(`Could not prepare workflow execution: ${error instanceof Error?error.message:String(error)}`),error instanceof InvalidContextError?"invalid-context":error instanceof SyncConflictError?"integration":"execution");return true;}const interrupted=this.store.db.prepare("SELECT status,interruption_reason FROM executions WHERE id=?").get(started.executionId) as {status:string;interruption_reason:string|null}|undefined;if(interrupted?.status==="interrupted"&&interrupted.interruption_reason==="interrupted-for-guidance"){this.store.event("execution.discarded",{executionId:started.executionId,reason:"Human interrupted the attempt with new guidance"},workItemId,started.executionId);return true;}this.store.event("workflow.result_failed",{error:error instanceof Error?error.message:String(error)},workItemId,started.executionId);this.scheduler.fail(workItemId,started.executionId,error,error instanceof InvalidContextError?"invalid-context":error instanceof InvalidResultError?"invalid-result":"execution");return true;}
   finally{if(reviewerContext&&cwd)try{this.workspaces.cleanupReviewerContext(cwd,workItemId);}catch(error){this.store.event("workflow.context_cleanup_failed",{error:error instanceof Error?error.message:String(error)},workItemId,started?.executionId);}}
  }

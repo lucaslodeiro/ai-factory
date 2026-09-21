@@ -1,3 +1,5 @@
+import {runVerification} from "../src/verification.js";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/storage.js";
@@ -162,4 +164,24 @@ test("continued Review includes published Tester evidence in the Reviewer prompt
 test("local agent result takes precedence over adopted evidence for the same role",async()=>{
  const continued=continuedStore("REVIEW","QUEUED",[{role:"qa",summary:"Adopted Tester evidence"}]),workspace=new Workspace();let instructions="";
  try{continued.store.event("agent.result",{role:"qa",result:result("pass",{summary:"Local Tester evidence"})},continued.id,"local-qa");new WorkflowCommands(continued.store).apply({kind:"retry",guidance:"",scope:"spec",appliesTo:[]},{workItemId:continued.id,login:"owner",commentId:9,specVersion:1});const runner=new WorkflowRunner(continued.store,{reviewer:{async run(request){instructions=request.instructions;continued.store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return result("pass");}}},workspace,{ensurePR(){return"unused";}});await runner.run(continued.id);assert.match(instructions,/Local Tester evidence/);assert.doesNotMatch(instructions,/Adopted Tester evidence/);}finally{continued.store.db.close();}
+});
+
+for(const code of [3,0])test(`factory verification exit ${code} controls the Tester pass path`,{skip:spawnSync("sh",["-c","exit 0"]).status!==0},async()=>{
+ const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace=new Workspace(),previous=config.verifyCommand;
+ workspace.ensure=()=>process.cwd();config.verifyCommand=`exit ${code}`;
+ const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded' WHERE id=?").run(request.executionId);return value;}});
+ try{
+  const runner=new WorkflowRunner(store,{"product-architect":adapter(result("spec")),developer:adapter(result("pass")),qa:adapter(result("pass"))},workspace,{ensurePR(){return "unused";}});
+  await runner.run(item.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});await runner.run(item.id);await runner.run(item.id);
+  const projection=new WorkflowProjections(store).get(item.id);assert.equal(projection.stage,code?"BUILD":"REVIEW");assert.equal(projection.status,"QUEUED");
+  const event=store.db.prepare("SELECT payload,run_id FROM events WHERE type='verification.completed'").get() as {payload:string;run_id:string};assert.equal(JSON.parse(event.payload).exitCode,code);assert.ok(event.run_id);
+  const applied=JSON.parse((store.db.prepare("SELECT payload FROM events WHERE type='agent.result' ORDER BY id DESC LIMIT 1").get() as {payload:string}).payload).result;
+  assert.equal(applied.outcome,code?"changes":"pass");if(code){assert.equal(applied.findings.length,1);assert.equal(applied.findings[0].classification,"auto-fix");assert.match(applied.findings[0].evidence,/`exit 3` exited 3/);}
+  const context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(item.id) as {context:string}).context);assert.deepEqual(context.verification,{head:"abc",command:`exit ${code}`,exitCode:code});
+ }finally{config.verifyCommand=previous;store.db.close();}
+});
+
+test("factory verification bounds combined output and times out asynchronously",{skip:spawnSync("sh",["-c","exit 0"]).status!==0},async()=>{
+ let ticks=0;const timer=setInterval(()=>ticks++,5);
+ try{const evidence=await runVerification({cwd:process.cwd(),command:"printf '%05000d' 0; printf 'error evidence' >&2; sleep 10",timeoutMs:100});assert.equal(evidence.exitCode,null);assert.equal(evidence.outputTail.length,4000);assert.match(evidence.outputTail,/error evidence/);assert.ok(evidence.durationMs>=90);assert.ok(ticks>0);}finally{clearInterval(timer);}
 });

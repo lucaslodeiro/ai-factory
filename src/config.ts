@@ -61,6 +61,7 @@ export const config = {
   repoDir: path.resolve(home,process.env.FACTORY_REPO_DIR ?? "."),
   pollMs: positive("FACTORY_POLL_INTERVAL_MS", 15000),
   timeoutMs: positive("FACTORY_EXECUTION_TIMEOUT_MS", 1800000),
+  verifyCommand: process.env.FACTORY_VERIFY_COMMAND?.trim() || undefined,
   maxCycles: positive("FACTORY_MAX_FIX_CYCLES", 3),
   contextBudget:{defaultBytes:positive("FACTORY_CONTEXT_BUDGET_BYTES",200000),overrides:contextBudgetOverrides()},
   artifactRetentionDays:nonnegative("FACTORY_ARTIFACT_RETENTION_DAYS",30),
