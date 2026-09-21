@@ -45,7 +45,7 @@ export class WorkflowOrchestrator {
    const labels=(issue.labels??[]).map(label=>label.name),instances=labels.filter(label=>label.startsWith("factory-instance:")),local=this.rows().find(item=>item.issue_id===issue.id);
    if(local){
     if(local.archived_at){view.push({issue:issue.number,state:"worked-here",instances});continue;}
-    if(["COMPLETED","CANCELLED"].includes(local.status)){await this.github.unassign(local.issue_number,[login]);await this.github.removeLabel(local.issue_number,own);view.push({issue:issue.number,state:"released",instances:[]});continue;}
+    if(["COMPLETED","CANCELLED"].includes(local.status)){if(!this.released(local)){await this.github.unassign(local.issue_number,[login]);await this.github.removeLabel(local.issue_number,own);this.updateContext(local.id,{releasedAt:new Date().toISOString()});}view.push({issue:issue.number,state:"released",instances:[]});continue;}
     if(!instances.length){await this.github.addLabel(issue.number,own);this.store.event("issue.claimed",{issue:issue.number,instance:config.instanceName},local.id);view.push({issue:issue.number,state:"claiming",instances:[own]});continue;}
     if(instances.length===1&&instances[0]===own){if(local.status==="PAUSED"&&["unassigned","moved"].includes(this.lastReason(local.id))){const current=this.projections.get(local.id),status=this.projections.resumeStatus(local.id);this.projections.transition({workItemId:local.id,expectedRevision:current.revision,stage:current.stage,status,attemptDelta:status==="QUEUED"?1:0,actor:{type:"github",id:login},source:{},reason:{code:"reassigned",summary:"Issue reassigned to this Factory instance"}});}view.push({issue:issue.number,state:"worked-here",instances});continue;}
     await this.pauseOwned(local,instances.includes(own)?"moved":"moved");view.push({issue:issue.number,state:instances.includes(own)?"claim-conflict":"other-instance",instances});continue;
@@ -60,7 +60,7 @@ export class WorkflowOrchestrator {
    else view.push({issue:issue.number,state:"other-instance",instances});
   }
   for(const local of this.rows().filter(item=>!item.archived_at&&!assignedIds.has(item.issue_id??-1))){
-   if(["COMPLETED","CANCELLED"].includes(local.status)){await this.github.unassign(local.issue_number,[login]);await this.github.removeLabel(local.issue_number,own);continue;}
+   if(["COMPLETED","CANCELLED"].includes(local.status)){if(!this.released(local)){await this.github.unassign(local.issue_number,[login]);await this.github.removeLabel(local.issue_number,own);this.updateContext(local.id,{releasedAt:new Date().toISOString()});}continue;}
    const remote=await this.github.issue(local.issue_number);if(remote.state!=="OPEN")continue;await this.pauseOwned(local,"unassigned");await this.github.removeLabel(local.issue_number,own);view.push({issue:local.issue_number,state:"unassigned",instances:[]});
   }
   this.store.setMetadata("runtime:assigned-issues",view);
@@ -73,6 +73,7 @@ export class WorkflowOrchestrator {
   try{await this.runner.preserve(item.id);}catch(error){this.store.event("workflow.preserve_failed",{reason,error:String(error)},item.id,current.activeRunId);}
  }
  private lastReason(id:string){const row=this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(id) as {payload:string}|undefined;return row?(JSON.parse(row.payload) as {reason?:{code?:string}}).reason?.code??"":"";}
+ private released(item:ItemRow){return Boolean((JSON.parse(item.context||"{}") as {releasedAt?:string}).releasedAt);}
  private eventOnce(key:string,type:string,payload:Record<string,unknown>){const metadata=`ownership:${config.repo}:${key}`;if(this.store.metadata(metadata))return;this.store.event(type,payload);this.store.setMetadata(metadata,true);}
  async refreshIssueList(){
   let updated=0;for(const item of this.rows()){let remote:Issue;try{remote=await this.github.issue(item.issue_number);}catch(error){this.store.event("github.issue_state_failed",{issue:item.issue_number,error:String(error)},item.id);continue;}await this.reconcileIssue(item,remote);if(remote.state==="OPEN"&&!this.row(item.id).archived_at){this.inbox.poll(item.id,await this.github.comments(item.issue_number));updated++;}}
