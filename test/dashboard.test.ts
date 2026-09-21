@@ -11,6 +11,7 @@ import { config } from "../src/config.js";
 
 test("dashboard serves readable state and queues daemon controls", async () => {
   const store = new Store(":memory:");
+  const previousApprovers=[...config.approvers];config.approvers.splice(0,config.approvers.length,"demo-user");store.setMetadata("runtime:factory-account","demo-user");
   // Upgrade compatibility: obsolete standby metadata cannot disable local controls.
   store.db.exec("CREATE TABLE repository_controller(repository_id INTEGER PRIMARY KEY,instance_id TEXT,generation INTEGER,remote_sha TEXT,state TEXT,last_verified_at TEXT,last_error TEXT); INSERT INTO repository_controller VALUES(1,'old-instance',1,'old-sha','standby','2099-01-01',NULL)");
   const settingsRoot = fs.mkdtempSync(path.join(os.tmpdir(),"factory-dashboard-settings-"));
@@ -392,7 +393,7 @@ echo "$*" >> "$PWD/update-actions.log"
     globalThis.fetch=originalFetch;
     await new Promise<void>(resolve => server.close(() => resolve()));
     store.db.close();
-    config.gitCommand=previousGit;config.dataDir=previousDataDir;
+    config.gitCommand=previousGit;config.dataDir=previousDataDir;config.approvers.splice(0,config.approvers.length,...previousApprovers);
     config.codexCommand=previousCodex; config.claudeCommand=previousClaude;
     if (previousGh === undefined) delete process.env.GH_COMMAND; else process.env.GH_COMMAND=previousGh;
     if (previousFactoryHome === undefined) delete process.env.AI_FACTORY_HOME; else process.env.AI_FACTORY_HOME=previousFactoryHome;

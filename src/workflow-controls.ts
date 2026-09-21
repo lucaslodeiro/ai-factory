@@ -1,6 +1,7 @@
 import type {Store} from './storage.js';
 import type {WorkflowCommands} from './workflow-commands.js';
 import type {ExecutionManager} from './execution-manager.js';
+import {config} from './config.js';
 
 export type WorkControl='pause'|'resume'|'retry'|'cancel';
 export function workActions(status:string):WorkControl[]{
@@ -25,7 +26,8 @@ export function applyWorkControl(store:Store,commands:WorkflowCommands,execution
  const workItemId=validateWorkControl(store,control.kind,control.target);
  const specVersion=(store.db.prepare('SELECT COALESCE(MAX(version),0) version FROM specs WHERE work_item_id=?').get(workItemId) as {version:number}).version;
  const command=control.kind==='resume'||control.kind==='retry'?{kind:'retry' as const,guidance:'',scope:'spec' as const,appliesTo:[]}:{kind:control.kind as 'pause'|'cancel',reason:''};
- const result=commands.apply(command,{workItemId,login:'dashboard',commentId:control.id,specVersion});
+ const login=store.metadata<string>('runtime:factory-account');if(!login||!config.approvers.includes(login))throw Object.assign(new Error('The authenticated GitHub operator is not an authorized approver'),{statusCode:403});
+ const result=commands.apply(command,{workItemId,login,commentId:control.id,specVersion});
  if(result.executionAction?.kind==='interrupt')executions.interrupt(result.executionAction.runId,result.executionAction.reason);
  if(result.executionAction?.kind==='cancel')executions.cancel(result.executionAction.runId);
  return result;

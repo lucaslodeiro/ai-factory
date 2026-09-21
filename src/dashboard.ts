@@ -110,6 +110,7 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
 function snapshot(store: Store) {
   return store.db.transaction(() => buildSnapshot(store))();
 }
+function dashboardOperator(store:Store){const login=store.metadata<string>("runtime:factory-account")??"";return{login,approver:Boolean(login&&config.approvers.includes(login))};}
 function buildSnapshot(store: Store) {
   const storedItems=(store.db.prepare("SELECT id,issue_number,repo,stage,status,attempt,revision,branch,updated_at,archived_at,context FROM work_items ORDER BY created_at").all() as any[]).map(item=>({...item,context:JSON.parse(item.context||"{}")}));
   const itemById=new Map(storedItems.map(item=>[item.id,item]));
@@ -167,7 +168,7 @@ function buildSnapshot(store: Store) {
     }
   }
   const maintenance=(store.db.prepare("SELECT id,operation,actor,status,requested_at,confirmed_at,finished_at,error FROM maintenance_operations ORDER BY requested_at DESC LIMIT 10").all() as any[]).map(operation=>({...operation,affected:(store.db.prepare("SELECT work_item_id,paused_at,resumed_at FROM maintenance_items WHERE maintenance_id=?").all(operation.id) as any[])}));
-  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, instanceName:config.instanceName, daemon:daemonState(store), githubSync:store.metadata("runtime:github-sync")??null,issueRefresh, items, executions, usage, events,maintenance };
+  return { generatedAt:new Date().toISOString(), naming:publicNaming, repository:config.repo, branch:config.defaultBranch, instanceName:config.instanceName, operator:dashboardOperator(store), daemon:daemonState(store), githubSync:store.metadata("runtime:github-sync")??null,issueRefresh, items, executions, usage, events,maintenance };
 }
 function remoteIssuesView(store:Store,settingsRoot:string){
  const configuredRepository=readDashboardSetting(settingsRoot,"GITHUB_REPOSITORY").trim();
@@ -570,7 +571,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         if (!["stop","cancel","retry","pause","resume","refresh-list","start-issue","claim-issue","continue-issue"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});
         if (!["stop","refresh-list"].includes(body.kind ?? "") && !body.target) return json(res,400,{error:body.kind === "start-issue" ? "An issue number or URL is required" : "A work item or run id is required"});
         if (["refresh-list","start-issue","claim-issue","continue-issue"].includes(body.kind ?? "") && !daemonState(store).running) return json(res,409,{error:"Start the daemon before synchronizing GitHub issues."});
-        if (["pause","resume","retry","cancel"].includes(body.kind??"")) {try{validateWorkControl(store,body.kind!,body.target!);}catch(error){return json(res,409,{error:(error as Error).message});}}
+        if (["pause","resume","retry","cancel"].includes(body.kind??"")) {const operator=dashboardOperator(store);if(!operator.approver)return json(res,403,{error:"The authenticated GitHub operator is not an authorized approver"});try{validateWorkControl(store,body.kind!,body.target!);}catch(error){return json(res,409,{error:(error as Error).message});}}
         const requestId=store.request(body.kind!,body.target ?? "");
         return json(res,202,{ok:true,requestId,message:body.kind === "refresh-list" ? "GitHub issue refresh queued." : body.kind === "start-issue" ? "Issue start queued." : `${body.kind} queued`});
       }
