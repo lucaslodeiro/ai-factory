@@ -64,9 +64,9 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
     "**Recommended action:** Remove or replace obsolete guidance, or increase the matching context budget in Configuration → Runtime, then retry.",
   ].join("\n\n");
   if (kind==="invalid-result"&&/Environment blockers require/i.test(reason)) return [
-    "**Summary:** Architect returned useful clarification questions and also reported that a required capability was unavailable, but the previous result contract could not represent both facts together.",
-    `**Evidence:** The provider completed successfully; validation rejected the combined \`questions\` and \`environment-blocked\` result: ${reason.replace(/^Error:\s*/,"")}`,
-    "**Recommended action:** Update AI Factory, restore the reported capability when it is required, then retry. If the unavailable check is optional, say which available equivalent is acceptable in the retry guidance.",
+    "**Summary:** This run used an older validation rule that could not combine Architect's clarification questions with an unavailable capability. The current Factory accepts that combination.",
+    "**Evidence:** Architect completed and returned useful questions plus a capability blocker. The former validator rejected the report before those questions could become the next workflow action.",
+    "**Recommended action:** Retry Design. Restore the reported capability when it is required; if the check is optional, say which available equivalent is acceptable in the retry guidance.",
   ].join("\n\n");
   if (kind==="invalid-result") return [
     "**Summary:** The agent returned output that did not satisfy the workflow contract for this role or stage.",
