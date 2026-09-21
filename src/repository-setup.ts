@@ -3,12 +3,13 @@ import path from "node:path";
 import {spawnSync} from "node:child_process";
 
 export const normalizedRepository=(value:string)=>value.trim().replace(/^git@github\.com:/,"https://github.com/").replace(/\/$/,"").replace(/\.git$/i,"").toLowerCase();
-export type RepositorySetup={repoDir:string;repo:string;defaultBranch:string;gitCommand:string};
+export type RepositorySetup={repoDir:string|undefined;repo:string;defaultBranch:string;gitCommand:string};
 export function prepareRepository(settings:RepositorySetup,account=()=>{
  const result=spawnSync(process.env.GH_COMMAND??"gh",["api","user"],{encoding:"utf8",timeout:30000});
  if(result.status!==0)throw new Error("Cannot read the authenticated GitHub account to configure the local Git identity");
  return JSON.parse(result.stdout) as {login:string;id:number};
 }) {
+ if(!settings.repoDir)throw new Error("FACTORY_REPO_DIR is required");
  const root=path.resolve(settings.repoDir),url=`https://github.com/${settings.repo}.git`;
  const git=(args:string[],allow=false,cwd=root)=>{
   const result=spawnSync(settings.gitCommand,args,{cwd,encoding:"utf8",timeout:120000});

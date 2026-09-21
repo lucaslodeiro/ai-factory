@@ -3,7 +3,7 @@ import {verificationPolicy,verificationPathAllowed,verificationArtifactAllowed,s
 import { execFile,spawnSync } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
-import { config } from "./config.js";
+import { config,requiredRepoDir } from "./config.js";
 import type {AgentRole} from "./types.js";
 function gitOutput(cwd: string, args: string[]) {
  const r = spawnSync(config.gitCommand, args, { cwd, encoding: "utf8", timeout: 60000, maxBuffer: 10_000_000 });
@@ -47,20 +47,21 @@ export class Workspaces implements WorkspacePort {
   if (!branch.startsWith("factory/") || branch === config.defaultBranch || git(cwd, ["branch", "--show-current"]) !== branch) throw new Error("Worktree branch mismatch; expected assigned factory branch");
  }
  ensure(id: string, branch: string) {
+  const repoDir=requiredRepoDir();
   const root = path.join(config.dataDir, "worktrees"); fs.mkdirSync(root, { recursive: true });
   const target = path.join(root, id);
   if (fs.existsSync(target)) {
    this.assertBranch(target, branch);
    return target;
   }
-  git(config.repoDir, ["fetch", "origin", config.defaultBranch]);
-  git(config.repoDir,["worktree","prune"]);
-  if (gitSucceeds(config.repoDir,["show-ref","--verify","--quiet",`refs/heads/${branch}`])) {
-   git(config.repoDir,["worktree","add",target,branch]);
+  git(repoDir, ["fetch", "origin", config.defaultBranch]);
+  git(repoDir,["worktree","prune"]);
+  if (gitSucceeds(repoDir,["show-ref","--verify","--quiet",`refs/heads/${branch}`])) {
+   git(repoDir,["worktree","add",target,branch]);
   } else {
-   const remoteBranch = gitSucceeds(config.repoDir,["fetch","origin",`${branch}:refs/remotes/origin/${branch}`])
-    && gitSucceeds(config.repoDir,["show-ref","--verify","--quiet",`refs/remotes/origin/${branch}`]);
-   git(config.repoDir,["worktree","add","-b",branch,target,remoteBranch ? `origin/${branch}` : `origin/${config.defaultBranch}`]);
+   const remoteBranch = gitSucceeds(repoDir,["fetch","origin",`${branch}:refs/remotes/origin/${branch}`])
+    && gitSucceeds(repoDir,["show-ref","--verify","--quiet",`refs/remotes/origin/${branch}`]);
+   git(repoDir,["worktree","add","-b",branch,target,remoteBranch ? `origin/${branch}` : `origin/${config.defaultBranch}`]);
   }
   return target;
  }

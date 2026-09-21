@@ -11,7 +11,7 @@ export function doctor(existingStore?:Store,github:Pick<GitHubPort,"repository">
  let ok = true;
  const check = (name: string, pass: boolean) => { ok = ok && pass; console.log(`${pass ? "✓" : "✗"} ${name}`); };
  check("Node >= 22", Number(process.versions.node.split(".")[0]) >= 22);
- for (const [cmd, args] of [[config.gitCommand, ["--version"]], ["gh", ["auth", "status"]], [config.codexCommand, ["--version"]], [config.claudeCommand, ["--version"]]] as [string, string[]][]) {
+ for (const [cmd, args] of [[config.gitCommand, ["--version"]], [process.env.GH_COMMAND ?? "gh", ["auth", "status"]], [config.codexCommand, ["--version"]], [config.claudeCommand, ["--version"]]] as [string, string[]][]) {
   check(cmd, spawnSync(cmd, args, { encoding: "utf8", timeout: 15000 }).status === 0);
  }
  check("Codex authentication", spawnSync(config.codexCommand, ["login", "status"], { encoding: "utf8", timeout: 15000 }).status === 0);
@@ -20,7 +20,7 @@ export function doctor(existingStore?:Store,github:Pick<GitHubPort,"repository">
  check("GITHUB_REPOSITORY", /^[^/]+\/[^/]+$/.test(config.repo));
  check("FACTORY_APPROVERS", config.approvers.length > 0);
  console.log(`Instance: ${config.instanceName}`);
- const checkoutExists=fs.existsSync(config.repoDir)&&fs.statSync(config.repoDir).isDirectory();
+ const checkoutExists=Boolean(config.repoDir&&fs.existsSync(config.repoDir)&&fs.statSync(config.repoDir).isDirectory());
  check(`Target checkout directory exists: ${config.repoDir}`,checkoutExists);
  if(checkoutExists){
   for (const key of ["user.name", "user.email"]) {

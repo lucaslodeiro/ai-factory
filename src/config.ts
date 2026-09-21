@@ -58,7 +58,7 @@ export const config = {
   home,
   instanceName:normalizeInstanceName(process.env.FACTORY_INSTANCE_NAME?.trim()||os.hostname()),
   dataDir: path.resolve(home,process.env.FACTORY_DATA_DIR ?? "data"),
-  repoDir: path.resolve(home,process.env.FACTORY_REPO_DIR ?? "."),
+  repoDir: process.env.FACTORY_REPO_DIR?.trim() ? path.resolve(home,process.env.FACTORY_REPO_DIR.trim()) : undefined,
   pollMs: positive("FACTORY_POLL_INTERVAL_MS", 15000),
   timeoutMs: positive("FACTORY_EXECUTION_TIMEOUT_MS", 1800000),
   verifyCommand: process.env.FACTORY_VERIFY_COMMAND?.trim() || undefined,
@@ -80,3 +80,5 @@ export function agentEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJ
     ...(source.AGENT_SECRET_ALLOWLIST ?? "").split(",").map(s => s.trim()).filter(Boolean)];
   return Object.fromEntries(names.filter(n => source[n] !== undefined).map(n => [n, source[n]]));
 }
+
+export function requiredRepoDir(){if(!config.repoDir)throw new Error("FACTORY_REPO_DIR is required");return config.repoDir;}

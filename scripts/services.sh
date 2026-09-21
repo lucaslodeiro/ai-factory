@@ -34,10 +34,11 @@ configured_value() {
   awk -F= -v key="$key" '$1==key{sub(/^[^=]*=/,"");gsub(/^[[:space:]]+|[[:space:]]+$/,"");print;exit}' "$file"
 }
 daemon_configuration_ready() {
-  local repository approvers
+  local repository approvers repo_dir
   repository=$(configured_value GITHUB_REPOSITORY)
   approvers=$(configured_value FACTORY_APPROVERS)
-  [[ $repository =~ ^[^/]+/[^/]+$ && $approvers =~ [[:alnum:]_.-] ]]
+  repo_dir=$(configured_value FACTORY_REPO_DIR)
+  [[ $repository =~ ^[^/]+/[^/]+$ && $approvers =~ [[:alnum:]_.-] && $repo_dir =~ [^[:space:]] ]]
 }
 wait_for_service() {
   local service=$1 expected_pid lock_pid details attempt attempts=${service_wait_attempts:-40}
@@ -102,7 +103,7 @@ start_one() {
   local service=$1
   if [[ $service == daemon ]] && ! daemon_configuration_ready; then
     if loaded daemon; then launchctl bootout "$domain/$(label daemon)" >/dev/null 2>&1 || true; fi
-    echo "Daemon was not started: configure GITHUB_REPOSITORY and FACTORY_APPROVERS first." >&2
+    echo "Daemon was not started: configure GITHUB_REPOSITORY, FACTORY_APPROVERS and FACTORY_REPO_DIR first." >&2
     return 1
   fi
   [[ -f $(plist "$service") ]] || write_service "$service"

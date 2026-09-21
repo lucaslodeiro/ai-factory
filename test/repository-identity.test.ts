@@ -18,12 +18,12 @@ test("repository identity is stored once and a different GitHub repository id is
 });
 
 test("daemon refuses a mismatched repository identity before acquiring its lock",async()=>{
- const store=new Store(":memory:"),previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
+ const store=new Store(":memory:"),previousRepo=config.repo,previousRepoDir=config.repoDir,previousApprovers=[...config.approvers];config.repo="owner/demo";config.repoDir=process.cwd();config.approvers.splice(0,config.approvers.length,"owner");
  try {
   store.setMetadata("repository_identity",{id:1,nodeId:"R_1",fullName:"owner/original"});
   await assert.rejects(()=>startDaemon(store,repository(2) as any),/Data directory belongs to repository owner\/original \(id 1\)/);
   assert.equal(store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='daemon_lock'").get(),undefined);
- } finally {config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);store.db.close();}
+ } finally {config.repo=previousRepo;config.repoDir=previousRepoDir;config.approvers.splice(0,config.approvers.length,...previousApprovers);store.db.close();}
 });
 
 test("doctor reports a repository identity mismatch",()=>{

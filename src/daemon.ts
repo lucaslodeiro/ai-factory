@@ -51,6 +51,7 @@ export function acquireLock(store: Store) {
 export function recoverAbandonedExecutions(store:Store){const scheduler=new WorkflowScheduler(store),abandoned=store.db.prepare("SELECT id,work_item_id FROM executions WHERE status='running'").all() as Array<{id:string;work_item_id:string}>;for(const run of abandoned){store.db.prepare("UPDATE executions SET status='interrupted',recovery_pending=1,finished_at=?,interruption_reason='unexpected-shutdown' WHERE id=?").run(new Date().toISOString(),run.id);scheduler.fail(run.work_item_id,run.id,new Error("Agent execution was interrupted by an unexpected daemon shutdown"),"recovery");store.event("execution.interrupted",{reason:"unexpected-shutdown"},run.work_item_id,run.id);}return abandoned.length;}
 export async function startDaemon(store = new Store(),github=new GitHubAdapter()) {
  try {
+  if (!config.repoDir) throw new Error("FACTORY_REPO_DIR is required");
   if (!config.repo || !config.approvers.length) throw new Error("Configure GITHUB_REPOSITORY and FACTORY_APPROVERS first");
   const factoryLogin=github.authenticatedLogin();if(!factoryLogin)throw new Error("GitHub authentication did not return an account login");store.setMetadata("runtime:factory-account",factoryLogin);
   verifyRepositoryIdentity(store,github);
