@@ -76,8 +76,8 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
   ].join("\n\n");
   if (kind==="invalid-result") return [
     "**Summary:** The agent returned output that did not satisfy the workflow contract for this role or stage.",
-    "**Evidence:** The provider completed, but schema, acceptance-coverage or stage-transition validation rejected its result.",
-    "**Recommended action:** Review the exact validation message and retry with clarifying guidance if the intended behavior is ambiguous.",
+    `**Evidence:** The provider completed, but Factory rejected its report because: ${reason.replace(/^Error:\s*/,"")}`,
+    "**Recommended action:** Correct the stated report requirement, then retry the saved stage. Add retry guidance only when the requested behavior needs clarification.",
   ].join("\n\n");
   if (kind==="environment") return [
     "**Summary:** A capability required to complete this stage was unavailable.",

@@ -1,4 +1,4 @@
-import {redactSecrets} from "./failure-report.js";
+import {failureDiagnosis,redactSecrets,sanitizeFailureEvidence} from "./failure-report.js";
 import type {RuntimeGitHub} from "./github-runtime.js";
 import type { Store } from "./storage.js";
 import type { WorkflowGitHubPort } from "./adapters/github.js";
@@ -8,6 +8,7 @@ import { roleFullName,roleShortName } from "./names.js";
 import { factoryHelpMarkdown } from "./factory-help.js";
 import {config} from "./config.js";
 import {IncompleteIssueStateError,issueStateIndex,validateIssueState,validateSpecificationFact,type ReadIssueState} from "./workflow-state.js";
+import {WorkflowFailures,type WorkflowFailure} from "./workflow-failures.js";
 
 export function publishedText(value:string){return redactSecrets(value).replaceAll("<!--","<!-\u200b-");}
 function publishedAgentData<T>(value:T):T{return JSON.parse(JSON.stringify(value),(_key,leaf)=>typeof leaf==="string"?publishedText(leaf):leaf) as T;}
@@ -30,6 +31,14 @@ export function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:num
  if(result.decisions.length)sections.push(`## Decisions\n\n${result.decisions.map(decision=>`- **${decision.kind}** — ${decision.decision}: ${decision.rationale}`).join("\n")}`);
  if(!result.questions.length&&result.outcome!=="spec"){const action=result.findings.some(f=>f.classification==="environment-blocked")?"Work failed because a required execution capability is unavailable. Fix the reported environment issue, then Retry this stage. No next agent has been queued.":role==="product-architect"&&result.outcome==="resolved"?`No human action is required; ${roleShortName(result.nextRole!)} continues.`:role==="product-architect"?"Review the specification and use the command shown in the AI Factory status comment.":role==="qa"&&result.outcome==="decision"?"Architect will resolve this decision; no human action is required.":role==="reviewer"?`Review and merge the pull request${pullRequestUrl?` (${pullRequestUrl})`:""} when it is ready.`:`${roleShortName(role)} finished. The next workflow stage is queued automatically.`;sections.push(`## Next action\n\n> ${action}`);}
  return sections.filter(section=>!options.reportOnly||!section.startsWith("# ")&&!section.startsWith("## Next action")).join("\n\n");
+}
+
+const stageName:Record<WorkflowFailure["stage"],string>={DESIGN:"Design",BUILD:"Build",TEST:"Test",REVIEW:"Review",DELIVERY:"Delivery"};
+function failureMarkdown(store:Store,failure:WorkflowFailure) {
+ const run=failure.executionId?store.db.prepare("SELECT status,exit_code,finished_at FROM executions WHERE id=? AND work_item_id=?").get(failure.executionId,failure.workItemId) as {status:string;exit_code:number|null;finished_at:string|null}|undefined:undefined;
+ const process=run?{status:run.status==="running"&&run.finished_at?"failed":run.status,exit_code:run.exit_code}:undefined;
+ const reason=publishedText(sanitizeFailureEvidence(failure.message,1600))||"The workflow stopped without an error message.";
+ return `# ${stageName[failure.stage]} failed\n\nThe Factory preserved this stage and its work so it can be retried safely.\n\n${failureDiagnosis(reason,"",process,failure.class)}\n\n## Exact validation message\n\n\`\`\`text\n${reason}\n\`\`\`\n\n## Next action\n\nFix the reported cause, then post:\n\n\`\`\`text\n/factory retry\n\`\`\`\n\n<sub>instance:${config.instanceName}</sub>`;
 }
 
 export class WorkflowGitHubPublisher {
@@ -71,6 +80,13 @@ export class WorkflowGitHubPublisher {
    if(payload.role==="product-architect"&&payload.result.outcome==="spec"){const current=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(row.work_item_id) as {context:string},value=JSON.parse(current.context||"{}") as Record<string,unknown>,specMarkers=value.specMarkers&&typeof value.specMarkers==="object"&&!Array.isArray(value.specMarkers)?value.specMarkers as Record<string,string>:{};this.store.db.prepare("UPDATE work_items SET context=? WHERE id=?").run(JSON.stringify({...value,specMarkers:{...specMarkers,[String(version)]:marker}}),row.work_item_id);}
    this.store.setMetadata(`github:result:${row.id}`,true);count++;
   }
+  return count+await this.publishFailures();
+ }
+ private async publishFailures() {
+  let count=0;
+  const rows=this.store.db.prepare("SELECT f.id,f.work_item_id,w.issue_number,w.archived_at FROM failures f JOIN work_items w ON w.id=f.work_item_id WHERE f.resolved_at IS NULL ORDER BY f.created_at").all() as Array<{id:string;work_item_id:string;issue_number:number;archived_at:string|null}>;
+  const failures=new WorkflowFailures(this.store);
+  for(const row of rows){const key=`github:failure:${row.id}`;if(row.archived_at||this.store.metadata<boolean>(key))continue;const failure=failures.get(row.id);if(!failure)continue;await this.github.publishWorkflowComment(row.issue_number,`failure-${row.id}`,failureMarkdown(this.store,failure));this.store.setMetadata(key,true);count++;}
   return count;
  }
  private isMilestone(row:{work_item_id:string;run_id:string},payload:{role:AgentRole;result:AgentResult}) {
