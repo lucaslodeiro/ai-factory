@@ -150,6 +150,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.ok(html.indexOf('Runtime controls')<html.indexOf('Local issues'));
     assert.match(html,/<details class="panel settings-panel">/);
     assert.match(html,/<details class="panel usage-panel">/);
+    assert.doesNotMatch(html,/Provider-reported token usage/);
     assert.doesNotMatch(html,/Dismiss guide/);
     assert.doesNotMatch(html,/Stop daemon/);
     const client = await fetch(`http://127.0.0.1:${port}/app.js`).then(response => response.text());
