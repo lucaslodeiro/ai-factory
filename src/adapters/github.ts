@@ -11,7 +11,7 @@ export interface GitHubPort {
  assignees(n:number):string[];assign(n:number,logins:string[]):void;unassign(n:number,logins:string[]):void;
  ensurePR(branch: string, title: string, body: string): string;
 }
-export interface WorkflowGitHubPort { syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,body:string):void; publishWorkflowComment(n:number,key:string,body:string):void; }
+export interface WorkflowGitHubPort { syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,body:string):void; publishWorkflowComment(n:number,key:string,body:string):number|void; }
 function gh(args: string[], input?: unknown) {
  const r = spawnSync(process.env.GH_COMMAND??"gh", args, { input: input === undefined ? undefined : JSON.stringify(input), encoding: "utf8", timeout: 60000, maxBuffer: 10_000_000 });
  if (r.status !== 0) throw new Error(r.stderr || r.error?.message || "gh failed"); return r.stdout.trim();
@@ -45,8 +45,9 @@ export class GitHubAdapter implements GitHubPort {
  }
  publishWorkflowComment(n:number,key:string,content:string) {
   const marker=`<!-- ai-factory:workflow-comment:${this.repositoryName}:${n}:${key} -->`;
-  if(this.comments(n).some(comment=>comment.body.includes(marker)))return;
+  const existing=this.comments(n).find(comment=>comment.body.includes(marker));if(existing)return existing.id;
   this.invoke(["issue","comment",String(n),"--repo",this.repositoryName,"--body",`${content}\n\n${marker}`]);
+  const created=this.comments(n).find(comment=>comment.body.includes(marker));if(!created)throw new Error("GitHub did not return the published workflow comment");return created.id;
  }
  assignees(n:number):string[]{return (JSON.parse(this.invoke(["issue","view",String(n),"--repo",this.repositoryName,"--json","assignees"])).assignees as Array<{login:string}>).map(value=>value.login);}
  assign(n:number,logins:string[]){if(logins.length)this.invoke(["issue","edit",String(n),"--repo",this.repositoryName,"--add-assignee",logins.join(",")]);}

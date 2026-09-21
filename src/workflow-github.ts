@@ -7,6 +7,10 @@ import { roleFullName,roleShortName } from "./names.js";
 import { factoryHelpMarkdown } from "./factory-help.js";
 import {config} from "./config.js";
 
+const payloadMarker=/<!-- ai-factory:payload:v1 ([\s\S]*?) -->/;
+export function withPayload(body:string,value:unknown){const json=JSON.stringify(value).replaceAll("--","-\\u002d");return `${body}\n\n<!-- ai-factory:payload:v1 ${json} -->`;}
+export function payloadOf(body:string):unknown|null {const match=body.match(payloadMarker);if(!match)return null;try{return JSON.parse(match[1]);}catch{return null;}}
+
 export function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:number,pullRequestUrl?:string) {
  const heading=role==="product-architect"&&result.outcome==="questions"?"Architect — questions":role==="product-architect"&&result.outcome==="resolved"?"Architect — tactical decision":role==="product-architect"?`Specification v${specVersion} — awaiting approval`:`${roleFullName(role)} report`;
  const sections=[`# ${heading}`,`## Summary\n\n${result.summary}`];
@@ -50,7 +54,11 @@ export class WorkflowGitHubPublisher {
    const payload=JSON.parse(row.payload) as {role:AgentRole;result:AgentResult;specVersion:number};
    if(!this.isMilestone(row,payload)) {this.store.setMetadata(`github:result:${row.id}`,true);continue;}
    const version=payload.specVersion||((this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(row.work_item_id) as {version:number|null}).version??0);
-   const context=JSON.parse(row.context||"{}") as {pr?:string};await this.github.publishWorkflowComment(row.issue_number,`result-${row.run_id}`,`${resultMarkdown(payload.role,payload.result,version,context.pr)}\n\n<sub>instance:${config.instanceName}</sub>`);
+   const context=JSON.parse(row.context||"{}") as {pr?:string};let machine:Record<string,unknown>;
+   if(payload.role==="product-architect"&&payload.result.outcome==="spec"){
+    const spec=this.store.db.prepare("SELECT version,body,criteria,assessment FROM specs WHERE work_item_id=? AND version=?").get(row.work_item_id,version) as {version:number;body:string;criteria:string;assessment:string|null};machine={kind:"spec",version:spec.version,body:spec.body,criteria:JSON.parse(spec.criteria),assessment:spec.assessment?JSON.parse(spec.assessment):null};
+   }else machine={kind:"result",role:payload.role,executionId:row.run_id,outcome:payload.result.outcome,findings:payload.result.findings,decisions:payload.result.decisions,coverage:payload.result.coverage,tests:payload.result.tests,changedFiles:payload.result.changedFiles,summary:payload.result.summary};
+   await this.github.publishWorkflowComment(row.issue_number,`result-${row.run_id}`,withPayload(`${resultMarkdown(payload.role,payload.result,version,context.pr)}\n\n<sub>instance:${config.instanceName}</sub>`,machine));
    this.store.setMetadata(`github:result:${row.id}`,true);count++;
   }
   return count;
