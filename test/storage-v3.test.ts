@@ -86,3 +86,26 @@ test("schema migration is forbidden while there is no production",()=>{
  assert.doesNotMatch(source,/\bversion\s*(?:===|!==|==|!=)\s*\d+\b/);
  assert.doesNotMatch(source,/\b\d+\s*(?:===|!==|==|!=)\s*version\b/);
 });
+
+test('opening an existing database retires controller storage without touching workflow or audit data',()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'factory-retire-controller-')),file=path.join(root,'factory.db');
+ try{
+  const original=new Store(file);insertItem(original);
+  original.db.prepare("UPDATE work_items SET stage='BUILD',status='PAUSED',revision=8 WHERE id='work-1'").run();
+  original.db.prepare("INSERT INTO specs(work_item_id,version,body,approved_by) VALUES('work-1',1,'Keep approved spec','owner')").run();
+  original.event('controller.takeover',{generation:3},'work-1');
+  original.setMetadata('repository_identity',{id:42,nodeId:'R_42',fullName:'owner/demo'});
+  original.db.exec("CREATE TABLE repository_controller(repository_id INTEGER PRIMARY KEY,state TEXT); INSERT INTO repository_controller VALUES(42,'standby'); CREATE INDEX old_controller_state ON repository_controller(state)");
+  const tables=['work_items','specs','events','metadata','controls'];
+  const expected=Object.fromEntries(tables.map(table=>[table,original.db.prepare(`SELECT * FROM ${table}`).all()]));
+  original.db.close();
+  for(let attempt=0;attempt<2;attempt++){
+   const reopened=new Store(file);
+   try{
+    assert.deepEqual(reopened.db.prepare("SELECT name FROM sqlite_master WHERE name IN ('repository_controller','old_controller_state')").all(),[]);
+    for(const table of tables)assert.deepEqual(reopened.db.prepare(`SELECT * FROM ${table}`).all(),expected[table],table);
+    assert.equal(reopened.db.pragma('quick_check',{simple:true}),'ok');
+   }finally{reopened.db.close();}
+  }
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});

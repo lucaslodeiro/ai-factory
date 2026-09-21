@@ -95,8 +95,6 @@ install_step="installing npm dependencies"
 CI=1 npm ci --no-audit --no-fund
 install_step="building the factory"
 npm run build
-install_step="creating the installation identity"
-node -e 'import("./dist/src/instance.js").then(module=>module.readOrCreateInstance())'
 install_step="validating the installation"
 node scripts/validate-installation.mjs
 install_step="installing the launcher"
