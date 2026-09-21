@@ -6,7 +6,7 @@ const source=fs.readFileSync(new URL('../dashboard/app.js',import.meta.url),'utf
 function dashboard(interrupted:boolean,fetch:()=>Promise<unknown>){
  const elements=new Map<string,any>(),toasts:string[]=[],storage=new Map<string,string>();
  if(interrupted)storage.set('factory-api-interruption',String(Date.now()+30000));
- const context=vm.createContext({fetch,Date,Promise,AbortSignal,sessionStorage:{getItem:(key:string)=>storage.get(key),setItem:(key:string,value:string)=>storage.set(key,value)},$: (selector:string)=>{if(!elements.has(selector))elements.set(selector,{textContent:'',innerHTML:'previous data',classList:{remove(){}}});return elements.get(selector)},toast:(message:string)=>toasts.push(message),escapeHtml:(value:string)=>value,credentialsData:{credentials:[]},settingsLoaded:false,render(){},renderSettings(){},renderCredentials(){},renderSlack(){},renderServices(){}});
+ const context=vm.createContext({fetch,Date,Promise,AbortSignal,AbortController,setTimeout,clearTimeout,sessionStorage:{getItem:(key:string)=>storage.get(key),setItem:(key:string,value:string)=>storage.set(key,value)},$: (selector:string)=>{if(!elements.has(selector))elements.set(selector,{textContent:'',innerHTML:'previous data',classList:{remove(){}}});return elements.get(selector)},toast:(message:string)=>toasts.push(message),escapeHtml:(value:string)=>value,credentialsData:{credentials:[]},settingsLoaded:false,render(){},renderSettings(){},renderCredentials(){},renderSlack(){},renderServices(){}});
  vm.runInContext(source.slice(source.indexOf('let factoryUpdating='),source.indexOf('async function prepareMaintenance')),context);
  for(const name of ['refresh','loadCredentials','loadSlack','loadSettings','loadServices'])vm.runInContext(source.split('\n').find(line=>line.startsWith(`async function ${name}(`))!,context);
  return {context,elements,toasts,run:(name:string)=>vm.runInContext(`${name}()`,context)};
@@ -58,4 +58,39 @@ test('update diagnostics stay outside the status badge and clear after recovery'
  assert.equal(ui.elements.get('#update-details').hidden,true);
  assert.equal(ui.elements.get('#update-diagnose').hidden,true);
  assert.equal(ui.elements.get('#update-detail-text').textContent,'');
+});
+
+function updateUi(fetch:()=>Promise<unknown>){
+ const ui=dashboard(false,fetch);
+ vm.runInContext("let updatePreparing=false;updateCheck={available:true};",ui.context);
+ for(const name of ['updateFactory','prepareMaintenance','checkForUpdates'])vm.runInContext(source.split('\n').find(line=>line.startsWith(`async function ${name}(`))!,ui.context);
+ return ui;
+}
+test('preparation immediately reports progress and preserves failure details while unlocking',async()=>{
+ const ui=updateUi(async()=>{throw new Error('Dashboard unavailable')});
+ await ui.run('updateFactory');
+ assert.equal(ui.toasts[0],'Preparing update…');
+ assert.equal(vm.runInContext('updatePreparing',ui.context),false);
+ assert.equal(vm.runInContext('updatePreparationError',ui.context),'Dashboard unavailable');
+ assert.equal(vm.runInContext('factoryUpdating',ui.context),false);
+});
+test('maintenance request bounds a stalled response body and aborts the request',async()=>{
+ const ui=dashboard(false,async()=>({ok:true,json:()=>new Promise(()=>{})}));
+ await assert.rejects(vm.runInContext("maintenanceRequest('/test',{},5)",ui.context),/did not respond in time/);
+});
+test('maintenance polling surfaces HTTP errors instead of waiting for the deadline',async()=>{
+ let calls=0;
+ const ui=updateUi(async()=>{calls++;return {ok:calls<3,json:async()=>calls===1?{id:'test',affected:[]}:calls===2?{ok:true}:{error:'Unknown maintenance operation'}}});
+ await ui.run('updateFactory');
+ assert.equal(calls,3);
+ assert.equal(vm.runInContext('updatePreparationError',ui.context),'Unknown maintenance operation');
+ assert.equal(vm.runInContext('updatePreparing',ui.context),false);
+});
+test('user cancellation does not confirm maintenance or start the update',async()=>{
+ let calls=0;
+ const ui=updateUi(async()=>{calls++;return {ok:true,json:async()=>({id:'test',affected:[{issueNumber:2,title:'Test',stage:'BUILD',status:'RUNNING'}]})}});
+ ui.context.confirm=()=>false;ui.context.statusName=(value:string)=>value;
+ await ui.run('updateFactory');
+ assert.equal(calls,1);assert.equal(vm.runInContext('updatePreparing',ui.context),false);
+ assert.equal(vm.runInContext('updatePreparationError',ui.context),'Operation cancelled.');
 });

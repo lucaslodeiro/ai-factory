@@ -117,9 +117,10 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
    try {
     let result: unknown;
     if (r.kind === "stop") result=await stop();
+    // Local maintenance must remain available on standby installations.
+    else if(r.kind==="maintenance-confirm")result=await maintenance.confirm(r.target);
     else if(controllerMode!=="active")throw new Error("Repository control is not confirmed; workflow controls are read-only");
     else if (["pause","resume","retry","cancel"].includes(r.kind)) result=applyWorkControl(store,commands,executions,r);
-    else if(r.kind==="maintenance-confirm")result=await maintenance.confirm(r.target);
     else if(r.kind==="maintenance-resume")result=maintenance.resume(r.target);
     else throw new Error(`Unknown control: ${r.kind}`);
     store.event("control.applied",{id:r.id,kind:r.kind,target:r.target,result});

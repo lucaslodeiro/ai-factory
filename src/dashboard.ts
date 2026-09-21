@@ -544,7 +544,14 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         if(!body.operation||!allowed.includes(body.operation))return json(res,400,{error:"Unknown maintenance operation"});return json(res,200,maintenanceCoordinator(store).request(body.operation,"dashboard"));
       }
       if(req.method==="POST"&&url.pathname.match(/^\/api\/maintenance\/[^/]+\/(confirm|resume)$/)){
-        const [, , ,id,action]=url.pathname.split("/");store.request(action==="confirm"?"maintenance-confirm":"maintenance-resume",id);return json(res,202,{ok:true,id,status:"queued"});
+        const [, , ,id,action]=url.pathname.split("/");
+        if(action==="confirm"){
+          const operation=maintenanceOperation(store,id);
+          // Empty plans need no daemon: confirm still rechecks the affected work.
+          if(!operation.affected.length)return json(res,200,await maintenanceCoordinator(store).confirm(id));
+          if(!daemonState(store).running)return json(res,409,{error:"Start the daemon before preparing maintenance: local tasks still need to be paused safely."});
+        }
+        store.request(action==="confirm"?"maintenance-confirm":"maintenance-resume",id);return json(res,202,{ok:true,id,status:"queued"});
       }
       if (req.method === "GET" && url.pathname === "/api/logs/daemon") return json(res,200,daemonLogs(settingsRoot,url.searchParams.get("lines")));
       if(req.method==="POST"&&url.pathname.match(/^\/api\/executions\/[^/]+\/prompt$/)){const id=url.pathname.split("/")[3],body=await readBody(req) as {acknowledgeSensitive?:boolean};if(body.acknowledgeSensitive!==true)return json(res,400,{error:"Acknowledge that prompts may contain sensitive source and issue context"});if(!store.db.prepare("SELECT 1 FROM executions WHERE id=?").get(id))return json(res,404,{error:"Unknown execution"});const file=path.join(config.dataDir,"runs",id,"prompt.md");if(!fs.existsSync(file))return json(res,410,{error:"Exact prompt content was pruned by retention or is unavailable"});const stat=fs.statSync(file);if(stat.size>2_000_000)return json(res,413,{error:"Prompt is too large to reveal in the dashboard"});return json(res,200,{id,warning:"Sensitive execution context. Do not share without review.",prompt:fs.readFileSync(file,"utf8")});}

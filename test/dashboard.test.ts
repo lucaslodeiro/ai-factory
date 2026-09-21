@@ -111,6 +111,13 @@ echo "$*" >> "$PWD/update-actions.log"
     return originalFetch(input,init);
   }) as typeof fetch;
   try {
+    // An idle installation can update without owning the repo or running a daemon.
+    const planResponse=await fetch(`http://127.0.0.1:${port}/api/maintenance`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operation:"update"})});
+    const plan=await planResponse.json() as {id:string};
+    const prepared=await fetch(`http://127.0.0.1:${port}/api/maintenance/${plan.id}/confirm`,{method:"POST"});
+    assert.equal(prepared.status,200);assert.equal((await prepared.json() as any).status,"ready");
+    store.db.prepare("UPDATE maintenance_operations SET status='completed' WHERE id=?").run(plan.id);
+
     const envPath=path.join(settingsRoot,".env"),savedEnv=fs.readFileSync(envPath,"utf8"),savedRepo=config.repo;
     try{
       fs.writeFileSync(envPath,savedEnv+"\nGITHUB_REPOSITORY=owner/demo\n");config.repo="";
