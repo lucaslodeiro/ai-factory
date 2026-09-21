@@ -75,7 +75,7 @@ test("sync preserves interrupted work and merges remote work and base commits",(
   const ws=new Workspaces(),cwd=ws.ensure("work-12",branch);fs.writeFileSync(path.join(cwd,"partial.txt"),"preserved\n");
   git(seed,["checkout","-b",branch]);fs.writeFileSync(path.join(seed,"human.txt"),"remote branch\n");git(seed,["add","."]);git(seed,["commit","-m","human branch"]);git(seed,["push","origin",branch]);
   git(seed,["checkout","main"]);fs.writeFileSync(path.join(seed,"base.txt"),"new base\n");git(seed,["add","."]);git(seed,["commit","-m","base update"]);git(seed,["push","origin","main"]);
-  const synced=ws.sync(cwd,branch,"main");assert.deepEqual(synced.merged,[`origin/${branch}`,"origin/main"]);assert.equal(fs.readFileSync(path.join(cwd,"partial.txt"),"utf8"),"preserved\n");assert.equal(fs.readFileSync(path.join(cwd,"human.txt"),"utf8"),"remote branch\n");assert.equal(fs.readFileSync(path.join(cwd,"base.txt"),"utf8"),"new base\n");assert.match(git(cwd,["log","--format=%s","-4"]),/factory: work in progress for #12/);
+  const synced=ws.sync(cwd,branch,"main","developer");assert.deepEqual(synced.merged,[`origin/${branch}`,"origin/main"]);assert.equal(fs.readFileSync(path.join(cwd,"partial.txt"),"utf8"),"preserved\n");assert.equal(fs.readFileSync(path.join(cwd,"human.txt"),"utf8"),"remote branch\n");assert.equal(fs.readFileSync(path.join(cwd,"base.txt"),"utf8"),"new base\n");assert.match(git(cwd,["log","--format=%s","-4"]),/factory: work in progress for #12/);
  }finally{config.repoDir=old.repoDir;config.dataDir=old.dataDir;fs.rmSync(root,{recursive:true,force:true});}
 });
 
@@ -86,6 +86,16 @@ test("sync aborts a conflicting merge and reports the conflicting files",()=>{
   fs.mkdirSync(origin);fs.mkdirSync(seed);git(origin,["init","--bare"]);git(seed,["init"]);git(seed,["config","user.name","Factory Test"]);git(seed,["config","user.email","factory@example.test"]);fs.writeFileSync(path.join(seed,"same.txt"),"base\n");git(seed,["add","."]);git(seed,["commit","-m","base"]);git(seed,["branch","-M","main"]);git(seed,["remote","add","origin",origin]);git(seed,["push","-u","origin","main"]);
   git(root,["clone","--branch","main",origin,repo]);git(repo,["config","user.name","Factory Test"]);git(repo,["config","user.email","factory@example.test"]);config.repoDir=repo;config.dataDir=path.join(root,"data");const ws=new Workspaces(),cwd=ws.ensure("work-13",branch);
   fs.writeFileSync(path.join(cwd,"same.txt"),"factory\n");git(cwd,["add","."]);git(cwd,["commit","-m","factory side"]);git(seed,["checkout","-b",branch]);fs.writeFileSync(path.join(seed,"same.txt"),"human\n");git(seed,["add","."]);git(seed,["commit","-m","human side"]);git(seed,["push","origin",branch]);
-  assert.throws(()=>ws.sync(cwd,branch,"main"),(error:unknown)=>error instanceof SyncConflictError&&error.files.includes("same.txt"));assert.equal(git(cwd,["status","--porcelain"]),"");assert.throws(()=>git(cwd,["rev-parse","--verify","MERGE_HEAD"]));
+  assert.throws(()=>ws.sync(cwd,branch,"main","developer"),(error:unknown)=>error instanceof SyncConflictError&&error.files.includes("same.txt"));assert.equal(git(cwd,["status","--porcelain"]),"");assert.throws(()=>git(cwd,["rev-parse","--verify","MERGE_HEAD"]));
+ }finally{config.repoDir=old.repoDir;config.dataDir=old.dataDir;fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test("sync enforces the prepared role policy before preserving interrupted work",()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"factory-sync-policy-")),old={repoDir:config.repoDir,dataDir:config.dataDir};
+ try{
+  const origin=path.join(root,"origin.git"),repo=path.join(root,"repo"),branch="factory/issue-7";fs.mkdirSync(origin);fs.mkdirSync(repo);git(origin,["init","--bare"]);git(repo,["init"]);git(repo,["config","user.name","Factory Test"]);git(repo,["config","user.email","factory@example.test"]);fs.writeFileSync(path.join(repo,"app.txt"),"base\n");git(repo,["add","."]);git(repo,["commit","-m","base"]);git(repo,["branch","-M","main"]);git(repo,["remote","add","origin",origin]);git(repo,["push","-u","origin","main"]);config.repoDir=repo;config.dataDir=path.join(root,"data");const ws=new Workspaces(),cwd=ws.ensure("policy",branch),before=ws.head(cwd);
+  fs.writeFileSync(path.join(cwd,".env"),"GITHUB_TOKEN=secret\n");assert.throws(()=>ws.sync(cwd,branch,"main","developer"),/credential/);assert.equal(ws.head(cwd),before);fs.unlinkSync(path.join(cwd,".env"));
+  fs.writeFileSync(path.join(cwd,"package.json"),"{}\n");assert.throws(()=>ws.sync(cwd,branch,"main","qa"),/protected non-test/);assert.equal(ws.head(cwd),before);assert.throws(()=>ws.sync(cwd,branch,"main","product-architect"),/uncommitted/);assert.equal(ws.head(cwd),before);fs.unlinkSync(path.join(cwd,"package.json"));
+  fs.writeFileSync(path.join(cwd,"partial.txt"),"work\n");ws.sync(cwd,branch,"main","developer");assert.notEqual(ws.head(cwd),before);assert.match(git(cwd,["log","-1","--format=%s"]),/work in progress for #7/);
  }finally{config.repoDir=old.repoDir;config.dataDir=old.dataDir;fs.rmSync(root,{recursive:true,force:true});}
 });

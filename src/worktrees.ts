@@ -4,6 +4,7 @@ import { execFile,spawnSync } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
 import { config } from "./config.js";
+import type {AgentRole} from "./types.js";
 function gitOutput(cwd: string, args: string[]) {
  const r = spawnSync(config.gitCommand, args, { cwd, encoding: "utf8", timeout: 60000, maxBuffer: 10_000_000 });
  if (r.status !== 0) throw new Error(r.stderr || r.error?.message || "git failed"); return r.stdout;
@@ -29,7 +30,7 @@ export interface WorkspacePort {
  capture?(cwd:string):WorkspaceSnapshot;
  assertBranch(cwd: string, branch: string): void;
  ensure(id: string, branch: string): string;
- sync(cwd:string,branch:string,base:string):WorkspaceSync;
+ sync(cwd:string,branch:string,base:string,role:AgentRole):WorkspaceSync;
  head(cwd: string): string;
  diff(cwd: string): string;
  check(cwd: string, role: string, before: string, branch: string, baseline?:WorkspaceSnapshot): string[]|void;
@@ -62,10 +63,15 @@ export class Workspaces implements WorkspacePort {
   }
   return target;
  }
- sync(cwd:string,branch:string,base:string):WorkspaceSync {
+ sync(cwd:string,branch:string,base:string,role:AgentRole):WorkspaceSync {
   this.assertBranch(cwd,branch);
   const before=this.head(cwd),issue=branch.match(/^factory\/issue-(\d+)$/)?.[1]??branch;
-  if(gitOutput(cwd,["status","--porcelain=v1","-z"]))this.commit(cwd,`factory: work in progress for #${issue}`,branch);
+  const dirty=this.capture(cwd).dirty;
+  const reject=(reason:string,files:string[])=>{if(files.length)throw new Error(`${reason}: ${files.map(file=>JSON.stringify(file)).join(", ")}`);};
+  reject("Potential credential file in changes; inspect before commit",dirty.filter(secretPath));
+  if(role==="product-architect"||role==="reviewer")reject(`${role} cannot continue with uncommitted worktree changes`,dirty);
+  if(role==="qa")reject("Verification Engineer cannot continue with a protected non-test file (only tests and declared verification artifacts are allowed)",dirty.filter(file=>!verificationPathAllowed(file,verificationPolicy(cwd))));
+  if(dirty.length)this.commit(cwd,`factory: work in progress for #${issue}`,branch);
   git(cwd,["fetch","origin",base]);
   const branchFetch=spawnSync(config.gitCommand,["fetch","origin",`${branch}:refs/remotes/origin/${branch}`],{cwd,encoding:"utf8",timeout:60000,maxBuffer:10_000_000});
   if(branchFetch.status!==0&&!/couldn't find remote ref|remote ref .* not found/i.test(branchFetch.stderr||""))throw new Error(branchFetch.stderr||branchFetch.error?.message||"git fetch failed");
