@@ -7,6 +7,7 @@ import { WorkflowProjections } from "../src/workflow-projection.js";
 import type { Comment } from "../src/adapters/github.js";
 import { workflowStatusMarkdown } from "../src/workflow-status.js";
 import { ContextAssembler } from "../src/context-assembly.js";
+import { workflowThread } from "../src/workflow-chat.js";
 
 const issue={id:700,nodeId:"I_700",number:7,title:"Inbox",body:"Build it",url:"https://github.com/owner/demo/issues/7",state:"OPEN" as const,createdAt:"2026-09-20T00:00:00Z",updatedAt:"2026-09-20T00:00:00Z",author:{login:"owner",type:"User"}};
 const comment=(id:number,body:string,login="owner",type="User",updatedAt=`2026-09-20T00:00:${String(id).padStart(2,"0")}Z`):Comment=>({id,body,user:{login,type},updatedAt});
@@ -58,6 +59,7 @@ test("inbox consumes commands once and records explicit human guidance",()=>{
   const inbox=new WorkflowInbox(store,{comments:()=>comments},["owner"]),result=inbox.poll(started.id);
   assert.deepEqual(result,{seen:4,applied:1,rejected:1,observed:2,cursor:4});
   const instruction=new WorkflowRecords(store).active(started.id,0,"qa").find(record=>record.kind==="instruction");assert.equal(instruction?.payload.kind==="instruction"&&instruction.payload.text,"Do not use Chromium");
+  const note=workflowThread(store,started.id).find(turn=>turn.kind==="human"&&turn.command==="note");assert.equal(note?.login,"owner");assert.equal(note?.text,"Do not use Chromium");assert.equal(note?.source,"comment");
   assert.equal(new WorkflowProjections(store).get(started.id).presentationRevision,3);
   assert.deepEqual(inbox.poll(started.id),{seen:0,applied:0,rejected:0,observed:0,cursor:4});
  } finally {store.db.close();}
@@ -114,8 +116,8 @@ test("an observed typo can be edited into a command on the same comment id",()=>
 });
 
 test("an applied command is frozen when its comment is edited",()=>{
- const store=new Store(":memory:"),comments=[comment(11,"/factory approve v1")];
- try {const started=new WorkflowIntake(store).start(issue,{actor:"dashboard",source:"control"}),records=new WorkflowRecords(store),projections=new WorkflowProjections(store);store.db.prepare("INSERT INTO specs(work_item_id,version,body) VALUES(?,?,?)").run(started.id,1,"SPEC");records.create({workItemId:started.id,specVersion:1,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:1},sourceType:"agent-result",sourceId:"run",actor:"product-architect"});projections.transition({workItemId:started.id,expectedRevision:0,stage:"DESIGN",status:"WAITING",actor:{type:"agent",id:"product-architect"},source:{executionId:"run"},reason:{code:"spec",summary:"SPEC proposed"}});const inbox=new WorkflowInbox(store,{comments:()=>comments},["owner"]);assert.equal(inbox.poll(started.id).applied,1);comments[0]=comment(11,"/factory cancel","owner","User","2026-09-20T00:02:00Z");assert.equal(inbox.poll(started.id).seen,0);assert.equal(projections.get(started.id).status,"QUEUED");}
+ const store=new Store(":memory:"),comments=[comment(11,"/factory approve v1 ship this version")];
+ try {const started=new WorkflowIntake(store).start(issue,{actor:"dashboard",source:"control"}),records=new WorkflowRecords(store),projections=new WorkflowProjections(store);store.db.prepare("INSERT INTO specs(work_item_id,version,body) VALUES(?,?,?)").run(started.id,1,"SPEC");records.create({workItemId:started.id,specVersion:1,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:1},sourceType:"agent-result",sourceId:"run",actor:"product-architect"});projections.transition({workItemId:started.id,expectedRevision:0,stage:"DESIGN",status:"WAITING",actor:{type:"agent",id:"product-architect"},source:{executionId:"run"},reason:{code:"spec",summary:"SPEC proposed"}});const inbox=new WorkflowInbox(store,{comments:()=>comments},["owner"]);assert.equal(inbox.poll(started.id).applied,1);const approval=workflowThread(store,started.id).find(turn=>turn.kind==="human"&&turn.command==="approve v1");assert.equal(approval?.login,"owner");assert.equal(approval?.text,"ship this version");assert.equal(approval?.source,"comment");comments[0]=comment(11,"/factory cancel","owner","User","2026-09-20T00:02:00Z");assert.equal(inbox.poll(started.id).seen,0);assert.equal(projections.get(started.id).status,"QUEUED");}
  finally {store.db.close();}
 });
 

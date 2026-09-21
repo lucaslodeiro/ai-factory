@@ -54,6 +54,7 @@ export class WorkflowInbox {
      const specVersion=(this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;
      const cancelled=this.commands.apply(bypass,{workItemId,login:comment.user.login,commentId:comment.id,specVersion});
      this.setCursor(workItemId,comment.id);this.clearObserved(workItemId);this.setLastCommand(workItemId,comment,this.commandLabel(bypass),"applied");
+     this.store.event("command.applied",{commentId:comment.id,login:comment.user.login,command:this.commandLabel(bypass),text:this.commandText(bypass),source:"comment"},workItemId);
      if(!this.store.db.prepare("SELECT 1 FROM events WHERE work_item_id=? AND type='command.superseded' AND json_extract(payload,'$.commentId')=?").get(workItemId,deferredRetry.commentId))this.store.event("command.superseded",{commentId:deferredRetry.commentId,login:deferredRetry.login,supersededBy:comment.id},workItemId);
      return {result:"applied",executionAction:"executionAction" in cancelled?cancelled.executionAction:undefined,supersededDeferred:true};
     }
@@ -69,7 +70,7 @@ export class WorkflowInbox {
      return "observed";
     }
     const specVersion=(this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;
-    try{const applied=this.commands.apply(command,{workItemId,login:comment.user.login,commentId:comment.id,specVersion});this.clearObserved(workItemId);this.setLastCommand(workItemId,comment,this.commandLabel(command),"applied");return {result:"applied",executionAction:"executionAction" in applied?applied.executionAction:undefined};}
+    try{const applied=this.commands.apply(command,{workItemId,login:comment.user.login,commentId:comment.id,specVersion});this.clearObserved(workItemId);this.setLastCommand(workItemId,comment,this.commandLabel(command),"applied");this.store.event("command.applied",{commentId:comment.id,login:comment.user.login,command:this.commandLabel(command),text:this.commandText(command),source:"comment"},workItemId);return {result:"applied",executionAction:"executionAction" in applied?applied.executionAction:undefined};}
     catch(error){
      if(error instanceof ExecutionNotStoppedError){
       const prior=this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='command.deferred' AND json_extract(payload,'$.commentId')=? ORDER BY id LIMIT 1").get(workItemId,comment.id) as {payload:string}|undefined;
@@ -110,6 +111,12 @@ export class WorkflowInbox {
   if(command.kind==="approve")return `approve v${command.version}`;
   if(command.kind==="replace"||command.kind==="revoke")return `${command.kind} ${command.recordId}`;
   return command.kind;
+ }
+ private commandText(command:NonNullable<ReturnType<typeof parseFactoryCommand>>) {
+  if(command.kind==="approve"||command.kind==="retry")return command.guidance;
+  if(command.kind==="answer"||command.kind==="note"||command.kind==="replace")return command.text;
+  if(command.kind==="pause"||command.kind==="cancel")return command.reason;
+  return "";
  }
  private errorMessage(error:unknown){return error instanceof Error?error.message:String(error);}
 }
