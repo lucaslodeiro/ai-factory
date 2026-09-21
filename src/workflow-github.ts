@@ -1,3 +1,4 @@
+import {sanitizeFailureEvidence} from "./failure-report.js";
 import type {RuntimeGitHub} from "./github-runtime.js";
 import type { Store } from "./storage.js";
 import type { WorkflowGitHubPort } from "./adapters/github.js";
@@ -8,12 +9,15 @@ import { factoryHelpMarkdown } from "./factory-help.js";
 import {config} from "./config.js";
 import {IncompleteIssueStateError,issueStateIndex,validateIssueState,validateSpecificationFact,type ReadIssueState} from "./workflow-state.js";
 
+export function publishedText(value:string){return sanitizeFailureEvidence(value,60000).replaceAll("<!--","<!-\u200b-");}
+function publishedAgentData<T>(value:T):T{return JSON.parse(JSON.stringify(value),(_key,leaf)=>typeof leaf==="string"?publishedText(leaf):leaf) as T;}
 const payloadMarker=/<!-- ai-factory:payload:v1 ([\s\S]*?) -->/;
 export function withPayload(body:string,value:unknown){const json=JSON.stringify(value).replaceAll("--","-\\u002d");return `${body}\n\n<!-- ai-factory:payload:v1 ${json} -->`;}
 export function payloadOf(body:string):unknown|null {const match=body.match(payloadMarker);if(!match)return null;try{return JSON.parse(match[1]);}catch{return null;}}
 export async function readIssueState(github:Pick<RuntimeGitHub,"comments">,issue:number):Promise<ReadIssueState|null>{const comments=await github.comments(issue),status=comments.find(comment=>comment.body.includes("<!-- ai-factory:workflow-status:")),value=status?payloadOf(status.body):null;if(!value)return null;const index=validateIssueState(value),specs=[];for(const reference of index.specs){const comment=comments.find(candidate=>candidate.body.includes(`:${reference.marker} -->`));if(!comment)throw new Error(`Published specification v${reference.version} is missing`);const spec=validateSpecificationFact(payloadOf(comment.body));if(spec.version!==reference.version)throw new Error(`Published specification marker does not match v${reference.version}`);specs.push(spec);}return{index,specs};}
 
 export function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:number,pullRequestUrl?:string) {
+ result=publishedAgentData(result);
  const environmentBlocked=result.findings.some(finding=>finding.classification==="environment-blocked");
  const heading=role==="product-architect"&&result.outcome==="questions"?(environmentBlocked?"Architect — blocked":"Architect — questions"):role==="product-architect"&&result.outcome==="resolved"?"Architect — tactical decision":role==="product-architect"?`Specification v${specVersion} — awaiting approval`:`${roleFullName(role)} report`;
  const sections=[`# ${heading}`,`## Summary\n\n${result.summary}`];
@@ -37,7 +41,7 @@ export class WorkflowGitHubPublisher {
   const revision=row.revision,presentationRevision=row.presentation_revision;
   const lastEvent=this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(workItemId) as {payload:string}|undefined;
   let eventId:string|undefined;try{eventId=lastEvent?(JSON.parse(lastEvent.payload) as {eventId?:string}).eventId:undefined;}catch{}
-  const status=`${workflowStatusMarkdown(this.store,workItemId)}\n\n<sub>workflow-rev:${revision} · presentation-rev:${presentationRevision}${eventId?` · event:${eventId}`:""}</sub>\n\n<sub>instance:${config.instanceName}</sub>`;let indexed:string|undefined;try{indexed=withPayload(status,issueStateIndex(this.store,workItemId));}catch(error){if(!(error instanceof IncompleteIssueStateError))throw error;const key=`github:state-incomplete:${workItemId}:${presentationRevision}`;if(!this.store.metadata(key)){this.store.event("github.state_incomplete",{issue:row.issue_number,reason:error.message,revision},workItemId);this.store.setMetadata(key,true);}}
+  const status=`${workflowStatusMarkdown(this.store,workItemId)}\n\n<sub>workflow-rev:${revision} · presentation-rev:${presentationRevision}${eventId?` · event:${eventId}`:""}</sub>\n\n<sub>instance:${config.instanceName}</sub>`;let indexed:string|undefined;try{const index=issueStateIndex(this.store,workItemId);index.latestResults=index.latestResults.map(publishedAgentData);if(index.failure)index.failure.message=publishedText(index.failure.message);index.records=index.records.map(record=>record.source_type==="agent-result"?{...record,payload:publishedAgentData(record.payload)}:record);indexed=withPayload(status,index);}catch(error){if(!(error instanceof IncompleteIssueStateError))throw error;const key=`github:state-incomplete:${workItemId}:${presentationRevision}`;if(!this.store.metadata(key)){this.store.event("github.state_incomplete",{issue:row.issue_number,reason:error.message,revision},workItemId);this.store.setMetadata(key,true);}}
   const body=indexed&&indexed.length<=60_000?indexed:status;
   if(indexed&&indexed.length>60_000){const key=`github:state-too-large:${workItemId}:${presentationRevision}`;if(!this.store.metadata(key)){this.store.event("github.state_too_large",{issue:row.issue_number,bytes:indexed.length,revision},workItemId);this.store.setMetadata(key,true);}}
   await this.github.syncWorkflow(row.issue_number,workflowLabels(this.store,workItemId),body);
@@ -63,7 +67,7 @@ export class WorkflowGitHubPublisher {
    if(payload.role==="product-architect"&&payload.result.outcome==="spec"){
     const spec=this.store.db.prepare("SELECT version,body,criteria,assessment FROM specs WHERE work_item_id=? AND version=?").get(row.work_item_id,version) as {version:number;body:string;criteria:string;assessment:string|null};machine={kind:"spec",version:spec.version,body:spec.body,criteria:JSON.parse(spec.criteria),assessment:spec.assessment?JSON.parse(spec.assessment):null};
    }else machine={kind:"result",role:payload.role,executionId:row.run_id,outcome:payload.result.outcome,findings:payload.result.findings,decisions:payload.result.decisions,coverage:payload.result.coverage,tests:payload.result.tests,changedFiles:payload.result.changedFiles,summary:payload.result.summary};
-   const marker=`result-${row.run_id}`;await this.github.publishWorkflowComment(row.issue_number,marker,withPayload(`${resultMarkdown(payload.role,payload.result,version,context.pr)}\n\n<sub>instance:${config.instanceName}</sub>`,machine));
+   const marker=`result-${row.run_id}`;await this.github.publishWorkflowComment(row.issue_number,marker,withPayload(`${resultMarkdown(payload.role,payload.result,version,context.pr)}\n\n<sub>instance:${config.instanceName}</sub>`,publishedAgentData(machine)));
    if(payload.role==="product-architect"&&payload.result.outcome==="spec"){const current=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(row.work_item_id) as {context:string},value=JSON.parse(current.context||"{}") as Record<string,unknown>,specMarkers=value.specMarkers&&typeof value.specMarkers==="object"&&!Array.isArray(value.specMarkers)?value.specMarkers as Record<string,string>:{};this.store.db.prepare("UPDATE work_items SET context=? WHERE id=?").run(JSON.stringify({...value,specMarkers:{...specMarkers,[String(version)]:marker}}),row.work_item_id);}
    this.store.setMetadata(`github:result:${row.id}`,true);count++;
   }

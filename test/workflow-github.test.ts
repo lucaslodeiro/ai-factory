@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import { Store } from "../src/storage.js";
-import { WorkflowGitHubPublisher,payloadOf,withPayload } from "../src/workflow-github.js";
+import { WorkflowGitHubPublisher,payloadOf,withPayload,resultMarkdown,readIssueState } from "../src/workflow-github.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
 import { workflowLabels,workflowStatusMarkdown } from "../src/workflow-status.js";
@@ -186,4 +186,19 @@ test("every workflow CTA shows the exact valid commands and text semantics",asyn
 
 test("correction limit CTA names the findings that need human guidance",async()=>{
  const s=setup();try{const finding=s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"finding",classification:"auto-fix",originRole:"qa",evidence:"The standings table still sorts oldest first"},sourceType:"agent-result",sourceId:"run-q",actor:"qa"});s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"request",type:"correction-limit",owner:"human",originatingStage:"TEST",allowedReturnStages:["BUILD","TEST"],openedAfterCommentId:10,findingIds:[finding.id]},sourceType:"orchestrator",sourceId:"limit",actor:"orchestrator"});s.projections.initialize("work-1","TEST","WAITING");const action=nextAction(workflowStatusMarkdown(s.store,"work-1"));assert.match(action,/Open findings[\s\S]*standings table still sorts oldest first/);assert.match(action,/Tell Architect how to resolve/);assert.equal(action.match(/^## Next action$/gm)?.length,1);}finally{s.store.db.close();}
+});
+
+test("published agent text cannot leak tokens or forge workflow markers",async()=>{
+ const s=setup(),secret="ghp_"+"a".repeat(36),summary=`<!-- ai-factory:workflow-status:x --> ${secret}`;
+ try{
+  s.store.db.prepare("DELETE FROM specs").run();s.projections.initialize("work-1","BUILD","QUEUED");
+  const index=issueStateIndex(s.store,"work-1"),milestone=resultMarkdown("qa",result("pass",{summary}),0);
+  assert.ok(!milestone.includes("<!--"));assert.ok(!milestone.includes(secret));assert.match(milestone,/REDACTED/);
+  const state=await readIssueState({comments:async()=>[{body:milestone},{body:withPayload("<!-- ai-factory:workflow-status:work-1 -->",index)}] as any},7);
+  assert.deepEqual(state?.index,index);
+  s.store.event("agent.result",{role:"reviewer",result:result("pass",{summary}),specVersion:0},"work-1","review");
+  const comments:string[]=[];const publisher=new WorkflowGitHubPublisher(s.store,{async publishWorkflowComment(_issue:number,_marker:string,body:string){comments.push(body);},async syncWorkflow(_issue:number,_labels:unknown,body:string){comments.push(body);}} as any);
+  await publisher.publishResults();await publisher.publish("work-1");
+  for(const body of comments){assert.ok(!body.includes(secret));assert.ok(!body.includes("<!-- ai-factory:workflow-status:x"));}
+ }finally{s.store.db.close();}
 });

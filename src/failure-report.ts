@@ -193,11 +193,11 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
   ].join("\n\n");
 }
 
-export function workflowFailureEvidence(store:Store,failure:WorkflowFailure) {
+export function workflowFailureEvidence(store:Store,failure:WorkflowFailure,publishText:(value:string)=>string=value=>value) {
   const storedRun=failure.executionId ? store.db.prepare("SELECT id,role,status,exit_code,finished_at FROM executions WHERE id=? AND work_item_id=?").get(failure.executionId,failure.workItemId) as {id:string;role:AgentRole;status:string;exit_code:number|null;finished_at:string|null}|undefined : undefined;
   const run=storedRun?{...storedRun,status:storedRun.status==="running"&&storedRun.finished_at?"failed":storedRun.status}:undefined;
-  const stderr=run && path.basename(run.id)===run.id ? failureLogTail(path.join(config.dataDir,"runs",run.id,"stderr.log"),25) : "";
-  const reason=sanitizeFailureEvidence(failure.message,1600)||"The workflow stopped without an error message.";
+  const stderr=run && path.basename(run.id)===run.id ? publishText(failureLogTail(path.join(config.dataDir,"runs",run.id,"stderr.log"),25)) : "";
+  const reason=publishText(sanitizeFailureEvidence(failure.message,1600))||"The workflow stopped without an error message.";
   const analysis=failureDiagnosis(reason,stderr,run,failure.class);
   const facts=[`- **Failure class:** ${failure.class}`,`- **Stage:** ${failure.stage}`,`- **Attempt:** ${failure.attempt}`];
   if(run)facts.push(`- **Agent:** ${roleShortName(run.role)}`,`- **Execution:** \`${run.id}\``,`- **Process result:** ${run.status}${run.exit_code===null?"":` · exit ${run.exit_code}`}`);
