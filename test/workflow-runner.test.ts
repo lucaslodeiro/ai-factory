@@ -35,6 +35,17 @@ test("runner assembles bounded context and drives Architect then Builder through
  } finally {store.db.close();}
 });
 
+test("previous attempt context is consumed once by only its matching stage and attempt",async()=>{
+ const run=async(previous:{stage:string;attempt:number})=>{const store=new Store(":memory:"),workspace=new Workspace(),instructions:string[]=[];try{
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context,stage,status,attempt) VALUES('previous',1,'owner/demo','factory/issue-1','now','now',?,'BUILD','QUEUED',2)").run(JSON.stringify({title:"Retry",body:"Continue",cwd:"/tmp/factory-work",previousAttempt:{...previous,reason:"interrupted-for-guidance",files:["src/partial.ts"]}}));
+  store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment,approved_by,approved_at) VALUES('previous',1,'SPEC',?,?,'owner','now')").run(JSON.stringify([{id:"AC1",description:"Works"}]),JSON.stringify({complexity:"medium",risk:"low",rationale:"standard"}));
+  const adapter:AgentAdapter={async run(request){instructions.push(request.instructions);store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return result("pass");}};
+  const runner=new WorkflowRunner(store,{developer:adapter,qa:adapter},workspace,{ensurePR(){return"unused";}});await runner.run("previous");const afterFirst=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id='previous'").get() as {context:string}).context);assert.equal("previousAttempt" in afterFirst,false);const state=new WorkflowProjections(store).get("previous");assert.deepEqual({stage:state.stage,status:state.status},{stage:"TEST",status:"QUEUED"},new WorkflowFailures(store).active("previous")?.message);await runner.run("previous");return instructions;
+ }finally{store.db.close();}};
+ const matching=await run({stage:"BUILD",attempt:2});assert.equal(matching.length,2);assert.match(matching[0],/## Previous attempt/);assert.doesNotMatch(matching[1],/## Previous attempt/);
+ const otherStage=await run({stage:"TEST",attempt:2});assert.equal(otherStage.length,2);assert.doesNotMatch(otherStage[0],/## Previous attempt/);assert.doesNotMatch(otherStage[1],/## Previous attempt/);
+});
+
 test("a rejected post-commit push preserves the applied result and records sanitized evidence",async()=>{
  const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace=new Workspace();
  const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return value;}});
