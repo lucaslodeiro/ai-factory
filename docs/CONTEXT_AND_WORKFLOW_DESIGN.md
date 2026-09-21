@@ -307,6 +307,9 @@ recovery                             = executions WHERE status='interrupted' AND
 | Tester execution evidence (tests, coverage) | if consultation originated in Test | no | own | yes, attributed |
 | Resolved / superseded records | no | no | no | no |
 | Recovery note | if interrupted | if interrupted | if interrupted | if interrupted |
+| Previous attempt | after dashboard interrupt/retry | after dashboard interrupt/retry | after dashboard interrupt/retry | after dashboard interrupt/retry |
+
+`Previous attempt` is an optional section assembled after **Interrupt and retry with this**. It records the interruption time and reason, the file list and `diff --stat` from the interrupted stage's starting commit to the preserved HEAD, the latest result for that stage when one exists, and the guidance record id. Builder also receives **Changed files** when `attempt > 1`, so it can distinguish preserved code from the next requested delta. Both sections are unprotected and may be omitted by the deterministic context budget; active human guidance itself remains protected.
 
 ### 6.4 Budget
 
@@ -391,6 +394,7 @@ interface Projection { stage: Stage; status: Status; attempt: number; revision: 
 | any active/RUNNING | daemon dies without its stop handler (for example SIGKILL) | same stage/FAILED | failure `recovery`; execution `interrupted/unexpected-shutdown` | Failure milestone |
 | any active/QUEUED or RUNNING | SIGTERM/SIGINT without confirmed maintenance | same stage/PAUSED | implicit `signal` maintenance operation; running execution `interrupted/signal` | Paused by operator signal |
 | any active/RUNNING | state changed by control during run | unchanged | event `execution.discarded` | none |
+| any active/RUNNING | dashboard **Interrupt and retry with this** | same stage/QUEUED | execution interrupted with `interrupted-for-guidance`; partial work committed and pushed; guidance instruction created; attempt + 1 | GitHub comment and dashboard thread show the human guidance |
 | any/QUEUED or RUNNING | confirmed disruptive maintenance | same stage/PAUSED | maintenance item linked; running execution becomes `interrupted/planned-maintenance` | Maintenance pause with Resume CTA |
 | any/PAUSED by maintenance | individual or batch Resume | same stage/`resumeStatus`; attempt + 1 only if QUEUED | maintenance item marked resumed | Resume acknowledged or original human CTA restored |
 | FAILED/PAUSED/CANCELLED | `/factory retry [--issue] [--for <roles>] [guidance]` | same stage/`resumeStatus`; attempt + 1 only if QUEUED | active failure resolved if present; scoped instruction created if text | Retry accepted or original human CTA restored |
@@ -542,6 +546,8 @@ Stage and status, current actor (agent or human), SPEC version, attempt, open re
 The Next action block prints the exact valid syntax for the current state and explains what optional text becomes. Approval guidance is an instruction, answers are human decisions except merge feedback (a Builder auto-fix finding), and retry guidance is an instruction. Queued and running states require no action but expose pause/cancel syntax. Paused and cancelled states name the last transition actor and reason before showing scoped retry syntax; a paused human request remains visible as the preserved action after resume. Failed states expose scoped retry syntax. Failure diagnosis starts from the stored failure class and, for execution failures, the supervisor's final process status; message-pattern diagnosis is only a refinement for a process recorded as failed.
 
 The issue remains assigned to the authenticated Factory account while work is active, including human-owned waiting states. Human attention is signalled by `factory:waiting` and the status comment; approvers are never assigned temporarily. Completion and cancellation remove the Factory assignment and the local instance label.
+
+The dashboard issue detail presents one ordered conversation derived from existing execution and workflow events. Prompt turns expose role, provider, model and the bounded manifest; exact prompt text remains local and requires explicit acknowledgement. Result turns reuse the GitHub result renderer, event turns show transitions and failure evidence, and human turns identify whether they came from an issue comment or the dashboard. The composer derives its buttons only from the current projection and active request. The authenticated `gh` login must be an approver. For every dashboard message the daemon publishes an idempotent command-form comment first, including the login and instance, then applies the same `WorkflowCommands` path with the real GitHub comment id. Factory markers prevent the inbox from applying that comment twice. A rejected command is appended to that published comment and recorded as a failed control.
 
 ### 8.3 Milestone comments (immutable)
 
