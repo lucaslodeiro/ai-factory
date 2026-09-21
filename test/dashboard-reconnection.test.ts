@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 const source=fs.readFileSync(new URL('../dashboard/app.js',import.meta.url),'utf8');
-function dashboard(interrupted:boolean,fetch:()=>Promise<unknown>){
+function dashboard(interrupted:boolean,fetch:(...args:any[])=>Promise<unknown>){
  const elements=new Map<string,any>(),toasts:string[]=[],storage=new Map<string,string>();
  if(interrupted)storage.set('factory-api-interruption',String(Date.now()+30000));
- const context=vm.createContext({fetch,Date,Promise,AbortSignal,AbortController,setTimeout,clearTimeout,sessionStorage:{getItem:(key:string)=>storage.get(key),setItem:(key:string,value:string)=>storage.set(key,value)},$: (selector:string)=>{if(!elements.has(selector))elements.set(selector,{textContent:'',innerHTML:'previous data',classList:{remove(){}}});return elements.get(selector)},toast:(message:string)=>toasts.push(message),escapeHtml:(value:string)=>value,credentialsData:{credentials:[]},settingsLoaded:false,render(){},renderSettings(){},renderCredentials(){},renderSlack(){},renderServices(){}});
+ const context=vm.createContext({fetch,Date,Promise,AbortSignal,AbortController,setTimeout,clearTimeout,sessionStorage:{getItem:(key:string)=>storage.get(key),setItem:(key:string,value:string)=>storage.set(key,value)},$: (selector:string)=>{if(!elements.has(selector))elements.set(selector,{textContent:'',innerHTML:'previous data',classList:{remove(){}}});return elements.get(selector)},toast:(message:string)=>toasts.push(message),escapeHtml:(value:string)=>value,credentialsData:{credentials:[]},settingsLoaded:false,settingsLoadPromise:null,render(){},renderSettings(){},renderCredentials(){},renderSlack(){},renderServices(){}});
  vm.runInContext(source.slice(source.indexOf('let factoryUpdating='),source.indexOf('async function prepareMaintenance')),context);
- for(const name of ['refresh','loadCredentials','loadSlack','loadSettings','loadServices'])vm.runInContext(source.split('\n').find(line=>line.startsWith(`async function ${name}(`))!,context);
+ for(const name of ['settingsLoadFailure','refresh','loadCredentials','loadSlack','loadSettings','loadServices'])vm.runInContext(source.split('\n').find(line=>line.startsWith(`${name==='settingsLoadFailure'?'function':'async function'} ${name}(`))!,context);
  return {context,elements,toasts,run:(name:string)=>vm.runInContext(`${name}()`,context)};
 }
 test('all background reads reconnect quietly during an update, including after a page reload',async()=>{
@@ -18,7 +18,7 @@ test('all background reads reconnect quietly during an update, including after a
  assert.equal(ui.elements.has('#credentials-list'),false);assert.equal(ui.elements.has('#slack-connection'),false);
 });
 test('network failures outside maintenance remain visible',async()=>{
- const ui=dashboard(false,async()=>{throw new TypeError('Failed to fetch')});await ui.run('loadSettings');assert.deepEqual(ui.toasts,['Failed to fetch']);
+ const ui=dashboard(false,async()=>{throw new TypeError('Failed to fetch')});await ui.run('loadSettings');assert.deepEqual(ui.toasts,['Failed to fetch']);assert.match(ui.elements.get('#settings-groups').innerHTML,/Configuration could not be loaded/);assert.match(ui.elements.get('#settings-groups').innerHTML,/Retry/);
 });
 test('HTTP errors during maintenance are not mistaken for reconnects',async()=>{
  const ui=dashboard(true,async()=>({ok:false,json:async()=>({error:'Configuration invalid'})}));await ui.run('loadSettings');assert.deepEqual(ui.toasts,['Configuration invalid']);
@@ -27,6 +27,15 @@ test('interrupted response bodies reconnect and subsequent polls recover',async(
  let disconnected=true;
  const ui=dashboard(true,async()=>({ok:true,json:async()=>{if(disconnected)throw new TypeError('Load failed');return {credentials:[]}}}));
  await ui.run('loadSettings');assert.deepEqual(ui.toasts,[]);disconnected=false;let renders=0;ui.context.renderSettings=()=>renders++;await ui.run('loadSettings');assert.equal(renders,1);
+});
+test('configuration renders without waiting for optional integration reads',async()=>{
+ let credentialsRequested=false,slackRequested=false,renders=0;
+ const ui=dashboard(false,async(url:string)=>{if(url==='/api/settings')return {ok:true,json:async()=>({fields:[]})};if(url==='/api/credentials')credentialsRequested=true;if(url==='/api/slack')slackRequested=true;return new Promise(()=>{})});
+ ui.context.renderSettings=()=>renders++;await ui.run('loadSettings');assert.equal(renders,1);assert.equal(credentialsRequested,true);assert.equal(slackRequested,true);
+});
+test('concurrent configuration refreshes share one request',async()=>{
+ const calls:string[]=[];let release!:(value:any)=>void;const pending=new Promise(resolve=>{release=resolve});const ui=dashboard(false,async(url:string)=>{calls.push(url);if(url==='/api/settings')return pending;return {ok:true,json:async()=>url==='/api/credentials'?{credentials:[]}:{configured:false}}});
+ const first=ui.run('loadSettings'),second=ui.run('loadSettings');assert.deepEqual(calls,['/api/settings']);release({ok:true,json:async()=>({fields:[]})});await Promise.all([first,second]);assert.equal(calls.filter(url=>url==='/api/settings').length,1);
 });
 
 test('repeated update clicks during asynchronous preparation submit only once',async()=>{
