@@ -9,3 +9,11 @@ test("workflow synchronization never uses destructive conflict resolution",()=>{
  const forbidden=["reset --hard","-X ours","-X theirs","--strategy-option","checkout -- ."];
  for(const file of [...sources("src"),...sources("scripts")]){const body=fs.readFileSync(file,"utf8");for(const token of forbidden)assert.equal(body.includes(token),false,`${file} contains forbidden Git operation ${token}`);}
 });
+
+test("Factory branch publication never force-pushes refs under refs/heads",()=>{
+ for(const file of [...sources("src"),...sources("scripts")]){
+  const body=fs.readFileSync(file,"utf8"),commands=[...body.matchAll(/\[[^\]]*["']push["'][^\]]*refs\/heads\/[^\]]*\]/gs)].map(match=>match[0]);
+  for(const command of commands)assert.doesNotMatch(command,/["'](?:--force|--force-with-lease|-f)["']/,`${file} force-pushes a branch: ${command}`);
+  for(const line of body.split(/\r?\n/))if(/\bgit\s+push\b/.test(line)&&/refs\/heads\//.test(line))assert.doesNotMatch(line,/(?:^|\s)(?:--force(?:-with-lease)?|-f)(?:\s|$)/,`${file} force-pushes a branch: ${line}`);
+ }
+});
