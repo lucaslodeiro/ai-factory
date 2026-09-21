@@ -47,8 +47,8 @@ export class WorkflowOrchestrator {
     if(local.archived_at){view.push({issue:issue.number,state:"worked-here",instances});continue;}
     if(["COMPLETED","CANCELLED"].includes(local.status)){if(!this.released(local)){await this.github.unassign(local.issue_number,[login]);await this.github.removeLabel(local.issue_number,own);this.updateContext(local.id,{releasedAt:new Date().toISOString()});}view.push({issue:issue.number,state:"released",instances:[]});continue;}
     if(!instances.length){await this.github.addLabel(issue.number,own);this.store.event("issue.claimed",{issue:issue.number,instance:config.instanceName},local.id);view.push({issue:issue.number,state:"claiming",instances:[own]});continue;}
-    if(instances.length===1&&instances[0]===own){if(local.status==="PAUSED"&&["unassigned","moved"].includes(this.lastReason(local.id))){const current=this.projections.get(local.id),status=this.projections.resumeStatus(local.id);this.projections.transition({workItemId:local.id,expectedRevision:current.revision,stage:current.stage,status,attemptDelta:status==="QUEUED"?1:0,actor:{type:"github",id:login},source:{},reason:{code:"reassigned",summary:"Issue reassigned to this Factory instance"}});}view.push({issue:issue.number,state:"worked-here",instances});continue;}
-    await this.pauseOwned(local,instances.includes(own)?"moved":"moved");view.push({issue:issue.number,state:instances.includes(own)?"claim-conflict":"other-instance",instances});continue;
+    if(instances.length===1&&instances[0]===own){if(local.status==="PAUSED"&&["unassigned","moved","claim-conflict"].includes(this.lastReason(local.id))){const current=this.projections.get(local.id),status=this.projections.resumeStatus(local.id);this.projections.transition({workItemId:local.id,expectedRevision:current.revision,stage:current.stage,status,attemptDelta:status==="QUEUED"?1:0,actor:{type:"github",id:login},source:{},reason:{code:"reassigned",summary:"Issue reassigned to this Factory instance"}});}view.push({issue:issue.number,state:"worked-here",instances});continue;}
+    await this.pauseOwned(local,instances.includes(own)?"claim-conflict":"moved");view.push({issue:issue.number,state:instances.includes(own)?"claim-conflict":"other-instance",instances});continue;
    }
    if(!instances.length){await this.github.addLabel(issue.number,own);this.store.event("issue.claimed",{issue:issue.number,instance:config.instanceName});view.push({issue:issue.number,state:"claiming",instances:[own]});continue;}
    if(instances.includes(own)&&instances.length===1){
@@ -65,10 +65,11 @@ export class WorkflowOrchestrator {
   }
   this.store.setMetadata("runtime:assigned-issues",view);
  }
- private async pauseOwned(item:ItemRow,reason:"unassigned"|"moved"){
+ private async pauseOwned(item:ItemRow,reason:"unassigned"|"moved"|"claim-conflict"){
   const current=this.projections.get(item.id);if(current.status==="PAUSED"&&this.lastReason(item.id)===reason)return;
   if(["COMPLETED","CANCELLED","PAUSED"].includes(current.status))return;
-  this.projections.transition({workItemId:item.id,expectedRevision:current.revision,stage:current.stage,status:"PAUSED",actor:{type:"github",id:"assignment"},source:{executionId:current.activeRunId},reason:{code:reason,summary:reason==="unassigned"?"Issue unassigned from the Factory account":"Issue moved to another Factory instance"}});
+  const summary=reason==="unassigned"?"Issue unassigned from the Factory account":reason==="claim-conflict"?"Another Factory instance also claims this issue":"Issue moved to another Factory instance";
+  this.projections.transition({workItemId:item.id,expectedRevision:current.revision,stage:current.stage,status:"PAUSED",actor:{type:"github",id:"assignment"},source:{executionId:current.activeRunId},reason:{code:reason,summary}});
   if(current.activeRunId){this.executions?.interrupt(current.activeRunId,reason);const deadline=Date.now()+30_000;while(Date.now()<deadline){const row=this.store.db.prepare("SELECT status FROM executions WHERE id=?").get(current.activeRunId) as {status:string}|undefined;if(!row||row.status!=="running")break;await new Promise(resolve=>setTimeout(resolve,25));}}
   try{await this.runner.preserve(item.id);}catch(error){this.store.event("workflow.preserve_failed",{reason,error:String(error)},item.id,current.activeRunId);}
  }

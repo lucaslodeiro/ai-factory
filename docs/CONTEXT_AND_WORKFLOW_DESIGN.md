@@ -372,7 +372,8 @@ interface Projection { stage: Stage; status: Status; attempt: number; revision: 
 | REVIEW or DELIVERY/QUEUED | synchronized HEAD differs from the last Tester pass | TEST/QUEUED | invalidate stale verification before running another agent or publishing | Status update |
 | any active status | Factory account unassigned | same stage/PAUSED | execution interrupted; partial work committed and pushed | Status update |
 | any active status | instance label moved elsewhere | same stage/PAUSED | execution interrupted; partial work committed and pushed | Status update |
-| PAUSED after unassigned or moved | assigned again with the sole local instance label | same stage/QUEUED or WAITING | attempt +1 only when queued | Status update |
+| any active status | local and another instance label both present | same stage/PAUSED | execution interrupted with `claim-conflict`; partial work committed and pushed | Status update |
+| PAUSED after unassigned, moved or claim conflict | assigned with the sole local instance label | same stage/QUEUED or WAITING | attempt +1 only when queued | Status update |
 | TEST/RUNNING | `changes` | BUILD/QUEUED | findings `auto-fix` opened; correction_cycles + 1 | Status update with findings |
 | REVIEW/RUNNING | `changes` | BUILD/QUEUED | findings opened; correction_cycles + 1 | Status update |
 | REVIEW/RUNNING | `pass` | DELIVERY/QUEUED | Reviewer result and evidence stored; no provider work remains | Status shows deterministic Delivery next |
