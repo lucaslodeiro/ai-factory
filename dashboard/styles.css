@@ -93,9 +93,11 @@ main { padding:2rem max(4vw,2rem) 4rem; display:grid; gap:1.5rem }
 .service-card>div:first-child { display:grid; gap:.65rem }
 .service-card .state { justify-self:start }
 .service-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:.4rem }
-.logs-panel summary { display:flex; align-items:end; justify-content:space-between; cursor:pointer; list-style:none }
-.logs-panel summary::-webkit-details-marker { display:none }
-.logs-panel[open] summary { padding-bottom:1rem; border-bottom:1px solid var(--line) }
+.logs-panel>summary,.usage-panel>summary { display:flex; align-items:end; justify-content:space-between; cursor:pointer; list-style:none }
+.logs-panel>summary::-webkit-details-marker,.usage-panel>summary::-webkit-details-marker { display:none }
+.logs-panel[open]>summary,.usage-panel[open]>summary { padding-bottom:1rem; border-bottom:1px solid var(--line) }
+.usage-panel>summary .panel-description { max-width:56rem }
+.usage-panel>.usage-list { margin-top:1rem }
 .log-toolbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin:1rem 0 .75rem }
 .log-tabs,.log-actions { display:flex; align-items:center; flex-wrap:wrap; gap:.4rem }
 .log-tabs button[aria-selected="true"] { color:var(--accent); border-color:var(--accent); background:color-mix(in srgb,var(--accent) 9%,var(--surface)) }

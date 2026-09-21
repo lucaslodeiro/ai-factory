@@ -145,12 +145,16 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.match(html,/Enter the number or URL of an open GitHub issue/);
     assert.match(html,/ACTION REQUIRED/);
     assert.match(html,/Complete the required setup/);
+    assert.ok(html.indexOf('class="metrics"')<html.indexOf('Runtime controls'));
+    assert.ok(html.indexOf('Runtime controls')<html.indexOf('Local issues'));
+    assert.match(html,/<details class="panel settings-panel">/);
+    assert.match(html,/<details class="panel usage-panel">/);
     assert.doesNotMatch(html,/Dismiss guide/);
     assert.doesNotMatch(html,/Stop daemon/);
     const client = await fetch(`http://127.0.0.1:${port}/app.js`).then(response => response.text());
-    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/); assert.match(client,/loadDaemonLogs/); assert.match(client,/execCommand\('copy'\)/); assert.match(client,/expandedUsageItems/); assert.match(client,/data-usage-item/); assert.match(client,/data-provider-choice/); assert.match(client,/codex:'openai'/);assert.match(client,/repositoryCard/);assert.match(client,/revealPrompt/);assert.match(client,/thread-prompt/);assert.match(client,/thread-result/);assert.match(client,/thread-event/);assert.match(client,/thread-human/);assert.match(client,/Approve specification/);assert.match(client,/Interrupt and retry with this/);assert.match(client,/not an authorized approver/);assert.match(client,/Rejected:/); assert.doesNotMatch(client,/function refreshIssue\(/);
+    assert.match(client,/pendingDashboardUrl/); assert.match(client,/location\.assign\(pendingDashboardUrl\)/); assert.match(client,/loadDaemonLogs/); assert.match(client,/execCommand\('copy'\)/); assert.match(client,/expandedUsageItems/); assert.match(client,/data-usage-item/); assert.match(client,/data-provider-choice/); assert.match(client,/codex:'openai'/);assert.match(client,/repositoryCard/);assert.match(client,/revealPrompt/);assert.match(client,/thread-prompt/);assert.match(client,/thread-result/);assert.match(client,/thread-event/);assert.match(client,/thread-human/);assert.match(client,/Approve specification/);assert.match(client,/Interrupt and retry with this/);assert.match(client,/not an authorized approver/);assert.match(client,/Rejected:/);assert.doesNotMatch(client,/panel\.open=true/);assert.doesNotMatch(client,/expandedUsageItems\.add\(data\.usage\[0\]/); assert.doesNotMatch(client,/function refreshIssue\(/);
     const styles = await fetch(`http://127.0.0.1:${port}/styles.css`).then(response => response.text());
-    assert.match(styles,/@media\(max-width:650px\)/); assert.match(styles,/content:attr\(data-label\)/); assert.match(styles,/\.usage-card\[open\]/); assert.match(styles,/\.provider-choice\[aria-pressed="true"\]/);
+    assert.match(styles,/@media\(max-width:650px\)/); assert.match(styles,/content:attr\(data-label\)/); assert.match(styles,/\.usage-card\[open\]/);assert.match(styles,/\.usage-panel>summary/); assert.match(styles,/\.provider-choice\[aria-pressed="true"\]/);
     for (const asset of ["github","git","openai","claude","slack"]) {
       const response = await fetch(`http://127.0.0.1:${port}/assets/brands/${asset}.svg`);
       assert.equal(response.status,200);

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../dashboard/app.js',import.meta.url),'utf8');
+test('every inline dashboard action is exported by the module',()=>{const actions=[...source.matchAll(/onclick="([A-Za-z_$][\w$]*)\(/g)].map(match=>match[1]);assert.ok(actions.includes('sendWorkflowMessage'));for(const action of new Set(actions))assert.match(source,new RegExp(`window\\.${action}\\s*=`),`${action} must be available to inline onclick handlers`);});
 test('settings progress stays beside the save button and exposes busy and completion states',()=>{
  const elements=new Map<string,any>();const context=vm.createContext({$:(key:string)=>{if(!elements.has(key))elements.set(key,{dataset:{},setAttribute(name:string,value:string){this[name]=value;}});return elements.get(key)}});
  vm.runInContext(source.split('\n').find(line=>line.startsWith('function settingsProgress('))!,context);
