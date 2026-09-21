@@ -62,7 +62,6 @@ export class WorkflowInbox {
     if(comment.body.includes("<!-- ai-factory:"))return "observed";
     let command;
     try{command=parseFactoryCommand(comment.body);}catch(error){const parserReason=this.errorMessage(error).replace(/[.\s]+$/g,"")||"Unknown or malformed /factory command",reason=`${parserReason}. Post a new comment; edits to this one are not re-read.`;this.store.event("command.rejected",{commentId:comment.id,login:comment.user.login,error:reason},workItemId);this.setLastCommand(workItemId,comment,"unparsed","rejected",reason,true);return "rejected";}
-    if(command?.kind==="start") {const reason="Issue is already in the factory";this.store.event("command.rejected",{commentId:comment.id,login:comment.user.login,command:"start",error:reason},workItemId);this.setLastCommand(workItemId,comment,"start","rejected",reason,true);return "rejected";}
     if(!command) {
      this.observe(workItemId,comment);
      const typo=factoryCommandTypo(comment.body);if(typo){const reason=`Unrecognized command \`${typo.attempt}\` — did you mean \`${typo.suggestion}\`? Edit this comment or post a new one.`;this.store.event("command.unrecognized",{commentId:comment.id,login:comment.user.login,command:typo.attempt,suggestion:typo.suggestion},workItemId);this.setLastCommand(workItemId,comment,typo.attempt,"unrecognized",reason,true);return "observed";}

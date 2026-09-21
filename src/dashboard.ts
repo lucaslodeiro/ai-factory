@@ -172,7 +172,7 @@ function remoteIssuesView(store:Store,settingsRoot:string){
  if(!configuredRepository)return{state:"unconfigured",issues:[]};
  const github=new GitHubAdapter(undefined,configuredRepository),repository=verifyRepositoryIdentity(store,github,false);
  const tracked=new Set((store.db.prepare("SELECT issue_id FROM work_items WHERE archived_at IS NULL AND issue_id IS NOT NULL").all() as Array<{issue_id:number}>).map(row=>row.issue_id));
- const issues=github.listManaged().map(issue=>{const labels=(issue.labels??[]).map(label=>label.name),stage=labels.find(label=>["factory:design","factory:build","factory:test","factory:review","factory:delivery","factory:done"].includes(label)),status=labels.find(label=>["factory:waiting","factory:failed","factory:paused","factory:cancelled"].includes(label));return{id:issue.id,number:issue.number,title:issue.title,url:issue.url,stage:stage?.slice(8)??"unknown",status:status?.slice(8)??"active",trackedHere:tracked.has(issue.id)};});
+ const issues=github.assignedIssues(github.authenticatedLogin()).map(issue=>{const labels=(issue.labels??[]).map(label=>label.name),stage=labels.find(label=>["factory:design","factory:build","factory:test","factory:review","factory:delivery","factory:done"].includes(label)),status=labels.find(label=>["factory:waiting","factory:failed","factory:paused","factory:cancelled"].includes(label));return{id:issue.id,number:issue.number,title:issue.title,url:issue.url,stage:stage?.slice(8)??"unknown",status:status?.slice(8)??"active",trackedHere:tracked.has(issue.id)};});
  return{repository:repository.fullName,issues};
 }
 async function readBody(req: http.IncomingMessage) {

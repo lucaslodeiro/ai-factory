@@ -51,6 +51,7 @@ export function recoverAbandonedExecutions(store:Store){const scheduler=new Work
 export async function startDaemon(store = new Store(),github=new GitHubAdapter()) {
  try {
   if (!config.repo || !config.approvers.length) throw new Error("Configure GITHUB_REPOSITORY and FACTORY_APPROVERS first");
+  const factoryLogin=github.authenticatedLogin();if(!factoryLogin)throw new Error("GitHub authentication did not return an account login");store.setMetadata("runtime:factory-account",factoryLogin);
   verifyRepositoryIdentity(store,github);
   prepareRepository(config);
   if (!doctor(store,github)) throw new Error("Preflight failed; fix doctor checks before starting");

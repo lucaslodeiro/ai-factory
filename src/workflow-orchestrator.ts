@@ -1,8 +1,7 @@
 import type {RuntimeGitHub} from "./github-runtime.js";
 import { config } from "./config.js";
-import type { Comment,GitHubPort,Issue,RepositoryComment,WorkflowGitHubPort } from "./adapters/github.js";
+import type { Issue } from "./adapters/github.js";
 import type { Store } from "./storage.js";
-import { factoryCommandTypo,parseFactoryCommand } from "./factory-command.js";
 import { WorkflowIntake,WorkflowInbox,type ExecutionControl } from "./workflow-inbox.js";
 import { WorkflowGitHubPublisher } from "./workflow-github.js";
 import { WorkflowRunner } from "./workflow-runner.js";
@@ -10,19 +9,18 @@ import { WorkflowProjections } from "./workflow-projection.js";
 import { WorkflowRecords } from "./workflow-records.js";
 import { deliverNotifications,type NotificationPort } from "./notifications.js";
 import {pruneExecutionArtifacts} from "./artifact-retention.js";
-import {createHash} from "node:crypto";
 
 type GitHub=RuntimeGitHub;
 type ItemRow={id:string;issue_number:number;issue_id:number|null;repo:string;stage:string;status:string;revision:number;archived_at:string|null;context:string};
 
 export class WorkflowOrchestrator {
- private intake:WorkflowIntake;private inbox:WorkflowInbox;private publisher:WorkflowGitHubPublisher;private projections:WorkflowProjections;private records:WorkflowRecords;
+ private intake:WorkflowIntake;private inbox:WorkflowInbox;private publisher:WorkflowGitHubPublisher;private projections:WorkflowProjections;private records:WorkflowRecords;private assigned:Issue[]=[];
  constructor(readonly store:Store,private github:GitHub,private runner:WorkflowRunner,private notifications:NotificationPort,executions?:ExecutionControl){this.intake=new WorkflowIntake(store);this.inbox=new WorkflowInbox(store,{comments:()=>{throw new Error("Remote comments must be fetched asynchronously");}},config.approvers,executions);this.publisher=new WorkflowGitHubPublisher(store,github);this.projections=new WorkflowProjections(store);this.records=new WorkflowRecords(store);}
  async tick(){await this.syncRemote();await this.runLocal();await this.flush();}
  async syncRemote(){
   const since=(this.store.db.prepare("SELECT COALESCE(MAX(id),0) id FROM events").get() as {id:number}).id;
-
-  await this.discoverStartIssues();await this.discoverStartCommands();await this.reconcileIssueVisibility();await this.reconcilePullRequests();
+  const login=this.store.metadata<string>("runtime:factory-account")??await this.github.authenticatedLogin();this.assigned=await this.github.assignedIssues(login);
+  await this.reconcileIssueVisibility();await this.reconcilePullRequests();
   for(const item of this.rows())if(!item.archived_at){const comments=await this.github.comments(item.issue_number);if(!this.row(item.id).archived_at)this.inbox.poll(item.id,comments);}
   await this.flush();
   if(this.store.db.prepare("SELECT 1 FROM events WHERE id>? AND type IN ('github.pr_poll_failed','github.issue_state_failed') LIMIT 1").get(since))throw new Error("Some GitHub checks failed; inspect daemon logs. Local processing remains independent.");
@@ -63,22 +61,6 @@ export class WorkflowOrchestrator {
   try{await this.publisher.publishHelp();await this.publisher.publishResults();await this.publisher.publishChanged();}catch(error){this.store.event("github.projection_failed",{error:String(error)});throw error;}
   await deliverNotifications(this.store,this.notifications);
  }
- private async discoverStartCommands(){
-  if(!this.github.repositoryComments)return;const key=`github.start-comments:v2:${config.repo}`,now=Date.now(),saved=this.store.metadata<{since:string;evaluated:Record<string,string>}>(key),historical=!saved,checkpoint=saved??{since:new Date(0).toISOString(),evaluated:{}};const evaluated={...checkpoint.evaluated};
-  const issues=new Map<number,Issue>();for(const comment of (await this.github.repositoryComments(checkpoint.since)).slice().sort((a,b)=>a.id-b.id)){const issueNumber=Number(comment.issueUrl.split("/").at(-1));if(!Number.isSafeInteger(issueNumber))continue;let issue=issues.get(issueNumber);if(!issue){issue=await this.github.issue(issueNumber);issues.set(issueNumber,issue);}if(this.tracked(issue))continue;if(evaluated[String(comment.id)]===comment.updatedAt)continue;evaluated[String(comment.id)]=comment.updatedAt;await this.startComment(comment,issue,historical&&this.previouslyProcessed(issue));}
-  const cutoff=now-300000;for(const [id,updatedAt] of Object.entries(evaluated))if(Date.parse(updatedAt)<cutoff)delete evaluated[id];this.store.setMetadata(key,{since:new Date(now-5000).toISOString(),evaluated});
- }
- private async discoverStartIssues(){
-  if(!this.github.repositoryIssues)return;const key=`github.start-issues:v2:${config.repo}`,now=Date.now(),checkpoint=this.store.metadata<{since:string;evaluated:Record<string,string>}>(key)??{since:new Date(0).toISOString(),evaluated:{}};const evaluated={...checkpoint.evaluated};
-  for(const issue of (await this.github.repositoryIssues(checkpoint.since)).slice().sort((a,b)=>a.updatedAt.localeCompare(b.updatedAt)||a.id-b.id)){if(issue.pullRequest||issue.state!=="OPEN"||evaluated[String(issue.id)]===issue.updatedAt)continue;evaluated[String(issue.id)]=issue.updatedAt;if(this.tracked(issue))continue;let command;try{command=parseFactoryCommand(issue.body);}catch(error){this.store.event("command.rejected",{issueId:issue.id,issueNumber:issue.number,login:issue.author.login,error:String(error)});continue;}if(command?.kind!=="start"){if(!command&&issue.author.type==="User"&&config.approvers.includes(issue.author.login)){const typo=factoryCommandTypo(issue.body),reason=typo?`Unrecognized command \`${typo.attempt}\` — did you mean \`${typo.suggestion}\`? Edit the issue description or post a new comment.`:this.misplacedStart(issue.body)?this.startPlacementHint():null;if(reason){this.store.event("command.rejected",{issueId:issue.id,issueNumber:issue.number,login:issue.author.login,command:typo?.attempt??"start",error:reason});await this.publishStartHint(issue.number,`body-${issue.id}-${createHash("sha256").update(issue.body).digest("hex").slice(0,16)}`,reason);}}continue;}if(this.previouslyProcessed(issue)){this.store.event("command.rejected",{issueId:issue.id,issueNumber:issue.number,login:issue.author.login,command:"start",reason:"already processed by Factory"});continue;}if(issue.author.type!=="User"||!config.approvers.includes(issue.author.login)){this.store.event("command.rejected",{issueId:issue.id,issueNumber:issue.number,login:issue.author.login,command:"start",error:"Only an authorized human issue author can start work"});continue;}try{await this.startIssue(String(issue.number),issue.author.login,{source:"description",login:issue.author.login,guidance:command.guidance});}catch(error){this.store.event("command.rejected",{issueId:issue.id,issueNumber:issue.number,login:issue.author.login,command:"start",error:String(error)});}}
-  const cutoff=now-300000;for(const [id,updatedAt] of Object.entries(evaluated))if(Date.parse(updatedAt)<cutoff)delete evaluated[id];this.store.setMetadata(key,{since:new Date(now-5000).toISOString(),evaluated});
- }
- private async startComment(comment:RepositoryComment,issue?:Issue,processed=false){if(comment.body.includes("<!-- ai-factory:"))return;let command;try{command=parseFactoryCommand(comment.body);}catch(error){this.store.event("command.rejected",{commentId:comment.id,login:comment.user.login,error:String(error)});return;}const issueNumber=Number(comment.issueUrl.split("/").at(-1));if(command?.kind!=="start"){if(!command&&comment.user.type==="User"&&config.approvers.includes(comment.user.login)&&Number.isSafeInteger(issueNumber)){const typo=factoryCommandTypo(comment.body),reason=typo?`Unrecognized command \`${typo.attempt}\` — did you mean \`${typo.suggestion}\`? Edit this comment or post a new one.`:this.misplacedStart(comment.body)?this.startPlacementHint():null;if(reason){this.store.event("command.rejected",{commentId:comment.id,issueNumber,login:comment.user.login,command:typo?.attempt??"start",error:reason});await this.publishStartHint(issueNumber,`comment-${comment.id}-${comment.updatedAt}`,reason);}}return;}if(processed){this.store.event("command.rejected",{commentId:comment.id,issueNumber,login:comment.user.login,command:"start",reason:"already processed by Factory"});return;}if(comment.user.type!=="User"||!config.approvers.includes(comment.user.login)||!Number.isSafeInteger(issueNumber)){this.store.event("start.command_rejected",{commentId:comment.id,issueNumber,login:comment.user.login,reason:"Only an authorized human can start work"});return;}try{await this.startIssue(String(issueNumber),comment.user.login,{source:"comment",commentId:comment.id,login:comment.user.login,guidance:command.guidance},issue);}catch(error){this.store.event("start.command_rejected",{commentId:comment.id,issueNumber,login:comment.user.login,reason:String(error)});}}
- private misplacedStart(body:string){return body.split(/\r?\n/).some(line=>/^>?\s*\/factory start(?:\s|$)/.test(line.trim()));}
- private startPlacementHint(){return "AI Factory did not start: put `/factory start` on the first or the last line of the issue description or of a new comment.";}
- private async publishStartHint(issue:number,key:string,body:string){const metadata=`github:start-hint:${config.repo}:${key}`;if(this.store.metadata(metadata))return;await this.github.publishWorkflowComment(issue,`start-hint-${key}`,body);this.store.setMetadata(metadata,true);}
- private tracked(issue:Issue){return Boolean(this.rows().find(item=>!item.archived_at&&item.repo===config.repo&&item.issue_number===issue.number&&item.issue_id===issue.id));}
- private previouslyProcessed(issue:Issue){return Boolean(issue.labels?.some(label=>label.name.startsWith("factory:")));}
  private async reconcileIssueVisibility(){for(const item of this.rows())try{await this.reconcileIssue(item,await this.github.issue(item.issue_number));}catch(error){this.store.event("github.issue_state_failed",{issue:item.issue_number,error:String(error)},item.id);}}
  private async reconcileIssue(item:ItemRow,remote:Issue){
   item=this.row(item.id);

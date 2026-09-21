@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { parseFactoryCommand } from "../src/factory-command.js";
 
 test("parses lifecycle commands strictly",()=>{
- assert.deepEqual(parseFactoryCommand("/factory start"),{kind:"start",guidance:""});
+ assert.throws(()=>parseFactoryCommand("/factory start"),/malformed/);
  assert.deepEqual(parseFactoryCommand("/factory help\nThanks"),{kind:"help"});
  assert.deepEqual(parseFactoryCommand("/factory approve v12"),{kind:"approve",version:12,guidance:""});
  assert.deepEqual(parseFactoryCommand("/factory cancel"),{kind:"cancel",reason:""});
@@ -19,8 +19,8 @@ test("parses lifecycle commands strictly",()=>{
 });
 
 test("commands may be the first or last non-empty line with all other lines as payload",()=>{
- assert.deepEqual(parseFactoryCommand("Let's go\n/factory start"),{kind:"start",guidance:"Let's go"});
- assert.deepEqual(parseFactoryCommand("/factory start\nLet's go"),{kind:"start",guidance:"Let's go"});
+ assert.throws(()=>parseFactoryCommand("Let's go\n/factory start"),/malformed/);
+ assert.throws(()=>parseFactoryCommand("/factory start\nLet's go"),/malformed/);
  assert.deepEqual(parseFactoryCommand("Looks good\n/factory approve v2"),{kind:"approve",version:2,guidance:"Looks good"});
  assert.deepEqual(parseFactoryCommand("Here is my answer\n/factory answer"),{kind:"answer",text:"Here is my answer"});
  assert.deepEqual(parseFactoryCommand("/factory retry\nuse WebKit"),parseFactoryCommand("use WebKit\n/factory retry"));
@@ -34,7 +34,7 @@ test("answer and retry accept inline or following multiline guidance",()=>{
  assert.deepEqual(parseFactoryCommand("/factory retry Retry without Chromium"),{kind:"retry",guidance:"Retry without Chromium",scope:"spec",appliesTo:[]});
  assert.deepEqual(parseFactoryCommand("/factory retry"),{kind:"retry",guidance:"",scope:"spec",appliesTo:[]});
  assert.deepEqual(parseFactoryCommand("/factory retry --issue --for builder,tester Keep the API stable"),{kind:"retry",guidance:"Keep the API stable",scope:"issue",appliesTo:["developer","qa"]});
- assert.deepEqual(parseFactoryCommand("/factory start Prefer a small dependency-free design"),{kind:"start",guidance:"Prefer a small dependency-free design"});
+ assert.throws(()=>parseFactoryCommand("/factory start Prefer a small dependency-free design"),/malformed/);
  assert.deepEqual(parseFactoryCommand("/factory pause Waiting for legal review"),{kind:"pause",reason:"Waiting for legal review"});
 });
 

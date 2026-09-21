@@ -6,7 +6,7 @@ import {startDaemon} from "../src/daemon.js";
 import {config} from "../src/config.js";
 import {doctor} from "../src/doctor.js";
 
-const repository=(id:number,fullName="owner/demo")=>({repository:()=>({id,nodeId:`R_${id}`,fullName,defaultBranch:"main"})});
+const repository=(id:number,fullName="owner/demo")=>({authenticatedLogin:()=>"factory",repository:()=>({id,nodeId:`R_${id}`,fullName,defaultBranch:"main"})});
 
 test("repository identity is stored once and a different GitHub repository id is refused",()=>{
  const store=new Store(":memory:");

@@ -19,7 +19,7 @@ export function backgroundGitHub():{github:RuntimeGitHub;close:()=>Promise<numbe
   current.on('message',({id,value,error})=>{const request=pending.get(id);if(!request)return;pending.delete(id);if(error)request.reject(new Error(error));else request.resolve(value);});
   return current;
  }
- const methods=new Set(['pullRequestState','listManaged','issue','comments','repository','repositoryComments','repositoryIssues','ensurePR','syncWorkflow','publishWorkflowComment','assignees','assign','unassign']);
+ const methods=new Set(['pullRequestState','authenticatedLogin','assignedIssues','issue','comments','repository','ensureLabel','addLabel','removeLabel','replaceInstanceLabel','ensurePR','syncWorkflow','publishWorkflowComment','assignees','assign','unassign']);
  const github=new Proxy({}, {get(_target,method){
   if(typeof method!=='string'||!methods.has(method))return undefined;
   return (...args:unknown[])=>{

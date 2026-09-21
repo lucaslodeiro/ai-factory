@@ -2,7 +2,6 @@ import type { AgentRole } from "./types.js";
 import type { RecordScope } from "./workflow-records.js";
 
 export type FactoryCommand=
- | {kind:"start";guidance:string}
  | {kind:"help"}
  | {kind:"approve";version:number;guidance:string}
  | {kind:"answer";text:string}
@@ -47,8 +46,6 @@ export function parseFactoryCommand(body:string):FactoryCommand|null {
  if (answer) {const text=[answer[1]??"",payload].filter(Boolean).join("\n").trim();if(!text)throw new Error("/factory answer requires guidance");return {kind:"answer",text};}
  const retry=commandLine.match(/^\/factory retry(?:\s+(.*))?$/);
  if (retry) {const parsed=scoped([retry[1]??"",payload].filter(Boolean).join("\n"));return {kind:"retry",guidance:parsed.text,scope:parsed.scope,appliesTo:parsed.appliesTo};}
- const start=commandLine.match(/^\/factory start(?:\s+(.*))?$/);
- if (start) return {kind:"start",guidance:[start[1]??"",payload].filter(Boolean).join("\n").trim()};
  const pause=commandLine.match(/^\/factory pause(?:\s+(.*))?$/);
  if (pause) return {kind:"pause",reason:[pause[1]??"",payload].filter(Boolean).join("\n").trim()};
  const cancel=commandLine.match(/^\/factory cancel(?:\s+(.*))?$/);
