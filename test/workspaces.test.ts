@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { Workspaces, git } from "../src/worktrees.js";
 import { config } from "../src/config.js";
-test("real Git worktree isolation, QA boundaries, commit and branch publication", () => {
+test("real Git worktree isolation, QA boundaries, commit and branch publication", async() => {
  const root = fs.mkdtempSync(path.join(os.tmpdir(), "factory-git-"));
  try {
   const origin = path.join(root,"origin.git"), repo = path.join(root,"repo"); fs.mkdirSync(origin); fs.mkdirSync(repo);
@@ -17,7 +17,7 @@ test("real Git worktree isolation, QA boundaries, commit and branch publication"
   fs.writeFileSync(path.join(cwd,"app.txt"),"implementation"); assert.throws(()=>ws.check(cwd,"qa",before,branch),/non-test/);
   assert.throws(()=>ws.check(cwd,"reviewer",before,branch),/modified/); ws.check(cwd,"developer",before,branch); ws.commit(cwd,"implementation",branch);
   fs.mkdirSync(path.join(cwd,"test")); fs.writeFileSync(path.join(cwd,"test","app.test.ts"),"test");
-  ws.check(cwd,"qa",ws.head(cwd),branch); ws.commit(cwd,"test",branch); ws.publish(cwd,branch);
+  ws.check(cwd,"qa",ws.head(cwd),branch); ws.commit(cwd,"test",branch); await ws.publishAsync(cwd,branch);
   assert.equal(git(origin,["rev-parse",`refs/heads/${branch}`]),ws.head(cwd)); assert.equal(fs.readFileSync(path.join(repo,"app.txt"),"utf8"),"base");
   assert.throws(()=>ws.publish(cwd,"main"),/Refusing/);
   // Branch switches at the same HEAD must fail before any orchestrator commit.
