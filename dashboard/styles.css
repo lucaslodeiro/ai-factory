@@ -196,6 +196,7 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .credential-copy p,.credential-copy small { color:var(--muted); font-size:.75rem; line-height:1.4 }
 .credential-copy small { color:var(--danger) }
 .credential-account { color:var(--text); font:600 .7rem ui-monospace,SFMono-Regular,monospace }
+.credential-actions { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; justify-content:flex-end }
 .credential-log { margin-top:1rem; font-size:.72rem }
 .credential-log code { overflow-wrap:anywhere }
 .slack-status { display:flex; align-items:flex-start; justify-content:space-between; gap:1.5rem; margin-bottom:1rem; padding:1rem; background:color-mix(in srgb,var(--surface) 60%,transparent); border:1px solid var(--line); border-radius:12px }
@@ -263,6 +264,7 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
   .role-settings-grid { grid-template-columns:1fr }
   .role-settings-grid .provider-setting { grid-column:auto }
   .credentials-intro,.credential-card,.slack-status { align-items:flex-start; flex-direction:column }
+  .credential-actions { justify-content:flex-start }
   .setup-guide { grid-template-columns:1fr; align-items:start }
   .slack-status dl { width:100% }
 
