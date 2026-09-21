@@ -23,7 +23,18 @@ test("captures output, spawn errors, nonzero exit and timeout", async () => {
  await assert.rejects(m.run("w", "qa", process.execPath, ["-e", "process.exit(4)"], os.tmpdir()), /failed/);
  assert.equal((s.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE exit_code=4").get() as any).n, 1);
  await assert.rejects(m.run("w", "qa", process.execPath, ["-e", "setInterval(()=>{},100)"], os.tmpdir(), "", 50), /timed_out/);
+ const timeout=s.db.prepare("SELECT status,interruption_reason FROM executions WHERE status='timed_out'").get() as any;
+ assert.deepEqual(timeout,{status:"timed_out",interruption_reason:"execution-timeout"});
  assert.equal(s.db.prepare("SELECT COUNT(*) as n FROM executions WHERE status='running'").get() && (s.db.prepare("SELECT COUNT(*) as n FROM executions WHERE status='running'").get() as any).n, 0); s.db.close();
+});
+test("host signals are interruptions rather than user cancellations", async () => {
+ const s=new Store(":memory:"),m=new ExecutionManager(s);
+ const pending=m.run("w","developer",process.execPath,["-e","console.log('ready');setInterval(()=>{},100)"],os.tmpdir());
+ const id=(s.db.prepare("SELECT id FROM executions").get() as any).id,pid=(s.db.prepare("SELECT pid FROM executions WHERE id=?").get(id) as any).pid,output=path.join(config.dataDir,"runs",id,"stdout.log"),deadline=Date.now()+3000;
+ while((!fs.existsSync(output)||!fs.readFileSync(output,"utf8").includes("ready"))&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20));
+ assert.match(fs.readFileSync(output,"utf8"),/ready/);
+ process.kill(-pid,"SIGTERM");await assert.rejects(pending,/interrupted/);
+ assert.deepEqual(s.db.prepare("SELECT status,interruption_reason FROM executions WHERE id=?").get(id),{status:"interrupted",interruption_reason:"host-interrupted"});s.db.close();
 });
 test("cancellation terminates active process and records cancelled", async () => {
  const s = new Store(":memory:"), m = new ExecutionManager(s);

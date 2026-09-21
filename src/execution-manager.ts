@@ -54,11 +54,11 @@ export class ExecutionManager {
       const child = spawn(process.execPath, [fileURLToPath(new URL("./worker-supervisor.mjs", import.meta.url)), id, logDir], { cwd, env: agentEnvironment(), detached: true, stdio: ["pipe", out, err, "ipc"] });
       fs.closeSync(out); fs.closeSync(err);
       this.store.db.prepare("UPDATE executions SET pid=? WHERE id=?").run(child.pid ?? null, id);
-      const send = (message:{type:"cancel"}|{type:"interrupt";reason:string}) => { if(child.connected) try{child.send(message);}catch{} };
-      const cancel = () => { if (cancelled) return; cancelled = true; send({type:"cancel"}); };
+      const send = (message:{type:"cancel";reason?:string}|{type:"interrupt";reason:string}) => { if(child.connected) try{child.send(message);}catch{} };
+      const cancel = (reason="user-cancel") => { if (cancelled) return; cancelled = true; interruptionReason=reason; send({type:"cancel",reason}); };
       const interrupt = (reason:string) => { if(cancelled||interrupted)return;interrupted=true;interruptionReason=reason;send({type:"interrupt",reason}); };
       this.running.set(id, { child, cancel, interrupt });
-      const timeout = setTimeout(() => { timedOut = true; cancel(); }, timeoutMs);
+      const timeout = setTimeout(() => { timedOut = true; cancel("execution-timeout"); }, timeoutMs);
       child.stdin?.on("error", () => {});
       child.stdin?.end(JSON.stringify({ command, args, cwd, input, role, browserExecutable: process.env.FACTORY_BROWSER_EXECUTABLE }));
       let spawnError: Error | undefined;
@@ -72,7 +72,7 @@ export class ExecutionManager {
           if (saved.runId === id && (saved.code === null || Number.isInteger(saved.code))) completion = saved;
         } catch {}
         const providerExitCode = completion?.code ?? code;
-        interruptionReason=!timedOut&&cancelled?"user-cancel":completion?.reason??interruptionReason;
+        interruptionReason=timedOut?"execution-timeout":cancelled?(completion?.reason??interruptionReason??"user-cancel"):completion?.reason??interruptionReason;
         const status = timedOut ? "timed_out" : cancelled||completion?.status==="cancelled" ? "cancelled" : interrupted||completion?.status==="interrupted" ? "interrupted" : code === 0 && !spawnError && completion?.status === "succeeded" ? "succeeded" : "failed";
         const stdoutFile=path.join(logDir,"stdout.log"),stderrFile=path.join(logDir,"stderr.log");
         const stdout=readOutput(stdoutFile,10_000_000),stderr=readOutput(stderrFile,512*1024,true);
