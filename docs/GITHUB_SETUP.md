@@ -6,6 +6,8 @@ The authenticated GitHub account is the Factory account. Assign an open issue to
 
 Unassigning the Factory account pauses the work and publishes preserved partial changes. Assigning it again is enough to resume: the Factory restores its instance label on one poll and continues on the next. Moving the instance label transfers ownership. While human input is needed, the issue remains assigned to the Factory account and uses `factory:waiting` plus the status comment. On completion or cancellation the Factory account and its instance label are removed. `FACTORY_APPROVERS` still controls approvals, answers and other workflow commands.
 
+Factory-authored comments also carry hidden, validated workflow facts. Specifications live once in their milestone comments; the editable status comment carries only a state index that points to them. Another installation reads the issue and the deterministic work branch to continue the same workflow id. Stable published states continue automatically. A published `RUNNING` or `QUEUED` state is shown as waiting so two installations cannot run it accidentally; use Dashboard **Continue anyway** only after confirming the source installation has stopped. `ai-factory issue show <number>` prints the published index and its specification-version approval summaries. Execution logs, prompts, credentials and local paths are never included.
+
 Available issue commands are:
 
 - `/factory help`
