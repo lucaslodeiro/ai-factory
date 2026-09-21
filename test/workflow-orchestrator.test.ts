@@ -10,7 +10,7 @@ import type { AgentAdapter } from "../src/adapters/agent.js";
 import type { WorkspacePort } from "../src/worktrees.js";
 import type { Comment,Issue,PullRequestState,RepositoryComment } from "../src/adapters/github.js";
 
-class Workspace implements WorkspacePort {ensure(){return "/tmp/v3-work";}assertBranch(){}head(){return "head";}diff(){return "";}check(){}commit(){}publish(){}changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/v3-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){}}
+class Workspace implements WorkspacePort {ensure(){return "/tmp/v3-work";}assertBranch(){}sync(){return{before:"head",after:"head",merged:[]};}head(){return "head";}diff(){return "";}check(){}commit(){}publish(){}changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/v3-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){}}
 class GitHub {
  commentsByIssue=new Map<number,Comment[]>();statusBodies:string[]=[];resultBodies:string[]=[];labels:string[][]=[];issueLabels:Array<{name:string}>=[];lastPrBody="";state:"OPEN"|"CLOSED"="OPEN";issueId=100;issueCalls=0;title="Ship V3";body="Complete the workflow";updatedAt="2026-09-20T00:00:00Z";author={login:"owner",type:"User"};discoverIssues=false;pr:PullRequestState={state:"OPEN",mergedAt:null,mergeCommit:null};
  issue(n:number):Issue{this.issueCalls++;return {id:this.issueId,nodeId:`I_${this.issueId}`,number:n,title:this.title,body:this.body,url:`https://github.com/owner/demo/issues/${n}`,state:this.state,labels:this.issueLabels,createdAt:"2026-09-20T00:00:00Z",updatedAt:this.updatedAt,author:this.author};}

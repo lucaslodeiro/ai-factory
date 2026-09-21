@@ -21,10 +21,15 @@ function gitFile(cwd:string,args:string[],file:string){
 }
 export function git(cwd: string, args: string[]) { return gitOutput(cwd, args).trim(); }
 export interface WorkspaceSnapshot {head:string;files:Map<string,string>;dirty:string[];policy:VerificationPolicy;}
+export interface WorkspaceSync {before:string;after:string;merged:string[];}
+export class SyncConflictError extends Error {
+ constructor(public files:string[],public ref:string){super(`Could not merge ${ref}; conflicting files: ${files.join(", ")||"unknown"}`);this.name="SyncConflictError";}
+}
 export interface WorkspacePort {
  capture?(cwd:string):WorkspaceSnapshot;
  assertBranch(cwd: string, branch: string): void;
  ensure(id: string, branch: string): string;
+ sync(cwd:string,branch:string,base:string):WorkspaceSync;
  head(cwd: string): string;
  diff(cwd: string): string;
  check(cwd: string, role: string, before: string, branch: string, baseline?:WorkspaceSnapshot): string[]|void;
@@ -56,6 +61,22 @@ export class Workspaces implements WorkspacePort {
    git(config.repoDir,["worktree","add","-b",branch,target,remoteBranch ? `origin/${branch}` : `origin/${config.defaultBranch}`]);
   }
   return target;
+ }
+ sync(cwd:string,branch:string,base:string):WorkspaceSync {
+  this.assertBranch(cwd,branch);
+  const before=this.head(cwd),issue=branch.match(/^factory\/issue-(\d+)$/)?.[1]??branch;
+  if(gitOutput(cwd,["status","--porcelain=v1","-z"]))this.commit(cwd,`factory: work in progress for #${issue}`,branch);
+  git(cwd,["fetch","origin",base]);
+  const branchFetch=spawnSync(config.gitCommand,["fetch","origin",`${branch}:refs/remotes/origin/${branch}`],{cwd,encoding:"utf8",timeout:60000,maxBuffer:10_000_000});
+  if(branchFetch.status!==0&&!/couldn't find remote ref|remote ref .* not found/i.test(branchFetch.stderr||""))throw new Error(branchFetch.stderr||branchFetch.error?.message||"git fetch failed");
+  const merged:string[]=[];
+  for(const ref of [`origin/${branch}`,`origin/${base}`]){
+   if(!gitSucceeds(cwd,["show-ref","--verify","--quiet",`refs/remotes/${ref}`])||gitSucceeds(cwd,["merge-base","--is-ancestor",ref,"HEAD"]))continue;
+   const merge=spawnSync(config.gitCommand,["merge","--no-edit",ref],{cwd,encoding:"utf8",timeout:60000,maxBuffer:10_000_000});
+   if(merge.status!==0){const files=gitOutput(cwd,["diff","--name-only","--diff-filter=U","-z"]).split("\0").filter(Boolean);if(gitSucceeds(cwd,["rev-parse","--verify","MERGE_HEAD"]))git(cwd,["merge","--abort"]);if(files.length)throw new SyncConflictError(files,ref);throw new Error(merge.stderr||merge.error?.message||`Could not merge ${ref}`);}
+   merged.push(ref);
+  }
+  return{before,after:this.head(cwd),merged};
  }
  head(cwd: string) { return git(cwd, ["rev-parse", "HEAD"]); }
  diff(cwd: string) { return git(cwd, ["diff", `origin/${config.defaultBranch}...HEAD`]); }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Workspaces, git } from "../src/worktrees.js";
+import { SyncConflictError,Workspaces, git } from "../src/worktrees.js";
 import { config } from "../src/config.js";
 test("real Git worktree isolation, QA boundaries, commit and branch publication", async() => {
  const root = fs.mkdtempSync(path.join(os.tmpdir(), "factory-git-"));
@@ -63,4 +63,29 @@ test("ensure restores a deterministic branch that exists only in the remote",()=
   config.repoDir=checkout;config.dataDir=path.join(root,"data");const cwd=new Workspaces().ensure("new-item",branch);
   assert.equal(git(cwd,["branch","--show-current"]),branch);assert.equal(fs.readFileSync(path.join(cwd,"continued.txt"),"utf8"),"remote work\n");assert.equal(git(cwd,["rev-parse","HEAD"]),git(origin,["rev-parse",`refs/heads/${branch}`]));
  } finally {config.repoDir=old.repoDir;config.dataDir=old.dataDir;fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test("sync preserves interrupted work and merges remote work and base commits",()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"factory-sync-")),old={repoDir:config.repoDir,dataDir:config.dataDir};
+ try{
+  const origin=path.join(root,"origin.git"),seed=path.join(root,"seed"),repo=path.join(root,"repo"),branch="factory/issue-12";
+  fs.mkdirSync(origin);fs.mkdirSync(seed);git(origin,["init","--bare"]);git(seed,["init"]);git(seed,["config","user.name","Factory Test"]);git(seed,["config","user.email","factory@example.test"]);
+  fs.writeFileSync(path.join(seed,"shared.txt"),"base\n");git(seed,["add","."]);git(seed,["commit","-m","base"]);git(seed,["branch","-M","main"]);git(seed,["remote","add","origin",origin]);git(seed,["push","-u","origin","main"]);
+  git(root,["clone","--branch","main",origin,repo]);git(repo,["config","user.name","Factory Test"]);git(repo,["config","user.email","factory@example.test"]);config.repoDir=repo;config.dataDir=path.join(root,"data");
+  const ws=new Workspaces(),cwd=ws.ensure("work-12",branch);fs.writeFileSync(path.join(cwd,"partial.txt"),"preserved\n");
+  git(seed,["checkout","-b",branch]);fs.writeFileSync(path.join(seed,"human.txt"),"remote branch\n");git(seed,["add","."]);git(seed,["commit","-m","human branch"]);git(seed,["push","origin",branch]);
+  git(seed,["checkout","main"]);fs.writeFileSync(path.join(seed,"base.txt"),"new base\n");git(seed,["add","."]);git(seed,["commit","-m","base update"]);git(seed,["push","origin","main"]);
+  const synced=ws.sync(cwd,branch,"main");assert.deepEqual(synced.merged,[`origin/${branch}`,"origin/main"]);assert.equal(fs.readFileSync(path.join(cwd,"partial.txt"),"utf8"),"preserved\n");assert.equal(fs.readFileSync(path.join(cwd,"human.txt"),"utf8"),"remote branch\n");assert.equal(fs.readFileSync(path.join(cwd,"base.txt"),"utf8"),"new base\n");assert.match(git(cwd,["log","--format=%s","-4"]),/factory: work in progress for #12/);
+ }finally{config.repoDir=old.repoDir;config.dataDir=old.dataDir;fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test("sync aborts a conflicting merge and reports the conflicting files",()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"factory-sync-conflict-")),old={repoDir:config.repoDir,dataDir:config.dataDir};
+ try{
+  const origin=path.join(root,"origin.git"),seed=path.join(root,"seed"),repo=path.join(root,"repo"),branch="factory/issue-13";
+  fs.mkdirSync(origin);fs.mkdirSync(seed);git(origin,["init","--bare"]);git(seed,["init"]);git(seed,["config","user.name","Factory Test"]);git(seed,["config","user.email","factory@example.test"]);fs.writeFileSync(path.join(seed,"same.txt"),"base\n");git(seed,["add","."]);git(seed,["commit","-m","base"]);git(seed,["branch","-M","main"]);git(seed,["remote","add","origin",origin]);git(seed,["push","-u","origin","main"]);
+  git(root,["clone","--branch","main",origin,repo]);git(repo,["config","user.name","Factory Test"]);git(repo,["config","user.email","factory@example.test"]);config.repoDir=repo;config.dataDir=path.join(root,"data");const ws=new Workspaces(),cwd=ws.ensure("work-13",branch);
+  fs.writeFileSync(path.join(cwd,"same.txt"),"factory\n");git(cwd,["add","."]);git(cwd,["commit","-m","factory side"]);git(seed,["checkout","-b",branch]);fs.writeFileSync(path.join(seed,"same.txt"),"human\n");git(seed,["add","."]);git(seed,["commit","-m","human side"]);git(seed,["push","origin",branch]);
+  assert.throws(()=>ws.sync(cwd,branch,"main"),(error:unknown)=>error instanceof SyncConflictError&&error.files.includes("same.txt"));assert.equal(git(cwd,["status","--porcelain"]),"");assert.throws(()=>git(cwd,["rev-parse","--verify","MERGE_HEAD"]));
+ }finally{config.repoDir=old.repoDir;config.dataDir=old.dataDir;fs.rmSync(root,{recursive:true,force:true});}
 });

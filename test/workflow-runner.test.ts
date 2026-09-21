@@ -9,11 +9,11 @@ import { WorkflowFailures } from "../src/workflow-failures.js";
 import { config } from "../src/config.js";
 import { result } from "./fixtures.js";
 import type { AgentAdapter,AgentRunRequest } from "../src/adapters/agent.js";
-import type { WorkspacePort } from "../src/worktrees.js";
+import { SyncConflictError,type WorkspacePort } from "../src/worktrees.js";
 import { InvalidResultError } from "../src/results.js";
 
 class Workspace implements WorkspacePort {
- commits:string[]=[];cleanupCalls=0;publishCalls=0;pushError:Error|undefined;ensure(){return "/tmp/factory-work";}assertBranch(){}head(){return "abc";}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){this.publishCalls++;}
+ commits:string[]=[];cleanupCalls=0;publishCalls=0;pushError:Error|undefined;syncError:Error|undefined;ensure(){return "/tmp/factory-work";}assertBranch(){}sync(){if(this.syncError)throw this.syncError;return{before:"abc",after:"abc",merged:[]};}head(){return "abc";}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){this.publishCalls++;}
  async publishAsync(){this.publishCalls++;if(this.pushError)throw this.pushError;}
  changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/factory-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){this.cleanupCalls++;}
 }
@@ -44,6 +44,16 @@ test("a rejected post-commit push preserves the applied result and records sanit
   assert.equal(await runner.run(started.id),true);assert.deepEqual({stage:new WorkflowProjections(store).get(started.id).stage,status:new WorkflowProjections(store).get(started.id).status},{stage:"TEST",status:"QUEUED"});
   const event=store.db.prepare("SELECT payload FROM events WHERE type='workflow.push_failed'").get() as {payload:string};assert.match(event.payload,/\[REDACTED\]/);assert.doesNotMatch(event.payload,/super-secret|hidden-value/);
  } finally {store.db.close();}
+});
+
+test("a synchronization conflict fails as integration before execution and retry prepares again",async()=>{
+ const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace=new Workspace();let calls=0;
+ try{
+  workspace.syncError=new SyncConflictError(["src/app.ts"],"origin/factory/issue-1");const runner=new WorkflowRunner(store,{"product-architect":{async run(){calls++;return result("spec");}}},workspace,{ensurePR(){return "unused";}});
+  assert.equal(await runner.run(started.id),true);assert.equal(calls,0);assert.equal(new WorkflowFailures(store).active(started.id)?.class,"integration");assert.match(new WorkflowFailures(store).active(started.id)?.message??"",/src\/app\.ts/);
+  new WorkflowCommands(store).apply({kind:"retry",guidance:"resolved merge",scope:"issue",appliesTo:[]},{workItemId:started.id,login:"owner",commentId:2,specVersion:0});workspace.syncError=undefined;
+  assert.equal(await runner.run(started.id),true);assert.equal(calls,1);assert.equal(new WorkflowProjections(store).get(started.id).status,"WAITING");
+ }finally{store.db.close();}
 });
 
 test("protected context overflow fails before invoking a provider",async()=>{

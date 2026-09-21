@@ -5,13 +5,14 @@ import { promptContract } from "./prompts.js";
 import type { Store } from "./storage.js";
 import type { AgentAdapter } from "./adapters/agent.js";
 import type { AgentRole,AgentResult,DeliveryStage,TaskAssessment } from "./types.js";
-import type { WorkspacePort } from "./worktrees.js";
+import { SyncConflictError,type WorkspacePort } from "./worktrees.js";
 import { WorkflowScheduler } from "./workflow-scheduler.js";
 import { WorkflowResults } from "./workflow-results.js";
 import { WorkflowRecords } from "./workflow-records.js";
 import type { TacticalNextRole } from "./tactical-routing.js";
 import { InvalidResultError } from "./results.js";
 import { sanitizeFailureEvidence } from "./failure-report.js";
+import { config } from "./config.js";
 
 export interface DeliveryPort {ensurePR(branch:string,title:string,body:string):string|Promise<string>;}
 
@@ -33,6 +34,7 @@ export class WorkflowRunner {
   const context=JSON.parse(row.context||"{}") as {title?:string;body?:string;url?:string;cwd?:string};
   cwd=context.cwd??this.workspaces.ensure(workItemId,row.branch);if(!context.cwd)this.updateContext(workItemId,{cwd});
   this.workspaces.assertBranch(cwd,row.branch);
+  this.workspaces.sync(cwd,row.branch,config.defaultBranch);
   const specVersion=this.specVersion(workItemId),assessment=this.assessment(workItemId,specVersion),active=this.records.activeRequest(workItemId);
   const consultation=active?.payload.kind==="request"&&active.payload.owner==="architect";
   const selection=selectModel(role,assessment,projection.correctionCycles,consultation),budget=resolveContextBudget(role,selection);
@@ -58,12 +60,12 @@ export class WorkflowRunner {
     catch(error){this.store.event("workflow.push_failed",{branch:row.branch,error:sanitizeFailureEvidence(error instanceof Error?error.message:String(error),1600)},workItemId,started.executionId);}
    }
    this.results.apply({workItemId,executionId:started.executionId,role,result});return true;
-  } catch(error){if(!started){if(!preparing)throw error;this.scheduler.rejectQueued(workItemId,new Error(`Could not prepare workflow execution: ${error instanceof Error?error.message:String(error)}`),error instanceof InvalidContextError?"invalid-context":"execution");return true;}this.store.event("workflow.result_failed",{error:error instanceof Error?error.message:String(error)},workItemId,started.executionId);this.scheduler.fail(workItemId,started.executionId,error,error instanceof InvalidContextError?"invalid-context":error instanceof InvalidResultError?"invalid-result":"execution");return true;}
+  } catch(error){if(!started){if(!preparing)throw error;this.scheduler.rejectQueued(workItemId,new Error(`Could not prepare workflow execution: ${error instanceof Error?error.message:String(error)}`),error instanceof InvalidContextError?"invalid-context":error instanceof SyncConflictError?"integration":"execution");return true;}this.store.event("workflow.result_failed",{error:error instanceof Error?error.message:String(error)},workItemId,started.executionId);this.scheduler.fail(workItemId,started.executionId,error,error instanceof InvalidContextError?"invalid-context":error instanceof InvalidResultError?"invalid-result":"execution");return true;}
   finally{if(reviewerContext&&cwd)try{this.workspaces.cleanupReviewerContext(cwd,workItemId);}catch(error){this.store.event("workflow.context_cleanup_failed",{error:error instanceof Error?error.message:String(error)},workItemId,started?.executionId);}}
  }
  private async publish(workItemId:string) {
   const row=this.store.db.prepare("SELECT issue_number,branch,context,revision FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;context:string;revision:number};const context=JSON.parse(row.context||"{}") as {title?:string;cwd?:string};
-  try {const cwd=context.cwd;if(!cwd)throw new Error("Delivery has no prepared worktree");this.workspaces.assertBranch(cwd,row.branch);const review=this.latestResult(workItemId,"reviewer");if(!review||review.outcome!=="pass")throw new InvalidResultError("Delivery requires a successful Reviewer result");if(this.workspaces.publishAsync)await this.workspaces.publishAsync(cwd,row.branch);else this.workspaces.publish(cwd,row.branch);if(this.deliveryInterrupted(workItemId,row.revision))return false;const pullRequestUrl=await this.delivery.ensurePR(row.branch,`#${row.issue_number}: ${context.title??"Factory delivery"}`,this.prBody(workItemId,row.issue_number,review));if(this.deliveryInterrupted(workItemId,row.revision))return false;this.results.published({workItemId,pullRequestUrl});return true;}
+  try {const cwd=context.cwd;if(!cwd)throw new Error("Delivery has no prepared worktree");this.workspaces.assertBranch(cwd,row.branch);this.workspaces.sync(cwd,row.branch,config.defaultBranch);const review=this.latestResult(workItemId,"reviewer");if(!review||review.outcome!=="pass")throw new InvalidResultError("Delivery requires a successful Reviewer result");if(this.workspaces.publishAsync)await this.workspaces.publishAsync(cwd,row.branch);else this.workspaces.publish(cwd,row.branch);if(this.deliveryInterrupted(workItemId,row.revision))return false;const pullRequestUrl=await this.delivery.ensurePR(row.branch,`#${row.issue_number}: ${context.title??"Factory delivery"}`,this.prBody(workItemId,row.issue_number,review));if(this.deliveryInterrupted(workItemId,row.revision))return false;this.results.published({workItemId,pullRequestUrl});return true;}
   catch(error){if(this.deliveryInterrupted(workItemId,row.revision))return false;this.scheduler.rejectQueued(workItemId,error,"integration");return true;}
  }
  private deliveryInterrupted(id:string,revision:number){const row=this.store.db.prepare("SELECT stage,status,archived_at,revision FROM work_items WHERE id=?").get(id) as {stage:string;status:string;archived_at:string|null;revision:number};return row.revision!==revision||row.stage!=="DELIVERY"||row.status!=="QUEUED"||Boolean(row.archived_at);}
