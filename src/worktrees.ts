@@ -22,7 +22,7 @@ function gitFile(cwd:string,args:string[],file:string){
 }
 export function git(cwd: string, args: string[]) { return gitOutput(cwd, args).trim(); }
 export interface WorkspaceSnapshot {head:string;files:Map<string,string>;dirty:string[];policy:VerificationPolicy;}
-export interface WorkspaceSync {before:string;after:string;merged:string[];}
+export interface WorkspaceSync {before:string;after:string;merged:string[];skipped?:string;}
 export class SyncConflictError extends Error {
  constructor(public files:string[],public ref:string){super(`Could not merge ${ref}; conflicting files: ${files.join(", ")||"unknown"}`);this.name="SyncConflictError";}
 }
@@ -72,9 +72,10 @@ export class Workspaces implements WorkspacePort {
   if(role==="product-architect"||role==="reviewer")reject(`${role} cannot continue with uncommitted worktree changes`,dirty);
   if(role==="qa")reject("Verification Engineer cannot continue with a protected non-test file (only tests and declared verification artifacts are allowed)",dirty.filter(file=>!verificationPathAllowed(file,verificationPolicy(cwd))));
   if(dirty.length)this.commit(cwd,`factory: work in progress for #${issue}`,branch);
-  git(cwd,["fetch","origin",base]);
+  const baseFetch=spawnSync(config.gitCommand,["fetch","origin",base],{cwd,encoding:"utf8",timeout:60000,maxBuffer:10_000_000});
+  if(baseFetch.status!==0)return{before,after:this.head(cwd),merged:[],skipped:baseFetch.stderr||baseFetch.error?.message||"git fetch failed"};
   const branchFetch=spawnSync(config.gitCommand,["fetch","origin",`${branch}:refs/remotes/origin/${branch}`],{cwd,encoding:"utf8",timeout:60000,maxBuffer:10_000_000});
-  if(branchFetch.status!==0&&!/couldn't find remote ref|remote ref .* not found/i.test(branchFetch.stderr||""))throw new Error(branchFetch.stderr||branchFetch.error?.message||"git fetch failed");
+  if(branchFetch.status!==0&&!/couldn't find remote ref|remote ref .* not found/i.test(branchFetch.stderr||""))return{before,after:this.head(cwd),merged:[],skipped:branchFetch.stderr||branchFetch.error?.message||"git fetch failed"};
   const merged:string[]=[];
   for(const ref of [`origin/${branch}`,`origin/${base}`]){
    if(!gitSucceeds(cwd,["show-ref","--verify","--quiet",`refs/remotes/${ref}`])||gitSucceeds(cwd,["merge-base","--is-ancestor",ref,"HEAD"]))continue;

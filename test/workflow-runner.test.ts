@@ -13,7 +13,7 @@ import { SyncConflictError,type WorkspacePort } from "../src/worktrees.js";
 import { InvalidResultError } from "../src/results.js";
 
 class Workspace implements WorkspacePort {
- commits:string[]=[];cleanupCalls=0;publishCalls=0;pushError:Error|undefined;syncError:Error|undefined;currentHead="abc";ensure(){return "/tmp/factory-work";}assertBranch(){}sync(){if(this.syncError)throw this.syncError;return{before:this.currentHead,after:this.currentHead,merged:[]};}head(){return this.currentHead;}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){this.publishCalls++;}
+ commits:string[]=[];cleanupCalls=0;publishCalls=0;pushError:Error|undefined;syncError:Error|undefined;syncSkipped:string|undefined;currentHead="abc";ensure(){return "/tmp/factory-work";}assertBranch(){}sync(){if(this.syncError)throw this.syncError;return{before:this.currentHead,after:this.currentHead,merged:[],skipped:this.syncSkipped};}head(){return this.currentHead;}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){this.publishCalls++;}
  async publishAsync(){this.publishCalls++;if(this.pushError)throw this.pushError;}
  changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/factory-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){this.cleanupCalls++;}
 }
@@ -54,6 +54,11 @@ test("a synchronization conflict fails as integration before execution and retry
   new WorkflowCommands(store).apply({kind:"retry",guidance:"resolved merge",scope:"issue",appliesTo:[]},{workItemId:started.id,login:"owner",commentId:2,specVersion:0});workspace.syncError=undefined;
   assert.equal(await runner.run(started.id),true);assert.equal(calls,1);assert.equal(new WorkflowProjections(store).get(started.id).status,"WAITING");
  }finally{store.db.close();}
+});
+
+test("a fetch failure skips remote synchronization without failing the execution",async()=>{
+ const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace=new Workspace();workspace.syncSkipped="fatal: unable to access https://operator:secret@example.test/repo";let calls=0;
+ try{const runner=new WorkflowRunner(store,{"product-architect":{async run(request){calls++;store.db.prepare("UPDATE executions SET status=\'succeeded\',finished_at=\'now\' WHERE id=?").run(request.executionId);return result("spec");}}},workspace,{ensurePR(){return "unused";}});assert.equal(await runner.run(started.id),true);assert.equal(calls,1);assert.equal(new WorkflowProjections(store).get(started.id).status,"WAITING");const event=store.db.prepare("SELECT payload FROM events WHERE type=\'workflow.sync_skipped\'").get() as {payload:string};assert.match(event.payload,/\[REDACTED\]/);assert.doesNotMatch(event.payload,/secret/);}finally{store.db.close();}
 });
 
 test("protected context overflow fails before invoking a provider",async()=>{
