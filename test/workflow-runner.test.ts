@@ -11,6 +11,7 @@ import { result } from "./fixtures.js";
 import type { AgentAdapter,AgentRunRequest } from "../src/adapters/agent.js";
 import { SyncConflictError,type WorkspacePort } from "../src/worktrees.js";
 import { InvalidResultError } from "../src/results.js";
+import {adoptIssueState,issueStateIndex} from "../src/workflow-state.js";
 
 class Workspace implements WorkspacePort {
  commits:string[]=[];cleanupCalls=0;publishCalls=0;pushError:Error|undefined;syncError:Error|undefined;syncSkipped:string|undefined;currentHead="abc";ensure(){return "/tmp/factory-work";}assertBranch(){}sync(){if(this.syncError)throw this.syncError;return{before:this.currentHead,after:this.currentHead,merged:[],skipped:this.syncSkipped};}head(){return this.currentHead;}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){this.publishCalls++;}
@@ -131,4 +132,23 @@ test('review preparation errors fail the preserved stage once instead of remaini
    assert.equal(await runner.run(item.id),false);
   }finally{store.db.close();}
  }
+});
+
+function continuedStore(stage:"REVIEW"|"DELIVERY",status:"QUEUED"|"FAILED",results:Array<{role:"qa"|"reviewer";summary:string}>){
+ const source=new Store(":memory:"),target=new Store(":memory:"),identity={id:1,nodeId:"R_1",fullName:"owner/demo"};for(const store of [source,target])store.setMetadata("repository_identity",identity);const item=new WorkflowIntake(source).start(runnerIssue,{actor:"factory",source:"assignment"});source.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment,approved_by) VALUES(?,?,?,?,?,?)").run(item.id,1,"SPEC",JSON.stringify([{id:"AC1",description:"Works"}]),JSON.stringify({complexity:"medium",risk:"low",rationale:"standard"}),"owner");source.db.prepare("UPDATE work_items SET stage=?,status=?,revision=4,context=json_set(context,'$.verifiedHeads.TEST','abc','$.specMarkers.1','result-run-spec') WHERE id=?").run(stage,status,item.id);for(const entry of results)source.event("agent.result",{role:entry.role,result:result("pass",{summary:entry.summary})},item.id,`run-${entry.role}`);if(status==="FAILED"){const failure=new WorkflowFailures(source).open({workItemId:item.id,class:"integration",message:"temporary delivery failure",stage,attempt:0});source.db.prepare("UPDATE work_items SET active_failure_id=? WHERE id=?").run(failure.id,item.id);}const index=issueStateIndex(source,item.id);adoptIssueState(target,{index,specs:[{kind:"spec",version:1,body:"SPEC",criteria:[{id:"AC1",description:"Works"}],assessment:{complexity:"medium",risk:"low",rationale:"standard"}}]},{issue:runnerIssue});source.db.close();return{store:target,id:item.id,index};
+}
+
+test("continued Delivery retry uses published Reviewer evidence and reaches pull request creation",async()=>{
+ const continued=continuedStore("DELIVERY","FAILED",[{role:"qa",summary:"Tester passed remotely"},{role:"reviewer",summary:"Reviewer passed remotely"}]),workspace=new Workspace();let pullRequests=0;
+ try{new WorkflowCommands(continued.store).apply({kind:"retry",guidance:"",scope:"spec",appliesTo:[]},{workItemId:continued.id,login:"owner",commentId:9,specVersion:1});const runner=new WorkflowRunner(continued.store,{},workspace,{ensurePR(){pullRequests++;return"https://github.com/owner/demo/pull/1";}});assert.equal(await runner.run(continued.id),true);assert.equal(pullRequests,1,JSON.stringify({projection:new WorkflowProjections(continued.store).get(continued.id),failure:new WorkflowFailures(continued.store).active(continued.id),context:JSON.parse((continued.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(continued.id) as {context:string}).context)}));assert.equal(new WorkflowProjections(continued.store).get(continued.id).status,"WAITING");}finally{continued.store.db.close();}
+});
+
+test("continued Review includes published Tester evidence in the Reviewer prompt",async()=>{
+ const continued=continuedStore("REVIEW","QUEUED",[{role:"qa",summary:"Remote Tester evidence"}]),workspace=new Workspace();let instructions="";
+ try{new WorkflowCommands(continued.store).apply({kind:"retry",guidance:"",scope:"spec",appliesTo:[]},{workItemId:continued.id,login:"owner",commentId:9,specVersion:1});const runner=new WorkflowRunner(continued.store,{reviewer:{async run(request){instructions=request.instructions;continued.store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return result("pass");}}},workspace,{ensurePR(){return"unused";}});await runner.run(continued.id);assert.match(instructions,/Tester execution evidence/);assert.match(instructions,/Remote Tester evidence/);}finally{continued.store.db.close();}
+});
+
+test("local agent result takes precedence over adopted evidence for the same role",async()=>{
+ const continued=continuedStore("REVIEW","QUEUED",[{role:"qa",summary:"Adopted Tester evidence"}]),workspace=new Workspace();let instructions="";
+ try{continued.store.event("agent.result",{role:"qa",result:result("pass",{summary:"Local Tester evidence"})},continued.id,"local-qa");new WorkflowCommands(continued.store).apply({kind:"retry",guidance:"",scope:"spec",appliesTo:[]},{workItemId:continued.id,login:"owner",commentId:9,specVersion:1});const runner=new WorkflowRunner(continued.store,{reviewer:{async run(request){instructions=request.instructions;continued.store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return result("pass");}}},workspace,{ensurePR(){return"unused";}});await runner.run(continued.id);assert.match(instructions,/Local Tester evidence/);assert.doesNotMatch(instructions,/Adopted Tester evidence/);}finally{continued.store.db.close();}
 });
