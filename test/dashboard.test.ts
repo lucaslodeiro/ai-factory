@@ -1,3 +1,4 @@
+import {validateDashboardSettings} from "../src/dashboard-settings.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
@@ -110,6 +111,16 @@ echo "$*" >> "$PWD/update-actions.log"
     return originalFetch(input,init);
   }) as typeof fetch;
   try {
+    const envPath=path.join(settingsRoot,".env"),savedEnv=fs.readFileSync(envPath,"utf8"),savedRepo=config.repo;
+    try{
+      fs.writeFileSync(envPath,savedEnv+"\nGITHUB_REPOSITORY=owner/demo\n");config.repo="";
+      assert.deepEqual(validateDashboardSettings(settingsRoot,{GITHUB_DEFAULT_BRANCH:"another-branch"}).restartServices.sort(),["daemon","dashboard"]);
+      const takeover=await fetch(`http://127.0.0.1:${port}/api/controller`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"takeover",force:true,confirmation:"wrong/repository"})});
+      assert.equal(takeover.status,400);assert.match((await takeover.json() as any).error,/Type owner\/demo to confirm/);
+      const live=await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(r=>r.json()) as any;assert.equal(live.repository,"owner/demo");
+      fs.writeFileSync(envPath,savedEnv+"\nGITHUB_REPOSITORY=\n");config.repo="stale/repo";
+      const absent=await fetch(`http://127.0.0.1:${port}/api/controller`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"takeover",force:true,confirmation:"stale/repo"})});assert.equal(absent.status,409);
+    }finally{config.repo=savedRepo;fs.writeFileSync(envPath,savedEnv);}
     const html = await fetch(`http://127.0.0.1:${port}/`).then(response => response.text());
     assert.match(html,/AI Factory/);
     assert.match(html,/theme-toggle/);

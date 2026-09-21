@@ -9,6 +9,7 @@ import {Store} from '../src/storage.js';
 import {createDashboardServer} from '../src/dashboard.js';
 test('live stream delivers changed work state and log output together and reconnects with current data',async()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'factory-live-')),previous=process.env.AI_FACTORY_HOME;process.env.AI_FACTORY_HOME=root;
+ fs.writeFileSync(path.join(root,'.env.example'),'GITHUB_REPOSITORY=owner/repo\nGITHUB_DEFAULT_BRANCH=main\n');
  fs.mkdirSync(path.join(root,'scripts'));fs.writeFileSync(path.join(root,'scripts/services.sh'),'exit 0\n');
  const logs=path.join(root,'data/service-logs');fs.mkdirSync(logs,{recursive:true});fs.writeFileSync(path.join(logs,'daemon.log'),'first entry\n');
  fs.writeFileSync(path.join(root,'package.json'),JSON.stringify({version:'0.0.0'}));const oldGit=config.gitCommand;const fakeGit=path.join(root,'fake-git');fs.writeFileSync(fakeGit,'#!/bin/sh\necho test\n',{mode:0o755});config.gitCommand=fakeGit;
