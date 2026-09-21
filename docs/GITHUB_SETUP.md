@@ -4,7 +4,7 @@ Authenticate `gh` with issue, content and pull-request write access to the targe
 
 The authenticated GitHub account is the Factory account. Assign an open issue to that account to offer it to the Factory. `ai-factory start-issue <number-or-url>` and Dashboard **Add Issue** perform the assignment and add this installation's instance label. The daemon starts work only on a later poll that confirms its label is the sole instance label. A simultaneous claim leaves both labels visible and neither installation starts. Dashboard **Work here** replaces another instance label with this installation's label; the previous installation pauses on its next poll.
 
-Unassigning the Factory account pauses the work and publishes preserved partial changes. Assigning it again with the same instance label resumes. Moving the instance label transfers ownership. While human input is needed, the issue remains assigned to the Factory account and uses `factory:waiting` plus the status comment. On completion or cancellation the Factory account and its instance label are removed. `FACTORY_APPROVERS` still controls approvals, answers and other workflow commands.
+Unassigning the Factory account pauses the work and publishes preserved partial changes. Assigning it again is enough to resume: the Factory restores its instance label on one poll and continues on the next. Moving the instance label transfers ownership. While human input is needed, the issue remains assigned to the Factory account and uses `factory:waiting` plus the status comment. On completion or cancellation the Factory account and its instance label are removed. `FACTORY_APPROVERS` still controls approvals, answers and other workflow commands.
 
 Available issue commands are:
 

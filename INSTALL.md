@@ -216,7 +216,7 @@ The engine repository and target application repository are separate. Set `GITHU
 
 At daemon start, `prepareRepository` verifies the target checkout and clones it when the configured path does not exist. If the remote repository is empty, it creates a README, makes the bootstrap commit and pushes the configured base branch before orchestration begins. A nonempty path, a mismatched origin or local changes are refused rather than overwritten.
 
-Multiple installations can share a repository and authenticated GitHub account. Give each one a distinct `FACTORY_INSTANCE_NAME` (hostname by default), target clone and data directory. Assignment to the Factory account offers an issue; the sole `factory-instance:<name>` label selects the installation. Unassigning pauses and preserves work, while changing the instance label moves it. Existing remote status from another installation is shown as continuation pending because database/context import is outside this release.
+Multiple installations can share a repository and authenticated GitHub account. Give each one a distinct `FACTORY_INSTANCE_NAME` (hostname by default), target clone and data directory. Assignment to the Factory account offers an issue; the sole `factory-instance:<name>` label selects the installation. Unassigning pauses and preserves work. Reassigning is enough to continue because the previous installation restores its label automatically; changing the instance label moves the issue instead. Existing remote status from another installation is shown as continuation pending because database/context import is outside this release.
 
 ## Manual installation
 

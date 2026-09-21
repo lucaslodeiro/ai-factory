@@ -46,6 +46,7 @@ export class WorkflowOrchestrator {
    if(local){
     if(local.archived_at){view.push({issue:issue.number,state:"worked-here",instances});continue;}
     if(["COMPLETED","CANCELLED"].includes(local.status)){await this.github.unassign(local.issue_number,[login]);await this.github.removeLabel(local.issue_number,own);view.push({issue:issue.number,state:"released",instances:[]});continue;}
+    if(!instances.length){await this.github.addLabel(issue.number,own);this.store.event("issue.claimed",{issue:issue.number,instance:config.instanceName},local.id);view.push({issue:issue.number,state:"claiming",instances:[own]});continue;}
     if(instances.length===1&&instances[0]===own){if(local.status==="PAUSED"&&["unassigned","moved"].includes(this.lastReason(local.id))){const current=this.projections.get(local.id),status=this.projections.resumeStatus(local.id);this.projections.transition({workItemId:local.id,expectedRevision:current.revision,stage:current.stage,status,attemptDelta:status==="QUEUED"?1:0,actor:{type:"github",id:login},source:{},reason:{code:"reassigned",summary:"Issue reassigned to this Factory instance"}});}view.push({issue:issue.number,state:"worked-here",instances});continue;}
     await this.pauseOwned(local,instances.includes(own)?"moved":"moved");view.push({issue:issue.number,state:instances.includes(own)?"claim-conflict":"other-instance",instances});continue;
    }
