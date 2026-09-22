@@ -6,6 +6,15 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { Store } from "../src/storage.js";
+test("opening a Store waits for a busy SQLite database", { timeout: 10000 }, async () => {
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"factory-busy-")),filename=path.join(root,"factory.db"),initial=new Store(filename),source=pathToFileURL(path.resolve("src/storage.ts")).href;
+ initial.db.close();
+ const child=spawn(process.execPath,["--import","tsx","--input-type=module","-e",`import {Store} from ${JSON.stringify(source)};const store=new Store(${JSON.stringify(filename)});store.db.exec('BEGIN IMMEDIATE');process.stdout.write('locked');setTimeout(()=>{store.db.exec('COMMIT');store.db.close()},300);`],{stdio:["ignore","pipe","pipe"]});
+ try {
+  await new Promise<void>((resolve,reject)=>{let output="",error="";child.stdout!.on("data",chunk=>{output+=chunk;if(output.includes("locked"))resolve();});child.stderr!.on("data",chunk=>error+=chunk);child.on("error",reject);child.on("exit",status=>{if(!output.includes("locked"))reject(new Error(error||`child exited ${status}`));});});
+  const started=Date.now(),second=new Store(filename);assert.ok(Date.now()-started>=200);second.db.close();
+ } finally {if(child.exitCode===null){child.kill("SIGKILL");await new Promise(resolve=>child.once("exit",resolve));}fs.rmSync(root,{recursive:true,force:true});}
+});
 test("concurrent CLI processes initialize a new V3 SQLite database exactly once", { timeout: 15000 }, async () => {
  const root = fs.mkdtempSync(path.join(os.tmpdir(), "factory-schema-"));
  const gate = path.join(root, "start"), filename = path.join(root, "factory.db");
