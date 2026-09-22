@@ -31,6 +31,15 @@ test('prompt viewer defaults to readable content and offers the exact agent JSON
  const readable=vm.runInContext("promptReadableHtml('# Goal\\n\\n- **First** `value`\\n- <unsafe>\\n\\nAC-1\\n\\n**Given** input')",context);assert.match(readable,/<h2>Goal<\/h2>/);assert.match(readable,/<ul><li><strong>First<\/strong> <code>value<\/code><\/li><li>&lt;unsafe><\/li><\/ul>/);assert.match(readable,/<h3 class="acceptance-criterion">AC-1<\/h3>/);assert.match(readable,/<strong>Given<\/strong> input/);assert.doesNotMatch(readable,/<unsafe>/);
  const json=vm.runInContext("promptAgentJson({id:'run-1',prompt:'# Goal',truncated:false})",context);assert.deepEqual(JSON.parse(json),{executionId:'run-1',instructions:'# Goal',truncated:false});assert.match(source,/selectPromptView\(dialog,'human'\)/);assert.match(source,/Human readable/);assert.match(source,/Agent JSON/);
 });
+test('human-readable markdown tables render across prompts, results and guidance',()=>{
+ const context=vm.createContext({escapeHtml:(value:string)=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')});vm.runInContext(source.split('\n').find(line=>line.startsWith('function promptReadableHtml('))!,context);
+ const markdown='| Restricción | Origen |\n| --- | --- |\n| Paleta **Openxpand** | `src/styles/global.css` |\n| Texto con \\| literal | <unsafe> |';
+ const html=vm.runInContext('promptReadableHtml(input)',Object.assign(context,{input:markdown}));
+ assert.match(html,/<div class="markdown-table-wrap"><table><thead><tr><th scope="col">Restricción<\/th><th scope="col">Origen<\/th><\/tr><\/thead>/);
+ assert.match(html,/<strong>Openxpand<\/strong>/);assert.match(html,/<code>src\/styles\/global.css<\/code>/);assert.match(html,/Texto con \| literal/);assert.match(html,/&lt;unsafe&gt;/);assert.doesNotMatch(html,/<unsafe>/);
+ assert.equal((html.match(/<tr>/g)||[]).length,3);
+ const fenced=vm.runInContext('promptReadableHtml(input)',Object.assign(context,{input:'```md\n'+markdown+'\n```'}));assert.doesNotMatch(fenced,/<table>/);
+});
 test('failed issue details render a human-readable diagnosis and next action',()=>{
  const context=vm.createContext({escapeHtml:String,relative:()=>"now"});vm.runInContext(source.split('\n').find(line=>line.startsWith('function promptReadableHtml('))!,context);vm.runInContext(source.split('\n').find(line=>line.startsWith('function workDetails('))!,context);
  const html=vm.runInContext("workDetails({id:'w',activity:{label:'Failed',detail:'raw',diagnosis:{summary:'**Required** browser unavailable',evidence:'Use `Browser`',nextAction:'Restore it and retry'}}},new Set(['w']))",context);
