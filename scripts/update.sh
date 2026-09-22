@@ -40,7 +40,7 @@ if [[ -n ${AI_FACTORY_UPDATE_STATE_FILE:-} && -f $AI_FACTORY_UPDATE_STATE_FILE ]
 fi
 write_update_state() {
   [[ -n ${AI_FACTORY_UPDATE_STATE_FILE:-} ]] || return 0
-  node -e 'const fs=require("fs"),path=require("path");const [file,status,phase,pid]=process.argv.slice(1);let old={};try{old=JSON.parse(fs.readFileSync(file,"utf8"))}catch{}const now=new Date().toISOString(),continuing=old.status==="updating",next={...(continuing?old:{}),status,phase,pid:Number(pid),startedAt:continuing&&old.startedAt||now,updatedAt:now};if(phase.startsWith("Stopping daemon"))next.versionActivated=false;if(status!=="updating")next.finishedAt=now;fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file+".tmp",JSON.stringify(next,null,2),{mode:0o600});fs.renameSync(file+".tmp",file);' "$AI_FACTORY_UPDATE_STATE_FILE" "$1" "$2" "$$"
+  node -e 'const fs=require("fs"),path=require("path");const [file,status,phase,pid,restoreDaemon,restoreDashboard]=process.argv.slice(1);let old={};try{old=JSON.parse(fs.readFileSync(file,"utf8"))}catch{}const now=new Date().toISOString(),continuing=old.status==="updating",next={...(continuing?old:{}),status,phase,pid:Number(pid),startedAt:continuing&&old.startedAt||now,updatedAt:now};if(restoreDaemon==="true"||restoreDaemon==="false")next.restoreDaemon=restoreDaemon==="true";if(restoreDashboard==="true"||restoreDashboard==="false")next.restoreDashboard=restoreDashboard==="true";if(phase.startsWith("Stopping daemon"))next.versionActivated=false;if(status!=="updating")next.finishedAt=now;fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file+".tmp",JSON.stringify(next,null,2),{mode:0o600});fs.renameSync(file+".tmp",file);' "$AI_FACTORY_UPDATE_STATE_FILE" "$1" "$2" "$$" "${3:-}" "${4:-}"
 }
 finish_update() {
   if "$update_complete"; then
@@ -78,11 +78,12 @@ if ( "$restart_services" || "$start_services" ) && [[ ${AI_FACTORY_SKIP_SERVICES
     restore_dashboard=true
   elif ! "$restore_intent_known"; then
     for service in daemon dashboard; do
-      if bash scripts/services.sh status "$service" 2>/dev/null | grep -q "^$service: loaded"; then
+      if bash scripts/services.sh status "$service" 2>/dev/null | grep -Eq "state = (running|active)"; then
         if [[ $service == daemon ]]; then restore_daemon=true; else restore_dashboard=true; fi
       fi
     done
   fi
+  write_update_state updating "Stopping daemon; dashboard remains available…" "$restore_daemon" "$restore_dashboard"
   bash scripts/services.sh stop daemon
   # launchctl can return before the daemon finishes its graceful shutdown and
   # releases the SQLite lock. Tell update.mjs to wait for that specific case;

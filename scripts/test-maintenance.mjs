@@ -159,7 +159,7 @@ fs.writeFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,JSON.stringify({status:'updati
 fs.writeFileSync(env.AI_FACTORY_SERVICE_LOG,'');
 run('bash',['scripts/update.sh','--restart-services'],engine);
 const restored=fs.readFileSync(env.AI_FACTORY_SERVICE_LOG,'utf8');
-assert.match(restored,/stop daemon/);assert.match(restored,/start daemon/);assert.match(restored,/start dashboard/);
+assert.match(restored,/stop daemon/);assert.match(restored,/start daemon/);assert.match(restored,/start dashboard/);assert.deepEqual(((state)=>({restoreDaemon:state.restoreDaemon,restoreDashboard:state.restoreDashboard}))(JSON.parse(fs.readFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,'utf8'))),{restoreDaemon:true,restoreDashboard:true});
 env.FAIL_DAEMON_START='1';
 fs.writeFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,JSON.stringify({status:'updating',restoreDaemon:true,restoreDashboard:true}));
 fs.writeFileSync(env.AI_FACTORY_SERVICE_LOG,'');

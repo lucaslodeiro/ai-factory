@@ -350,7 +350,7 @@ function runUpdate(root: string,maintenanceId?:string) {
   // Capture service intent while both services still have their original state.
   // The detached job starts later and must not infer intent after stopping one.
   const daemonBefore=serviceStatus(root,"daemon"),dashboardBefore=serviceStatus(root,"dashboard");
-  const intent={restoreDaemon:daemonBefore.loaded,restoreDashboard:dashboardBefore.loaded,maintenanceId};
+  const intent={restoreDaemon:daemonBefore.running,restoreDashboard:dashboardBefore.running,maintenanceId};
   writeUpdateState(root,{status:"updating",phase:"Preparing update…",startedAt:new Date().toISOString(),...intent});
   if (process.platform === "darwin" && dashboardBefore.loaded) {
     const label = `com.ai-factory.update.${Date.now()}`;
