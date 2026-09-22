@@ -19,6 +19,7 @@ export interface ContextAssemblyInput {
   diffPath?:string;
   qaEvidence?:unknown;
   previousAttempt?:unknown;
+  rejectedResult?:{message:string};
 }
 
 export interface ContextManifest {
@@ -79,6 +80,7 @@ export class ContextAssembler {
       {name:"Open findings required by this role",value:openFindings.map(payload),protected:true},
       ...(activeFailure ? [{name:"Active failure",value:activeFailure,protected:true}] : []),
       ...(input.previousAttempt ? [{name:"Previous attempt",value:input.previousAttempt,protected:false}] : []),
+      ...(input.rejectedResult ? [{name:"Rejected previous result",value:{message:`Your previous result for this stage was rejected: ${input.rejectedResult.message}. Return a corrected result. In tests report only the acceptance verification commands; put diagnostic runs in the summary.`},protected:false}] : []),
       ...(["developer","qa","reviewer"].includes(input.role) && (input.changedFiles || input.diffStat) ? [{name:"Changed files",value:{files:input.changedFiles??[],diffStat:input.diffStat??"",...(input.role==="reviewer"&&input.diffPath?{diffPath:input.diffPath}:{})},protected:false}] : []),
       ...(input.role === "reviewer" && input.qaEvidence ? [{name:"Tester execution evidence",value:input.qaEvidence,protected:false}] : []),
     ];

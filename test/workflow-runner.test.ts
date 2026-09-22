@@ -99,9 +99,17 @@ test("protected context overflow fails before invoking a provider",async()=>{
 });
 
 test("runner classifies failures by typed result errors rather than message text",async()=>{
- const run=async(error:Error)=>{const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"});try{const runner=new WorkflowRunner(store,{"product-architect":{async run(){throw error;}}},new Workspace(),{ensurePR(){throw new Error("unused");}});await runner.run(started.id);return new WorkflowFailures(store).active(started.id)?.class;}finally{store.db.close();}};
+ const run=async(error:Error)=>{const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"});try{const runner=new WorkflowRunner(store,{"product-architect":{async run(){throw error;}}},new Workspace(),{ensurePR(){throw new Error("unused");}});await runner.run(started.id);if(error instanceof InvalidResultError)await runner.run(started.id);return new WorkflowFailures(store).active(started.id)?.class;}finally{store.db.close();}};
  assert.equal(await run(new Error("provider result channel disconnected")),"execution");
  assert.equal(await run(new InvalidResultError("invalid structured output")),"invalid-result");
+});
+
+test("runner retries one invalid result with the validator message and then fails the second",async()=>{
+ const run=async(failures:number)=>{const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),prompts:string[]=[];let calls=0;try{
+  const runner=new WorkflowRunner(store,{"product-architect":{async run(request){prompts.push(request.instructions);store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);if(calls++<failures)throw new InvalidResultError("result.summary: invalid text length");return result("spec");}}},new Workspace(),{ensurePR(){return "unused";}});
+  await runner.run(started.id);if(failures===1){assert.deepEqual({stage:new WorkflowProjections(store).get(started.id).stage,status:new WorkflowProjections(store).get(started.id).status},{stage:"DESIGN",status:"QUEUED"});assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='execution.invalid_result'").get() as {count:number}).count,1);await runner.run(started.id);assert.equal(new WorkflowProjections(store).get(started.id).status,"WAITING");assert.match(prompts[1],/## Rejected previous result/);assert.match(prompts[1],/result.summary: invalid text length/);assert.equal("invalidResultRetry" in JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(started.id) as {context:string}).context),false);const transition=store.db.prepare("SELECT payload FROM events WHERE type='workflow.transition' AND payload LIKE '%invalid-result-retry%'").get() as {payload:string};assert.ok(transition);}else{await runner.run(started.id);assert.equal(new WorkflowFailures(store).active(started.id)?.class,"invalid-result");} 
+ }finally{store.db.close();}};
+ await run(1);await run(2);
 });
 
 test("reviewer context is cleaned when maintenance blocks scheduler begin",async()=>{
