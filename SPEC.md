@@ -11,7 +11,7 @@ Run a software factory on the user's Mac that turns a GitHub Issue into a tested
 | ID | Decision |
 |---|---|
 | D01 | Orchestration and agent processes always execute locally. GitHub is the collaboration UI, not the execution engine. Initial platform: macOS, without Docker. |
-| D02 | Four independent roles: Product Architect (Architect) in Design, Implementation Engineer (Builder) in Build, Verification Engineer (Tester) in Test and Delivery Reviewer (Reviewer) in Review. Each invocation starts a fresh context. The operator configures Codex or Claude independently for every role, then selects the direct model ID or `auto`; defaults remain Claude, Codex, Codex and Claude respectively. |
+| D02 | Four independent roles: Product Architect (Architect) in Design, Implementation Engineer (Builder) in Build, Verification Engineer (Tester) in Test and Delivery Reviewer (Reviewer) in Review. Each invocation starts a fresh context. The operator configures Codex, Claude or Cursor independently for every role, then selects the direct model ID or `auto`; defaults remain Claude, Codex, Codex and Claude respectively. |
 | D03 | GitHub Issues accept requests and human feedback; comments and labels mirror progress. SQLite is authoritative for workflow state and audit history. |
 | D04 | Initial specs and material revisions need explicit human approval. Approved specs are immutable versioned contracts with verifiable acceptance criteria. |
 | D05 | Product Architect may challenge a human decision and propose alternatives, but cannot silently override it. Major product, architecture, scope, risk or conflicting decisions go to the human. |
@@ -106,7 +106,7 @@ Provide reproducible Node 22+ installation, explicit repo/data directories, prov
 
 ### F15 — Task-aware model selection
 
-Use the direct-v1 policy in `docs/MODEL_POLICY.md`: Product Architect reports complexity, risk and rationale with each new spec; the human approves that assessment with the exact spec version. Each role has a configured Codex/Claude provider and one direct model, or `auto` to omit the model override and let the provider use its recommended/default model. The deterministic orchestrator uses the approved assessment and correction context for workflow safeguards, without translating them into another model. A high-complexity or high-risk draft receives a fresh Architect review before a version is published for approval; questions and retries preserve that requirement. Every provider call records its configured selection and internal workflow tier. No silent provider or model fallback.
+Use the direct-v1 policy in `docs/MODEL_POLICY.md`: Product Architect reports complexity, risk and rationale with each new spec; the human approves that assessment with the exact spec version. Each role has a configured Codex, Claude or Cursor provider and one direct model, or `auto` to omit the model override and let the provider use its recommended/default model. The deterministic orchestrator uses the approved assessment and correction context for workflow safeguards, without translating them into another model. A high-complexity or high-risk draft receives a fresh Architect review before a version is published for approval; questions and retries preserve that requirement. Every provider call records its configured selection and internal workflow tier. No silent provider or model fallback.
 
 ## Requirements traceability
 

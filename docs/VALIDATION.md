@@ -76,6 +76,10 @@ This was not an uninterrupted first-attempt success. Two validation failures wer
 
 Logs and SQLite remain under `.factory/demo/` on the original validation machine. Earlier standalone Codex protocol checks also passed, including explicit Terra selection (`d83d51bd-d69f-49da-bed3-97e3baca45a1`).
 
+## Cursor provider — 2026-09-22 (automated only)
+
+The Cursor Agent CLI adapter was added with the same subprocess fixtures as Codex and Claude: prompt delivery on stdin, `--model` and `auto` omission, `--force` for Implementation Engineer and Verification Engineer, `--mode ask` for Product Architect and Delivery Reviewer, extraction of the final message from the JSON envelope (bare, fenced or surrounded by prose), rejection of error envelopes and contract-breaking results, dashboard provider/credential/model catalog coverage, doctor checks limited to selected providers, and the macOS installer mock for `https://cursor.com/install`. The CLI's flags come from its published reference and local `--help`; no run against a real, authenticated Cursor account has been recorded yet. Before relying on Cursor for a delivery, verify with a signed-in account that `--mode ask` refuses file writes, that stdin prompts are accepted, and how often the final message is a clean JSON object.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

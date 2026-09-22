@@ -21,9 +21,21 @@ The assessment and rationale are published with SPEC vN and stored in its immuta
 
 Dashboard → Configuration → Agent roles exposes one card per role. Each card writes `<ROLE>_PROVIDER` and `<ROLE>_MODEL`, where `<ROLE>` is `PRODUCT_ARCHITECT`, `DEVELOPER`, `QA`, or `REVIEWER`. The model selector offers `Auto (provider recommended)`, known model IDs for the selected provider, and preserves an existing custom ID.
 
-The Codex choices follow the [official model catalog](https://developers.openai.com/es-419/docs/models). OpenAI documents that Codex uses a recommended model when none is specified. Claude's [official CLI reference](https://code.claude.com/docs/en/cli-usage) documents `--model` as an override. Availability depends on the account and provider. A rejected model fails the run; the factory never silently changes provider or model. Changing role settings requires restarting the daemon and affects future attempts.
+The Codex choices follow the [official model catalog](https://developers.openai.com/es-419/docs/models). OpenAI documents that Codex uses a recommended model when none is specified. Claude's [official CLI reference](https://code.claude.com/docs/en/cli-usage) documents `--model` as an override. Cursor's [Agent CLI parameters](https://docs.cursor.com/en/cli/reference/parameters) document `--model` and `cursor-agent models` lists the identifiers the signed-in Cursor account may use; the dashboard offers the identifiers named in that documentation and preserves a custom one. Cursor brokers models from several vendors through a Cursor subscription, so choosing it changes the harness and the billing route rather than adding a model. Availability depends on the account and provider. A rejected model fails the run; the factory never silently changes provider or model. Changing role settings requires restarting the daemon and affects future attempts.
 
-Both providers receive the same canonical role contract. Product Architect and Delivery Reviewer remain read-only; Implementation Engineer can edit the worktree; Verification Engineer remains restricted to test files by the orchestrator's mutation checks.
+All providers receive the same canonical role contract. Product Architect and Delivery Reviewer remain read-only; Implementation Engineer can edit the worktree; Verification Engineer remains restricted to test files by the orchestrator's mutation checks.
+
+## Provider differences
+
+| Capability | Codex | Claude | Cursor |
+|---|---|---|---|
+| Structured result | `--output-schema` enforced by the CLI | `--json-schema` enforced by the CLI | No schema flag; the orchestrator appends the schema to the prompt as an output contract and validates the final message locally |
+| Read-only roles | `--sandbox read-only` | read-only tool allowlist | `--mode ask` |
+| Writing roles | `--sandbox workspace-write` with network | edit, write and shell tools | `--force` |
+| Token usage | reported on stderr | reported in the JSON envelope | not reported; executions show Unavailable |
+| Authentication check | `codex login status` | `claude auth status` | `cursor-agent status --format json` |
+
+An invalid Cursor final message fails the execution with a readable reason instead of being re-run silently; `/factory retry` restarts it under human control.
 
 ## Inspecting and auditing
 
