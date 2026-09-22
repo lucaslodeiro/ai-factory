@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildBenchmarkReport, compareBenchmarks, comparable, type ExecutionSample, type Verification } from "../src/benchmark.js";
+import { buildBenchmarkReport, compareBenchmarks, comparable, promptCost, type ExecutionSample, type Verification } from "../src/benchmark.js";
 
 const sample=(role:string,over:Partial<ExecutionSample>={}):ExecutionSample=>({
  role,stage:"BUILD",status:"succeeded",startedAt:"t1",finishedAt:"t2",promptBytes:20000,
@@ -80,4 +80,39 @@ test("a cheaper run that did not resolve the issue is refused rather than report
  assert.match(comparable(good,cheapAndWrong)!,/did not resolve the benchmark issue/);
  // The numbers are still produced; what is refused is calling the difference an improvement.
  assert.equal(compareBenchmarks(good,cheapAndWrong).find(row=>row.metric==="costUsd")?.delta,-1.04);
+});
+
+// The four roles of issue #10, the first benchmark run that resolved its issue.
+const issueTen=(over:Partial<ExecutionSample>)=>sample("x",{status:"succeeded",...over});
+const tenRoles=[
+ issueTen({role:"developer",turns:15,promptBytes:29074,inputTokens:22,outputTokens:7485,cacheReadTokens:484784,cacheWriteTokens:73611,totalTokens:565902,costUsd:1.174109}),
+ issueTen({role:"qa",turns:13,promptBytes:31022,inputTokens:18,outputTokens:9084,cacheReadTokens:380816,cacheWriteTokens:61580,totalTokens:451498,costUsd:1.042143}),
+ issueTen({role:"reviewer",turns:12,promptBytes:32882,inputTokens:8,outputTokens:8500,cacheReadTokens:110381,cacheWriteTokens:66578,totalTokens:185467,costUsd:0.943081}),
+];
+
+test("the prompt's share of a run is reported, because that is what decides whether to shrink it",()=>{
+ const report=input({executions:tenRoles,outcomes:[]});
+ const costs=promptCost(report.roles);
+ const builder=costs.find(entry=>entry.role==="developer")!;
+ assert.equal(builder.promptTokens,7269,"29074 bytes at 4 bytes per token");
+ // Written to cache once at 1.25 and re-read on each of 15 turns at 0.1, against the run's own mix.
+ assert.equal(builder.sharePercent,11.2);
+ assert.equal(builder.costUsd,0.1319);
+ assert.equal(costs.find(entry=>entry.role==="reviewer")!.sharePercent,14.7,"the worst-amortized role pays the most for its prompt");
+});
+
+test("one turn is priced in prompt tokens, which is the comparison a cut has to beat",()=>{
+ const costs=promptCost(input({executions:tenRoles,outcomes:[]}).roles);
+ const builder=costs.find(entry=>entry.role==="developer")!;
+ assert.equal(builder.oneTurnInPromptTokens,4314);
+ assert.ok(builder.oneTurnInPromptTokens! > builder.promptTokens!/2,
+  "deleting half the Builder's prompt does not pay for one extra turn, which is the whole finding");
+});
+
+test("a role whose provider reported no turns or no tokens is not given an invented share",()=>{
+ const report=input({executions:[sample("developer",{turns:null}),sample("qa",{stage:"TEST",promptBytes:null})],outcomes:[]});
+ const costs=promptCost(report.roles);
+ assert.equal(costs.find(entry=>entry.role==="developer")!.sharePercent,null);
+ assert.equal(costs.find(entry=>entry.role==="qa")!.promptTokens,null);
+ assert.equal(costs.find(entry=>entry.role==="qa")!.sharePercent,null);
 });

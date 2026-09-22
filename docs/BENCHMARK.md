@@ -110,6 +110,22 @@ then prints the workflow's transition path with the reason for each move, and a
 health line counting failed executions, invalid results, interruptions and
 discarded runs.
 
+The report then prices the prompt the factory assembles, which is the question
+"is it worth shrinking". A prompt token is written to cache once and re-read on
+every turn, so it costs `cacheWrite + turns x cacheRead`, while what the agent
+fetches for itself is read far fewer times. The decisive number is the last
+column: how many prompt tokens cost what one more turn costs. On the first
+resolved run that was 4,314 for the Builder against a prompt of 7,269 tokens,
+so deleting *half* the Builder's prompt did not pay for one extra turn.
+
+Only the bytes-to-tokens conversion is an estimate there, at 4 bytes per token;
+everything else is measured. Claude's `--output-format json` reports usage for
+the whole run and never for its first turn, so the prompt cannot be isolated
+from what the agent pulled in afterwards. The conclusion was checked across 3.5
+to 4.5 bytes per token, where the prompt's share moves between 10% and 13% of
+the run and the ranking of the roles does not change. Getting the exact number
+would mean switching the adapter to `stream-json` and reading per-turn usage.
+
 Compare a later run against a saved baseline:
 
 ```sh
@@ -124,7 +140,11 @@ because a value nobody measured is not an improvement.
 
 - **Cost, turns and duration are the performance numbers.** Prompt bytes only
   matter through them: the prompt sits at the head of the conversation and is
-  re-read on every turn, so bytes are multiplied by turns.
+  re-read on every turn, so bytes are multiplied by turns. Even so the whole
+  prompt budget was 11% of the first resolved run, spread evenly across the
+  four roles, so there is no concentrated saving in it. A cut that makes an
+  agent go and fetch what was removed loses: it pays the same tokens in again
+  and adds turns on top.
 - **`Resolved` decides whether the run counts at all.** A run that did not
   resolve the issue has no comparable cost: it did not do the work. Correction
   cycles, invalid results and the transition path then say how expensively it

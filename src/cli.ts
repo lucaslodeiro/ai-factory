@@ -21,7 +21,7 @@ import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {readIssueState} from "./workflow-github.js";
 import {activityRow,summarizeActivity,progression} from "./execution-activity.js";
 import {resolveWorkItem} from "./work-item-reference.js";
-import {buildBenchmarkReport,compareBenchmarks,comparable,verifierInvocation,benchmarkCheckout,type BenchmarkReport,type ExecutionSample,type Verification} from "./benchmark.js";
+import {buildBenchmarkReport,compareBenchmarks,comparable,verifierInvocation,benchmarkCheckout,promptCost,bytesPerToken,type BenchmarkReport,type ExecutionSample,type Verification} from "./benchmark.js";
 import {spawnSync as spawnVerifier} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import fs from "node:fs";
@@ -140,6 +140,14 @@ p.command("benchmark").argument("<work-item-id-or-issue-number>").option("--save
   console.log(`Transitions (${report.transitions.count}): ${report.transitions.path.join(" -> ")}`);
   console.log(`Reasons: ${Object.entries(report.transitions.reasons).map(([reason,count])=>`${reason}:${count}`).join(" ") || "none"}`);
   console.log(`Health: ${Object.entries(report.health).map(([key,value])=>`${key}:${value}`).join(" ")}`);
+  const prompts=promptCost(report.roles);
+  console.log(`\nWhat the assembled prompt costs (prompt bytes read as ${bytesPerToken} bytes per token; everything else measured):`);
+  console.table(prompts);
+  const decisive=prompts.filter(entry=>entry.oneTurnInPromptTokens !== null);
+  if (decisive.length) {
+   console.log(`One more turn costs what ${Math.min(...decisive.map(entry=>entry.oneTurnInPromptTokens!))}-${Math.max(...decisive.map(entry=>entry.oneTurnInPromptTokens!))} prompt tokens cost.`);
+   console.log("Shrinking a prompt only pays if it costs no extra turns: compare what you would cut against that number before cutting it.");
+  }
   if (report.verification) {
    const check=report.verification;
    console.log(`Resolved: ${check.resolved?"yes":"no"}${check.module?` · ${check.module}`:""}${check.failures!==null?` · ${check.failures} failed check(s)`:""}${check.error?` · ${check.error}`:""}`);

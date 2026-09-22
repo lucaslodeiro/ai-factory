@@ -32,6 +32,42 @@ export interface RoleMetrics {
 // engine's own directory is what makes the operator's shell irrelevant: launched from a home
 // directory it dies with ERR_MODULE_NOT_FOUND and the run reads as unresolved for a reason that has
 // nothing to do with the code under test. The checkout is resolved before that move, not after it.
+// Is the prompt we assemble worth shrinking? A prompt token is written to cache once and re-read
+// on every turn, so it costs `cacheWrite + turns * cacheRead` against the run's own mix, while
+// what the agent fetches for itself is read far fewer times. The break-even is the number that
+// decides: how many prompt tokens cost what one more turn costs.
+//
+// Prices are not known here, so the mix is weighted in input-equivalents at the ratios Claude has
+// published across models. Only the ratios matter, since every term is divided by the same run.
+export const costUnits = {input:1, output:5, cacheRead:0.1, cacheWrite:1.25} as const;
+// The one estimate in this calculation. Claude's `--output-format json` reports usage for the
+// whole run and never for its first turn, so the prompt cannot be separated from what the agent
+// pulled in afterwards; counting it locally would need a tokenizer for a model we do not pin.
+// English prose and source code sit between 3.5 and 4.5 bytes per token, and the conclusion has
+// been checked to hold across that whole range.
+export const bytesPerToken = 4;
+
+export interface PromptCost {
+  role:string; promptBytes:number|null; promptTokens:number|null; turns:number|null;
+  sharePercent:number|null; costUsd:number|null; oneTurnInPromptTokens:number|null;
+}
+function runUnits(role:RoleMetrics):number|null {
+  const terms=[[role.inputTokens,costUnits.input],[role.outputTokens,costUnits.output],
+    [role.cacheReadTokens,costUnits.cacheRead],[role.cacheWriteTokens,costUnits.cacheWrite]] as const;
+  if (terms.every(([tokens])=>tokens === null)) return null;
+  return terms.reduce((total,[tokens,weight])=>total+(tokens ?? 0)*weight,0);
+}
+export function promptCost(roles:RoleMetrics[]):PromptCost[] {
+  return roles.map(role=>{
+    const units=runUnits(role),tokens=role.promptBytes === null ? null : Math.round(role.promptBytes/bytesPerToken);
+    const perPromptToken=role.turns === null ? null : costUnits.cacheWrite+costUnits.cacheRead*role.turns;
+    const share=units && tokens !== null && perPromptToken !== null ? (tokens*perPromptToken)/units : null;
+    return {role:role.role,promptBytes:role.promptBytes,promptTokens:tokens,turns:role.turns,
+      sharePercent:share === null ? null : Math.round(share*1000)/10,
+      costUsd:share === null || role.costUsd === null ? null : Math.round(share*role.costUsd*1e6)/1e6,
+      oneTurnInPromptTokens:units && role.turns && perPromptToken ? Math.round(units/role.turns/perPromptToken) : null};
+  });
+}
 // Which checkout to grade. The run's worktree is `<dataDir>/worktrees/<work item id>`, so the
 // operator never has to find and paste it: pasting a placeholder instead of the real path is how
 // the first benchmark run reported a failure that had nothing to do with the code it produced.
