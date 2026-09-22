@@ -30,6 +30,10 @@ for(const f of ['install-core.sh','update.sh','update.mjs','configure.sh','confi
 const validationScript=path.join(seed,'scripts','validate-installation.mjs');
 fs.writeFileSync(validationScript,"if(process.env.FAIL_INSTALL_CHECK==='1')throw new Error('fixture installation check failed');\n"+fs.readFileSync(validationScript,'utf8'));
 fs.writeFileSync(path.join(seed,'scripts','services.sh'),`#!/bin/sh
+if [ \"$1\" = status ]; then
+  case \" \${AI_FACTORY_FAKE_LOADED:-} \" in *\" $2 \"*) printf '%s: loaded\\n  state = waiting\\n  pid = 0\\n' \"$2\";; esac
+  exit 0
+fi
 printf '%s %s\\n' \"$1\" \"$2\" >> \"$AI_FACTORY_SERVICE_LOG\"
 if [ \"$1 $2\" = \"start daemon\" ] && [ \"\${FAIL_DAEMON_START:-0}\" = 1 ]; then exit 43; fi
 if [ \"$1 $2\" = \"start dashboard\" ] && [ -n \"\${AI_FACTORY_FAKE_DASHBOARD_PORT:-}\" ]; then
@@ -152,6 +156,27 @@ assert.equal(fs.readFileSync(path.join(engine,'change.txt'),'utf8'),'upstream');
 assert.equal(fs.readFileSync(path.join(dest,'.env'),'utf8'),originalEnv);
 assert.equal(fs.readFileSync(path.join(dest,'data','worktrees','keep'),'utf8'),'worktree');
 assert.ok(fs.readdirSync(path.join(dest,'data')).some(f=>f.startsWith('update-backup-')));
+
+// The updater replaces its own source while it is running: the fast-forward rewrites
+// scripts/update.sh under the shell executing it. bash reads a script lazily, seeking by byte
+// offset, so a file larger than its read buffer can have its remaining bytes shifted mid-run; a
+// standalone script of this shape re-ran its own middle hundreds of times. The update path
+// survives it, and this pins that: grow the installed updater past the buffer, then change it
+// again underneath a run of it, and require exactly one completed update.
+const seededUpdater=path.join(seed,'scripts','update.sh'),installedUpdater=path.join(engine,'scripts','update.sh');
+const padUpdater=(text)=>fs.writeFileSync(seededUpdater,fs.readFileSync(path.join(source,'scripts','update.sh'),'utf8')
+ .replace('#!/usr/bin/env bash','#!/usr/bin/env bash\n'+`# ${text}\n`.repeat(200)));
+padUpdater('an upstream line that grows this script past the read buffer');
+run('git',['add','.'],seed);run('git',['commit','-m','grow the updater'],seed);run('git',['push','origin','HEAD:main'],seed);
+run('bash',['scripts/update.sh'],engine);
+assert.ok(fs.statSync(installedUpdater).size>8192,'the reproduction needs an updater past bash\'s read buffer');
+padUpdater('a longer upstream line that shifts every later byte of this script by a different amount');
+run('git',['add','.'],seed);run('git',['commit','-m','rewrite the updater'],seed);run('git',['push','origin','HEAD:main'],seed);
+const selfRewrite=spawnSync('bash',['scripts/update.sh'],{cwd:engine,env,encoding:'utf8',timeout:180000});
+assert.equal(selfRewrite.status,0,`the updater did not survive replacing its own source: ${selfRewrite.signal ?? ''} ${selfRewrite.stderr}`);
+assert.equal(selfRewrite.stdout.split('Factory updated to').length-1,1,'the updater re-executed its own middle');
+assert.equal(JSON.parse(fs.readFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,'utf8')).status,'completed');
+assert.equal(JSON.parse(fs.readFileSync(path.join(dest,'data','install.json'),'utf8')).revision,run('git',['rev-parse','HEAD'],engine).stdout.trim());
 // The dashboard records service intent before its detached updater stops the
 // daemon. A later status check must not overwrite that durable intent.
 env.AI_FACTORY_SKIP_SERVICES='0';
@@ -160,6 +185,22 @@ fs.writeFileSync(env.AI_FACTORY_SERVICE_LOG,'');
 run('bash',['scripts/update.sh','--restart-services'],engine);
 const restored=fs.readFileSync(env.AI_FACTORY_SERVICE_LOG,'utf8');
 assert.match(restored,/stop daemon/);assert.match(restored,/start daemon/);assert.match(restored,/start dashboard/);assert.deepEqual(((state)=>({restoreDaemon:state.restoreDaemon,restoreDashboard:state.restoreDashboard}))(JSON.parse(fs.readFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,'utf8'))),{restoreDaemon:true,restoreDashboard:true});
+// launchd reports `state = waiting` for a service it has loaded whose process is momentarily
+// down. Deciding what to restore from the process state left the daemon stopped after an update,
+// twice, and the update said nothing about it. Being loaded is the operator's intent, so that is
+// what the decision reads, and anything left down is named on stderr.
+env.AI_FACTORY_FAKE_LOADED='daemon';
+fs.rmSync(env.AI_FACTORY_UPDATE_STATE_FILE,{force:true});
+fs.writeFileSync(env.AI_FACTORY_SERVICE_LOG,'');
+const loadedIntent=run('bash',['scripts/update.sh','--restart-services'],engine);
+const loadedActions=fs.readFileSync(env.AI_FACTORY_SERVICE_LOG,'utf8');
+assert.match(loadedActions,/stop daemon/);
+assert.match(loadedActions,/start daemon/,'a loaded daemon has to come back even if its process was down when the update started');
+assert.equal(JSON.parse(fs.readFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,'utf8')).restoreDaemon,true);
+assert.match(loadedIntent.stderr,/dashboard is not running after this update/,'a service left down has to be named, not buried in the build output');
+assert.doesNotMatch(loadedIntent.stderr,/daemon is not running/);
+delete env.AI_FACTORY_FAKE_LOADED;
+
 env.FAIL_DAEMON_START='1';
 fs.writeFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,JSON.stringify({status:'updating',restoreDaemon:true,restoreDashboard:true}));
 fs.writeFileSync(env.AI_FACTORY_SERVICE_LOG,'');
