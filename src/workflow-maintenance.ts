@@ -50,7 +50,9 @@ export class WorkflowMaintenance {
  complete(id:string){const operation=this.operation(id);if(!["ready","running"].includes(operation.status))throw new Error(`Maintenance ${id} cannot complete from ${operation.status}`);this.store.db.prepare("UPDATE maintenance_operations SET status='completed',finished_at=? WHERE id=?").run(new Date().toISOString(),id);this.store.event("maintenance.completed",{maintenanceId:id,operation:operation.operation});}
  resume(id:string){const operation=this.operation(id);if(!["ready","running","completed","failed"].includes(operation.status))throw new Error(`Maintenance ${id} cannot resume tasks from ${operation.status}`);const resumed:string[]=[];
   for(const item of this.items(id)){if(item.resumed_at)continue;const current=this.projections.get(item.work_item_id);if(current.status!=="PAUSED")continue;const status=this.projections.resumeStatus(item.work_item_id);this.projections.transition({workItemId:item.work_item_id,expectedRevision:current.revision,stage:current.stage,status,attemptDelta:status==="QUEUED"?1:0,actor:{type:"human",id:operation.actor},source:{},reason:{code:"maintenance-resumed",summary:`Resumed after ${operation.operation}`}},()=>this.store.db.prepare("UPDATE maintenance_items SET resumed_at=? WHERE maintenance_id=? AND work_item_id=?").run(new Date().toISOString(),id,item.work_item_id));resumed.push(item.work_item_id);}
-  this.store.event("maintenance.tasks_resumed",{maintenanceId:id,operation:operation.operation,affected:resumed});return resumed;
+  this.store.event("maintenance.tasks_resumed",{maintenanceId:id,operation:operation.operation,affected:resumed});
+  if(["ready","running"].includes(operation.status))this.complete(id);
+  return resumed;
  }
  async pauseForSignal(signal:string){const request=this.request("signal",`os:${signal}`);await this.confirm(request.id);this.complete(request.id);return {id:request.id,status:"completed" as const};}
  reconcileSignalsAfterRestart(){
