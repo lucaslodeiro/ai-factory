@@ -70,6 +70,10 @@ test("result contract failures use a typed error",()=>{
  assert.throws(()=>validateCoverage(result("pass"),[]),error=>error instanceof InvalidResultError);
 });
 
+test("summaries are limited to 1500 characters",()=>{
+ assert.throws(()=>parseResult(result("pass",{summary:"x".repeat(1600)}),"developer"),/summary: invalid text length/);
+});
+
 test("every provider result schema requires all object properties recursively",()=>{
  const inspect=(schema:ReturnType<typeof resultSchemaFor>,location="result")=>{
   if(schema.properties){assert.equal(schema.additionalProperties,false,location);assert.deepEqual([...(schema.required??[])].sort(),Object.keys(schema.properties).sort(),location);for(const [key,value] of Object.entries(schema.properties))inspect(value,`${location}.${key}`);}

@@ -11,7 +11,7 @@ const decisionSchema=object({ kind: enumeration("tactical", "major"), decision: 
 export const resultSchema = object({
   taskAssessment: { ...object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), rationale: text() }), type: ["object", "null"] },
   outcome: enumeration("spec", "questions", "resolved", "pass", "changes", "decision"),
-  summary: text(10000), spec: { type: "string", maxLength: 30000 }, questions: list(text()),
+  summary: text(1500), spec: { type: "string", maxLength: 30000 }, questions: list(text()),
   findings: list(object({ classification: enumeration("auto-fix", "decision-required", "defer", "environment-blocked"), evidence: text() })),
   acceptanceCriteria: list(object({ id: text(100), description: text() })),
   coverage: list(object({ criterionId: text(100), status: enumeration("passed", "failed", "not-run"), evidence: text() })),

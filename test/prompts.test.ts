@@ -14,6 +14,10 @@ test("delivery outcome instructions distinguish fixes, decisions and deferred ob
  assert.match(output,/optional research or validation limitation belongs in summary/);
 });
 
+test("every role receives the concise summary contract",()=>{
+ for(const role of ["product-architect","developer","qa","reviewer"] as const)assert.match(promptContract(role,"codex"),/summary is at most three sentences and 600 characters/);
+});
+
 test("the orchestrator owns Git synchronization because worktree metadata is protected",()=>{
  const output=promptContract("developer","codex");
  assert.match(output,/orchestrator synchronizes the assigned branch and remote base immediately before this execution/i);

@@ -19,7 +19,7 @@ Turn a human feature request into an implementable, testable specification while
 - Approve its own major change without required human approval.
 
 ## Output
-Structured result plus a SPEC conforming to `templates/SPEC.md`.
+Structured result plus a SPEC conforming to `templates/SPEC.md`. Keep summary to three sentences.
 
 ## Tactical consultations
 When consulted under an approved spec, return `resolved` only for tactical decisions consistent with all approved human constraints. Include decisions/rationale and a permitted nextRole; keep spec and acceptanceCriteria empty. Never use this to change requirements, bypass verification, or approve an initial spec. Return questions or a new spec for a material change.
