@@ -124,7 +124,23 @@ test("workflow thread groups the prompt, result and outcome of one execution and
   assert.match(String(finished.markdown),/Implementation Engineer report/);
   assert.deepEqual({role:running.role,status:running.status,outcome:running.outcome,durationMs:running.durationMs,result:running.result},{role:"qa",status:"running",outcome:undefined,durationMs:null,result:undefined});
   assert.equal(turns.filter(turn=>turn.executionId==="run-1").length,1,"one turn per execution");
+  assert.deepEqual(turns.map(turn=>turn.milestone),[false,false,false],"intermediate passes, queued transitions and running executions are not milestones");
   store.event("execution.finished",{status:"timed_out",interruptionReason:"user-cancel"},"w","run-2");
-  const timedOut=workflowThread(store,"w")[2];assert.equal(timedOut.status,"timed_out");assert.match(String(timedOut.reason),/exceeded its time limit/);assert.equal(turns.filter(turn=>turn.executionId==="run-2").length,1);
+  const timedOut=workflowThread(store,"w")[2];assert.equal(timedOut.status,"timed_out");assert.match(String(timedOut.reason),/exceeded its time limit/);assert.equal(turns.filter(turn=>turn.executionId==="run-2").length,1);assert.equal(timedOut.milestone,true,"a process that did not finish cleanly is a milestone");
+ }finally{store.db.close();}
+});
+
+test("workflow thread marks milestones with the same rule that publishes them, plus human guidance and states that wait on a person",()=>{
+ const store=new Store(":memory:");try{
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status) VALUES('w',1,'owner/demo','now','now','{}','DESIGN','WAITING')").run();
+  store.event("workflow.transition",{to:{stage:"DESIGN",status:"WAITING"},reason:{code:"continued",summary:"Continued from other-instance at revision 3"},actor:{type:"orchestrator",id:"continuation"}},"w");
+  store.event("workflow.transition",{to:{stage:"DESIGN",status:"RUNNING"},reason:{code:"execution-started",summary:"Architect execution started"},actor:{type:"orchestrator",id:"scheduler"}},"w","run-design");
+  store.event("agent.result",{role:"product-architect",result:result("spec"),specVersion:1},"w","run-design");
+  store.event("workflow.transition",{to:{stage:"DESIGN",status:"WAITING"},reason:{code:"spec-proposed",summary:"SPEC v1 proposed"},actor:{type:"agent",id:"product-architect"}},"w","run-design");
+  store.event("command.applied",{commentId:9,login:"owner",command:"approve",text:"/factory approve v1",source:"dashboard"},"w");
+  store.event("workflow.transition",{to:{stage:"BUILD",status:"QUEUED"},reason:{code:"approved",summary:"SPEC v1 approved"},actor:{type:"human",id:"owner"}},"w");
+  store.event("agent.result",{role:"developer",result:result("pass"),specVersion:1},"w","run-build");
+  const turns=workflowThread(store,"w");
+  assert.deepEqual(turns.map(turn=>[turn.kind,turn.milestone]),[["event",false],["event",false],["execution",true],["event",true],["human",true],["event",false],["execution",false]]);
  }finally{store.db.close();}
 });
