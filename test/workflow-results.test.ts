@@ -82,6 +82,18 @@ test("correction cycles count changes, stop at the limit and preserve the tactic
  } finally {config.maxCycles=previous;s.store.db.close();}
 });
 
+test("a Builder pass with no files after a correction request waits for human guidance",()=>{
+ const s=setup("TEST",true);try{
+  running(s,"qa","run-q");s.results.apply({head:"head",workItemId:"work-1",executionId:"run-q",role:"qa",result:result("changes",{coverage:[{criterionId:"AC1",status:"failed",evidence:"Mismatch"}],findings:[{classification:"auto-fix",evidence:"Fix it"}]})});
+  running(s,"developer","run-empty");const empty=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-empty",role:"developer",result:result("pass"),changedPaths:[]});
+  assert.deepEqual({stage:empty.projection.stage,status:empty.projection.status},{stage:"BUILD",status:"WAITING"});const request=s.records.activeRequest("work-1");assert.equal(request?.payload.kind==="request"&&request.payload.type,"correction-limit");
+ }finally{s.store.db.close();}
+ const changed=setup("TEST",true);try{
+  running(changed,"qa","run-q");changed.results.apply({head:"head",workItemId:"work-1",executionId:"run-q",role:"qa",result:result("changes",{coverage:[{criterionId:"AC1",status:"failed",evidence:"Mismatch"}],findings:[{classification:"auto-fix",evidence:"Fix it"}]})});
+  running(changed,"developer","run-changed");const applied=changed.results.apply({head:"head",workItemId:"work-1",executionId:"run-changed",role:"developer",result:result("pass"),changedPaths:["src/app.ts"]});assert.deepEqual({stage:applied.projection.stage,status:applied.projection.status},{stage:"TEST",status:"QUEUED"});
+ }finally{changed.store.db.close();}
+});
+
 test("late agent results are discarded after a concurrent workflow change",()=>{
  const s=setup("BUILD",true);
  try {

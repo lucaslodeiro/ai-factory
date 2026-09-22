@@ -13,7 +13,7 @@ const nextRoleStage={developer:"BUILD",qa:"TEST",reviewer:"REVIEW"} as const;
 export class WorkflowResults {
  private projections:WorkflowProjections;private records:WorkflowRecords;
  constructor(private store:Store){this.projections=new WorkflowProjections(store);this.records=new WorkflowRecords(store);}
- apply(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult;head:string}) {
+ apply(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult;head:string;changedPaths?:string[]}) {
   const current=this.projections.get(input.workItemId);
   if(current.status!=="RUNNING"||current.activeRunId!==input.executionId||current.stage!==roleStage[input.role]) {
    this.store.event("execution.discarded",{executionId:input.executionId,role:input.role,reason:"Workflow changed before the result was applied",projection:current},input.workItemId,input.executionId);return {discarded:true,projection:current};
@@ -66,7 +66,7 @@ export class WorkflowResults {
   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:current.revision,stage:"DELIVERY",status:"WAITING",actor:{type:"orchestrator",id:"delivery"},source:{},reason:{code:"published",summary:"Branch published and pull request ready"},recordIds:ids},()=>{this.updateContext(input.workItemId,{pr:input.pullRequestUrl});ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"merge",owner:"human",originatingStage:"DELIVERY",allowedReturnStages:["DELIVERY"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"orchestrator",sourceId:`delivery:${current.revision}`,actor:"orchestrator"}).id);});
   return {projection,recordIds:ids};
  }
- private delivery(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult;head:string},revision:number,specVersion:number,ids:string[]) {
+ private delivery(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult;head:string;changedPaths?:string[]},revision:number,specVersion:number,ids:string[]) {
   const result=input.result,stage=roleStage[input.role];
   const createFindings=()=>{for(const finding of result.findings)ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"finding",classification:finding.classification,originRole:input.role,criterionId:result.coverage.find(coverage=>coverage.status==="failed")?.criterionId,evidence:finding.evidence},sourceType:"agent-result",sourceId:input.executionId,actor:input.role}).id);};
   if(result.outcome==="decision") {
@@ -79,6 +79,14 @@ export class WorkflowResults {
    return {discarded:false,projection,recordIds:ids};
   }
   if(result.outcome!=="pass")throw new InvalidResultError(`Unsupported ${input.role} outcome ${result.outcome}`);
+  const current=this.projections.get(input.workItemId);
+  if(input.role==="developer"&&current.correctionCycles>0&&input.changedPaths?.length===0){
+   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:"BUILD",status:"WAITING",actor:{type:"agent",id:input.role},source:{executionId:input.executionId},reason:{code:"no-change-pass",summary:"Builder found nothing to change after a correction request"},recordIds:ids},()=>{
+    this.resultEvent(input);createFindings();this.settlePass(input.workItemId,input.role,input.executionId);
+    const findingIds=this.records.active(input.workItemId,specVersion,"developer").filter(record=>record.payload.kind==="finding"&&record.payload.classification==="auto-fix").map(record=>record.id);
+    ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"correction-limit",owner:"human",originatingStage:"BUILD",allowedReturnStages:this.returnStages("BUILD"),openedAfterCommentId:this.cursor(input.workItemId),findingIds},sourceType:"agent-result",sourceId:input.executionId,actor:input.role}).id);
+   });return {discarded:false,projection,recordIds:ids};
+  }
   const target=input.role==="developer"?"TEST":input.role==="qa"?"REVIEW":"DELIVERY";
   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status:"QUEUED",actor:{type:"agent",id:input.role},source:{executionId:input.executionId},reason:{code:"pass",summary:`${roleShortName(input.role)} passed`},recordIds:ids},()=>{
    this.resultEvent(input);
@@ -94,6 +102,6 @@ export class WorkflowResults {
  private cursor(workItemId:string){const row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string};return (JSON.parse(row.context||"{}") as {cursor?:number}).cursor??0;}
  private updateContext(workItemId:string,values:Record<string,unknown>){const row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string};this.store.db.prepare("UPDATE work_items SET context=? WHERE id=?").run(JSON.stringify({...JSON.parse(row.context||"{}"),...values}),workItemId);}
  private setVerifiedHead(workItemId:string,stage:"TEST"|"REVIEW",head:string){const row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string};const context=JSON.parse(row.context||"{}") as {verifiedHeads?:Record<string,string>};this.updateContext(workItemId,{verifiedHeads:{...context.verifiedHeads,[stage]:head}});}
- private resultEvent(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult;head:string},specVersion=this.specVersion(input.workItemId)){this.store.event("agent.result",{role:input.role,result:input.result,specVersion},input.workItemId,input.executionId);}
+ private resultEvent(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult;head:string;changedPaths?:string[]},specVersion=this.specVersion(input.workItemId)){this.store.event("agent.result",{role:input.role,result:input.result,specVersion},input.workItemId,input.executionId);}
  private returnStages(stage:V3Stage):V3Stage[]{return stage==="BUILD"?["BUILD"]:stage==="TEST"?["BUILD","TEST"]:stage==="REVIEW"?["BUILD","TEST","REVIEW"]:[stage];}
 }
