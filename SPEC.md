@@ -108,19 +108,26 @@ Provide reproducible Node 22+ installation, explicit repo/data directories, prov
 
 Use the direct-v1 policy in `docs/MODEL_POLICY.md`: Product Architect reports complexity, risk and rationale with each new spec; the human approves that assessment with the exact spec version. Each role has a configured Codex, Claude or Cursor provider and one direct model, or `auto` to omit the model override and let the provider use its recommended/default model. The deterministic orchestrator uses the approved assessment and correction context for workflow safeguards, without translating them into another model. A high-complexity or high-risk draft receives a fresh Architect review before a version is published for approval; questions and retries preserve that requirement. Every provider call records its configured selection and internal workflow tier. No silent provider or model fallback.
 
+### F16 — Measurement and comparison
+
+Record what each provider run did inside itself and make one run comparable to the next. `execution.finished` carries the provider's event count and event-type histogram, its reported turn count, wall and API duration and cost estimate, and cache reads recorded apart from cache writes, because a read is a hit and a write is a miss and their sum cannot tell an improvement from a regression. `docs/BENCHMARK.md` fixes one cheap issue that still crosses every gate, so two runs measure the factory rather than two different tasks. `factory benchmark` reports a run per role and in total, with the workflow transition path, the reasons for each move and a health count of failed executions, invalid results, interruptions and discards; `--save` writes a baseline and `--baseline` prints the deltas.
+
+The objective is cost and time subject to the issue being resolved. Stated without that condition it is maximised by doing nothing, and each role has a cheap path that improves every cost number while degrading the product. An independent oracle therefore grades the produced code against the behaviours the benchmark issue states, without reading the agents' tests or trusting a reported PASS, and a comparison is refused when either side was unverified or unresolved.
+
 ## Requirements traceability
 
 | Requirement | Implementation | Automated evidence |
 |---|---|---|
 | F01 | `src/workflow-inbox.ts`, `src/workflow-orchestrator.ts` | `test/workflow-inbox.test.ts`, `test/daemon.test.ts` |
-| F02 | `src/context-assembly.ts`, `src/workflow-records.ts`, provider contracts | `test/context-assembly.test.ts`, `test/worktree-context.test.ts` |
+| F02 | `src/context-assembly.ts`, `src/workflow-records.ts`, `src/repository-map.ts`, provider contracts | `test/context-assembly.test.ts`, `test/worktree-context.test.ts`, `test/repository-map.test.ts` |
 | F03–F05 | `src/workflow-commands.ts`, `src/workflow-results.ts`, `specs` and `records` | `test/workflow-commands.test.ts`, `test/workflow-results.test.ts` |
 | F06–F08 | `src/results.ts`, `src/worktrees.ts` | `test/results.test.ts`, `test/workspaces.test.ts` |
 | F09–F10 | `src/workflow-results.ts`, `src/workflow-github.ts` | Result routing, GitHub projection and full daemon tests |
 | F11 | `src/execution-manager.ts`, `src/worker-supervisor.mjs`, `src/daemon.ts` | `test/execution.test.ts`, `test/recovery.test.ts`, `test/storage.test.ts`, cross-process cancel/retry/stop in `test/daemon.test.ts` |
 | F12 | `src/notifications.ts`, `src/adapters/slack.ts`, SQLite queues | `test/notifications.test.ts`, GitHub-outage notification case |
 | F13 | `src/workflow-projection.ts`, `src/workflow-status.ts`, `src/cli.ts`, `src/dashboard.ts` | Projection, publisher, dashboard and daemon tests |
-| F15 | `src/model-policy.ts`, adapters, spec snapshots and execution events | `test/model-policy.test.ts`, workflow routing and subprocess argument/audit assertions |
+| F15 | `src/model-policy.ts`, `src/adapters/{codex,claude,cursor}.ts`, spec snapshots and execution events | `test/model-policy.test.ts`, workflow routing and subprocess argument/audit assertions |
+| F16 | `src/provider-activity.ts`, `src/execution-activity.ts`, `src/benchmark.ts`, `src/token-usage.ts`, `scripts/benchmark-verify.mjs`, `docs/BENCHMARK.md` | `test/provider-activity.test.ts`, `test/execution-activity.test.ts`, `test/benchmark.test.ts`, `test/token-usage.test.ts`, oracle exercised against correct, lazy, throwing and absent implementations |
 | F14 | `INSTALL.md`, `src/doctor.ts`, demo repository | Historical real four-role demo reached delivery readiness and created demo PR #2; see `docs/VALIDATION.md` |
 
 ## Operational boundaries and remaining acceptance work

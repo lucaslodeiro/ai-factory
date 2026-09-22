@@ -343,6 +343,14 @@ Run `ai-factory models` to inspect each role's provider and direct model selecti
 
 Worker prompts include the actual daemon Node executable and configured Git, plus an explicit PATH prefix for shell commands: login-shell startup files may otherwise select an older Node or Xcode Git. Verify the tool versions in run logs. Delivery Reviewer receives Tester commands/results as attributed evidence and does not claim to have executed them personally.
 
+## Measuring a run
+
+`ai-factory activity <work-item-id>` groups a work item's finished executions by role and prints runs, provider events, events per run, reported turns, cache reads and cache writes apart, output tokens and the event-type histogram. `ai-factory events` dumps raw payload JSON and is not readable for this.
+
+To compare one run against another, use the fixed issue in [docs/BENCHMARK.md](docs/BENCHMARK.md): two different issues measure the issues, not the factory. `ai-factory benchmark <work-item-id> --verify <checkout> --save <file>` records a baseline and `--baseline <file>` prints the deltas. `--verify` runs an independent oracle against the code the run produced; without it the cost figures are the system grading its own homework, and a comparison where either side was unverified or unresolved is refused.
+
+Providers do not report the same things. Codex streams one JSON object per line, so its event histogram is real, but it reports only a token total with no cache split and no cost. Claude returns a single envelope, so its event count is always 1, but it reports turns, the cache split and a cost estimate. Compare a role against itself across runs, never across providers.
+
 ## After PR delivery
 
 The daemon reconciles `DELIVERY/WAITING` items against GitHub. Merge records `DELIVERY/COMPLETED` with timestamp/commit; closing without merge remains waiting and reopening resumes the same merge request. With the daemon stopped, `ai-factory sync` performs one reconciliation and flushes pending GitHub/Slack deliveries without running agents. The shared singleton lock prevents concurrent daemon/sync execution.
