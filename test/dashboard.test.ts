@@ -258,6 +258,9 @@ echo "$*" >> "$PWD/update-actions.log"
     fs.writeFileSync(path.join(settingsRoot,"up-to-date"),"");
     const currentCheck = await fetch(`http://127.0.0.1:${port}/api/update/check`,{method:"POST"}).then(response => response.json()) as any;
     assert.equal(currentCheck.available,false);
+    fs.writeFileSync(path.join(settingsRoot,"data","update-state.json"),JSON.stringify({status:"failed",phase:"Previous update failed"}));
+    await fetch(`http://127.0.0.1:${port}/api/update/check`,{method:"POST"});
+    assert.equal(JSON.parse(fs.readFileSync(path.join(settingsRoot,"data","update-state.json"),"utf8")).status,"idle");
     fs.writeFileSync(path.join(settingsRoot,"runtime-stale"),"");
     const activationCheck=await fetch(`http://127.0.0.1:${port}/api/update/check`,{method:"POST"}).then(response => response.json()) as any;
     assert.equal(activationCheck.available,true);assert.equal(activationCheck.runtimeStale,true);assert.match(activationCheck.message,/ready to activate/);

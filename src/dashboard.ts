@@ -301,6 +301,11 @@ function checkUpdate(root: string, runtime?: VersionInfo) {
   if(gitSucceeds(root,["merge-base","--is-ancestor",latestFull,currentFull]))return {current,latest,available:false,localAhead:true,message:"The installed engine already includes this version and has local commits that are not published to main.",checkedAt:new Date().toISOString()};
   return {current,latest,available:true,mergeLocal:true,message:"The update will merge the downloaded version with local engine commits. A conflict leaves the installation unchanged.",checkedAt:new Date().toISOString()};
 }
+function clearResolvedUpdateFailure(root: string, check: ReturnType<typeof checkUpdate>) {
+  if (check.available || check.runtimeStale || check.localAhead || check.mergeLocal) return;
+  const current = updateState(root);
+  if (current.status === "failed") writeUpdateState(root,{status:"idle",phase:"Current version is active.",finishedAt:new Date().toISOString()});
+}
 function writeUpdateState(root: string, state: UpdateState) {
   const file = updateStateFile(root);
   fs.mkdirSync(path.dirname(file),{recursive:true});
@@ -562,7 +567,11 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if((req.method==="GET"||req.method==="POST")&&url.pathname.match(/^\/api\/executions\/[^/]+\/prompt$/)){const id=url.pathname.split("/")[3];if(req.method==="POST"){const body=await readBody(req) as {acknowledgeSensitive?:boolean};if(body.acknowledgeSensitive!==true)return json(res,400,{error:"Acknowledge that prompts may contain sensitive source and issue context"});}if(!store.db.prepare("SELECT 1 FROM executions WHERE id=?").get(id))return json(res,404,{error:"Unknown execution"});const artifact=promptArtifact(id);if(!artifact.available)return json(res,404,{error:"Exact prompt content was pruned by retention or is unavailable"});return json(res,200,{id,warning:"Sensitive execution context. Do not share without review.",prompt:artifact.prompt,truncated:artifact.truncated});}
       if(req.method==="GET"&&url.pathname==="/api/repository")return json(res,200,new RepositoryMaintenance(store).check());
       if(req.method==="POST"&&url.pathname==="/api/repository") {const body=await readBody(req) as {action?:string;workItemId?:string;confirmPath?:string;repeatPath?:string;maintenanceId?:string},repository=new RepositoryMaintenance(store);if(body.action==="check")return json(res,200,repository.check());if(body.action==="sync")return json(res,200,repository.sync("dashboard"));if(body.action==="publish"&&body.workItemId)return json(res,200,repository.publish(body.workItemId,"dashboard"));if(body.action==="clear"){requireMaintenance(store,body.maintenanceId,["user-pause"]);if(body.maintenanceId)maintenanceCoordinator(store).markStarted(body.maintenanceId);try{return json(res,200,repository.clear(body.confirmPath??"",body.repeatPath??"","dashboard"));}finally{if(body.maintenanceId)maintenanceCoordinator(store).complete(body.maintenanceId);}}if(body.action==="restore")return json(res,200,repository.restore("dashboard"));return json(res,400,{error:"Unknown or incomplete repository action"});}
-      if (req.method === "POST" && url.pathname === "/api/update/check") return json(res,200,checkUpdate(settingsRoot,runtimeVersion));
+      if (req.method === "POST" && url.pathname === "/api/update/check") {
+        const check=checkUpdate(settingsRoot,runtimeVersion);
+        clearResolvedUpdateFailure(settingsRoot,check);
+        return json(res,200,check);
+      }
       if (req.method === "GET" && url.pathname === "/healthz") return json(res,200,{ok:true});
       if (req.method === "PUT" && url.pathname === "/api/settings") {
         const body = await readBody(req) as { values?: Record<string,unknown>; clearSecrets?: string[];maintenanceId?:string;startDaemonWhenReady?:boolean };
