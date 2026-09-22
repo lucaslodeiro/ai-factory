@@ -3,12 +3,14 @@ set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 restart_services=false
 start_services=false
+finish_phase=false
 for argument in "$@"; do
 if [[ $argument == -h || $argument == --help ]]; then
   echo 'Usage: bash scripts/update.sh [--restart-services|--start-services]'
   echo '  Configuration is preserved and remains editable in the dashboard.'
   echo '  --restart-services  stop loaded services, update, then restore them'
   echo '  --start-services    recovery mode: stop services, update, then start both'
+  echo '  --finish-update     internal: run only the steps after the new version is activated'
   echo 'Run `ai-factory help` for every command.'
   exit 0
 fi
@@ -17,6 +19,7 @@ while (($#)); do
   case $1 in
     --restart-services) restart_services=true;;
     --start-services) start_services=true;;
+    --finish-update) finish_phase=true;;
     *) echo 'Unexpected arguments; see --help.' >&2; exit 1;;
   esac
   shift
@@ -81,8 +84,11 @@ finish_update() {
   fi
 }
 trap finish_update EXIT
-write_update_state updating "Stopping daemon; dashboard remains available…"
+# The finish phase inherits an update already in flight; re-announcing this phase would also clear
+# the versionActivated flag the recovery path depends on.
+"$finish_phase" || write_update_state updating "Stopping daemon; dashboard remains available…"
 
+if ! "$finish_phase"; then
 if ( "$restart_services" || "$start_services" ) && [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
   if "$start_services"; then
     restore_daemon=true
@@ -104,6 +110,18 @@ fi
 
 write_update_state updating "Downloading, building and validating…"
 node scripts/update.mjs
+# Everything below belongs to the version that was just activated, so hand over to its own updater.
+# Otherwise a fix to those steps only takes effect one update later, which is what left the daemon
+# stopped after three updates in a row: each of them was still running the previous script. The
+# restore intent travels in the state file, which the new process reads on startup.
+mode=""
+"$restart_services" && mode=--restart-services || true
+"$start_services" && mode=--start-services || true
+# Unquoted on purpose: $mode is one of two fixed flags or empty, and bash 3.2 under `set -u`
+# rejects the empty-array expansion that would otherwise express this.
+exec bash scripts/update.sh --finish-update $mode
+fi
+
 write_update_state updating "Preserving configuration…"
 if [[ ! -f "$home/.env" ]]; then umask 077; cp .env.example "$home/.env"; fi
 mkdir -p "$HOME/.local/bin"

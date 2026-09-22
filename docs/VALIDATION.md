@@ -189,6 +189,28 @@ The update also stayed silent about it. The outcome was one line, `Start it expl
 
 Not reproduced locally: `launchctl` exists only on macOS, so this is reasoned from the script and the reported symptom rather than from a failing test. `scripts/test-maintenance.mjs` still passes, and it does not cover this path.
 
+## Every fix to the updater's tail arrived one update late — 2026-09-22
+
+Three updates in a row left the daemon stopped, and each fix was already
+installed when the next one failed. `update.sh` runs `node scripts/update.mjs`,
+which activates the new version, and then carried on executing **its own old
+self** for everything after that: preserving configuration, installing
+services, restoring the daemon, writing `data/install.json`. A correction to
+any of those steps could not take effect in the update that shipped it.
+
+After activation the script now hands over with
+`exec bash scripts/update.sh --finish-update`, so the tail runs from the
+version just installed. The restore intent already travels in the update state
+file, which the new process reads on startup, and `exec` replaces the process
+so the old EXIT trap cannot also run. The finish phase skips the
+"Stopping daemon" state write, which would otherwise clear the
+`versionActivated` flag the recovery path depends on.
+
+Verified: `scripts/test-maintenance.mjs`. Upstream marks its updater's tail
+with a line the installed updater does not have, so the marker can only be
+written by the new version; the test asserts the installed one does not already
+carry it. Without the handover the marker file never appears.
+
 ## The daemon stayed down: SIGPIPE, not the state predicate — 2026-09-22
 
 The entry above diagnosed this from the symptom and named the wrong cause. The

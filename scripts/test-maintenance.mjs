@@ -183,6 +183,20 @@ assert.equal(selfRewrite.status,0,`the updater did not survive replacing its own
 assert.equal(selfRewrite.stdout.split('Factory updated to').length-1,1,'the updater re-executed its own middle');
 assert.equal(JSON.parse(fs.readFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,'utf8')).status,'completed');
 assert.equal(JSON.parse(fs.readFileSync(path.join(dest,'data','install.json'),'utf8')).revision,run('git',['rev-parse','HEAD'],engine).stdout.trim());
+
+// Everything after the new version is activated has to run from that new version. While the old
+// script finished its own update, a fix to the restore steps only took effect one update later,
+// and three updates in a row left the daemon stopped for exactly that reason. Upstream marks its
+// tail; the installed updater has no such line, so the marker can only come from the new one.
+const tailMarker=path.join(temp,'update-tail-version');
+fs.writeFileSync(seededUpdater,fs.readFileSync(path.join(source,'scripts','update.sh'),'utf8')
+ .replace('update_complete=true',`printf 'the activated version finished this update\\n' > '${tailMarker}'\nupdate_complete=true`));
+run('git',['add','.'],seed);run('git',['commit','-m','mark the updater tail'],seed);run('git',['push','origin','HEAD:main'],seed);
+assert.doesNotMatch(fs.readFileSync(installedUpdater,'utf8'),/the activated version finished this update/,'the installed updater must not already carry the marker');
+run('bash',['scripts/update.sh'],engine);
+assert.equal(fs.readFileSync(tailMarker,'utf8').trim(),'the activated version finished this update',
+ 'the update finished with the previous version, so a fix to these steps would arrive one update late');
+assert.equal(JSON.parse(fs.readFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,'utf8')).status,'completed');
 // The dashboard records service intent before its detached updater stops the
 // daemon. A later status check must not overwrite that durable intent.
 env.AI_FACTORY_SKIP_SERVICES='0';
