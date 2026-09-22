@@ -153,6 +153,20 @@ The publisher now sheds narrative text until the index fits, instead of dropping
 
 On a reconstruction of issue 6's shape, four roles with five criteria each and twelve records, the full index measured 133,227 bytes and compacted to 29,271 at a 500-character budget, keeping all twelve records, all four roles and all five criterion ids. Covered by `test/issue-state-compaction.test.ts`.
 
+## Local runtime multi-origin handling — 2026-09-22
+
+Issue 9 of the demo repository, the benchmark issue, failed at Build before a single agent ran: `Could not prepare workflow execution: Factory local runtime did not become ready`.
+
+The cause was a contract the Factory shares with the target repository. Issue 6 had taught that repository's preview script to publish three origins in `.local/url`, one per line with the LAN address first, and the runtime manager read the whole file as a single URL. `new URL` threw on every poll for fifteen seconds and the stage failed. Even parsing one line would not have helped: the first line is a LAN address, and the manager accepts only loopback.
+
+The manager now reads the file as a list and takes the first loopback entry, ignoring any LAN or tunnel address beside it; `::1` counts as loopback, which it did not before. A file that announces only non-loopback origins now fails with its own message naming the hosts, because that is a different problem from never starting.
+
+Both failures are also diagnosed by name. Before this, `failureDiagnosis` fell through to "The operation failed, but the available evidence does not identify its underlying cause" on a failure whose evidence stated the cause and gave a log path, which tells the operator there is nothing to read when there is.
+
+Covered by `test/local-runtime-url.test.ts`, including the exact three-origin shape issue 6 produced. Not yet confirmed against a live run: issue 9 has not been retried.
+
+**Still open, not fixed here.** `browserRequired` starts a preview server whenever the target repository declares a browser dependency, regardless of what the issue asks for. The benchmark issue adds a pure string function and needs no browser. That is cost and fragility on every issue in a repository that happens to contain browser tests, and changing it is a design decision rather than a repair.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

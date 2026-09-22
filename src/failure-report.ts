@@ -64,6 +64,16 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
     "**Evidence:** The process wrapper reported ENOBUFS. This is not evidence of a problem in the application being built.",
     "**Recommended action:** Update the Factory to a version that streams large command output. If it persists, share the sanitized technical evidence with the Factory maintainer before retrying.",
   ].join("\n\n");
+  if (/Factory local runtime announced no loopback address/i.test(evidence)) return [
+    "**Summary:** The preview server started, but it published only addresses this machine's Factory will not drive.",
+    `**Evidence:** ${reason.replace(/^Error:\s*/,"").replace(/^Could not prepare workflow execution:\s*/,"")}`,
+    "**Recommended action:** The Factory drives the preview from this machine, so the target repository must publish a loopback origin in `.local/url`, first or alongside any LAN or tunnel address. Make its preview script bind loopback as well, then retry the saved stage.",
+  ].join("\n\n");
+  if (/Factory local runtime did not become ready/i.test(evidence)) return [
+    "**Summary:** The Factory starts the target repository's preview server for browser checks, and it did not come up within fifteen seconds.",
+    `**Evidence:** ${reason.replace(/^Error:\s*/,"").replace(/^Could not prepare workflow execution:\s*/,"")} The named log holds the script's own output. The server is started because the repository declares a browser dependency and a preview script, not because this issue asked for one.`,
+    "**Recommended action:** Open the named log: the usual causes are the script exiting on a busy port, needing an environment variable the Factory does not set, or taking longer than fifteen seconds to write `.local/url`. Free the port or fix the script, then retry the saved stage. If this issue does not need a browser at all, the preview server is pure cost: remove the browser dependency or the preview script from the target repository.",
+  ].join("\n\n");
   if (kind==="invalid-context") return [
     "**Summary:** The required specification, decisions, instructions and request chain do not fit within the configured context budget.",
     "**Evidence:** Context assembly stopped before invoking a provider rather than silently dropping protected information.",
