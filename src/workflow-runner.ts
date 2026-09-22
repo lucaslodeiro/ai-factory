@@ -22,6 +22,8 @@ import {executionOutcomeText} from "./execution-presentation.js";
 
 export interface DeliveryPort {ensurePR(branch:string,title:string,body:string):string|Promise<string>;}
 
+export function commitSummary(summary:string){const line=summary.trim().split(/\r?\n/)[0].trim();if(line.length<=72)return line;const cut=line.lastIndexOf(" ",72);return `${line.slice(0,cut>0?cut:72).trimEnd()}…`;}
+
 export class WorkflowRunner {
  private scheduler:WorkflowScheduler;private results:WorkflowResults;private records:WorkflowRecords;private assembler:ContextAssembler;
  constructor(private store:Store,private agents:Partial<Record<AgentRole,AgentAdapter>>,private workspaces:WorkspacePort,private delivery:DeliveryPort){this.scheduler=new WorkflowScheduler(store);this.results=new WorkflowResults(store);this.records=new WorkflowRecords(store);this.assembler=new ContextAssembler(store);}
@@ -76,7 +78,7 @@ export class WorkflowRunner {
    const current=new WorkflowProjections(this.store).get(workItemId);if(current.status!=="RUNNING"||current.activeRunId!==started.executionId){this.store.event("execution.discarded",{executionId:started.executionId,reason:"Workflow changed before worktree validation"},workItemId,started.executionId);return true;}
    const changed=this.workspaces.check(cwd,role,before,row.branch,baseline);
    if(role==="developer"||role==="qa"){
-    const summaryLine=result.summary.trim().split(/\r?\n/)[0].trim().slice(0,72);
+    const summaryLine=commitSummary(result.summary);
     this.workspaces.commit(cwd,summaryLine?`factory(${roleShortName(role)}): ${summaryLine} (#${row.issue_number})`:`factory: ${role} for #${row.issue_number}`,row.branch,changed??undefined);
     try {if(this.workspaces.publishAsync)await this.workspaces.publishAsync(cwd,row.branch);else this.workspaces.publish(cwd,row.branch);}
     catch(error){this.store.event("workflow.push_failed",{branch:row.branch,error:sanitizeFailureEvidence(error instanceof Error?error.message:String(error),1600)},workItemId,started.executionId);}

@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/storage.js";
 import { WorkflowIntake } from "../src/workflow-inbox.js";
-import { WorkflowRunner } from "../src/workflow-runner.js";
+import { commitSummary,WorkflowRunner } from "../src/workflow-runner.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowCommands } from "../src/workflow-commands.js";
 import { WorkflowFailures } from "../src/workflow-failures.js";
@@ -20,6 +20,12 @@ class Workspace implements WorkspacePort {
  async publishAsync(){this.publishCalls++;if(this.pushError)throw this.pushError;}
  changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/factory-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){this.cleanupCalls++;}
 }
+
+test("commit summaries cut long subjects at a word boundary",()=>{
+ const summary="Implement the requested export behavior with validation, integration coverage, and documentation for all affected callers today";
+ assert.ok(summary.length>100);const subject=commitSummary(summary);
+ assert.match(subject,/integration…$/);assert.ok(subject.length<=73);
+});
 const runnerIssue={id:100,nodeId:"I_100",number:1,title:"Runner",body:"Build it",url:"https://github.com/owner/demo/issues/1",state:"OPEN" as const,createdAt:"2026-09-20T00:00:00Z",updatedAt:"2026-09-20T00:00:00Z",author:{login:"owner",type:"User"}};
 
 test("runner assembles bounded context and drives Architect then Builder through V3",async()=>{
