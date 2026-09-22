@@ -93,10 +93,10 @@ Verification now always fails, even when the tests pass.
 
 | Step | Expected |
 | --- | --- |
-| C1 | Tester pass → verification exit 1 → Build · Queued (cycle 1) → Builder → Tester → verification exit 1 → **Test · Waiting** with reason `correction-limit` and a human request |
+| C1 | With `FACTORY_MAX_FIX_CYCLES=1`, Tester pass → verification exit 1 → **Test · Waiting** with reason `correction-limit` and a human request, before any Builder correction cycle |
 | C2 | The issue carries `factory:waiting`; the status comment says the limit was reached and shows the finding with `exited 1`; the item is first in the dashboard queue with its conversation open |
-| C3 | Fix the configuration (`FACTORY_VERIFY_COMMAND=npm test`), restart the daemon, and from the dashboard thread click "Retry with guidance" with a text such as "Verification was misconfigured; change nothing" |
-| C4 | Your comment appears on the issue before the transition; Builder receives the guidance and its changed files (human retry, `attempt` is 1); the rest proceeds as in A |
+| C3 | Fix the configuration (`FACTORY_VERIFY_COMMAND=npm test`), restart the daemon, and from the dashboard thread click **Send answer** with guidance such as "Verification was misconfigured; change nothing" |
+| C4 | The answer is published on the issue before the transition; the item goes to Design · Queued (`human-answer`), Architect resolves the consultation (`tactical-resolved`), and Builder continues with `correctionCycles` back to 0; the rest proceeds as in A |
 
 What matters here is how much it cost you to understand what happened and what to do without opening GitHub. Note every time you had to go to GitHub or the logs to understand something.
 
