@@ -204,7 +204,7 @@ test("delivery body summarizes tests and verification while commits describe the
    await runner.run(item.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});for(let stage=0;stage<4;stage++)await runner.run(item.id);
    assert.equal(new WorkflowProjections(store).get(item.id).stage,"DELIVERY");assert.equal(new WorkflowProjections(store).get(item.id).status,"WAITING");
    assert.equal(workspace.commits[0],"factory(Builder): Implement the requested behavior (#1)");assert.ok(workspace.commits[1].startsWith("factory(Tester):"));
-   assert.match(body,/Closes #1/);assert.match(body,/Approved SPEC v1 by owner/);assert.match(body,/## Tests[\s\S]*node --test[\s\S]*0/);assert.match(body,/## Acceptance evidence/);assert.match(body,/src\/app.ts/);assert.match(body,/## Deferred findings\n\n- Optional polish/);
+   assert.match(body,/Closes #1/);assert.match(body,/Approved SPEC v1 by owner/);assert.equal(body.match(/^## Summary$/gm)?.length,1);assert.equal(body.match(/^## Tester summary$/gm)?.length,1);assert.match(body,/## Tests[\s\S]*node --test[\s\S]*0/);assert.match(body,/## Acceptance evidence/);assert.match(body,/src\/app.ts/);assert.match(body,/## Deferred findings\n\n- Optional polish/);
    assert.ok(body.includes(command?"Factory verification: `exit 0` exited 0.":"Factory verification: not configured"));assert.ok(!body.includes(result("spec").spec));assert.doesNotMatch(body,/# Verification Engineer.*report|## Next action/);
   }finally{store.db.close();}
  }}finally{config.verifyCommand=previous;}
