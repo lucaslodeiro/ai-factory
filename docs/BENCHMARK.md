@@ -59,6 +59,20 @@ Let it reach DELIVERY without human guidance. A run where you answered a
 question or sent a retry is still worth recording, but it is not comparable to
 one where you did not: the extra turns are yours, not the system's.
 
+**Do not update the factory while a benchmark run is in flight.** Every update
+stops the daemon, and the execution that was running is recorded as interrupted
+and retried on a new attempt. A run carrying interruptions is not comparable to
+one without them: the health line counts them, and the retried role's tokens
+are spent twice. Interruptions from updates are what put an unrelated issue on
+attempt 2 with two dead Builders on 2026-09-22.
+
+Plan for the queue too. The orchestrator runs **one execution at a time and
+takes the oldest queued item first** (`workflow-orchestrator.ts`, `runLocal`),
+so an older work item reclaims the lane every time it returns to QUEUED. A
+benchmark issue queued behind one does not start until that item reaches a
+state it cannot be queued out of: Delivery/Waiting, Completed, Paused,
+Cancelled or Failed. Start the benchmark when nothing older is in flight.
+
 ## The objective, and why it needs a fourth term
 
 The aim is to resolve an issue in the fewest iterations, the fewest tokens and
