@@ -20,7 +20,7 @@ test("workflow thread orders prompts, results, transitions, failures and human i
   store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,finished_at) VALUES('run','w','qa','TEST','failed','now','now')").run();
   const runDir=path.join(root,"runs","run");fs.mkdirSync(runDir,{recursive:true});fs.writeFileSync(path.join(runDir,"prompt.md"),"secret prompt");fs.writeFileSync(path.join(runDir,"prompt.json"),JSON.stringify({sectionBytes:{Issue:20},budgetBytes:1000,includedRecordIds:["r1"],cwd:"/private/path",logDir:"/private/log"}));
   store.event("execution.started",{role:"qa",selection:{provider:"codex",model:"auto"},cwd:"/private/path",logDir:"/private/log"},"w","run");store.event("agent.result",{role:"qa",result:result("changes"),specVersion:1},"w","run");store.event("workflow.transition",{to:{stage:"TEST",status:"FAILED"},reason:{summary:"Tests failed"},actor:{type:"orchestrator",id:"runner"}},"w","run");store.event("command.rejected",{commentId:7,login:"owner",command:"retry",error:"still running"},"w");
-  const turns=workflowThread(store,"w");assert.deepEqual(turns.map(turn=>turn.kind),["prompt","result","event","human"]);assert.equal(turns[0].available,true);assert.deepEqual((turns[0].manifest as any).sections,{Issue:20});assert.equal(JSON.stringify(turns).includes("/private/"),false);assert.match(String(turns[1].markdown),/Verification Engineer report/);assert.equal(turns[3].login,"owner");
+  const turns=workflowThread(store,"w");assert.deepEqual(turns.map(turn=>turn.kind),["execution","event","human"]);assert.equal(turns[0].available,true);assert.deepEqual((turns[0].manifest as any).sections,{Issue:20});assert.equal(JSON.stringify(turns).includes("/private/"),false);assert.match(String(turns[0].markdown),/Verification Engineer report/);assert.equal(turns[0].outcome,"changes");assert.equal(turns[2].login,"owner");
   fs.unlinkSync(path.join(runDir,"prompt.md"));assert.equal(workflowThread(store,"w")[0].available,false);
  }finally{store.db.close();config.dataDir=previous;fs.rmSync(root,{recursive:true,force:true});}
 });
@@ -104,5 +104,27 @@ test("workflow thread shows each publishable milestone as pending, published wit
   status=statusPublication(store,"w");assert.equal(status.error,"GitHub unavailable");assert.equal(status.attempts,3);assert.equal(status.needsAttention,true);
   store.db.prepare("UPDATE work_items SET published_presentation_revision=2 WHERE id='w'").run();store.setMetadata(statusPublicationKey("w"),{status:"published",commentId:5,url:"https://github.com/owner/demo/issues/1#issuecomment-5",publishedAt:"now"});
   status=statusPublication(store,"w");assert.deepEqual({behind:status.behind,url:status.url,error:status.error},{behind:false,url:"https://github.com/owner/demo/issues/1#issuecomment-5",error:null});
+ }finally{store.db.close();}
+});
+
+test("workflow thread groups the prompt, result and outcome of one execution and reports its start and duration",()=>{
+ const store=new Store(":memory:");try{
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status) VALUES('w',1,'owner/demo','now','now','{}','BUILD','RUNNING')").run();
+  store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,finished_at) VALUES('run-1','w','developer','BUILD','succeeded','2026-09-22T17:30:00.000Z','2026-09-22T17:31:42.000Z')").run();
+  store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at) VALUES('run-2','w','qa','TEST','running','2026-09-22T17:32:00.000Z')").run();
+  store.event("execution.started",{role:"developer",selection:{provider:"codex",model:"gpt-5-codex"}},"w","run-1");
+  store.event("agent.result",{role:"developer",result:result("pass"),specVersion:1},"w","run-1");
+  store.event("execution.finished",{status:"succeeded",code:0},"w","run-1");
+  store.event("workflow.transition",{to:{stage:"TEST",status:"QUEUED"},reason:{summary:"Builder passed"},actor:{type:"agent",id:"developer"}},"w","run-1");
+  store.event("execution.started",{role:"qa",selection:{provider:"claude",model:"sonnet"}},"w","run-2");
+  const turns=workflowThread(store,"w");
+  assert.deepEqual(turns.map(turn=>turn.kind),["execution","event","execution"]);
+  const finished=turns[0],running=turns[2];
+  assert.deepEqual({role:finished.role,provider:finished.provider,model:finished.model,outcome:finished.outcome,status:finished.status,startedAt:finished.startedAt,finishedAt:finished.finishedAt,durationMs:finished.durationMs},{role:"developer",provider:"codex",model:"gpt-5-codex",outcome:"pass",status:"succeeded",startedAt:"2026-09-22T17:30:00.000Z",finishedAt:"2026-09-22T17:31:42.000Z",durationMs:102_000});
+  assert.match(String(finished.markdown),/Implementation Engineer report/);
+  assert.deepEqual({role:running.role,status:running.status,outcome:running.outcome,durationMs:running.durationMs,result:running.result},{role:"qa",status:"running",outcome:undefined,durationMs:null,result:undefined});
+  assert.equal(turns.filter(turn=>turn.executionId==="run-1").length,1,"one turn per execution");
+  store.event("execution.finished",{status:"timed_out",interruptionReason:"user-cancel"},"w","run-2");
+  const timedOut=workflowThread(store,"w")[2];assert.equal(timedOut.status,"timed_out");assert.match(String(timedOut.reason),/exceeded its time limit/);assert.equal(turns.filter(turn=>turn.executionId==="run-2").length,1);
  }finally{store.db.close();}
 });

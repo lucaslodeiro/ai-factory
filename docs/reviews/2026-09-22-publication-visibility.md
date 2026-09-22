@@ -51,3 +51,13 @@ With the conversation open in Chromium, the adopted issue #10 was driven through
 | Recovered | read-only port resolved the real status comment | local 11, published 11 | no note; publication holds comment `5780966837` |
 
 Events recorded for the item: `github.publish_failed` once, `github.publish_stalled` once, `github.published` four times. See [issue-10-status-stalled.png](2026-09-22-publication-visibility/issue-10-status-stalled.png).
+
+## Follow-up: one turn per execution, timing, and the status note as a row
+
+Owner feedback on the issue #10 captures: group the prompt and the result of one execution, show start time and duration, and apply the three small fixes to the status note.
+
+- `workflowThread` now emits one `execution` turn per run: the prompt manifest, the result, and a non-successful process outcome share it. Start, finish and duration come from the `executions` row when it exists, otherwise from the event timestamps, so a continued item without local executions still shows them. Status is the row's status (`running` with a finish time reads as failed), else derived from the result or the finish event.
+- The dashboard renders the turn as "Agent execution · role · outcome or process state" with the publication badge, provider, model, start time and duration in the header; the result in the body; and the manifest and reveal button under a collapsed Agent input block. A running execution shows how long it has been running.
+- The status note is a row with a state dot, the comment link and the next step: "Retries on the next daemon cycle" after a failure, "Check `gh auth status` and the daemon log" once three attempts failed. API URLs are stripped from the visible error and kept in the tooltip; the same applies to the per-turn error. Published badges carry the confirmation time in their tooltip.
+- Issue #10 adopted again: the conversation drops from 18 to 14 turns and each execution shows its start and duration. Because the owner's local `executions` rows are not available here, the reconstruction starts each execution at the time its stage was queued in the published history and ends it at its result time; the durations in the captures are those bounds, not measured process times. The status note walkthrough was repeated on the grouped conversation with the same result (behind → failed → stalled → recovered, no navigation).
+- Tests: **workflow thread groups the prompt, result and outcome of one execution and reports its start and duration** (`test/workflow-chat.test.ts`); the vm rendering test and the dashboard API test were updated to the new turn shape. `npm test` — **373 pass, 0 fail, 0 skipped**.
