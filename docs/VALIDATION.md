@@ -97,6 +97,8 @@ Derived from the cache metrics of issue #6, where Builder and Tester executions 
 
 The previous "roles share a byte-identical prefix" invariant was retired with that evidence. It has not been re-measured against a live run: confirm on the next issue that cached tokens per execution fall rather than rise.
 
+To make that confirmation possible, `execution.finished` now records cache reads and cache writes apart from each other. The `cached_tokens` column keeps their sum, so no schema change and no fresh data directory are required. The distinction matters because a write is a miss that populated the cache and a read is a hit: summed, a cache improvement and a cache regression are indistinguishable. Read the split with `npm run factory -- events <work-item-id>`.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.
