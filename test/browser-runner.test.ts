@@ -3,10 +3,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {browserRequired,browserExecutable,createBrowserRunner} from '../src/browser-runner.mjs';
+import {browserRequired,browserExecutable,browserInstructions,createBrowserRunner} from '../src/browser-runner.mjs';
 test('browser capability only activates for delivery projects using browser tools',()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'factory-browser-test-'));
  try{assert.equal(browserRequired(root,'developer'),false);fs.writeFileSync(path.join(root,'package.json'),JSON.stringify({devDependencies:{'@playwright/test':'*'}}));assert.equal(browserRequired(root,'developer'),true);assert.equal(browserRequired(root,'qa'),true);assert.equal(browserRequired(root,'product-architect'),false);assert.equal(browserExecutable('/missing/factory-browser'),undefined)}finally{fs.rmSync(root,{recursive:true,force:true})}
+});
+test('browser instructions select a transient project preview and prohibit persistent services',()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'factory-browser-test-'));
+ try{
+  fs.writeFileSync(path.join(root,'package.json'),JSON.stringify({scripts:{'local:start':'node service.mjs start','local:serve':'node server.mjs'},devDependencies:{playwright:'*'}}));
+  const instructions=browserInstructions(root);
+  assert.match(instructions,/npm run local:serve/);
+  assert.match(instructions,/ephemeral child process/);
+  assert.match(instructions,/Never register a system service or use launchctl/);
+  assert.doesNotMatch(instructions,/npm run local:start/);
+ }finally{fs.rmSync(root,{recursive:true,force:true})}
 });
 test('runner verifies debugging and browser loopback load; cleanup removes only its profile',async()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'factory-browser-test-')),exe=path.join(root,'chrome'),record=path.join(root,'profile');

@@ -21,6 +21,13 @@ test("the orchestrator owns Git synchronization because worktree metadata is pro
  assert.match(output,/not an environment blocker/i);
 });
 
+test("workers use transient verification servers instead of registering host services",()=>{
+ const output=promptContract("developer","codex");
+ assert.match(output,/Do not register, bootstrap, restart, or manage a system service from the worktree/i);
+ assert.match(output,/launchctl, systemctl, service managers and persistent process managers are host-owned/i);
+ assert.match(output,/transient child process.*does not need to survive the worker/i);
+});
+
 test("Architect distinguishes a required Design blocker from an optional research limitation",()=>{
  const output=promptContract("product-architect","codex");
  assert.match(output,/initial Architect pairs a real blocker with outcome questions/);

@@ -51,4 +51,15 @@ export function createBrowserRunner(executable,{timeoutMs=15000}={}){
  };
  return {start,close};
 }
-export function browserInstructions(){return `\n\nFactory browser runner:\nRead process.env.FACTORY_BROWSER_REPORT for the host supervisor readiness evidence. If FACTORY_BROWSER_STATUS is unavailable, the report explains why; do not assume the browser is ready.\nUse process.env.FACTORY_BROWSER_CDP_URL with playwright.chromium.connectOverCDP() instead of chromium.launch(). For Lighthouse use Number(process.env.FACTORY_BROWSER_DEBUG_PORT) as its port; do not call chrome-launcher. Adapt browser test scripts to support these environment variables while retaining standalone local launch as fallback. Start the project preview server in the assigned worktree, and connect to it over 127.0.0.1. This browser uses a fresh temporary profile, with no user cookies or credentials. Do not navigate to file:// URLs or read host files through the browser. The supervisor owns browser lifecycle; do not kill the browser or invoke Browser.close via CDP. Close your own contexts. These probes establish infrastructure readiness only; run all required project checks and record their evidence. If the connection fails, report environment-blocked with the actual error.\n`;}
+function previewScript(cwd){
+ try{
+  const scripts=JSON.parse(fs.readFileSync(path.join(cwd,'package.json'),'utf8')).scripts??{};
+  return ['local:serve','preview','dev','serve'].find(name=>typeof scripts[name]==='string');
+ }catch{return undefined;}
+}
+export function browserInstructions(cwd){
+ const script=previewScript(cwd);
+ const preview=script
+  ? `For this project, use \`npm run ${script}\` as the transient preview server when one is needed.`
+  : 'Use the project\'s ordinary non-persistent development or preview command when one is needed.';
+ return `\n\nFactory browser runner:\nRead process.env.FACTORY_BROWSER_REPORT for the host supervisor readiness evidence. If FACTORY_BROWSER_STATUS is unavailable, the report explains why; do not assume the browser is ready.\nUse process.env.FACTORY_BROWSER_CDP_URL with playwright.chromium.connectOverCDP() instead of chromium.launch(). For Lighthouse use Number(process.env.FACTORY_BROWSER_DEBUG_PORT) as its port; do not call chrome-launcher. Adapt browser test scripts to support these environment variables while retaining standalone local launch as fallback. ${preview} Start it as an ephemeral child process of this execution, wait for its loopback port, and connect to it over 127.0.0.1. It only needs to live during this execution: the Factory worker supervisor owns its process group and cleans it up afterwards. Never register a system service or use launchctl, systemctl, service, pm2, or a persistent local-start script to run a preview. This browser uses a fresh temporary profile, with no user cookies or credentials. Do not navigate to file:// URLs or read host files through the browser. The supervisor owns browser lifecycle; do not kill the browser or invoke Browser.close via CDP. Close your own contexts. These probes establish infrastructure readiness only; run all required project checks and record their evidence. If the connection fails, report environment-blocked with the actual error.\n`;}
