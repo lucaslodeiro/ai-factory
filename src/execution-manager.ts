@@ -78,8 +78,10 @@ export class ExecutionManager {
         const stdoutFile=path.join(logDir,"stdout.log"),stderrFile=path.join(logDir,"stderr.log");
         const stdout=readOutput(stdoutFile,10_000_000),stderr=readOutput(stderrFile,512*1024,true);
         const usage=extractTokenUsage(selection?.provider,stdout.text,stderr.text);
-        this.store.db.prepare("UPDATE executions SET status=?,finished_at=?,exit_code=?,input_tokens=?,output_tokens=?,cached_tokens=?,total_tokens=?,interruption_reason=? WHERE id=?")
-          .run(status, new Date().toISOString(), providerExitCode, usage?.inputTokens ?? null,usage?.outputTokens ?? null,usage?.cachedTokens ?? null,usage?.totalTokens ?? null,interruptionReason??null,id);
+        // Without a completion record the supervisor died before the agent was reaped, so the agent may
+        // still be running: retry must prove its process group is gone first.
+        this.store.db.prepare("UPDATE executions SET status=?,finished_at=?,exit_code=?,input_tokens=?,output_tokens=?,cached_tokens=?,total_tokens=?,interruption_reason=?,recovery_pending=? WHERE id=?")
+          .run(status, new Date().toISOString(), providerExitCode, usage?.inputTokens ?? null,usage?.outputTokens ?? null,usage?.cachedTokens ?? null,usage?.totalTokens ?? null,interruptionReason??null,completion?0:1,id);
         this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage,activity:extractProviderActivity(stdout.text),interruptionReason }, workItemId, id);
         if (status !== "succeeded") return reject(new Error(`Execution ${id} ${status}${spawnError ? ': ' + spawnError.message : ''}`));
         try {
@@ -99,15 +101,30 @@ export function assertExecutionStopped(store: Store, workItemId: string) {
   if (store.db.prepare("SELECT id FROM executions WHERE work_item_id=? AND status='running'").get(workItemId)) throw new ExecutionNotStoppedError("Wait for the active process to stop before retry");
   const pending = store.db.prepare("SELECT id,pid FROM executions WHERE work_item_id=? AND recovery_pending=1").all(workItemId) as { id: string; pid: number | null }[];
   for (const run of pending) {
-    if (run.pid) {
-      try { process.kill(-run.pid, 0); }
+    // The supervisor and the agent lead separate process groups: an agent whose supervisor was
+    // killed keeps writing to the worktree, so both groups must be gone before a retry starts.
+    for (const group of [run.pid, workerGroup(run.id)]) {
+      if (!group) continue;
+      try { process.kill(-group, 0); }
       catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== "ESRCH") throw new ExecutionNotStoppedError(`Cannot establish whether interrupted run ${run.id} has exited`);
-        store.db.prepare("UPDATE executions SET recovery_pending=0 WHERE id=?").run(run.id);
-        continue;
+        if ((e as NodeJS.ErrnoException).code === "ESRCH") continue;
+        throw new ExecutionNotStoppedError(`Cannot establish whether interrupted run ${run.id} has exited`);
       }
-      throw new ExecutionNotStoppedError(`Interrupted run ${run.id} still has a live process group; wait for supervisor cleanup before retry.`);
+      throw new ExecutionNotStoppedError(group === run.pid
+        ? `Interrupted run ${run.id} still has a live process group; wait for supervisor cleanup before retry.`
+        : `Interrupted run ${run.id} left its agent process group ${group} running without a supervisor; stop it before retry.`);
     }
     store.db.prepare("UPDATE executions SET recovery_pending=0 WHERE id=?").run(run.id);
   }
+}
+function workerGroup(runId: string): number | undefined {
+  let saved: unknown;
+  try { saved = JSON.parse(fs.readFileSync(path.join(config.dataDir, "runs", runId, "worker.json"), "utf8")); }
+  catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw new ExecutionNotStoppedError(`Cannot read the agent process record of interrupted run ${runId}`);
+  }
+  const record = saved as { runId?: unknown; pid?: unknown } | null;
+  if (record?.runId !== runId || !Number.isSafeInteger(record.pid) || (record.pid as number) <= 1) throw new ExecutionNotStoppedError(`Agent process record of interrupted run ${runId} is invalid`);
+  return record.pid as number;
 }

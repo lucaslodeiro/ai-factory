@@ -7,11 +7,12 @@ import {browserRequired,browserExecutable,createBrowserRunner} from "./browser-r
 let browser;
 const [runId, logDir] = process.argv.slice(2);
 let stopping = false, finished = false, worker, stopStatus, stopReason, force;
-const record = (status, code, reason) => {
-  const file = path.join(logDir, "completion.json");
-  fs.writeFileSync(file + ".tmp", JSON.stringify({ runId, status, code, reason, finishedAt: new Date().toISOString() }), { mode: 0o600 });
+const writeAtomic = (name, value) => {
+  const file = path.join(logDir, name);
+  fs.writeFileSync(file + ".tmp", JSON.stringify(value), { mode: 0o600 });
   fs.renameSync(file + ".tmp", file);
 };
+const record = (status, code, reason) => writeAtomic("completion.json", { runId, status, code, reason, finishedAt: new Date().toISOString() });
 async function terminate(status, reason, escalate) {
   if (finished) return;
   if (stopping) {
@@ -53,6 +54,12 @@ process.stdin.on("end", async () => {
     }
     if(stopping)return;
     worker = spawn(command, args, { cwd, env, detached: true, stdio: ["pipe", "inherit", "inherit"] });
+    // The worker leads its own process group, so the supervisor's group says nothing about it once
+    // the supervisor is gone. Recovery reads this record to prove the agent has really stopped.
+    if (worker.pid) {
+      try { writeAtomic("worker.json", { runId, pid: worker.pid }); }
+      catch (error) { console.error(`Could not record the agent process: ${error.message}`); terminate("failed", "worker-record-failed", true); }
+    }
     worker.stdin?.on("error", () => {});
     worker.stdin?.end(input);
     worker.on("error", error => { console.error(error.message); });

@@ -74,7 +74,13 @@ export class Workspaces implements WorkspacePort {
   const reject=(reason:string,files:string[])=>{if(files.length)throw new Error(`${reason}: ${files.map(file=>JSON.stringify(file)).join(", ")}`);};
   reject("Potential credential file in changes; inspect before commit",dirty.filter(secretPath));
   if(role==="product-architect"||role==="reviewer")reject(`${role} cannot continue with uncommitted worktree changes`,dirty);
-  if(role==="qa")reject("Verification Engineer cannot continue with a protected non-test file (only tests and declared verification artifacts are allowed)",dirty.filter(file=>!verificationPathAllowed(file,verificationPolicy(cwd))));
+  if(role==="qa"){
+   // These files are about to be committed and pushed, usually left by a Tester that timed out
+   // before check() ran, so they meet the same rules check() applies to a finished execution.
+   const policy=verificationPolicy(cwd);
+   reject("Verification Engineer cannot continue with a protected non-test file (only tests and declared verification artifacts are allowed)",dirty.filter(file=>!verificationPathAllowed(file,policy)));
+   reject("Verification Engineer cannot continue with verification artifacts/tests that are links or executable evidence",dirty.filter(file=>this.unsafeVerificationFile(cwd,file,policy)));
+  }
   if(dirty.length)this.commit(cwd,`factory: work in progress for #${issue}`,branch);
   const baseFetch=spawnSync(config.gitCommand,["fetch","origin",base],{cwd,encoding:"utf8",timeout:60000,maxBuffer:10_000_000});
   if(baseFetch.status!==0)return{before,after:this.head(cwd),merged:[],skipped:baseFetch.stderr||baseFetch.error?.message||"git fetch failed"};
@@ -104,6 +110,10 @@ export class Workspaces implements WorkspacePort {
   const dirty=[...new Set([...gitOutput(cwd,["diff","--name-only","--no-renames","-z","HEAD"]).split("\0"),...gitOutput(cwd,["ls-files","--others","--exclude-standard","-z"]).split("\0")].filter(Boolean))];
   return{head:this.head(cwd),files,dirty,policy:policy??verificationPolicy(cwd)};
  }
+ private unsafeVerificationFile(cwd:string,file:string,policy:VerificationPolicy){
+  if(this.unsafeParent(cwd,file))return true;
+  try{const stat=fs.lstatSync(path.join(cwd,file));return !stat.isFile()||stat.nlink>1||(policy.evidenceDirectories.some(dir=>file.startsWith(dir+"/"))&&Boolean(stat.mode&0o111));}catch(error){if((error as NodeJS.ErrnoException).code==="ENOENT")return false;throw error;}
+ }
  private unsafeParent(cwd:string,file:string){const parts=file.split("/");parts.pop();let parent=cwd;for(const part of parts){parent=path.join(parent,part);try{if(fs.lstatSync(parent).isSymbolicLink())return true;}catch(error){if((error as NodeJS.ErrnoException).code!=="ENOENT")throw error;}}return false;}
  check(cwd: string, role: string, before: string, branch: string, baseline?:WorkspaceSnapshot) {
   this.assertBranch(cwd, branch);
@@ -118,10 +128,7 @@ export class Workspaces implements WorkspacePort {
   if(role==="qa"){
    const policy=baseline?.policy??verificationPolicy(cwd);
    reject("Verification Engineer modified a protected non-test file (only tests and declared verification artifacts are allowed)",changed.filter(file=>!verificationPathAllowed(file,policy)));
-   reject("Verification artifacts/tests must be regular files, not links or executable evidence",changed.filter(file=>{
-    if(this.unsafeParent(cwd,file))return true;
-    try{const stat=fs.lstatSync(path.join(cwd,file));return !stat.isFile()||stat.nlink>1||(policy.evidenceDirectories.some(dir=>file.startsWith(dir+"/"))&&Boolean(stat.mode&0o111));}catch(error){if((error as NodeJS.ErrnoException).code==="ENOENT")return false;throw error;}
-   }));
+   reject("Verification artifacts/tests must be regular files, not links or executable evidence",changed.filter(file=>this.unsafeVerificationFile(cwd,file,policy)));
   }
   if(baseline&&(role==="qa"||role==="reviewer"))reject("Pre-existing uncommitted code or configuration needs review before verification can be accepted (not attributed to this agent)",baseline.dirty.filter(file=>!changed.includes(file)&&!verificationArtifactAllowed(file,baseline.policy)));
   return changed;

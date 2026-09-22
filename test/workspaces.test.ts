@@ -99,3 +99,20 @@ test("sync enforces the prepared role policy before preserving interrupted work"
   fs.writeFileSync(path.join(cwd,"partial.txt"),"work\n");ws.sync(cwd,branch,"main","developer");assert.notEqual(ws.head(cwd),before);assert.match(git(cwd,["log","-1","--format=%s"]),/work in progress for #7/);
  }finally{config.repoDir=old.repoDir;config.dataDir=old.dataDir;fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test("sync refuses to commit links or executable evidence left by an interrupted Tester",()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"factory-sync-qa-")),old={repoDir:config.repoDir,dataDir:config.dataDir};
+ try{
+  const origin=path.join(root,"origin.git"),seed=path.join(root,"seed"),repo=path.join(root,"repo"),branch="factory/issue-12";
+  fs.mkdirSync(origin);fs.mkdirSync(seed);git(origin,["init","--bare"]);git(seed,["init"]);git(seed,["config","user.name","Factory Test"]);git(seed,["config","user.email","factory@example.test"]);
+  fs.writeFileSync(path.join(seed,"app.txt"),"production\n");git(seed,["add","."]);git(seed,["commit","-m","base"]);git(seed,["branch","-M","main"]);git(seed,["remote","add","origin",origin]);git(seed,["push","-u","origin","main"]);
+  git(root,["clone","--branch","main",origin,repo]);git(repo,["config","user.name","Factory Test"]);git(repo,["config","user.email","factory@example.test"]);config.repoDir=repo;config.dataDir=path.join(root,"data");
+  const ws=new Workspaces(),cwd=ws.ensure("work-12",branch),head=git(cwd,["rev-parse","HEAD"]),evidence=path.join(cwd,"evidence");fs.mkdirSync(evidence);
+  const refused=(setup:()=>void,cleanup:()=>void)=>{setup();try{assert.throws(()=>ws.sync(cwd,branch,"main","qa"),/links or executable evidence/);assert.equal(git(cwd,["rev-parse","HEAD"]),head);}finally{cleanup();}};
+  refused(()=>fs.symlinkSync("../app.txt",path.join(evidence,"report.md")),()=>fs.rmSync(path.join(evidence,"report.md")));
+  refused(()=>fs.writeFileSync(path.join(evidence,"result.json"),"{}\n",{mode:0o755}),()=>fs.rmSync(path.join(evidence,"result.json")));
+  refused(()=>fs.linkSync(path.join(cwd,"app.txt"),path.join(evidence,"copy.txt")),()=>fs.rmSync(path.join(evidence,"copy.txt")));
+  fs.writeFileSync(path.join(evidence,"report.md"),"partial\n");ws.sync(cwd,branch,"main","qa");
+  assert.match(git(cwd,["log","--format=%s","-1"]),/factory: work in progress for #12/);assert.equal(git(cwd,["show","--name-only","--format=","HEAD"]),"evidence/report.md");
+ }finally{config.repoDir=old.repoDir;config.dataDir=old.dataDir;fs.rmSync(root,{recursive:true,force:true});}
+});
