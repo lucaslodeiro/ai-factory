@@ -13,12 +13,23 @@ test("a streaming provider is counted per event and grouped by whatever type it 
  assert.equal(activity.turns,null);
 });
 
-test("a single result envelope contributes the turn count and API duration it states",()=>{
- const activity=extractProviderActivity(JSON.stringify({type:"result",subtype:"success",is_error:false,num_turns:37,duration_api_ms:41234,result:"{}"}))!;
+test("a single result envelope contributes the turns, durations and cost it states",()=>{
+ // Field names taken from a real Claude Code result envelope, not from documentation.
+ const activity=extractProviderActivity(JSON.stringify({type:"result",subtype:"success",is_error:false,num_turns:37,duration_api_ms:41234,duration_ms:52000,total_cost_usd:0.734,result:"{}"}))!;
  assert.equal(activity.events,1);
  assert.equal(activity.turns,37);
  assert.equal(activity.apiDurationMs,41234);
+ assert.equal(activity.durationMs,52000);
+ assert.equal(activity.costUsd,0.734);
  assert.deepEqual(activity.eventTypes,{result:1});
+});
+
+test("a provider that reports no cost leaves it unknown instead of zero",()=>{
+ const activity=extractProviderActivity(JSON.stringify({type:"progress"}))!;
+ assert.equal(activity.costUsd,null);
+ assert.equal(activity.durationMs,null);
+ // A free run really reported as zero is kept, because zero is a measurement and null is not.
+ assert.equal(extractProviderActivity(JSON.stringify({type:"result",total_cost_usd:0}))!.costUsd,0);
 });
 
 test("output that carries no JSON object records no activity rather than a fabricated zero",()=>{

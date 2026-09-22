@@ -11,6 +11,9 @@ export interface ProviderActivity {
   eventTypes: Record<string, number>;
   turns: number | null;
   apiDurationMs: number | null;
+  durationMs: number | null;
+  // Reported by the provider, not computed here. It is an estimate and can differ from the bill.
+  costUsd: number | null;
 }
 
 const count = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
@@ -40,5 +43,11 @@ export function extractProviderActivity(stdout: string): ProviderActivity | null
   // A provider that states its own turn count is believed over any count derived from the stream.
   const reported = objects.map(value => count(value.num_turns ?? (value as {numTurns?: unknown}).numTurns)).filter(value => value !== null);
   const api = objects.map(value => count(value.duration_api_ms ?? (value as {durationApiMs?: unknown}).durationApiMs)).filter(value => value !== null);
-  return { events: objects.length, eventTypes, turns: reported.at(-1) ?? null, apiDurationMs: api.at(-1) ?? null };
+  const wall = objects.map(value => count(value.duration_ms ?? (value as {durationMs?: unknown}).durationMs)).filter(value => value !== null);
+  const cost = objects.map(value => {
+    const reportedCost = value.total_cost_usd ?? (value as {totalCostUsd?: unknown}).totalCostUsd;
+    return typeof reportedCost === "number" && Number.isFinite(reportedCost) && reportedCost >= 0 ? reportedCost : null;
+  }).filter(value => value !== null);
+  return { events: objects.length, eventTypes, turns: reported.at(-1) ?? null, apiDurationMs: api.at(-1) ?? null,
+    durationMs: wall.at(-1) ?? null, costUsd: cost.at(-1) ?? null };
 }

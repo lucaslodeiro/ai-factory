@@ -111,6 +111,14 @@ This is a hypothesis, not a finding: nothing yet shows that a Builder with a map
 
 Read the comparison with `npm run factory -- activity <work-item-id>`, which groups the finished executions of one work item by role and prints runs, provider events, events per run, reported turns, cache reads and cache writes apart, output tokens and the event-type histogram. `factory events` dumps raw payload JSON and is not readable for this.
 
+## Benchmark scenario — 2026-09-22
+
+`docs/BENCHMARK.md` defines a fixed, cheap issue that crosses every gate, and `factory benchmark <work-item-id>` measures one run of it: per role and in total, executions, turns, provider events, prompt bytes, input and output tokens, cache reads and writes apart, total tokens, provider-reported cost and duration, and each role's final outcome; then the workflow transition path with the reason for each move, and a health line counting failed executions, invalid results, interruptions and discarded runs. `--save` writes a baseline and `--baseline` prints the deltas.
+
+Cost and wall duration are newly captured. The Claude result envelope was inspected directly rather than taken from documentation: it carries `num_turns`, `duration_ms`, `duration_api_ms` and `total_cost_usd`, all of which the factory previously discarded.
+
+Verified against a seeded database covering all four roles, a saved baseline and a comparison run; the aggregation, the null handling and the transition path are covered by `test/benchmark.test.ts`. No real benchmark run has been recorded yet, so there is no baseline in `docs/benchmark/` and no variance figure. Three runs of the same issue are needed before any single difference can be called a result.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

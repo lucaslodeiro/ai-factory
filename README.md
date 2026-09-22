@@ -30,7 +30,7 @@ The human remains the authority for major product/architecture decisions and any
 - Slack sends structured workflow updates with direct links and clear actions; decisions happen in GitHub.
 - Agents may use the Internet. Secrets are exposed only when explicitly configured.
 
-The consolidated requirements and traceability matrix are in [SPEC.md](SPEC.md).
+The consolidated requirements and traceability matrix are in [SPEC.md](SPEC.md). [docs/BENCHMARK.md](docs/BENCHMARK.md) defines a fixed, cheap issue used to measure the system end to end and compare one run against the next.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) and [INSTALL.md](INSTALL.md).
 
@@ -117,7 +117,7 @@ Update, daemon stop/restart and daemon-affecting configuration changes first lis
 
 The global update area checks `origin` before enabling update and runs through an independent job while the dashboard reconnects. Configuration groups credentials, project, runtime, dashboard, direct role model selection, tools, access and notifications. Slack uses the global **Save and apply** flow, durable delivery retry and a test action. If the dashboard cannot start, use `ai-factory configure`, `ai-factory doctor` and `ai-factory service start all`.
 
-Factory commands include `doctor`, `start`, `start-issue`, `issue show`, `status`, `events`, `activity`, `cancel`, `retry`, `refresh-list`, `stop --pause-active`, `notifications`, `slack-test`, `models`, `sync`, and `repo <check|sync|publish|clear|restore>`.
+Factory commands include `doctor`, `start`, `start-issue`, `issue show`, `status`, `events`, `activity`, `benchmark`, `cancel`, `retry`, `refresh-list`, `stop --pause-active`, `notifications`, `slack-test`, `models`, `sync`, and `repo <check|sync|publish|clear|restore>`.
 
 Each installation executes agent stages sequentially and is identified by `FACTORY_INSTANCE_NAME`, which defaults to its hostname. Multiple installations may share a repository and GitHub account: assignment to that account offers work, while the single `factory-instance:<name>` label selects the installation. Unassign to pause for a human, reassign to resume, or change the instance label to move work. The issue itself carries the current state index, specifications and milestone facts needed by another installation; stable work continues automatically, while remotely active work waits for the explicit **Continue anyway** action. The local daemon lock still prevents duplicate processes using the same data directory.
 

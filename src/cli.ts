@@ -20,6 +20,8 @@ import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {readIssueState} from "./workflow-github.js";
 import {activityRow,summarizeActivity} from "./execution-activity.js";
+import {buildBenchmarkReport,compareBenchmarks,type BenchmarkReport,type ExecutionSample} from "./benchmark.js";
+import fs from "node:fs";
 const p = new Command().name("factory").description("Local AI Software Factory").version("0.2.0");
 p.command("models").argument("[id]").description("Show model policy or preview role selections for a work item").action(id => {
  console.log(`Model policy: ${modelPolicyVersion}`);
@@ -67,6 +69,55 @@ p.command("activity").argument("[id]").description("Per-role provider activity a
   console.table(summarizeActivity(rows));
   console.log("events: JSON objects the provider wrote to stdout. A streaming provider reports many; a provider that returns one result envelope reports one.");
   console.log("Builder receives a repository map and Tester does not, so compare their events per run on the same work item.");
+ } finally { s.db.close(); }
+});
+p.command("benchmark").argument("<id>").option("--save <file>","Write this run as a baseline")
+ .option("--baseline <file>","Compare this run against a saved baseline").option("--role <role>","Role to compare, or ALL")
+ .description("Measure one benchmark run: tokens, cache, turns, cost, duration, transitions and health")
+ .action((id:string,options:{save?:string;baseline?:string;role?:string}) => {
+ const s = new Store();
+ try {
+  const item=s.db.prepare("SELECT issue_number,stage,status,attempt,correction_cycles FROM work_items WHERE id=?").get(id) as
+   {issue_number:number;stage:string|null;status:string|null;attempt:number;correction_cycles:number}|undefined;
+  if (!item) { console.log(`Unknown work item ${id}`); process.exitCode=1; return; }
+  const finished=new Map<string,{usage:Record<string,unknown>;activity:Record<string,unknown>}>();
+  for (const row of s.db.prepare("SELECT run_id,payload FROM events WHERE work_item_id=? AND type='execution.finished'").all(id) as Array<{run_id:string;payload:string}>) {
+   try { const payload=JSON.parse(row.payload); finished.set(row.run_id,{usage:payload.usage ?? {},activity:payload.activity ?? {}}); } catch {}
+  }
+  const number=(value:unknown)=>typeof value === "number" && Number.isFinite(value) ? value : null;
+  const executions=(s.db.prepare("SELECT id,role,stage,status,started_at,finished_at,prompt_bytes FROM executions WHERE work_item_id=? ORDER BY started_at").all(id) as
+   Array<{id:string;role:string;stage:string|null;status:string;started_at:string|null;finished_at:string|null;prompt_bytes:number|null}>).map<ExecutionSample>(row=>{
+    const extra=finished.get(row.id),usage=extra?.usage ?? {},activity=extra?.activity ?? {};
+    return {role:row.role,stage:row.stage,status:row.status,startedAt:row.started_at,finishedAt:row.finished_at,promptBytes:row.prompt_bytes,
+     inputTokens:number(usage.inputTokens),outputTokens:number(usage.outputTokens),cacheReadTokens:number(usage.cacheReadTokens),
+     cacheWriteTokens:number(usage.cacheWriteTokens),totalTokens:number(usage.totalTokens),turns:number(activity.turns),events:number(activity.events),
+     eventTypes:(activity.eventTypes && typeof activity.eventTypes === "object" ? activity.eventTypes : {}) as Record<string,number>,
+     costUsd:number(activity.costUsd),durationMs:number(activity.durationMs)};
+   });
+  const transitions=(s.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id").all(id) as Array<{payload:string}>)
+   .map(row=>{ try { const payload=JSON.parse(row.payload); return {from:`${payload.from?.stage}/${payload.from?.status}`,to:`${payload.to?.stage}/${payload.to?.status}`,reason:payload.reason?.code ?? null}; } catch { return null; } })
+   .filter((value):value is {from:string;to:string;reason:string|null}=>value!==null);
+  const outcomes=(s.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='agent.result' ORDER BY id").all(id) as Array<{payload:string}>)
+   .map(row=>{ try { const payload=JSON.parse(row.payload); return {role:String(payload.role),outcome:String(payload.result?.outcome)}; } catch { return null; } })
+   .filter((value):value is {role:string;outcome:string}=>value!==null);
+  const eventCounts=Object.fromEntries((s.db.prepare("SELECT type,COUNT(*) n FROM events WHERE work_item_id=? GROUP BY type").all(id) as Array<{type:string;n:number}>).map(row=>[row.type,row.n]));
+  const specVersions=((s.db.prepare("SELECT COUNT(*) n FROM specs WHERE work_item_id=?").get(id) as {n:number}).n);
+  const report=buildBenchmarkReport({workItemId:id,issueNumber:item.issue_number,stage:item.stage,status:item.status,
+   attempt:item.attempt,correctionCycles:item.correction_cycles,specVersions,executions,transitions,outcomes,eventCounts});
+
+  console.log(`Issue #${report.issueNumber} · ${report.stage}/${report.status} · attempt ${report.attempt} · correction cycles ${report.correctionCycles} · SPEC versions ${report.specVersions}`);
+  console.table(report.roles);
+  console.table([report.totals]);
+  console.log(`Transitions (${report.transitions.count}): ${report.transitions.path.join(" -> ")}`);
+  console.log(`Reasons: ${Object.entries(report.transitions.reasons).map(([reason,count])=>`${reason}:${count}`).join(" ") || "none"}`);
+  console.log(`Health: ${Object.entries(report.health).map(([key,value])=>`${key}:${value}`).join(" ")}`);
+  if (options.baseline) {
+   const previous=JSON.parse(fs.readFileSync(options.baseline,"utf8")) as BenchmarkReport;
+   console.log(`\nAgainst ${options.baseline}, role ${options.role ?? "ALL"}:`);
+   console.table(compareBenchmarks(previous,report,options.role ?? "ALL"));
+   console.log("A metric missing on either side compares as null: it was never measured, so it is not an improvement.");
+  }
+  if (options.save) { fs.writeFileSync(options.save,JSON.stringify(report,null,2)); console.log(`\nBaseline written to ${options.save}`); }
  } finally { s.db.close(); }
 });
 p.command("notifications").action(() => {
