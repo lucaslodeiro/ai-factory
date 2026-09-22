@@ -179,6 +179,16 @@ Both commands now accept a work item id, an issue number with or without a leadi
 
 Covered by `test/work-item-reference.test.ts`, including the exact truncated UUID that produced the report.
 
+## Update left the daemon stopped — 2026-09-22
+
+Reported from a real run: `ai-factory update` printed `Stopped daemon`, completed, and never brought it back. `ai-factory update` invokes `scripts/update.sh --restart-services`, documented as "stop loaded services, update, then restore them".
+
+The script asked the same question two different ways. It decided what to restore with `grep -Eq "state = (running|active)"` against `services.sh status`, while the restore path itself checks `grep -q '^daemon: loaded'`. Being loaded is the operator's intent and survives a process that is momentarily down; `state = running` is today's weather. A daemon that was loaded but whose process was not running at that instant read as "not meant to be running" and was left stopped. Both places now ask whether the service is loaded.
+
+The update also stayed silent about it. The outcome was one line, `Start it explicitly when ready`, inside a wall of build output, and the service summary that follows lists commands without saying anything is down. The update now names any service that is not loaded when it finishes, on stderr, with the command to start it.
+
+Not reproduced locally: `launchctl` exists only on macOS, so this is reasoned from the script and the reported symptom rather than from a failing test. `scripts/test-maintenance.mjs` still passes, and it does not cover this path.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

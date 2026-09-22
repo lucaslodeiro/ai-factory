@@ -78,7 +78,7 @@ if ( "$restart_services" || "$start_services" ) && [[ ${AI_FACTORY_SKIP_SERVICES
     restore_dashboard=true
   elif ! "$restore_intent_known"; then
     for service in daemon dashboard; do
-      if bash scripts/services.sh status "$service" 2>/dev/null | grep -Eq "state = (running|active)"; then
+      if bash scripts/services.sh status "$service" 2>/dev/null | grep -q "^$service: loaded"; then
         if [[ $service == daemon ]]; then restore_daemon=true; else restore_dashboard=true; fi
       fi
     done
@@ -109,6 +109,11 @@ if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
     if "$restore_daemon"; then AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start daemon; fi
     if "$restore_dashboard" && ! bash scripts/services.sh status dashboard 2>/dev/null | grep -q '^dashboard: loaded'; then AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start dashboard; fi
   fi
+  for service in daemon dashboard; do
+    if ! bash scripts/services.sh status "$service" 2>/dev/null | grep -q "^$service: loaded"; then
+      echo "The $service is not running after this update. Start it with: ai-factory service start $service" >&2
+    fi
+  done
   node scripts/service-summary.mjs
 fi
 mkdir -p "$home/data"
