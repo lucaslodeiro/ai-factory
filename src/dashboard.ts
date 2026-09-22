@@ -287,13 +287,16 @@ export function versionInfo(root: string): VersionInfo {
   return { number,revision,branch,display:`v${number} · ${revision}` };
 }
 function gitSucceeds(root:string,args:string[],timeout=10000){return spawnSync(config.gitCommand,args,{cwd:root,encoding:"utf8",timeout}).status===0}
-function checkUpdate(root: string) {
+function checkUpdate(root: string, runtime?: VersionInfo) {
   const current = versionInfo(root);
   const currentFull = git(root,["rev-parse","HEAD"]);
   git(root,["fetch","origin",`refs/heads/${current.branch}`],30000);
   const latestFull = git(root,["rev-parse","FETCH_HEAD"]);
   const latest = git(root,["rev-parse","--short","FETCH_HEAD"]);
-  if(latestFull===currentFull)return {current,latest,available:false,checkedAt:new Date().toISOString()};
+  if(latestFull===currentFull){
+    if(runtime&&runtime.revision!==current.revision)return {current,latest,available:true,runtimeStale:true,message:`The downloaded version ${latest} is ready to activate. Restart the Factory services to run it.`,checkedAt:new Date().toISOString()};
+    return {current,latest,available:false,checkedAt:new Date().toISOString()};
+  }
   if(gitSucceeds(root,["merge-base","--is-ancestor",currentFull,latestFull]))return {current,latest,available:true,checkedAt:new Date().toISOString()};
   if(gitSucceeds(root,["merge-base","--is-ancestor",latestFull,currentFull]))return {current,latest,available:false,localAhead:true,message:"The installed engine already includes this version and has local commits that are not published to main.",checkedAt:new Date().toISOString()};
   return {current,latest,available:true,mergeLocal:true,message:"The update will merge the downloaded version with local engine commits. A conflict leaves the installation unchanged.",checkedAt:new Date().toISOString()};
@@ -559,7 +562,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if((req.method==="GET"||req.method==="POST")&&url.pathname.match(/^\/api\/executions\/[^/]+\/prompt$/)){const id=url.pathname.split("/")[3];if(req.method==="POST"){const body=await readBody(req) as {acknowledgeSensitive?:boolean};if(body.acknowledgeSensitive!==true)return json(res,400,{error:"Acknowledge that prompts may contain sensitive source and issue context"});}if(!store.db.prepare("SELECT 1 FROM executions WHERE id=?").get(id))return json(res,404,{error:"Unknown execution"});const artifact=promptArtifact(id);if(!artifact.available)return json(res,404,{error:"Exact prompt content was pruned by retention or is unavailable"});return json(res,200,{id,warning:"Sensitive execution context. Do not share without review.",prompt:artifact.prompt,truncated:artifact.truncated});}
       if(req.method==="GET"&&url.pathname==="/api/repository")return json(res,200,new RepositoryMaintenance(store).check());
       if(req.method==="POST"&&url.pathname==="/api/repository") {const body=await readBody(req) as {action?:string;workItemId?:string;confirmPath?:string;repeatPath?:string;maintenanceId?:string},repository=new RepositoryMaintenance(store);if(body.action==="check")return json(res,200,repository.check());if(body.action==="sync")return json(res,200,repository.sync("dashboard"));if(body.action==="publish"&&body.workItemId)return json(res,200,repository.publish(body.workItemId,"dashboard"));if(body.action==="clear"){requireMaintenance(store,body.maintenanceId,["user-pause"]);if(body.maintenanceId)maintenanceCoordinator(store).markStarted(body.maintenanceId);try{return json(res,200,repository.clear(body.confirmPath??"",body.repeatPath??"","dashboard"));}finally{if(body.maintenanceId)maintenanceCoordinator(store).complete(body.maintenanceId);}}if(body.action==="restore")return json(res,200,repository.restore("dashboard"));return json(res,400,{error:"Unknown or incomplete repository action"});}
-      if (req.method === "POST" && url.pathname === "/api/update/check") return json(res,200,checkUpdate(settingsRoot));
+      if (req.method === "POST" && url.pathname === "/api/update/check") return json(res,200,checkUpdate(settingsRoot,runtimeVersion));
       if (req.method === "GET" && url.pathname === "/healthz") return json(res,200,{ok:true});
       if (req.method === "PUT" && url.pathname === "/api/settings") {
         const body = await readBody(req) as { values?: Record<string,unknown>; clearSecrets?: string[];maintenanceId?:string;startDaemonWhenReady?:boolean };
@@ -610,7 +613,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       }
       if (req.method === "POST" && url.pathname === "/api/update") {
         const body=await readBody(req) as {maintenanceId?:string};requireMaintenance(store,body.maintenanceId,["update"]);
-        const check = checkUpdate(settingsRoot);
+        const check = checkUpdate(settingsRoot,runtimeVersion);
         if (!check.available) return json(res,409,{error:`${check.current.display} is already up to date`,check});
         if(body.maintenanceId)maintenanceCoordinator(store).markStarted(body.maintenanceId);
         return json(res,202,{...runUpdate(settingsRoot,body.maintenanceId),check});

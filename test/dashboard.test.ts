@@ -22,16 +22,16 @@ test("dashboard serves readable state and queues daemon controls", async () => {
   const fakeGit = path.join(settingsRoot,"git");
   fs.writeFileSync(fakeGit,`#!/usr/bin/env bash
 case "$*" in
-  "rev-parse --short HEAD") echo abc1234;;
+  "rev-parse --short HEAD") if [[ -f "$PWD/runtime-stale" ]]; then echo d9d0c3b; else echo abc1234; fi;;
   "rev-parse --is-inside-work-tree") echo true;;
   "symbolic-ref --quiet --short HEAD") if [[ -f "$PWD/detached-head" ]]; then exit 1; else echo main; fi;;
-  "rev-parse HEAD") echo abc1234abc1234abc1234abc1234abc1234abc1;;
+  "rev-parse HEAD") if [[ -f "$PWD/runtime-stale" ]]; then echo d9d0c3bd9d0c3bd9d0c3bd9d0c3bd9d0c3bd9d0; else echo abc1234abc1234abc1234abc1234abc1234abc1; fi;;
   "config user.name") echo 'AI Factory Test';;
   "config user.email") echo 'factory@example.com';;
   "remote get-url origin") echo 'https://github.com/owner/demo.git';;
   "fetch origin refs/heads/main") ;;
-  "rev-parse FETCH_HEAD") if [[ -f "$PWD/up-to-date" ]]; then echo abc1234abc1234abc1234abc1234abc1234abc1; else echo def5678def5678def5678def5678def5678def5; fi;;
-  "rev-parse --short FETCH_HEAD") if [[ -f "$PWD/up-to-date" ]]; then echo abc1234; else echo def5678; fi;;
+  "rev-parse FETCH_HEAD") if [[ -f "$PWD/runtime-stale" ]]; then echo d9d0c3bd9d0c3bd9d0c3bd9d0c3bd9d0c3bd9d0; elif [[ -f "$PWD/up-to-date" ]]; then echo abc1234abc1234abc1234abc1234abc1234abc1; else echo def5678def5678def5678def5678def5678def5; fi;;
+  "rev-parse --short FETCH_HEAD") if [[ -f "$PWD/runtime-stale" ]]; then echo d9d0c3b; elif [[ -f "$PWD/up-to-date" ]]; then echo abc1234; else echo def5678; fi;;
   "merge-base --is-ancestor abc1234abc1234abc1234abc1234abc1234abc1 def5678def5678def5678def5678def5678def5") ;;
   *) echo "unexpected git args: $*" >&2; exit 1;;
 esac
@@ -258,6 +258,10 @@ echo "$*" >> "$PWD/update-actions.log"
     fs.writeFileSync(path.join(settingsRoot,"up-to-date"),"");
     const currentCheck = await fetch(`http://127.0.0.1:${port}/api/update/check`,{method:"POST"}).then(response => response.json()) as any;
     assert.equal(currentCheck.available,false);
+    fs.writeFileSync(path.join(settingsRoot,"runtime-stale"),"");
+    const activationCheck=await fetch(`http://127.0.0.1:${port}/api/update/check`,{method:"POST"}).then(response => response.json()) as any;
+    assert.equal(activationCheck.available,true);assert.equal(activationCheck.runtimeStale,true);assert.match(activationCheck.message,/ready to activate/);
+    fs.unlinkSync(path.join(settingsRoot,"runtime-stale"));
     const unnecessaryUpdate = await fetch(`http://127.0.0.1:${port}/api/update`,{method:"POST"});
     assert.equal(unnecessaryUpdate.status,409);
     const unknownService = await fetch(`http://127.0.0.1:${port}/api/services`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({service:"worker",action:"restart"})});
