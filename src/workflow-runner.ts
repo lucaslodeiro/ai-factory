@@ -57,7 +57,20 @@ export class WorkflowRunner {
   const head=this.workspaces.head(cwd),verified=(JSON.parse((this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string}).context||"{}") as {verifiedHeads?:Record<string,string>}).verifiedHeads;
   if(projection.stage==="REVIEW"&&verified?.TEST!==head){new WorkflowProjections(this.store).transition({workItemId,expectedRevision:projection.revision,stage:"TEST",status:"QUEUED",actor:{type:"orchestrator",id:"sync"},source:{},reason:{code:"code-changed",summary:"Code changed since the last verified test run"}});return true;}
   let localRuntimeUrl:string|undefined;
-  if(this.localRuntime&&browserRequired(cwd,role)){const runtime=await this.localRuntime.ensure(workItemId,cwd);if(runtime){localRuntimeUrl=runtime.url;this.store.event("runtime.local_started",{script:runtime.script,url:runtime.url,log:runtime.log},workItemId);}}
+  let localRuntimeFailure:string|undefined;
+  // The supervised preview server is an aid, not a requirement: without it the agent is told to
+  // start its own ephemeral one, and a role that genuinely cannot proceed reports
+  // environment-blocked. Failing the stage instead turned an unneeded convenience into a hard
+  // failure on issue 9, which adds a pure string function and never asked for a browser.
+  if(this.localRuntime&&browserRequired(cwd,role)){
+   try{
+    const runtime=await this.localRuntime.ensure(workItemId,cwd);
+    if(runtime){localRuntimeUrl=runtime.url;this.store.event("runtime.local_started",{script:runtime.script,url:runtime.url,log:runtime.log},workItemId);}
+   }catch(error){
+    localRuntimeFailure=sanitizeFailureEvidence(error instanceof Error?error.message:String(error),600);
+    this.store.event("runtime.local_failed",{reason:localRuntimeFailure},workItemId);
+   }
+  }
   const specVersion=this.specVersion(workItemId),assessment=this.assessment(workItemId,specVersion),active=this.records.activeRequest(workItemId);
   const consultation=active?.payload.kind==="request"&&active.payload.owner==="architect";
   const selection=selectModel(role,assessment,projection.correctionCycles,consultation),budget=resolveContextBudget(role,selection);
@@ -75,7 +88,10 @@ export class WorkflowRunner {
    const invalidResultRetry=currentContext.invalidResultRetry?.stage===projection.stage&&currentContext.invalidResultRetry.attempt===projection.attempt?currentContext.invalidResultRetry:undefined;
    const assembled=this.assembler.assemble({workItemId,role,specVersion,budgetBytes:budget.bytes-contractBytes-2,budgetSource:budget.source,issue:{title:context.title??`Issue #${row.issue_number}`,body:context.body??""},repositoryMap:role==="developer"?this.workspaces.repositoryMap?.(cwd):undefined,changedFiles:(reviewerContext??summary??retrySummary)?.files,diffStat:(reviewerContext??summary??retrySummary)?.stat,diffPath:reviewerContext?.path,qaEvidence:role==="reviewer"?this.latestResult(workItemId,"qa"):undefined,previousAttempt,rejectedResult:invalidResultRetry?.message?{message:invalidResultRetry.message}:undefined});
 
-  const instructions=`${contract}\n\n${assembled.markdown}`,before=baseline?.head??this.workspaces.head(cwd);
+  // Saying the Factory already tried and failed saves the agent from spending turns rediscovering
+  // the same broken preview server for itself.
+  const runtimeNote=localRuntimeFailure?`\n\nThe Factory tried to start this project's preview server for you and it did not come up: ${localRuntimeFailure} Starting it yourself will probably fail the same way. If this task does not need a running preview, ignore it and continue. If it does, report an environment-blocked finding naming that cause instead of retrying it repeatedly.`:"";
+  const instructions=`${contract}\n\n${assembled.markdown}${runtimeNote}`,before=baseline?.head??this.workspaces.head(cwd);
    preparing=false;started=this.scheduler.begin(workItemId);
    this.updateContext(workItemId,{attemptStart:{executionId:started.executionId,head:before,startedAt:new Date().toISOString(),stage:projection.stage}},currentContext.previousAttempt?["previousAttempt"]:[]);
    this.store.event("model.selected",{role,specVersion,selection,budget},workItemId,started.executionId);

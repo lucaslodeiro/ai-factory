@@ -165,7 +165,11 @@ Both failures are also diagnosed by name. Before this, `failureDiagnosis` fell t
 
 Covered by `test/local-runtime-url.test.ts`, including the exact three-origin shape issue 6 produced. Not yet confirmed against a live run: issue 9 has not been retried.
 
-**Still open, not fixed here.** `browserRequired` starts a preview server whenever the target repository declares a browser dependency, regardless of what the issue asks for. The benchmark issue adds a pure string function and needs no browser. That is cost and fragility on every issue in a repository that happens to contain browser tests, and changing it is a design decision rather than a repair.
+**The preview server is no longer allowed to fail a stage.** `browserRequired` still fires on the target repository's dependencies rather than on what the issue asks for, but that is now a cost rather than a hazard: when the preview server does not start, the run continues without it, `runtime.local_failed` records why, and the agent is told the Factory already tried and failed so it does not spend turns rediscovering the same broken server. A role that genuinely cannot proceed reports `environment-blocked`, which is the mechanism the contracts already have.
+
+Narrowing the trigger itself was considered and rejected. Requiring a preview script alongside the dependency would be a regression: a browser test can exercise a static build or an external URL with no preview server at all, and `browserInstructions` already handles that case. Deciding from the issue text or the specification would be a guess in both directions. The honest fix is to make the capability optional, not to predict when it is wanted.
+
+**A second defect surfaced while verifying this.** The Cursor adapter never forwarded `localRuntimeUrl`, so a Cursor-configured Builder or Tester was told to start its own preview server beside the one the Factory had already started and was supervising. Issue 6 ended with exactly that: two runtimes of the same worktree alive at once, which its Tester recorded as the deferred finding QA-1. Codex and Claude forwarded it correctly; only Cursor, added earlier the same day, did not. `test/local-runtime-optional.test.ts` now asserts all three adapters pass it through.
 
 ## Remaining operational validation
 
