@@ -19,7 +19,7 @@ import type {TaskAssessment} from "./types.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {readIssueState} from "./workflow-github.js";
-import {activityRow,summarizeActivity} from "./execution-activity.js";
+import {activityRow,summarizeActivity,progression} from "./execution-activity.js";
 import {buildBenchmarkReport,compareBenchmarks,comparable,type BenchmarkReport,type ExecutionSample,type Verification} from "./benchmark.js";
 import {spawnSync as spawnVerifier} from "node:child_process";
 import {fileURLToPath} from "node:url";
@@ -69,8 +69,15 @@ p.command("activity").argument("[id]").description("Per-role provider activity a
     .map(row=>{ let payload:unknown; try{payload=JSON.parse(row.payload);}catch{payload={};} return activityRow(payload,row.role,row.stage,row.startedAt); });
   if (!rows.length) { console.log(id?`No finished executions recorded for ${id}`:"No finished executions recorded"); return; }
   console.table(summarizeActivity(rows));
+  const sequence=progression(rows);
+  if (sequence.length) {
+   console.log("\nRuns in order, for each role that ran more than once:");
+   console.table(sequence);
+   console.log("vsFirstPercent compares each run against that role's first run, by cost when the provider reports it and by tokens otherwise.");
+   console.log("A second Builder run that is not cheaper than the first means the role starts over every correction cycle.");
+  }
   console.log("events: JSON objects the provider wrote to stdout. A streaming provider reports many; a provider that returns one result envelope reports one.");
-  console.log("Builder receives a repository map and Tester does not, so compare their events per run on the same work item.");
+  console.log("Builder receives a repository map and Tester does not. Compare them on events per run with Codex, and on turns with Claude, whose event count is always 1.");
  } finally { s.db.close(); }
 });
 p.command("benchmark").argument("<id>").option("--save <file>","Write this run as a baseline")

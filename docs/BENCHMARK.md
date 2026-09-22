@@ -123,6 +123,13 @@ because a value nobody measured is not an improvement.
   cycles, invalid results and the transition path then say how expensively it
   got there. A change that halves tokens while adding a correction cycle made
   the system worse.
+- **A second run of a role should be cheaper than its first.** When a
+  correction cycle happens, `ai-factory activity <work-item-id>` lists each
+  role's runs in order with `vsFirstPercent`. The second Builder already has
+  the findings and the code it wrote, so it should cost less. If it costs more,
+  the role is starting over every cycle, and fixing that is worth more than any
+  prompt-size work: one cycle re-runs Builder and Tester, about 90% of an
+  issue.
 - **One run is not a measurement.** These are agents: the same issue varies
   between runs. Treat a difference under roughly 10% as noise until you have
   run the benchmark three times and seen the spread for yourself.

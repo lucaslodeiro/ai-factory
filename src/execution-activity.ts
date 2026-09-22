@@ -6,6 +6,33 @@ export interface ActivityRow {
   role:string; stage:string|null; startedAt:string|null;
   events:number|null; eventTypes:Record<string,number>; turns:number|null;
   cacheReadTokens:number|null; cacheWriteTokens:number|null; outputTokens:number|null;
+  totalTokens:number|null; costUsd:number|null; durationMs:number|null;
+}
+
+// Does a correction cycle get cheaper? The second run of a role already has the findings and the
+// code it wrote, so it should cost less than the first. If it does not, the role is starting over
+// each cycle, and that is worth more than any prompt-size work: one cycle re-runs Builder and
+// Tester, which on a measured issue was 90% of its cost.
+export interface RunProgression {
+  role:string; run:number; stage:string|null; turns:number|null; events:number|null;
+  totalTokens:number|null; costUsd:number|null; durationMs:number|null; vsFirstPercent:number|null;
+}
+export function progression(rows:ActivityRow[]):RunProgression[] {
+  const byRole=new Map<string,ActivityRow[]>();
+  for (const row of rows) byRole.set(row.role,[...(byRole.get(row.role) ?? []),row]);
+  const result:RunProgression[]=[];
+  for (const [role,unsorted] of byRole) {
+    if (unsorted.length < 2) continue;
+    const runs=[...unsorted].sort((a,b)=>String(a.startedAt ?? "").localeCompare(String(b.startedAt ?? "")));
+    // Cost is the comparison when the provider reports it, tokens otherwise. A run missing both
+    // compares as unknown rather than as an improvement.
+    const basis=(row:ActivityRow)=>row.costUsd ?? row.totalTokens;
+    const first=basis(runs[0]);
+    runs.forEach((row,index)=>result.push({role,run:index+1,stage:row.stage,turns:row.turns,events:row.events,
+      totalTokens:row.totalTokens,costUsd:row.costUsd,durationMs:row.durationMs,
+      vsFirstPercent:index===0 || first === null || !first || basis(row) === null ? null : Math.round(((basis(row)!-first)/first)*1000)/10}));
+  }
+  return result;
 }
 export interface RoleActivity {
   role:string; runs:number; events:number|null; eventsPerRun:number|null; turns:number|null;
@@ -35,5 +62,6 @@ export function activityRow(payload:unknown, role:string, stage:string|null, sta
   const number=(value:unknown)=>typeof value === "number" && Number.isFinite(value) ? value : null;
   const types=activity.eventTypes && typeof activity.eventTypes === "object" ? activity.eventTypes as Record<string,number> : {};
   return {role,stage,startedAt,events:number(activity.events),eventTypes:types,turns:number(activity.turns),
-    cacheReadTokens:number(usage.cacheReadTokens),cacheWriteTokens:number(usage.cacheWriteTokens),outputTokens:number(usage.outputTokens)};
+    cacheReadTokens:number(usage.cacheReadTokens),cacheWriteTokens:number(usage.cacheWriteTokens),outputTokens:number(usage.outputTokens),
+    totalTokens:number(usage.totalTokens),costUsd:number(activity.costUsd),durationMs:number(activity.durationMs)};
 }

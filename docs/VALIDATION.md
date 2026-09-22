@@ -131,6 +131,14 @@ The role contracts grew as a result: Architect 10601 to 11885 bytes, Builder 100
 
 Not yet validated against a live run: nothing shows how often the Tester was returning minor findings before, so the size of the saving is unknown. The benchmark's transition path and reason codes are what will show it.
 
+## Correction-cycle progression — 2026-09-22
+
+`ai-factory activity <work-item-id>` now lists, for each role that ran more than once, its runs in chronological order with turns, tokens, cost, duration and `vsFirstPercent` against that role's own first run. It compares on provider-reported cost when available and on tokens otherwise; a run missing both compares as unknown rather than as an improvement.
+
+This answers the open question behind the largest cost item: a second Builder run already has the findings and the code it wrote, so it should be cheaper than the first. If it is not, the role re-explores on every correction cycle, and that is worth more than any prompt-size work.
+
+Not answered yet. The issue #6 figures reported two Builder executions of 541,087 and 4,882,278 tokens, which would be a ninefold increase on the second, but totals alone cannot say whether the smaller one was a cycle, an interrupted attempt or a short first try. Verified against a seeded work item with one correction cycle; covered by `test/execution-activity.test.ts`.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.
