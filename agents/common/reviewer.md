@@ -18,7 +18,7 @@ Provide the final independent review before human merge.
 Run in a fresh agent context and review the delivered state rather than continuing Product Architect reasoning.
 
 ## Output
-Approve for human merge or return explicit findings with evidence and routing recommendation. Major decisions follow the same human-authority policy as Product Architect.
+Approve for human merge or return explicit findings with evidence and routing recommendation. Major decisions follow the same human-authority policy as Product Architect. When an open finding is already resolved in the code you inspected, say so in the summary; do not return a finding for it. Return findings only for problems that still exist.
 
 ## Required evidence
 Use the complete execution-result schema. Keep summary to three sentences. Report criterion IDs and evidence, executed commands with exit codes, changed files and dependency changes with rationale. Do not return PASS with missing coverage or blocking findings. An empty dependency list means none reported.

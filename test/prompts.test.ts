@@ -18,6 +18,11 @@ test("every role receives the concise summary contract",()=>{
  for(const role of ["product-architect","developer","qa","reviewer"] as const)assert.match(promptContract(role,"codex"),/summary is at most three sentences and 600 characters/);
 });
 
+test("Reviewer acknowledges already resolved findings in the summary",()=>{
+ const output=promptContract("reviewer","codex");
+ assert.match(output,/When an open finding is already resolved in the code you inspected, say so in the summary; do not return a finding for it\. Return findings only for problems that still exist\./);
+});
+
 test("the orchestrator owns Git synchronization because worktree metadata is protected",()=>{
  const output=promptContract("developer","codex");
  assert.match(output,/orchestrator synchronizes the assigned branch and remote base immediately before this execution/i);
