@@ -2,6 +2,7 @@ import fs from "node:fs";
 import {normalizedRepository} from "./repository-setup.js";
 import { spawnSync } from "node:child_process";
 import { config } from "./config.js";
+import { agentProviders, type AgentProvider } from "./types.js";
 import { Store } from "./storage.js";
 import { workflowProjectionProblems } from "./workflow-doctor.js";
 import {GitHubAdapter,type GitHubPort} from "./adapters/github.js";
@@ -11,12 +12,24 @@ export function doctor(existingStore?:Store,github:Pick<GitHubPort,"repository">
  let ok = true;
  const check = (name: string, pass: boolean) => { ok = ok && pass; console.log(`${pass ? "✓" : "✗"} ${name}`); };
  check("Node >= 22", Number(process.versions.node.split(".")[0]) >= 22);
- for (const [cmd, args] of [[config.gitCommand, ["--version"]], [process.env.GH_COMMAND ?? "gh", ["auth", "status"]], [config.codexCommand, ["--version"]], [config.claudeCommand, ["--version"]]] as [string, string[]][]) {
+ for (const [cmd, args] of [[config.gitCommand, ["--version"]], [process.env.GH_COMMAND ?? "gh", ["auth", "status"]]] as [string, string[]][]) {
   check(cmd, spawnSync(cmd, args, { encoding: "utf8", timeout: 15000 }).status === 0);
  }
- check("Codex authentication", spawnSync(config.codexCommand, ["login", "status"], { encoding: "utf8", timeout: 15000 }).status === 0);
- const auth = spawnSync(config.claudeCommand, ["auth", "status"], { encoding: "utf8", timeout: 15000 });
- try { check("Claude authentication", auth.status === 0 && JSON.parse(auth.stdout).loggedIn === true); } catch { check("Claude authentication", false); }
+ const probe = (cmd: string, args: string[]) => spawnSync(cmd, args, { encoding: "utf8", timeout: 15000 });
+ const jsonFlag = (output: ReturnType<typeof probe>, flag: string) => { try { return output.status === 0 && JSON.parse(output.stdout)[flag] === true; } catch { return false; } };
+ const providerChecks: Record<AgentProvider, { label: string; command: string; authenticated: () => boolean }> = {
+  codex: { label: "Codex", command: config.codexCommand, authenticated: () => probe(config.codexCommand, ["login", "status"]).status === 0 },
+  claude: { label: "Claude", command: config.claudeCommand, authenticated: () => jsonFlag(probe(config.claudeCommand, ["auth", "status"]), "loggedIn") },
+  cursor: { label: "Cursor", command: config.cursorCommand, authenticated: () => jsonFlag(probe(config.cursorCommand, ["status", "--format", "json"]), "isAuthenticated") },
+ };
+ // A provider costs nothing until a role selects it: only selected CLIs must be installed and authenticated.
+ const selected = new Set(Object.values(config.roles).map(routing => routing.provider));
+ for (const provider of agentProviders) {
+  if (!selected.has(provider)) continue;
+  const { label, command, authenticated } = providerChecks[provider];
+  check(command, probe(command, ["--version"]).status === 0);
+  check(`${label} authentication`, authenticated());
+ }
  check("GITHUB_REPOSITORY", /^[^/]+\/[^/]+$/.test(config.repo));
  check("FACTORY_APPROVERS", config.approvers.length > 0);
  console.log(`Instance: ${config.instanceName}`);

@@ -392,9 +392,10 @@ function setupReadiness(root: string, credentials: ReturnType<typeof credentialS
     id:"github-credential",label:github?.installed ? "Connect GitHub." : "Install the GitHub CLI and connect GitHub.",group:"connections",
   });
   const selectedProviders = new Set(["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"].map(role => readDashboardSetting(root,`${role}_PROVIDER`) as CredentialProvider));
-  for (const provider of ["claude","codex"] as const) {
+  const providerLabels = {claude:"Claude",codex:"Codex",cursor:"Cursor"} as const;
+  for (const provider of ["claude","codex","cursor"] as const) {
     if (!selectedProviders.has(provider)) continue;
-    const status = credential(provider), label = provider === "claude" ? "Claude" : "Codex";
+    const status = credential(provider), label = providerLabels[provider];
     require(Boolean(status?.installed && status.connected),{
       id:`${provider}-credential`,label:status?.installed ? `Connect ${label}; at least one agent role uses it.` : `Install and connect ${label}; at least one agent role uses it.`,group:"connections",
     });
@@ -432,10 +433,10 @@ function dashboardSettings(root: string) {
   } : {});
   const providers=["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"].map(role=>readDashboardSetting(root,`${role}_PROVIDER`));
   const setupProvider=providers.every(value=>value===providers[0])?providers[0]:"codex";
-  settings.fields.push({key:"AGENT_PROVIDER",label:"Agent provider",description:"Use one provider for all four roles during first-time setup.",group:"connections",type:"select",options:[{value:"codex",label:"Codex"},{value:"claude",label:"Claude"}],value:setupProvider,required:true,restart:"daemon",setup:true,setupOnly:true} as any);
+  settings.fields.push({key:"AGENT_PROVIDER",label:"Agent provider",description:"Use one provider for all four roles during first-time setup.",group:"connections",type:"select",options:[{value:"codex",label:"Codex"},{value:"claude",label:"Claude"},{value:"cursor",label:"Cursor"}],value:setupProvider,required:true,restart:"daemon",setup:true,setupOnly:true} as any);
   return {...settings,readiness:setupReadiness(root,credentials)};
 }
-function expandSetupProvider(values:Record<string,unknown>){const result={...values};if("AGENT_PROVIDER" in result){const provider=result.AGENT_PROVIDER;if(provider!=="codex"&&provider!=="claude")throw new Error("AGENT_PROVIDER: choose codex or claude");for(const role of["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"])result[`${role}_PROVIDER`]=provider;delete result.AGENT_PROVIDER;}return result;}
+function expandSetupProvider(values:Record<string,unknown>){const result={...values};if("AGENT_PROVIDER" in result){const provider=result.AGENT_PROVIDER;if(provider!=="codex"&&provider!=="claude"&&provider!=="cursor")throw new Error("AGENT_PROVIDER: choose codex, claude or cursor");for(const role of["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"])result[`${role}_PROVIDER`]=provider;delete result.AGENT_PROVIDER;}return result;}
 function saveConfiguration(store: Store, root: string, values: Record<string,unknown>, clearSecrets: string[] = [],maintenanceId?:string,startDaemonWhenReady=false) {
   const candidate=expandSetupProvider(values);
   const currentRepository=readDashboardSetting(root,"GITHUB_REPOSITORY").trim(),nextRepository=typeof candidate.GITHUB_REPOSITORY==="string"?candidate.GITHUB_REPOSITORY.trim():currentRepository;
@@ -592,7 +593,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       }
       if (req.method === "POST" && url.pathname === "/api/credentials/connect") {
         const body = await readBody(req) as { provider?: string };
-        if (!['github','claude','codex'].includes(body.provider ?? "")) return json(res,400,{error:"Unknown credential provider"});
+        if (!['github','claude','codex','cursor'].includes(body.provider ?? "")) return json(res,400,{error:"Unknown credential provider"});
         return json(res,202,connectCredential(settingsRoot,body.provider as CredentialProvider));
       }
       if (req.method === "PUT" && url.pathname === "/api/slack") {
@@ -618,7 +619,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       const files: Record<string,string> = {
         "/":"index.html", "/index.html":"index.html", "/app.js":"app.js", "/styles.css":"styles.css",
         "/assets/brands/github.svg":"assets/brands/github.svg", "/assets/brands/claude.svg":"assets/brands/claude.svg",
-        "/assets/brands/openai.svg":"assets/brands/openai.svg", "/assets/brands/git.svg":"assets/brands/git.svg",
+        "/assets/brands/openai.svg":"assets/brands/openai.svg", "/assets/brands/cursor.svg":"assets/brands/cursor.svg", "/assets/brands/git.svg":"assets/brands/git.svg",
         "/assets/brands/slack.svg":"assets/brands/slack.svg",
         "/favicon.svg":"favicon.svg",
       };

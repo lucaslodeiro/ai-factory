@@ -16,7 +16,7 @@ fs.writeFileSync(path.join(bin,'uname'),`#!/bin/sh\necho Darwin\n`,{mode:0o755})
 fs.writeFileSync(path.join(bin,'launchctl'),`#!/bin/sh\nprintf '%s\\n' "$*" >> "$AI_FACTORY_LAUNCHCTL_LOG"\n[ "$1" != print ]\n`,{mode:0o755});
 const home=path.join(temp,'home');fs.mkdirSync(home);
 const env={...process.env,HOME:home,PATH:`${bin}:${process.env.PATH}`,AI_FACTORY_SKIP_SERVICES:'1'};
-for(const k of Object.keys(env)) if(/^(FACTORY_|GITHUB_|CODEX_COMMAND|CLAUDE_COMMAND|GIT_COMMAND)/.test(k)) delete env[k];
+for(const k of Object.keys(env)) if(/^(FACTORY_|GITHUB_|CODEX_COMMAND|CLAUDE_COMMAND|CURSOR_COMMAND|GIT_COMMAND)/.test(k)) delete env[k];
 function run(command,args,cwd=temp,ok=true){const r=spawnSync(command,args,{cwd,env,encoding:'utf8'}); if(ok)assert.equal(r.status,0,r.stderr+r.stdout);else assert.notEqual(r.status,0);return r;}
 try {
 run(process.execPath,[path.join(source,'scripts/test-dashboard-config.mjs')]);

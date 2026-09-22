@@ -107,7 +107,7 @@ PATH="$retry_path" \
 [[ -f "$retry_home/data/install.json" ]]
 [[ ! -e "$retry_home/.uninstall" ]]
 
-for executable in node npm git gh codex claude; do
+for executable in node npm git gh codex claude cursor-agent; do
   cat > "$fixture/bin/$executable" <<'MOCK'
 #!/usr/bin/env bash
 exit 0
@@ -240,7 +240,7 @@ printf '%s\n' > "$fixture/expected"
 cmp "$fixture/expected" "$fixture/args"
 
 # Provider installers must never open their console or read from the terminal.
-for executable in codex claude; do
+for executable in codex claude cursor-agent; do
   cat > "$fixture/bin/$executable" <<'MOCK'
 #!/usr/bin/env bash
 exit 1
@@ -280,6 +280,17 @@ printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/claude"
 chmod +x "$HOME/.local/bin/claude"
 PROVIDER
     ;;
+  *"https://cursor.com/install"*)
+    cat > "$output" <<'PROVIDER'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ ${CI:-} == outer && ${NO_COLOR:-} == outer && ${TERM:-} == outer ]]
+if IFS= read -r _; then echo 'Cursor installer received interactive input' >&2; exit 33; fi
+printf 'cursor noninteractive\n' >> "$PROVIDER_LOG"
+printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/cursor-agent"
+chmod +x "$HOME/.local/bin/cursor-agent"
+PROVIDER
+    ;;
   *"https://raw.githubusercontent.com/lucaslodeiro/ai-factory/main/scripts/install-core.sh"*)
     cat > "$output" <<'PRIVATE_INSTALLER'
 #!/usr/bin/env bash
@@ -290,10 +301,10 @@ PRIVATE_INSTALLER
 esac
 MOCK
 chmod +x "$fixture/bin/curl"
-rm -f "$fixture/home/.local/bin/codex" "$fixture/home/.local/bin/claude" "$fixture/provider.log"
+rm -f "$fixture/home/.local/bin/codex" "$fixture/home/.local/bin/claude" "$fixture/home/.local/bin/cursor-agent" "$fixture/provider.log"
 PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" MOCK_ARGS="$fixture/args" PROVIDER_LOG="$fixture/provider.log" CI=outer NO_COLOR=outer TERM=outer \
   bash "$root/scripts/install-macos.sh" >/dev/null
-printf 'codex noninteractive\nclaude noninteractive\n' > "$fixture/providers-expected"
+printf 'codex noninteractive\nclaude noninteractive\ncursor noninteractive\n' > "$fixture/providers-expected"
 cmp "$fixture/providers-expected" "$fixture/provider.log"
 
 # A missing Apple toolchain stops cleanly instead of opening the macOS GUI.

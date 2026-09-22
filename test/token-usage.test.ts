@@ -8,3 +8,8 @@ test("extracts reported Codex and Claude token usage without estimating missing 
   {inputTokens:100,outputTokens:25,cachedTokens:25,totalTokens:150});
  assert.equal(extractTokenUsage("codex","no usage", ""),null);
 });
+
+test("Cursor reports no token usage today and is read generically if its envelope ever carries one", () => {
+ assert.equal(extractTokenUsage("cursor",JSON.stringify({type:"result",subtype:"success",is_error:false,duration_ms:12,result:"{}"}),""),null);
+ assert.deepEqual(extractTokenUsage("cursor",JSON.stringify({type:"result",result:"{}",usage:{input_tokens:7,output_tokens:3}}),""),{inputTokens:7,outputTokens:3,cachedTokens:null,totalTokens:10});
+});

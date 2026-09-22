@@ -18,7 +18,7 @@ test("dashboard serves readable state and queues daemon controls", async () => {
   const previousFactoryHome = process.env.AI_FACTORY_HOME;
   process.env.AI_FACTORY_HOME=settingsRoot;
   const previousGit = config.gitCommand,previousDataDir=config.dataDir;
-  const previousCodex = config.codexCommand, previousClaude = config.claudeCommand, previousGh = process.env.GH_COMMAND;
+  const previousCodex = config.codexCommand, previousClaude = config.claudeCommand, previousCursor = config.cursorCommand, previousGh = process.env.GH_COMMAND;
   const fakeGit = path.join(settingsRoot,"git");
   fs.writeFileSync(fakeGit,`#!/usr/bin/env bash
 case "$*" in
@@ -37,7 +37,7 @@ case "$*" in
 esac
 `,{mode:0o755});
   config.gitCommand=fakeGit;
-  const fakeGh = path.join(settingsRoot,"gh"), fakeCodex = path.join(settingsRoot,"codex"), fakeClaude = path.join(settingsRoot,"claude");
+  const fakeGh = path.join(settingsRoot,"gh"), fakeCodex = path.join(settingsRoot,"codex"), fakeClaude = path.join(settingsRoot,"claude"), fakeCursor = path.join(settingsRoot,"cursor-agent");
   fs.writeFileSync(fakeGh,`#!/usr/bin/env bash
 if [[ $1 == auth && $2 == status ]]; then [[ -f "$PWD/gh-authenticated" ]]; exit; fi
 if [[ $1 == auth && $2 == login ]]; then touch "$PWD/gh-authenticated"; exit; fi
@@ -55,7 +55,11 @@ exit 0
 if [[ $1 == auth && $2 == status ]]; then echo '{"loggedIn":true,"email":"claude@example.com"}'; exit 0; fi
 exit 0
 `,{mode:0o755});
-  config.codexCommand=fakeCodex; config.claudeCommand=fakeClaude; process.env.GH_COMMAND=fakeGh;
+  fs.writeFileSync(fakeCursor,`#!/usr/bin/env bash
+if [[ $1 == status ]]; then echo '{"status":"unauthenticated","isAuthenticated":false,"message":"Not logged in"}'; exit 0; fi
+exit 0
+`,{mode:0o755});
+  config.codexCommand=fakeCodex; config.claudeCommand=fakeClaude; config.cursorCommand=fakeCursor; process.env.GH_COMMAND=fakeGh;
   fs.writeFileSync(path.join(settingsRoot,"package.json"),JSON.stringify({version:"0.1.0"}));
   fs.copyFileSync(".env.example",path.join(settingsRoot,".env.example"));
   fs.writeFileSync(path.join(settingsRoot,".env"),"FACTORY_POLL_INTERVAL_MS=15000\nSLACK_WEBHOOK_URL='https://hooks.example.com/private'\nDEVELOPER_MODEL='custom-codex-model'\n");
@@ -270,9 +274,11 @@ echo "$*" >> "$PWD/update-actions.log"
     const dashboardHost = settings.fields.find((field: any) => field.key === "FACTORY_DASHBOARD_HOST");
     assert.equal(dashboardHost.type,"select"); assert.deepEqual(dashboardHost.options.map((option: any) => option.value),["127.0.0.1","localhost","::1"]);
     const developerProvider = settings.fields.find((field: any) => field.key === "DEVELOPER_PROVIDER");
-    assert.equal(developerProvider.group,"agents"); assert.equal(developerProvider.type,"select"); assert.deepEqual(developerProvider.options.map((option: any) => option.value),["codex","claude"]);
+    assert.equal(developerProvider.group,"agents"); assert.equal(developerProvider.type,"select"); assert.deepEqual(developerProvider.options.map((option: any) => option.value),["codex","claude","cursor"]);
     assert.equal(developerProvider.description,"Provider used for the Implementation Engineer role.");
     assert.equal(settings.fields.find((field:any)=>field.key==="CODEX_COMMAND")?.group,"tools");
+    assert.equal(settings.fields.find((field:any)=>field.key==="CURSOR_COMMAND")?.group,"tools");
+    assert.equal(settings.modelCatalog.cursor.default,"auto");
     const developerModel = settings.fields.find((field: any) => field.key === "DEVELOPER_MODEL");
     assert.equal(developerModel.kind,"role-model"); assert.equal(developerModel.section,"Implementation Engineer");
     assert.equal(developerModel.value,"custom-codex-model");
@@ -296,8 +302,9 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(slackPayload.blocks[1].text.type,"mrkdwn");
     const credentials = await fetch(`http://127.0.0.1:${port}/api/credentials`).then(response => response.json()) as any;
     assert.deepEqual(credentials.credentials.map(({id,status}: any) => ({id,status})),[
-      {id:"github",status:"disconnected"},{id:"claude",status:"connected"},{id:"codex",status:"connected"}
+      {id:"github",status:"disconnected"},{id:"claude",status:"connected"},{id:"codex",status:"connected"},{id:"cursor",status:"disconnected"}
     ]);
+    assert.equal(credentials.credentials.find((item: any) => item.id === "cursor").installed,true);
     assert.equal(credentials.credentials.find((item: any) => item.id === "github").account,undefined);
     assert.equal(credentials.credentials.find((item: any) => item.id === "claude").account,"claude@example.com");
     assert.ok(!JSON.stringify(credentials).includes("token"));
@@ -345,7 +352,7 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8"),serviceActionsBeforeInvalid);
     const invalidProvider = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{QA_PROVIDER:"unknown"}})});
     assert.equal(invalidProvider.status,400);
-    assert.match(await invalidProvider.text(),/choose codex or claude/);
+    assert.match(await invalidProvider.text(),/choose codex, claude or cursor/);
     const appliedWhileRunning = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_POLL_INTERVAL_MS:"6000"}})});
     assert.equal(appliedWhileRunning.status,200);
     assert.deepEqual((await appliedWhileRunning.json() as any).restartedServices,["daemon"]);
@@ -427,7 +434,7 @@ echo "$*" >> "$PWD/update-actions.log"
     await new Promise<void>(resolve => server.close(() => resolve()));
     store.db.close();
     config.gitCommand=previousGit;config.dataDir=previousDataDir;config.approvers.splice(0,config.approvers.length,...previousApprovers);
-    config.codexCommand=previousCodex; config.claudeCommand=previousClaude;
+    config.codexCommand=previousCodex; config.claudeCommand=previousClaude; config.cursorCommand=previousCursor;
     if (previousGh === undefined) delete process.env.GH_COMMAND; else process.env.GH_COMMAND=previousGh;
     if (previousFactoryHome === undefined) delete process.env.AI_FACTORY_HOME; else process.env.AI_FACTORY_HOME=previousFactoryHome;
     fs.rmSync(settingsRoot,{recursive:true,force:true});

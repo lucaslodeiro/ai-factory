@@ -2,6 +2,7 @@ import path from "node:path";
 import os from "node:os";
 import { config as loadEnvironment } from "dotenv";
 import { factoryHome } from "./home.js";
+import { agentProviders, type AgentProvider } from "./types.js";
 const home=factoryHome();
 loadEnvironment({path:path.join(home,".env"),quiet:true});
 function positive(name: string, fallback: number) {
@@ -15,10 +16,10 @@ function model(name: string, fallback: string) {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(value)) throw new Error(`${name} must be a nonempty model identifier`);
   return value;
 }
-function provider(name: string, fallback: "codex" | "claude"): "codex" | "claude" {
+function provider(name: string, fallback: AgentProvider): AgentProvider {
   const value = (process.env[name] ?? fallback).trim();
-  if (value !== "codex" && value !== "claude") throw new Error(`${name} must be codex or claude`);
-  return value as "codex" | "claude";
+  if (!(agentProviders as readonly string[]).includes(value)) throw new Error(`${name} must be ${agentProviders.join(", ")}`);
+  return value as AgentProvider;
 }
 function dashboardHost() {
   const value = (process.env.FACTORY_DASHBOARD_HOST ?? "127.0.0.1").trim();
@@ -37,14 +38,14 @@ function contextBudgetOverrides() {
   if (!value || Array.isArray(value) || typeof value !== "object") throw new Error("FACTORY_CONTEXT_BUDGET_OVERRIDES must be a JSON object");
   const roles=new Set(["product-architect","developer","qa","reviewer"]),result:Record<string,number>={};
   for (const [key,budget] of Object.entries(value)) {
-    if (!roles.has(key) && !/^(codex|claude)\/[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(key)) throw new Error(`Invalid context budget override key: ${key}`);
+    if (!roles.has(key) && !/^(codex|claude|cursor)\/[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(key)) throw new Error(`Invalid context budget override key: ${key}`);
     if (!Number.isSafeInteger(budget) || Number(budget)<1) throw new Error(`Context budget override ${key} must be a positive integer`);
     result[key]=Number(budget);
   }
   return result;
 }
 export function normalizeInstanceName(input:string){const value=input.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,40).replace(/-+$/g,"");return value||"factory";}
-function role(prefix: string, fallback: "codex" | "claude", fallbackModel: string) {
+function role(prefix: string, fallback: AgentProvider, fallbackModel: string) {
   const selected = provider(`${prefix}_PROVIDER`,fallback);
   return { provider:selected,model:model(`${prefix}_MODEL`,fallbackModel) };
 }
@@ -73,6 +74,7 @@ export const config = {
   slackWebhook: process.env.SLACK_WEBHOOK_URL ?? "",
   codexCommand: process.env.CODEX_COMMAND ?? "codex",
   claudeCommand: process.env.CLAUDE_COMMAND ?? "claude",
+  cursorCommand: process.env.CURSOR_COMMAND ?? "cursor-agent",
   gitCommand: process.env.GIT_COMMAND ?? "git",
 };
 export function agentEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {

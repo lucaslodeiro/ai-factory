@@ -9,7 +9,7 @@ const root = new URL("../", import.meta.url);
 const read = (p: string) => fs.readFileSync(fileURLToPath(new URL(p, root)), "utf8");
 export interface PromptContractOptions {tacticalRoute?:{from:import("./types.js").DeliveryStage;allowedNextRoles:TacticalNextRole[]};}
 export function promptContractParts(role:AgentRole,selectedProvider:AgentProvider,options:PromptContractOptions={}) {
-  const provider = selectedProvider === "codex" ? "codex/AGENTS.md" : "claude/CLAUDE.md";
+  const provider = selectedProvider === "codex" ? "codex/AGENTS.md" : selectedProvider === "cursor" ? "cursor/AGENTS.md" : "claude/CLAUDE.md";
   const template = role === "product-architect" ? "SPEC" : role === "qa" ? "QA_REPORT" : role === "reviewer" ? "REVIEW_REPORT" : null;
   const toolDirs = [path.dirname(process.execPath), ...(path.isAbsolute(config.gitCommand) ? [path.dirname(config.gitCommand)] : [])].join(path.delimiter);
   const shellPrefix = `export PATH='${toolDirs.replaceAll("'", "'\\''") }':"$PATH";`;

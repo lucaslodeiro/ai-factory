@@ -13,6 +13,7 @@ import { Store } from "./storage.js";
 import { ExecutionManager } from "./execution-manager.js";
 import { CodexAdapter } from "./adapters/codex.js";
 import { ClaudeAdapter } from "./adapters/claude.js";
+import { CursorAdapter } from "./adapters/cursor.js";
 import { daemonLog, type LogLevel } from "./logger.js";
 import { roleShortName } from "./names.js";
 import { GitHubAdapter } from "./adapters/github.js";
@@ -61,8 +62,8 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
  } catch(error) {throw new StartupError(error instanceof Error?error.message:String(error));}
  daemonLog("info","daemon.starting",{repo:config.repo,pollMs:config.pollMs,dataDir:config.dataDir});
  const release = acquireLock(store), executions = new ExecutionManager(store);
- const codex = new CodexAdapter(executions), claude = new ClaudeAdapter(executions);
- const adapters = { codex,claude };
+ const codex = new CodexAdapter(executions), claude = new ClaudeAdapter(executions), cursor = new CursorAdapter(executions);
+ const adapters = { codex,claude,cursor };
  const agents = {
   "product-architect":adapters[config.roles["product-architect"].provider],
   developer:adapters[config.roles.developer.provider],

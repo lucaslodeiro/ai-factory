@@ -15,7 +15,7 @@ A GitHub Issue becomes a work item. The local orchestrator coordinates four inde
 
 The role identifiers are `product-architect`, `developer`, `qa` and `reviewer`. Workflow projections store stage (`DESIGN`, `BUILD`, `TEST`, `REVIEW`, `DELIVERY`) independently from status (`QUEUED`, `RUNNING`, `WAITING`, `FAILED`, `PAUSED`, `CANCELLED`, `COMPLETED`). Human-facing surfaces use the names in the table.
 
-Each role can use Codex or Claude independently. In **Configuration → Agent roles**, the operator chooses the provider and either a concrete model or **Auto**, which lets that provider use its recommended model.
+Each role can use Codex, Claude or Cursor independently. In **Configuration → Agent roles**, the operator chooses the provider and either a concrete model or **Auto**, which lets that provider use its recommended model. Cursor runs through the Cursor Agent CLI and a Cursor subscription: it brokers models from several vendors rather than adding one, has no JSON Schema flag (the orchestrator sends the schema in the prompt and validates the final message), uses its documented read-only mode for Architect and Reviewer, and reports no token usage.
 
 The human remains the authority for major product/architecture decisions and any change that contradicts a previously approved human decision.
 
@@ -125,7 +125,7 @@ This repository has one long-lived branch, `main`; the installer installs it by 
 
 See [installation and operations](INSTALL.md), [GitHub setup](docs/GITHUB_SETUP.md), [validation evidence and operational boundaries](docs/VALIDATION.md), and the [end-to-end run playbook](docs/E2E_RUN_PLAYBOOK.md).
 
-Product Architect records a complexity/risk assessment that is approved together with the specification. Configuration → Agent roles chooses Codex or Claude and one direct model for Product Architect, Implementation Engineer, Verification Engineer and Delivery Reviewer. Each model can also be **Auto**, which delegates model choice to its provider. See [model selection policy](docs/MODEL_POLICY.md).
+Product Architect records a complexity/risk assessment that is approved together with the specification. Configuration → Agent roles chooses Codex, Claude or Cursor and one direct model for Product Architect, Implementation Engineer, Verification Engineer and Delivery Reviewer. Each model can also be **Auto**, which delegates model choice to its provider. See [model selection policy](docs/MODEL_POLICY.md).
 
 Configuration → Runtime also sets the byte budget for agent context. Optional JSON overrides can target an exact role or `provider/model`; the most specific matching value is recorded with each persisted prompt. Protected specification, decision and instruction context is never silently clipped.
 

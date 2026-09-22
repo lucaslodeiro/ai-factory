@@ -1,5 +1,6 @@
 export type AgentRole = "product-architect" | "developer" | "qa" | "reviewer";
-export type AgentProvider = "codex" | "claude";
+export const agentProviders = ["codex", "claude", "cursor"] as const;
+export type AgentProvider = typeof agentProviders[number];
 export type DeliveryStage = "BUILD" | "TEST" | "REVIEW";
 export interface Criterion { id: string; description: string; }
 export interface Finding { classification: "auto-fix" | "decision-required" | "defer" | "environment-blocked"; evidence: string; }

@@ -4,13 +4,14 @@ import { spawn, spawnSync } from "node:child_process";
 import { config } from "./config.js";
 import { factoryHome } from "./home.js";
 
-export type CredentialProvider = "github" | "claude" | "codex";
+export type CredentialProvider = "github" | "claude" | "codex" | "cursor";
 type StoredState = { status: "connecting" | "failed"; pid?: number; startedAt?: string; finishedAt?: string };
 
 const providers: Array<{ id: CredentialProvider; label: string; description: string }> = [
   { id:"github",label:"GitHub",description:"Issues, pull requests and authenticated Git operations." },
   { id:"claude",label:"Claude",description:"Product, architecture and review agents." },
   { id:"codex",label:"Codex",description:"Builder and Tester agents." },
+  { id:"cursor",label:"Cursor",description:"Any role through the Cursor Agent CLI and a Cursor subscription." },
 ];
 
 const stateFile = (root: string) => path.join(factoryHome(root),"data","credential-state.json");
@@ -49,6 +50,14 @@ function actualStatus(root: string, provider: CredentialProvider) {
     const auth = run(root,config.codexCommand,["login","status"]);
     return { installed:!auth.error,connected:!auth.error && auth.status === 0 };
   }
+  if (provider === "cursor") {
+    const auth = run(root,config.cursorCommand,["status","--format","json"]);
+    if (auth.error) return { installed:false,connected:false };
+    try {
+      const parsed = JSON.parse(auth.stdout) as { isAuthenticated?: boolean };
+      return { installed:true,connected:auth.status === 0 && parsed.isAuthenticated === true };
+    } catch { return { installed:true,connected:false }; }
+  }
   const auth = run(root,config.claudeCommand,["auth","status"]);
   if (auth.error) return { installed:false,connected:false };
   try {
@@ -86,10 +95,11 @@ export function connectCredential(root: string, provider: CredentialProvider) {
   const log = logFile(root);
   fs.mkdirSync(path.dirname(log),{recursive:true});
   const output = fs.openSync(log,"a",0o600);
-  const command = provider === "github" ? "/bin/bash" : provider === "claude" ? config.claudeCommand : config.codexCommand;
+  const command = provider === "github" ? "/bin/bash" : provider === "claude" ? config.claudeCommand : provider === "cursor" ? config.cursorCommand : config.codexCommand;
   const githubScript = current.connected
     ? '"$1" auth refresh --hostname github.com --reset-scopes && "$1" auth setup-git --hostname github.com'
     : '"$1" auth login --hostname github.com --git-protocol https --web && "$1" auth setup-git --hostname github.com';
+  // Cursor and Codex both expose a bare `login` subcommand.
   const args = provider === "github"
     ? ["-c",githubScript,"factory-github-login",githubCommand()]
     : provider === "claude" ? ["auth","login"] : ["login"];

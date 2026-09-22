@@ -52,3 +52,10 @@ test("roles on one provider share a byte-identical common prefix",()=>{
  assert.ok(tester.prefix.indexOf("AI Factory worker rules")<tester.prefix.indexOf("Codex Worker Instructions"));
  assert.ok(tester.prefix.indexOf("Codex Worker Instructions")<promptContract("qa","codex").indexOf("Verification Engineer (Tester) Contract"));
 });
+
+test("Cursor prompts carry the Cursor worker instructions instead of another provider's file",()=>{
+ const output=promptContract("developer","cursor");
+ assert.ok(output.includes("Cursor Worker Instructions"));
+ assert.ok(!output.includes("Codex Worker Instructions")&&!output.includes("Claude Worker Instructions"));
+ assert.ok(output.includes("OUTPUT CONTRACT"));
+});

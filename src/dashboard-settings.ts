@@ -12,14 +12,16 @@ const groups = [
   {id:"project",label:"Project",description:"Repository, checkout, approvers and this installation's identity."},
   {id:"workflow",label:"Workflow",description:"Verification, correction loop and execution limits."},
   {id:"agents",label:"Agents",description:"Provider and model selection for each workflow role."},
-  {id:"tools",label:"Tools",description:"Commands used to run Codex, Claude and Git."},
+  {id:"tools",label:"Tools",description:"Commands used to run Codex, Claude, Cursor and Git."},
   {id:"service",label:"Service",description:"Storage, polling and the local dashboard server."},
   {id:"advanced",label:"Advanced",description:"Prompt budgets and worker environment. Only for debugging."},
 ];
 const automaticModel = {value:"auto",label:"Auto (provider recommended)"};
 const codexModels = [automaticModel,...["gpt-5.6-luna","gpt-5.6-terra","gpt-5.6-sol","gpt-6-astra","gpt-5.5"].map(value => ({value,label:value}))];
 const claudeModels = [automaticModel,...["haiku","sonnet","opus"].map(value => ({value,label:value}))];
-const providerOptions = [{value:"codex",label:"Codex"},{value:"claude",label:"Claude"}];
+// Cursor brokers several vendors; the account-specific list comes from `cursor-agent models`. These are the identifiers its documentation names.
+const cursorModels = [automaticModel,...["gpt-5","sonnet-4-thinking"].map(value => ({value,label:value}))];
+const providerOptions = [{value:"codex",label:"Codex"},{value:"claude",label:"Claude"},{value:"cursor",label:"Cursor"}];
 const roleField = (section: string, role: string, label: string): Omit<Field,"key"> => ({label:"Provider",description:`Provider used for the ${label} role.`,group:"agents",type:"select",options:providerOptions,required:true,restart:"daemon",section,role,kind:"provider"});
 const modelField = (section: string, role: string): Omit<Field,"key"> => ({label:"Model",description:"Model selected for this role. Auto lets the provider choose.",group:"agents",type:"select",required:true,restart:"daemon",section,role,kind:"role-model"});
 
@@ -42,6 +44,7 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   SLACK_WEBHOOK_URL:{label:"Slack webhook",description:"Optional HTTPS Incoming Webhook URL. Leave it blank to preserve the configured secret.",group:"connections",secret:true,restart:"daemon"},
   CODEX_COMMAND:{label:"Codex command",description:"Absolute path or command used to start Codex.",group:"tools",required:true,restart:"all"},
   CLAUDE_COMMAND:{label:"Claude command",description:"Absolute path or command used to start Claude.",group:"tools",required:true,restart:"all"},
+  CURSOR_COMMAND:{label:"Cursor command",description:"Absolute path or command used to start the Cursor Agent CLI.",group:"tools",required:true,restart:"all"},
   GIT_COMMAND:{label:"Git command",description:"Absolute path or command used for Git operations.",group:"tools",required:true,restart:"all"},
   AGENT_SECRET_ALLOWLIST:{label:"Agent environment allowlist",description:"Extra environment variable names forwarded to worker processes.",group:"advanced",restart:"daemon"},
   PRODUCT_ARCHITECT_PROVIDER:roleField(roleFullName("product-architect"),"product-architect",roleFullName("product-architect")),
@@ -53,7 +56,7 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   REVIEWER_PROVIDER:roleField(roleFullName("reviewer"),"reviewer",roleFullName("reviewer")),
   REVIEWER_MODEL:modelField(roleFullName("reviewer"),"reviewer"),
 };
-const fieldOrder=["SLACK_WEBHOOK_URL","GITHUB_REPOSITORY","FACTORY_REPO_DIR","GITHUB_DEFAULT_BRANCH","FACTORY_APPROVERS","FACTORY_INSTANCE_NAME","FACTORY_VERIFY_COMMAND","FACTORY_MAX_FIX_CYCLES","FACTORY_EXECUTION_TIMEOUT_MS","PRODUCT_ARCHITECT_PROVIDER","PRODUCT_ARCHITECT_MODEL","DEVELOPER_PROVIDER","DEVELOPER_MODEL","QA_PROVIDER","QA_MODEL","REVIEWER_PROVIDER","REVIEWER_MODEL","CODEX_COMMAND","CLAUDE_COMMAND","GIT_COMMAND","FACTORY_DATA_DIR","FACTORY_POLL_INTERVAL_MS","FACTORY_ARTIFACT_RETENTION_DAYS","FACTORY_DASHBOARD_HOST","FACTORY_DASHBOARD_PORT","FACTORY_CONTEXT_BUDGET_BYTES","FACTORY_CONTEXT_BUDGET_OVERRIDES","AGENT_SECRET_ALLOWLIST"];
+const fieldOrder=["SLACK_WEBHOOK_URL","GITHUB_REPOSITORY","FACTORY_REPO_DIR","GITHUB_DEFAULT_BRANCH","FACTORY_APPROVERS","FACTORY_INSTANCE_NAME","FACTORY_VERIFY_COMMAND","FACTORY_MAX_FIX_CYCLES","FACTORY_EXECUTION_TIMEOUT_MS","PRODUCT_ARCHITECT_PROVIDER","PRODUCT_ARCHITECT_MODEL","DEVELOPER_PROVIDER","DEVELOPER_MODEL","QA_PROVIDER","QA_MODEL","REVIEWER_PROVIDER","REVIEWER_MODEL","CODEX_COMMAND","CLAUDE_COMMAND","CURSOR_COMMAND","GIT_COMMAND","FACTORY_DATA_DIR","FACTORY_POLL_INTERVAL_MS","FACTORY_ARTIFACT_RETENTION_DAYS","FACTORY_DASHBOARD_HOST","FACTORY_DASHBOARD_PORT","FACTORY_CONTEXT_BUDGET_BYTES","FACTORY_CONTEXT_BUDGET_OVERRIDES","AGENT_SECRET_ALLOWLIST"];
 const fieldRank=new Map(fieldOrder.map((key,index)=>[key,index]));
 
 function encode(value: string) {
@@ -72,7 +75,7 @@ export function validateSetting(key: string, value: string) {
     if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error(`${key}: enter a JSON object`);
     const roles=new Set(["product-architect","developer","qa","reviewer"]);
     for (const [name,budget] of Object.entries(parsed)) {
-      if (!roles.has(name) && !/^(codex|claude)\/[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(name)) throw new Error(`${key}: invalid override key ${name}`);
+      if (!roles.has(name) && !/^(codex|claude|cursor)\/[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(name)) throw new Error(`${key}: invalid override key ${name}`);
       if (!Number.isSafeInteger(budget) || Number(budget)<1) throw new Error(`${key}: ${name} must be a positive integer`);
     }
   }
@@ -83,8 +86,8 @@ export function validateSetting(key: string, value: string) {
   if(key==="FACTORY_INSTANCE_NAME"&&value&&!/^[a-zA-Z0-9-]{1,40}$/.test(value))throw new Error(`${key}: use at most 40 letters, numbers or hyphens`);
   if (key === "AGENT_SECRET_ALLOWLIST" && value && !value.split(",").every(item => /^[A-Za-z_][A-Za-z0-9_]*$/.test(item.trim()))) throw new Error(`${key}: use comma-separated environment variable names`);
   if (key.includes("_MODEL") && !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(value)) throw new Error(`${key}: enter a model identifier`);
-  if (key.endsWith("_PROVIDER") && !["codex","claude"].includes(value)) throw new Error(`${key}: choose codex or claude`);
-  if (["FACTORY_DATA_DIR","GITHUB_DEFAULT_BRANCH","CODEX_COMMAND","CLAUDE_COMMAND","GIT_COMMAND","FACTORY_DASHBOARD_HOST","FACTORY_DASHBOARD_PORT"].includes(key) && !value.trim()) throw new Error(`${key}: this value cannot be empty`);
+  if (key.endsWith("_PROVIDER") && !["codex","claude","cursor"].includes(value)) throw new Error(`${key}: choose codex, claude or cursor`);
+  if (["FACTORY_DATA_DIR","GITHUB_DEFAULT_BRANCH","CODEX_COMMAND","CLAUDE_COMMAND","CURSOR_COMMAND","GIT_COMMAND","FACTORY_DASHBOARD_HOST","FACTORY_DASHBOARD_PORT"].includes(key) && !value.trim()) throw new Error(`${key}: this value cannot be empty`);
   if (key === "SLACK_WEBHOOK_URL" && value) {
     let url: URL; try { url = new URL(value); } catch { throw new Error(`${key}: enter an HTTPS URL`); }
     if (url.protocol !== "https:") throw new Error(`${key}: enter an HTTPS URL`);
@@ -140,13 +143,14 @@ export function readDashboardSettings(root: string, suggestions: Record<string,s
   const providerCatalog = {
     codex:{options:codexModels,default:"auto"},
     claude:{options:claudeModels,default:"auto"},
+    cursor:{options:cursorModels,default:"auto"},
   };
   const fields = Object.keys(defaults).map(key => {
     const meta = descriptions[key] ?? {label:key,description:"Factory setting.",group:"Other"};
     const value = meta.secret ? "" : values[key] ?? "";
     let baseOptions = meta.options;
     if (meta.kind === "role-model") {
-      const prefix = key.slice(0,-"_MODEL".length), selectedProvider = values[`${prefix}_PROVIDER`] === "claude" ? "claude" : "codex";
+      const prefix = key.slice(0,-"_MODEL".length), selectedProvider = values[`${prefix}_PROVIDER`] === "claude" ? "claude" : values[`${prefix}_PROVIDER`] === "cursor" ? "cursor" : "codex";
       const catalog = providerCatalog[selectedProvider];
       baseOptions = [...catalog.options];
     }

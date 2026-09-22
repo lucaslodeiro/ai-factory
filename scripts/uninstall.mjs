@@ -27,7 +27,7 @@ for(const directory of new Set([configuredData,standardData]))if(!directory.star
 }
 console.log("AI Factory uninstall plan");
 console.log("  Services:     daemon and dashboard LaunchAgents");console.log(`  Engine:       ${engine}`);console.log(`  Runtime data: ${configuredData}${configuredData===standardData?"":` and ${standardData}`}`);
-console.log(purge?`  Purge:        ${factoryHome} including configuration and repos/`:`  Preserved:    ${environmentFile}, .env.backup-* and ${reposDir}`);console.log("  Credentials:  GitHub, Codex and Claude credentials are preserved");
+console.log(purge?`  Purge:        ${factoryHome} including configuration and repos/`:`  Preserved:    ${environmentFile}, .env.backup-* and ${reposDir}`);console.log("  Credentials:  GitHub, Codex, Claude and Cursor credentials are preserved");
 
 let unsafeWork=[];const databaseFile=path.join(configuredData,"factory.db");
 if(fs.existsSync(databaseFile))try{

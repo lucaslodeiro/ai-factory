@@ -227,6 +227,12 @@ if ! claude --version >/dev/null 2>&1; then
   bash "$temporary_dir/claude-install.sh" stable </dev/null
 fi
 
+if ! cursor-agent --version >/dev/null 2>&1; then
+  echo "Installing Cursor Agent CLI non-interactively with its official native installer..."
+  curl --proto '=https' --tlsv1.2 -fsSL https://cursor.com/install -o "$temporary_dir/cursor-install.sh"
+  bash "$temporary_dir/cursor-install.sh" </dev/null
+fi
+
 hash -r
 node --version
 npm --version
@@ -234,6 +240,7 @@ git --version
 gh --version
 codex --version
 claude --version
+cursor-agent --version
 
 core_branch=$factory_branch
 if [[ $factory_repo =~ ^https://github\.com/([^/]+)/([^/]+)(\.git)?$ ]]; then
