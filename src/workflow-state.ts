@@ -41,6 +41,32 @@ export function validateIssueState(value:unknown):IssueStateIndex {
  return value as IssueStateIndex;
 }
 
+// The index is what lets this issue be recovered from GitHub, and it only grows: agent summaries
+// and finding evidence run to thousands of characters each. Dropping it whole once it crosses the
+// body limit loses recovery for the rest of the issue's life, silently, because the issue body
+// still looks complete. Narrative text is shed instead, because recovery reads identifiers,
+// versions, statuses and markers, never prose.
+const narrativeKeys=new Set(["summary","evidence","rationale","decision","text","message","command","questions"]);
+export const stateTextBudgets=[2000,500,120,0] as const;
+
+function clip(value:unknown,budget:number,key?:string):unknown {
+ if (typeof value==="string") return key && narrativeKeys.has(key) && value.length>budget ? (budget===0 ? "" : `${value.slice(0,budget)}…`) : value;
+ // An array inherits its field name, so questions[] is clipped and changedFiles[] is not.
+ if (Array.isArray(value)) return value.map(item=>clip(item,budget,key));
+ if (value && typeof value==="object") return Object.fromEntries(Object.entries(value).map(([name,item])=>[name,clip(item,budget,name)]));
+ return value;
+}
+
+export interface CompactedIssueState { index:IssueStateIndex; clippedTo:number|null }
+export function compactIssueState(index:IssueStateIndex,fits:(candidate:IssueStateIndex)=>boolean):CompactedIssueState|null {
+ if (fits(index)) return {index,clippedTo:null};
+ for (const budget of stateTextBudgets) {
+  const candidate=clip(index,budget) as IssueStateIndex;
+  if (fits(candidate)) return {index:validateIssueState(candidate),clippedTo:budget};
+ }
+ return null;
+}
+
 export function issueStateIndex(store:Store,workItemId:string):IssueStateIndex {
  const item=store.db.prepare("SELECT id,issue_number,issue_id,branch,context,stage,status,attempt,revision,correction_cycles FROM work_items WHERE id=?").get(workItemId) as any;if(!item)throw new Error("Unknown work item");const repository=store.metadata<StoredRepositoryIdentity>("repository_identity");if(!repository)throw new Error("Repository identity is not initialized");const source=JSON.parse(item.context||"{}") as Record<string,unknown>,context:Record<string,unknown>={};for(const key of ["cursor","observedComments","lastCommand","verifiedHeads","pr","releasedAt","title","url"])if(source[key]!==undefined)context[key]=source[key];const issueNodeId=text(source.issueNodeId,"issue.nodeId");
  const resultRows=store.db.prepare("SELECT run_id,payload FROM events WHERE work_item_id=? AND type='agent.result' ORDER BY id").all(workItemId) as Array<{run_id:string;payload:string}>,storedMarkers=source.specMarkers&&typeof source.specMarkers==="object"&&!Array.isArray(source.specMarkers)?source.specMarkers as Record<string,unknown>:{},markers=new Map<number,string>(),latestByRole=new Map<AgentRole,PublishedLatestResult>();for(const value of Array.isArray(source.latestResults)?source.latestResults:[])try{const checked=validateLatestResult(value);latestByRole.set(checked.role,checked);}catch{}for(const [version,marker] of Object.entries(storedMarkers))if(/^\d+$/.test(version)&&typeof marker==="string")markers.set(Number(version),marker);for(const row of resultRows)try{const payload=JSON.parse(row.payload) as {role?:AgentRole;result?:AgentResult;specVersion?:number};if(payload.role==="product-architect"&&payload.result?.outcome==="spec"&&payload.specVersion&&!markers.has(payload.specVersion))markers.set(payload.specVersion,`result-${row.run_id}`);if(payload.role&&payload.result){const latest=publishedResult(payload.role,row.run_id,payload.result);validateLatestResult(latest);latestByRole.set(payload.role,latest);}}catch{}

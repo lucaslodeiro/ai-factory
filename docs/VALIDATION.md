@@ -145,6 +145,14 @@ That data also exposed a flaw in the first version of this report. The first two
 
 Covered by `test/execution-activity.test.ts`, including the exact shape issue 6 showed.
 
+## Issue state index compaction — 2026-09-22
+
+Issue 6 of the demo repository emitted `github.state_too_large` four times, at 64,882, 68,496, 71,467 and 76,146 bytes. Above 60,000 bytes the publisher dropped the machine-readable state index and published the issue body without it. The index only grows, so once an issue crossed the limit it never carried recoverable state again, and nothing was visibly wrong: the issue body still rendered correctly while `readIssueState` and `adoptIssueState` had nothing to read.
+
+The publisher now sheds narrative text until the index fits, instead of dropping it whole. Recovery reads identifiers, versions, markers, statuses and criterion ids, never prose, so summaries, evidence, rationales, questions and failure messages are clipped in turn at 2000, 500, 120 and finally 0 characters. Everything recovery depends on is untouched, including `changedFiles`, which is structure rather than prose. The compacted index is revalidated before it is published, so it is adoptable at every budget. `github.state_compacted` records that it happened and at which budget; `github.state_too_large` now fires only when even the smallest form does not fit, which for a typical shape is around 1,300 bytes of pure structure.
+
+On a reconstruction of issue 6's shape, four roles with five criteria each and twelve records, the full index measured 133,227 bytes and compacted to 29,271 at a 500-character budget, keeping all twelve records, all four roles and all five criterion ids. Covered by `test/issue-state-compaction.test.ts`.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

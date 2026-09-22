@@ -7,7 +7,7 @@ import type { AgentResult,AgentRole } from "./types.js";
 import { roleFullName,roleShortName } from "./names.js";
 import { factoryHelpMarkdown } from "./factory-help.js";
 import {config} from "./config.js";
-import {IncompleteIssueStateError,issueStateIndex,validateIssueState,validateSpecificationFact,type ReadIssueState} from "./workflow-state.js";
+import {IncompleteIssueStateError, issueStateIndex, validateIssueState, validateSpecificationFact, type ReadIssueState, compactIssueState, type IssueStateIndex} from "./workflow-state.js";
 import {WorkflowFailures,type WorkflowFailure} from "./workflow-failures.js";
 
 export function publishedText(value:string){return redactSecrets(value).replaceAll("<!--","<!-\u200b-");}
@@ -50,9 +50,19 @@ export class WorkflowGitHubPublisher {
   const revision=row.revision,presentationRevision=row.presentation_revision;
   const lastEvent=this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(workItemId) as {payload:string}|undefined;
   let eventId:string|undefined;try{eventId=lastEvent?(JSON.parse(lastEvent.payload) as {eventId?:string}).eventId:undefined;}catch{}
-  const status=`${workflowStatusMarkdown(this.store,workItemId)}\n\n<sub>workflow-rev:${revision} · presentation-rev:${presentationRevision}${eventId?` · event:${eventId}`:""}</sub>\n\n<sub>instance:${config.instanceName}</sub>`;let indexed:string|undefined;try{const index=issueStateIndex(this.store,workItemId);index.latestResults=index.latestResults.map(publishedAgentData);if(index.failure)index.failure.message=publishedText(index.failure.message);index.records=index.records.map(record=>record.source_type==="agent-result"?{...record,payload:publishedAgentData(record.payload)}:record);indexed=withPayload(status,index);}catch(error){if(!(error instanceof IncompleteIssueStateError))throw error;const key=`github:state-incomplete:${workItemId}:${presentationRevision}`;if(!this.store.metadata(key)){this.store.event("github.state_incomplete",{issue:row.issue_number,reason:error.message,revision},workItemId);this.store.setMetadata(key,true);}}
-  const body=indexed&&indexed.length<=60_000?indexed:status;
-  if(indexed&&indexed.length>60_000){const key=`github:state-too-large:${workItemId}:${presentationRevision}`;if(!this.store.metadata(key)){this.store.event("github.state_too_large",{issue:row.issue_number,bytes:indexed.length,revision},workItemId);this.store.setMetadata(key,true);}}
+  const status=`${workflowStatusMarkdown(this.store,workItemId)}\n\n<sub>workflow-rev:${revision} · presentation-rev:${presentationRevision}${eventId?` · event:${eventId}`:""}</sub>\n\n<sub>instance:${config.instanceName}</sub>`;let indexed:string|undefined,index:IssueStateIndex|undefined,clippedTo:number|null|undefined;
+  try{
+   const built=issueStateIndex(this.store,workItemId);
+   built.latestResults=built.latestResults.map(publishedAgentData);
+   if(built.failure)built.failure.message=publishedText(built.failure.message);
+   built.records=built.records.map(record=>record.source_type==="agent-result"?{...record,payload:publishedAgentData(record.payload)}:record);
+   index=built;
+   const compacted=compactIssueState(built,candidate=>withPayload(status,candidate).length<=60_000);
+   if(compacted){indexed=withPayload(status,compacted.index);clippedTo=compacted.clippedTo;}
+  }catch(error){if(!(error instanceof IncompleteIssueStateError))throw error;const key=`github:state-incomplete:${workItemId}:${presentationRevision}`;if(!this.store.metadata(key)){this.store.event("github.state_incomplete",{issue:row.issue_number,reason:error.message,revision},workItemId);this.store.setMetadata(key,true);}}
+  const body=indexed ?? status;
+  if(indexed===undefined&&index!==undefined){const key=`github:state-too-large:${workItemId}:${presentationRevision}`;if(!this.store.metadata(key)){this.store.event("github.state_too_large",{issue:row.issue_number,bytes:withPayload(status,index).length,revision},workItemId);this.store.setMetadata(key,true);}}
+  if(clippedTo!==null&&clippedTo!==undefined){const key=`github:state-compacted:${workItemId}:${presentationRevision}`;if(!this.store.metadata(key)){this.store.event("github.state_compacted",{issue:row.issue_number,clippedTo,revision},workItemId);this.store.setMetadata(key,true);}}
   await this.github.syncWorkflow(row.issue_number,workflowLabels(this.store,workItemId),body);
   this.store.db.prepare("UPDATE work_items SET published_presentation_revision=? WHERE id=? AND (published_presentation_revision IS NULL OR published_presentation_revision<?)").run(presentationRevision,workItemId,presentationRevision);
   return true;
