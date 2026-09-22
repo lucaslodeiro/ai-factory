@@ -19,6 +19,7 @@ import type {TaskAssessment} from "./types.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {readIssueState} from "./workflow-github.js";
+import {activityRow,summarizeActivity} from "./execution-activity.js";
 const p = new Command().name("factory").description("Local AI Software Factory").version("0.2.0");
 p.command("models").argument("[id]").description("Show model policy or preview role selections for a work item").action(id => {
  console.log(`Model policy: ${modelPolicyVersion}`);
@@ -53,6 +54,20 @@ issueCommand.command("show").argument("<number>").description("Show the state in
 p.command("stop").option("--pause-active","Pause active tasks before stopping").action(options => { const s = new Store();const count=(s.db.prepare("SELECT COUNT(*) count FROM work_items WHERE status IN ('QUEUED','RUNNING')").get() as {count:number}).count;if(count&&!options.pauseActive){s.db.close();throw new Error(`${count} active task${count===1?"":"s"}; rerun with --pause-active to preserve and pause them`);}s.request("stop");s.db.close();console.log("Stop queued."); });
 p.command("events").argument("[id]").action(id => {
  const s = new Store(); console.table(id ? s.db.prepare("SELECT * FROM events WHERE work_item_id=? ORDER BY id DESC LIMIT 50").all(id) : s.db.prepare("SELECT * FROM events ORDER BY id DESC LIMIT 50").all()); s.db.close();
+});
+p.command("activity").argument("[id]").description("Per-role provider activity and cache split for one work item, or the most recent runs").action(id => {
+ const s = new Store();
+ try {
+  const rows=(s.db.prepare(`SELECT e.payload payload, x.role role, x.stage stage, x.started_at startedAt
+    FROM events e JOIN executions x ON x.id=e.run_id
+    WHERE e.type='execution.finished'${id?" AND e.work_item_id=?":""} ORDER BY e.id DESC LIMIT 200`)
+    .all(...(id?[id]:[])) as Array<{payload:string;role:string;stage:string|null;startedAt:string|null}>)
+    .map(row=>{ let payload:unknown; try{payload=JSON.parse(row.payload);}catch{payload={};} return activityRow(payload,row.role,row.stage,row.startedAt); });
+  if (!rows.length) { console.log(id?`No finished executions recorded for ${id}`:"No finished executions recorded"); return; }
+  console.table(summarizeActivity(rows));
+  console.log("events: JSON objects the provider wrote to stdout. A streaming provider reports many; a provider that returns one result envelope reports one.");
+  console.log("Builder receives a repository map and Tester does not, so compare their events per run on the same work item.");
+ } finally { s.db.close(); }
 });
 p.command("notifications").action(() => {
  const s = new Store(); console.table(s.db.prepare("SELECT id,sent,attempts,next_at,last_error FROM notifications ORDER BY id DESC LIMIT 50").all()); s.db.close();
