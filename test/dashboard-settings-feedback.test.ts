@@ -28,7 +28,7 @@ test('Connections keeps Save and apply visible and configures Slack through its 
 });
 test('prompt viewer defaults to readable content and offers the exact agent JSON',()=>{
  const context=vm.createContext({escapeHtml:(value:string)=>String(value).replaceAll('<','&lt;')});for(const name of ['promptReadableHtml','promptAgentJson'])vm.runInContext(source.split('\n').find(line=>line.startsWith(`function ${name}(`))!,context);
- const readable=vm.runInContext("promptReadableHtml('# Goal\\n\\n- First\\n- <unsafe>')",context);assert.match(readable,/<h2>Goal<\/h2>/);assert.match(readable,/<ul><li>First<\/li><li>&lt;unsafe><\/li><\/ul>/);assert.doesNotMatch(readable,/<unsafe>/);
+ const readable=vm.runInContext("promptReadableHtml('# Goal\\n\\n- **First** `value`\\n- <unsafe>\\n\\nAC-1\\n\\n**Given** input')",context);assert.match(readable,/<h2>Goal<\/h2>/);assert.match(readable,/<ul><li><strong>First<\/strong> <code>value<\/code><\/li><li>&lt;unsafe><\/li><\/ul>/);assert.match(readable,/<h3 class="acceptance-criterion">AC-1<\/h3>/);assert.match(readable,/<strong>Given<\/strong> input/);assert.doesNotMatch(readable,/<unsafe>/);
  const json=vm.runInContext("promptAgentJson({id:'run-1',prompt:'# Goal',truncated:false})",context);assert.deepEqual(JSON.parse(json),{executionId:'run-1',instructions:'# Goal',truncated:false});assert.match(source,/selectPromptView\(dialog,'human'\)/);assert.match(source,/Human readable/);assert.match(source,/Agent JSON/);
 });
 test('failed issue details render a human-readable diagnosis and next action',()=>{
