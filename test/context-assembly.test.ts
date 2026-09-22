@@ -95,3 +95,20 @@ test("Reviewer evidence outranks optional context and never disappears silently"
       error=>error instanceof InvalidContextError);
   } finally { store.db.close(); }
 });
+
+test("only the Builder receives the repository map, and it never displaces protected context",()=>{
+  const {store,assembler}=setup();
+  const repositoryMap={legend:"directory, tracked files, most common extensions",files:2,rootFiles:["package.json"],directories:["src 1 .ts"],truncated:false};
+  try {
+    const builder=assembler.assemble({workItemId:"work-1",role:"developer",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"},repositoryMap});
+    assert.match(builder.markdown,/Repository map/);
+    assert.match(builder.markdown,/src 1 \.ts/);
+    for (const role of ["qa","reviewer","product-architect"] as const) {
+      assert.doesNotMatch(assembler.assemble({workItemId:"work-1",role,specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"},repositoryMap}).markdown,/Repository map/);
+    }
+    const baseline=assembler.assemble({workItemId:"work-1",role:"developer",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"}});
+    const tight=assembler.assemble({workItemId:"work-1",role:"developer",specVersion:1,budgetBytes:Buffer.byteLength(baseline.markdown)+10,budgetSource:"default",issue:{title:"Issue",body:"Body"},repositoryMap});
+    assert.deepEqual(tight.manifest.excludedSections,["Repository map"]);
+    assert.match(tight.markdown,/Approved specification/);
+  } finally { store.db.close(); }
+});

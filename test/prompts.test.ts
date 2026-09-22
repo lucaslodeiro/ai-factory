@@ -92,3 +92,9 @@ test("only a provider without schema enforcement is told in prose which fields a
  // The rest of that paragraph is guidance the schema cannot express, so it stays for every provider.
  for (const provider of ["codex","claude","cursor"] as const) assert.ok(promptContract("developer",provider).includes("A failed required verification blocks PASS."));
 });
+
+test("only the Builder is told how to read the repository map",()=>{
+ const builder=promptContract("developer","codex");
+ assert.ok(builder.includes("Repository map section")&&builder.includes("never a substitute for reading the files"));
+ for (const role of ["product-architect","qa","reviewer"] as const) assert.ok(!promptContract(role,"codex").includes("Repository map section"));
+});

@@ -103,6 +103,12 @@ The same event now carries `activity`: how many JSON objects the provider wrote 
 
 This is the missing measurement behind the largest open cost question. On issue #6 the Builder spent 4.88M cached tokens against the Architect's 164K, and the previous Builder run spent 541K: a ninefold swing between two runs of the same role. Prompt size cannot explain that; turn count can. Nothing here changes it, the point is to be able to see it.
 
+## Repository map for the Builder — 2026-09-22 (unvalidated hypothesis)
+
+The Builder now receives a map of the target checkout's tracked directories. On this repository, 219 tracked files across 14 directories render in 711 bytes. The Builder's prompt contract fell from 11073 to 10363 bytes over the same period, so its total prompt is roughly unchanged while it no longer starts blind.
+
+This is a hypothesis, not a finding: nothing yet shows that a Builder with a map spends fewer turns than one without. The measurement is set up rather than assumed. The map goes to the Builder alone, so on the next issue the `activity` histogram on `execution.finished` compares the Builder against the Tester, which runs the same work without a map. If the Builder's event count does not fall relative to the Tester's, the map is costing bytes for nothing and should be removed.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

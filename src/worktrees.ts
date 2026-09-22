@@ -5,6 +5,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { config,requiredRepoDir } from "./config.js";
 import type {AgentRole} from "./types.js";
+import { buildRepositoryMap, type RepositoryMap } from "./repository-map.js";
 function gitOutput(cwd: string, args: string[]) {
  const r = spawnSync(config.gitCommand, args, { cwd, encoding: "utf8", timeout: 60000, maxBuffer: 10_000_000 });
  if (r.status !== 0) throw new Error(r.stderr || r.error?.message || "git failed"); return r.stdout;
@@ -39,6 +40,7 @@ export interface WorkspacePort {
  publishAsync?(cwd:string,branch:string):Promise<void>;
  changeSummary(cwd:string):{files:string[];stat:string};
  changeSummarySince?(cwd:string,base:string):{files:string[];stat:string};
+ repositoryMap?(cwd:string):RepositoryMap|undefined;
  prepareReviewerContext(cwd:string,workItemId:string):{path:string;files:string[];stat:string};
  cleanupReviewerContext(cwd:string,workItemId:string):void;
 }
@@ -147,6 +149,10 @@ export class Workspaces implements WorkspacePort {
  }
  changeSummary(cwd:string){const range=`origin/${config.defaultBranch}...HEAD`,files=gitOutput(cwd,["diff","--name-only","--no-renames","-z",range]).split("\0").filter(Boolean),stat=gitOutput(cwd,["diff","--stat",range]).trim();return{files,stat};}
  changeSummarySince(cwd:string,base:string){const range=`${base}..HEAD`,files=gitOutput(cwd,["diff","--name-only","--no-renames","-z",range]).split("\0").filter(Boolean),stat=gitOutput(cwd,["diff","--stat",range]).trim();return{files,stat};}
+ // Tracked files only: what .gitignore excludes is not part of the repository a Builder edits.
+ repositoryMap(cwd:string){
+  try { return buildRepositoryMap(gitOutput(cwd,["ls-files","-z"]).split("\0")); } catch { return undefined; }
+ }
  prepareReviewerContext(cwd:string,workItemId:string){const directory=path.join(cwd,".factory-context"),owner=path.join(directory,"OWNER"),diff=path.join(directory,"review.diff"),expected=`ai-factory:${workItemId}\n`;
   this.assertContextSafe(cwd,directory,owner,expected,true);if(fs.existsSync(directory))fs.rmSync(directory,{recursive:true});fs.mkdirSync(directory,{mode:0o700});fs.writeFileSync(owner,expected,{mode:0o600});try{const summary=this.changeSummary(cwd);gitFile(cwd,["diff","--no-ext-diff","--no-textconv","--binary",`origin/${config.defaultBranch}...HEAD`],diff);
   const excludeValue=git(cwd,["rev-parse","--git-path","info/exclude"]),exclude=path.isAbsolute(excludeValue)?excludeValue:path.resolve(cwd,excludeValue);fs.mkdirSync(path.dirname(exclude),{recursive:true});const current=fs.existsSync(exclude)?fs.readFileSync(exclude,"utf8"):"";if(!current.split(/\r?\n/).includes("/.factory-context/"))fs.appendFileSync(exclude,`${current&&!current.endsWith("\n")?"\n":""}/.factory-context/\n`);

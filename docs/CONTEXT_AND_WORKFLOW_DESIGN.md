@@ -302,6 +302,7 @@ recovery                             = executions WHERE status='interrupted' AND
 | Open `auto-fix` findings (full text) | if `decision-required` refers to them | yes | no | ids and status only |
 | Open `decision-required` findings | yes | no | no | no |
 | Builder summary (last `agent.result`) | if consultation originated in Build | previous attempt only | **no** | no |
+| Repository map (tracked directories, counts, extensions) | no | yes | no | no |
 | Changed-file manifest + `git diff --stat` | on consultation | yes | yes | yes |
 | Full diff | no | no | no | **on disk**, path in prompt (6.5) |
 | Tester execution evidence (outcome, tests, coverage) | if consultation originated in Test | no | own | yes, attributed and **protected** |
@@ -310,6 +311,10 @@ recovery                             = executions WHERE status='interrupted' AND
 | Previous attempt | after dashboard interrupt/retry | after dashboard interrupt/retry | after dashboard interrupt/retry | after dashboard interrupt/retry |
 
 `Previous attempt` is an optional section assembled after **Interrupt and retry with this**. It records the interruption time and reason, the file list and `diff --stat` from the interrupted stage's starting commit to the preserved HEAD, the latest result for that stage when one exists, and the guidance record id. It is scoped to the stage and attempt created by that retry, included only for that matching execution and removed atomically when the execution starts, so later stages and attempts cannot receive stale recovery context. Builder also receives **Changed files** when `attempt > 1`, so it can distinguish preserved code from the next requested delta. Both sections are unprotected and may be omitted by the deterministic context budget; active human guidance itself remains protected.
+
+**The Repository map is unprotected and Builder-only.** Every role starts with fresh context, so the Builder rediscovers the target repository's layout on every execution before it can act. The map states that layout once: the tracked directories from `git ls-files`, how many files each holds and their most common extensions, rendered densely as `path count kinds` because the prompt is re-read on every turn of an agentic run. It carries no file contents, is bounded to 40 directories and 25 root files, and declares when it truncated. The Builder's contract says plainly that it is a starting point and never a substitute for reading the files it is about to change.
+
+It is given to the Builder alone on purpose. The Tester and the Reviewer run the same issue without it, so the `activity` histogram on `execution.finished` compares a role that has the map against roles that do not, on the same work, without a feature flag or a code revert.
 
 **Tester execution evidence is protected for the Delivery Reviewer.** It is projected to the Tester's outcome, `coverage` and `tests` before assembly: its `summary`, `findings`, `decisions` and `dependencies` never reach the Reviewer, which must reach an independent verdict from the code and the executed evidence. The projection also keeps the section small, so protecting it does not realistically exhaust the budget. Leaving it unprotected made the Reviewer's contract unsatisfiable: that contract requires returning `decision` or `changes` when Tester evidence is missing, so an omitted section produced a rejection whose stated reason was not the real one.
 
