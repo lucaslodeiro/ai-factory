@@ -63,7 +63,13 @@ if(codex) {
   {role:"product-architect",stage:"DESIGN",total_tokens:125},{role:"developer",stage:"BUILD",total_tokens:1234},
  ]);
  assert.deepEqual(s.db.prepare("SELECT total_tokens FROM executions WHERE status='succeeded' ORDER BY rowid DESC LIMIT 2").all(),[{total_tokens:null},{total_tokens:null}]);
- assert.equal((s.db.prepare("SELECT payload FROM events WHERE type='execution.started'").all() as Array<{payload:string}>).map(row=>JSON.parse(row.payload).selection.model).includes("auto"),true);s.db.close();
+ assert.equal((s.db.prepare("SELECT payload FROM events WHERE type='execution.started'").all() as Array<{payload:string}>).map(row=>JSON.parse(row.payload).selection.model).includes("auto"),true);
+ const finished=(s.db.prepare("SELECT payload FROM events WHERE type='execution.finished'").all() as Array<{payload:string}>).map(row=>JSON.parse(row.payload));
+ assert.equal(finished.length,8);
+ assert.ok(finished.every(event=>event.activity && event.activity.events>=1),"every provider run records what it did inside the run");
+ assert.deepEqual(finished[1].activity.eventTypes,{progress:1},"Codex stream events are counted by their own type");
+ assert.ok(finished.every(event=>event.usage===null||event.usage.cacheReadTokens!==undefined),"cache reads are recorded apart from writes");
+ s.db.close();
 });
 
 test('Claude requires the configured structured output instead of accepting an old result envelope',async()=>{

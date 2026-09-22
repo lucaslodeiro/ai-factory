@@ -99,6 +99,10 @@ The previous "roles share a byte-identical prefix" invariant was retired with th
 
 To make that confirmation possible, `execution.finished` now records cache reads and cache writes apart from each other. The `cached_tokens` column keeps their sum, so no schema change and no fresh data directory are required. The distinction matters because a write is a miss that populated the cache and a read is a hit: summed, a cache improvement and a cache regression are indistinguishable. Read the split with `npm run factory -- events <work-item-id>`.
 
+The same event now carries `activity`: how many JSON objects the provider wrote to stdout, a histogram keyed by the event type the provider itself reports, and the turn count and API duration when the provider states them. Codex streams one object per line, so its histogram is real; Claude and Cursor return a single result envelope, so they contribute only what that envelope states. The histogram is deliberately not keyed by a fixed vocabulary: a provider renaming or adding an event type shows up in the data instead of being silently dropped, and no event name had to be guessed to write the extractor.
+
+This is the missing measurement behind the largest open cost question. On issue #6 the Builder spent 4.88M cached tokens against the Architect's 164K, and the previous Builder run spent 541K: a ninefold swing between two runs of the same role. Prompt size cannot explain that; turn count can. Nothing here changes it, the point is to be able to see it.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

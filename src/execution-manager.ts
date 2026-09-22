@@ -8,6 +8,7 @@ import { Store } from "./storage.js";
 import { config, agentEnvironment } from "./config.js";
 import type { AgentRole, ModelSelection } from "./types.js";
 import { extractTokenUsage } from "./token-usage.js";
+import { extractProviderActivity } from "./provider-activity.js";
 const workflowStage: Record<AgentRole,string> = {"product-architect":"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"};
 export interface PromptManifestInput {
   includedRecordIds?:string[];
@@ -79,7 +80,7 @@ export class ExecutionManager {
         const usage=extractTokenUsage(selection?.provider,stdout.text,stderr.text);
         this.store.db.prepare("UPDATE executions SET status=?,finished_at=?,exit_code=?,input_tokens=?,output_tokens=?,cached_tokens=?,total_tokens=?,interruption_reason=? WHERE id=?")
           .run(status, new Date().toISOString(), providerExitCode, usage?.inputTokens ?? null,usage?.outputTokens ?? null,usage?.cachedTokens ?? null,usage?.totalTokens ?? null,interruptionReason??null,id);
-        this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage,interruptionReason }, workItemId, id);
+        this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage,activity:extractProviderActivity(stdout.text),interruptionReason }, workItemId, id);
         if (status !== "succeeded") return reject(new Error(`Execution ${id} ${status}${spawnError ? ': ' + spawnError.message : ''}`));
         try {
           if (stdout.tooLarge) return reject(new Error("Agent output exceeds 10 MB"));
