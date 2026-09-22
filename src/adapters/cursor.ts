@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import { ExecutionManager } from "../execution-manager.js";
+import { ExecutionManager,providerFailureMessage } from "../execution-manager.js";
 import { resultSchemaFor, parseResult } from "../results.js";
 import type { AgentAdapter, AgentRunRequest } from "./agent.js";
 
@@ -28,7 +28,7 @@ export class CursorAdapter implements AgentAdapter {
    ["-p", ...modelArgs, "--output-format", "stream-json", "--trust", ...accessArgs], r.cwd, `${r.instructions}\n\n${cursorOutputContract(schema)}`, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
   const envelope = finalEvent;
   if (!envelope) throw new Error("Cursor did not return a result event");
-  if (envelope.is_error) throw new Error("Cursor returned an error result");
+  if (envelope.is_error) throw new Error(`Cursor returned an error result${providerFailureMessage(envelope,"cursor")?`: ${providerFailureMessage(envelope,"cursor")}`:""}`);
   if (typeof envelope.result !== "string") throw new Error("Cursor result is missing the final message");
   return parseResult(extractCursorResult(envelope.result), r.role, r.allowedNextRoles, r.consultationFrom);
  }

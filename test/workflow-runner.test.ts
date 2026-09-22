@@ -17,7 +17,7 @@ import {adoptIssueState,issueStateIndex} from "../src/workflow-state.js";
 import {progressKey} from "../src/execution-progress.js";
 
 class Workspace implements WorkspacePort {
- commits:string[]=[];cleanupCalls=0;publishCalls=0;pushError:Error|undefined;syncError:Error|undefined;syncSkipped:string|undefined;currentHead="abc";ensure(){return "/tmp/factory-work";}assertBranch(){}sync(){if(this.syncError)throw this.syncError;return{before:this.currentHead,after:this.currentHead,merged:[],skipped:this.syncSkipped};}head(){return this.currentHead;}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){this.publishCalls++;}
+ commits:string[]=[];cleanupCalls=0;publishCalls=0;syncCalls=0;pushError:Error|undefined;syncError:Error|undefined;syncSkipped:string|undefined;currentHead="abc";ensure(){return "/tmp/factory-work";}assertBranch(){}sync(){this.syncCalls++;if(this.syncError)throw this.syncError;return{before:this.currentHead,after:this.currentHead,merged:[],skipped:this.syncSkipped};}head(){return this.currentHead;}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){this.publishCalls++;}
  async publishAsync(){this.publishCalls++;if(this.pushError)throw this.pushError;}
  changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/factory-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){this.cleanupCalls++;}
 }
@@ -49,6 +49,19 @@ test("runner publishes the deterministic work branch before the initial Design e
  try{
   const runner=new WorkflowRunner(store,{"product-architect":{async run(request){store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return result("questions");}}},workspace,{ensurePR(){return "unused";}});
   await runner.run(started.id);assert.equal(workspace.commits.length,0);assert.equal(workspace.publishCalls,1);
+ }finally{store.db.close();}
+});
+
+test("a failed Builder execution preserves partial work on its branch",async()=>{
+ const store=new Store(":memory:"),workspace=new Workspace();
+ try{
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,created_at,updated_at,context,stage,status) VALUES('failed-builder',1,'owner/demo','factory/issue-1','now','now',?,'BUILD','QUEUED')").run(JSON.stringify({title:"Build",body:"Continue",cwd:"/tmp/factory-work"}));
+  store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment,approved_by,approved_at) VALUES('failed-builder',1,'SPEC',?,?,'owner','now')").run(JSON.stringify([{id:"AC1",description:"Works"}]),JSON.stringify({complexity:"medium",risk:"low",verificationDepth:"thorough",rationale:"standard"}));
+  const runner=new WorkflowRunner(store,{developer:{async run(request){store.db.prepare("UPDATE executions SET status='failed',finished_at='now',exit_code=1 WHERE id=?").run(request.executionId);throw new Error("You've hit your session limit");}}},workspace,{ensurePR(){return"unused";}});
+  await runner.run("failed-builder");
+  assert.equal(new WorkflowProjections(store).get("failed-builder").status,"FAILED");
+  assert.equal(workspace.syncCalls,2);
+  assert.equal(workspace.publishCalls,2);
  }finally{store.db.close();}
 });
 

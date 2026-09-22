@@ -26,5 +26,8 @@ test("V3 failure evidence is actionable and redacts local paths, tokens and ANSI
   assert.match(invalid,/Coverage entry AC-4 is missing executed evidence/);assert.match(invalid,/Correct the stated report requirement/);
   assert.match(failureDiagnosis("[integration] Pull request create failed: Base ref must be a branch",""),/configured base branch is unavailable[\s\S]*reuse the successful review/);
   assert.match(failureDiagnosis("[integration] GraphQL: No commits between main and factory\/issue-1",""),/no commits between[\s\S]*retry Delivery/i);
+  assert.match(failureDiagnosis("Execution run failed: You've hit your session limit · resets 7:20pm","",{status:"failed",exit_code:1},"execution"),/session limit[\s\S]*Wait until the provider's reported reset time/);
+  assert.match(failureDiagnosis("Failed to provide valid structured output after 5 attempts","",{status:"failed",exit_code:1},"execution"),/exhausted its attempts[\s\S]*schema error/);
+  assert.match(failureDiagnosis("Execution 8a639fd5-3622-4f4f-9794-aa0620de626b failed: rate limit exceeded","",{status:"failed",exit_code:1},"execution"),/provider reported an error[\s\S]*rate limit exceeded/);
  }finally{store.db.close();config.dataDir=previous;fs.rmSync(root,{recursive:true,force:true});}
 });

@@ -49,6 +49,16 @@ export function failureLogTail(file: string, maxLines = 30) {
 export function failureDiagnosis(reason: string, stderr: string, run?: {status:string;exit_code:number|null},failureClass?:WorkflowFailure["class"]) {
   const evidence=`${reason}\n${stderr}`;
   const kind=failureClass??reason.match(/^\[([^\]]+)\]/)?.[1] as WorkflowFailure["class"]|undefined;
+  if (/(?:hit your session limit|session limit reached)/i.test(reason)) return [
+    "**Summary:** The agent provider stopped this run because its session limit was reached.",
+    `**Evidence:** ${sanitizeFailureEvidence(reason,600)}`,
+    "**Recommended action:** Wait until the provider's reported reset time, or switch this role to an available provider, then retry the saved stage. Inspect the preserved branch for partial work before continuing.",
+  ].join("\n\n");
+  if (/structured_output_retry_exhausted|failed to provide valid structured output after \d+ attempts/i.test(reason)) return [
+    "**Summary:** The provider exhausted its attempts to return a valid structured result.",
+    `**Evidence:** ${sanitizeFailureEvidence(reason,600)}`,
+    "**Recommended action:** Review the schema error and agent output, then retry the saved stage with corrective guidance if needed. The provider's repeated validation attempts may consume substantial tokens.",
+  ].join("\n\n");
   if (/(?:RPC failed|remote end hung up unexpectedly|HTTP [45]\d\d|curl \d+)/i.test(evidence) && /(?:RPC failed|remote end hung up|git push)/i.test(evidence)) return [
     "**Summary:** Git could not complete the transfer to the remote repository.",
     "**Evidence:** The recorded Git output reports a transport failure. An HTTP 400 alone does not prove invalid credentials, a size limit or a server outage.",
@@ -196,6 +206,12 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
     "**Summary:** The stage was interrupted before the orchestrator could safely record completion.",
     "**Evidence:** Recovery found an unfinished execution after the daemon stopped or restarted.",
     "**Recommended action:** Confirm the daemon is stable, inspect the preserved worktree, and retry the saved stage.",
+  ].join("\n\n");
+  const providerMessage=reason.match(/^Execution [0-9a-f-]+ failed: ([\s\S]+)$/i)?.[1];
+  if(kind==="execution"&&providerMessage)return [
+    "**Summary:** The agent provider reported an error before this stage could finish.",
+    `**Evidence:** ${sanitizeFailureEvidence(providerMessage,600)}`,
+    "**Recommended action:** Resolve the reported provider error, then retry the saved stage. Inspect the preserved branch for partial work before continuing.",
   ].join("\n\n");
   if (run?.status === "failed" || (run?.exit_code !== null && run?.exit_code !== undefined && run.exit_code !== 0)) return [
     "**Summary:** The agent subprocess failed before the workflow stage could complete.",

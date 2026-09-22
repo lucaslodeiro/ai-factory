@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Store } from "../src/storage.js";
-import { ExecutionManager } from "../src/execution-manager.js";
+import { ExecutionManager,providerFailureMessage } from "../src/execution-manager.js";
 import { ClaudeAdapter } from "../src/adapters/claude.js";
 import { CodexAdapter } from "../src/adapters/codex.js";
 import { CursorAdapter, extractCursorResult } from "../src/adapters/cursor.js";
@@ -14,6 +14,21 @@ import { config } from "../src/config.js";
 const root=fs.mkdtempSync(path.join(os.tmpdir(),"factory-adapters-"));
 config.dataDir=root;
 test.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+test("provider error envelopes preserve a bounded, sanitized cause",()=>{
+ assert.match(providerFailureMessage({type:"result",is_error:true,result:"You've hit your session limit · resets 7:20pm (America/Buenos_Aires)"},"claude")??"",/session limit.*resets 7:20pm/);
+ assert.match(providerFailureMessage({type:"result",is_error:true,errors:["Failed to provide valid structured output after 5 attempts"]},"claude")??"",/structured output after 5 attempts/);
+ assert.match(providerFailureMessage({type:"result",is_error:true,result:"token=hidden-value failed"},"cursor")??"",/token=\[REDACTED\]/);
+ assert.equal(providerFailureMessage({type:"result",is_error:false,result:"secret"},"claude"),undefined);
+ assert.match(providerFailureMessage({type:"turn.failed",error:{message:"rate limit exceeded"}},"codex")??"",/rate limit exceeded/);
+});
+test("an error result fails the execution even when the provider exits zero",async()=>{
+ const script=path.join(root,"error-result-provider");
+ fs.writeFileSync(script,`#!${process.execPath}\nconsole.log(JSON.stringify({type:'result',is_error:true,result:"You've hit your session limit · resets 7:20pm"}));\n`,{mode:0o755});
+ const store=new Store(":memory:");try{
+  await assert.rejects(new ExecutionManager(store).run("w","developer",script,[],root,"",30_000,{provider:"claude",model:"auto"} as any),/session limit.*resets 7:20pm/);
+  assert.deepEqual(store.db.prepare("SELECT status,exit_code FROM executions").get(),{status:"failed",exit_code:0});
+ }finally{store.db.close();}
+});
 test("real subprocess provider adapters deliver prompt via stdin and parse native output envelopes", async()=>{
  const script=path.join(root,"provider");
  fs.writeFileSync(script,`#!${process.execPath}

@@ -16,7 +16,7 @@ for(const provider of ["codex","claude","cursor"]){
    for(const role of roles){delete env[`${role}_PROVIDER` as keyof typeof env];delete env[`${role}_MODEL` as keyof typeof env];}
    const result=spawnSync(process.execPath,["--import","tsx","--test",fileURLToPath(new URL("./adapters.test.ts",import.meta.url))],{env,encoding:"utf8",timeout:30000});
    assert.equal(result.status,0,result.stdout+result.stderr);
-   assert.match(result.stdout,/# tests 6/);
+   assert.match(result.stdout,/# tests 8/);
   }finally{fs.rmSync(home,{recursive:true,force:true});}
  });
 }

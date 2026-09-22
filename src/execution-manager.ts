@@ -11,7 +11,20 @@ import { tokenUsageReducer } from "./token-usage.js";
 import { providerActivityReducer } from "./provider-activity.js";
 import { eachJsonLine, type JsonEvent } from "./provider-stream.js";
 import {progressMonitor,progressKey} from "./execution-progress.js";
+import {sanitizeFailureEvidence} from "./failure-report.js";
 const workflowStage: Record<AgentRole,string> = {"product-architect":"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"};
+export function providerFailureMessage(event:JsonEvent|undefined,provider:ModelSelection["provider"]|undefined){
+  if(!event||!provider)return undefined;
+  const failed=event.type==="result"&&event.is_error===true||provider==="codex"&&event.type==="turn.failed";
+  if(!failed)return undefined;
+  const error=event.error&&typeof event.error==="object"?event.error as Record<string,unknown>:undefined;
+  const message=typeof event.result==="string"&&event.result.trim()?event.result
+    :Array.isArray(event.errors)&&typeof event.errors[0]==="string"?event.errors[0]
+    :typeof error?.message==="string"?error.message
+    :typeof event.message==="string"?event.message
+    :typeof event.subtype==="string"?event.subtype:undefined;
+  return message?sanitizeFailureEvidence(message,500):undefined;
+}
 export interface PromptManifestInput {
   includedRecordIds?:string[];
   activeRequestId?:string;
@@ -86,21 +99,23 @@ export class ExecutionManager {
         } catch {}
         const providerExitCode = completion?.code ?? code;
         interruptionReason=timedOut?"execution-timeout":cancelled?(completion?.reason??interruptionReason??"user-cancel"):completion?.reason??interruptionReason;
-        const status = timedOut ? "timed_out" : cancelled||completion?.status==="cancelled" ? "cancelled" : interrupted||completion?.status==="interrupted" ? "interrupted" : code === 0 && !spawnError && completion?.status === "succeeded" ? "succeeded" : "failed";
+        let status = timedOut ? "timed_out" : cancelled||completion?.status==="cancelled" ? "cancelled" : interrupted||completion?.status==="interrupted" ? "interrupted" : code === 0 && !spawnError && completion?.status === "succeeded" ? "succeeded" : "failed";
         // One pass over the provider's event stream, however long the run was: its usage, its
         // activity and the final result envelope. Plain-text output simply yields no events.
         const stdoutFile=path.join(logDir,"stdout.log"),usageReducer=tokenUsageReducer(selection?.provider),activityReducer=providerActivityReducer();
-        let finalEvent:JsonEvent|undefined;
+        let finalEvent:JsonEvent|undefined,failedTurn:JsonEvent|undefined;
         // A transcript that cannot be read leaves usage and activity unknown; it must not stop the
         // execution from being recorded.
-        try { eachJsonLine(stdoutFile,event=>{usageReducer.add(event);activityReducer.add(event);if(event.type==="result")finalEvent=event;}); } catch {}
+        try { eachJsonLine(stdoutFile,event=>{usageReducer.add(event);activityReducer.add(event);if(event.type==="result")finalEvent=event;if(event.type==="turn.failed")failedTurn=event;}); } catch {}
+        if(status==="succeeded"&&(finalEvent?.is_error===true||failedTurn))status="failed";
         const usage=usageReducer.result();
         // Without a completion record the supervisor died before the agent was reaped, so the agent may
         // still be running: retry must prove its process group is gone first.
         this.store.db.prepare("UPDATE executions SET status=?,finished_at=?,exit_code=?,input_tokens=?,output_tokens=?,cached_tokens=?,total_tokens=?,interruption_reason=?,recovery_pending=? WHERE id=?")
           .run(status, new Date().toISOString(), providerExitCode, usage?.inputTokens ?? null,usage?.outputTokens ?? null,usage?.cachedTokens ?? null,usage?.totalTokens ?? null,interruptionReason??null,completion?0:1,id);
-        this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage,activity:activityReducer.result(),interruptionReason }, workItemId, id);
-        if (status !== "succeeded") return reject(new Error(`Execution ${id} ${status}${spawnError ? ': ' + spawnError.message : ''}`));
+        const providerError=status==="failed"?providerFailureMessage(finalEvent??failedTurn,selection?.provider):undefined;
+        this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage,activity:activityReducer.result(),interruptionReason,providerError }, workItemId, id);
+        if (status !== "succeeded") return reject(new Error(`Execution ${id} ${status}${providerError ? `: ${providerError}` : spawnError ? ': ' + spawnError.message : ''}`));
         resolve({ id, finalEvent, readStdout:()=>{ const stdout=readOutput(stdoutFile,10_000_000); if(stdout.tooLarge)throw new Error("Agent output exceeds 10 MB"); return stdout.text; } });
       });
     });

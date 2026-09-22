@@ -47,6 +47,14 @@ test("workflow thread explains timeouts without execution identifiers or cancell
  }finally{store.db.close();}
 });
 
+test("workflow thread shows a provider's failure reason when one was reported",()=>{
+ const store=new Store(":memory:");try{
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status) VALUES('w',1,'owner/demo','now','now','{}','BUILD','FAILED')").run();
+  store.event("execution.finished",{status:"failed",providerError:"You've hit your session limit · resets 7:20pm"},"w","run");
+  assert.match(String(workflowThread(store,"w")[0].reason),/session limit.*resets 7:20pm/);
+ }finally{store.db.close();}
+});
+
 test("prompt artifact caps full text at 512 KiB and reports pruning",()=>{const root=fs.mkdtempSync(path.join(os.tmpdir(),"workflow-prompt-")),previous=config.dataDir;config.dataDir=root;try{const dir=path.join(root,"runs","run");fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,"prompt.md"),"x".repeat(600*1024));const artifact=promptArtifact("run");assert.equal(artifact.available,true);assert.equal(artifact.truncated,true);assert.equal(Buffer.byteLength(artifact.prompt!),512*1024);assert.equal("logDir" in artifact,false);fs.unlinkSync(path.join(dir,"prompt.md"));assert.deepEqual(promptArtifact("run"),{available:false});}finally{config.dataDir=previous;fs.rmSync(root,{recursive:true,force:true});}});
 
 test("message actions are derived only from workflow state and active request",()=>{
