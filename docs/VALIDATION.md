@@ -189,6 +189,53 @@ The update also stayed silent about it. The outcome was one line, `Start it expl
 
 Not reproduced locally: `launchctl` exists only on macOS, so this is reasoned from the script and the reported symptom rather than from a failing test. `scripts/test-maintenance.mjs` still passes, and it does not cover this path.
 
+## The benchmark oracle never ran — 2026-09-22
+
+The first clean benchmark run (issue #10) reported `Resolved: no` with
+`Cannot find package 'tsx' imported from /Users/<operator>/`. The code the run
+produced was never examined; two defects in the verifier's own plumbing made it
+impossible to examine.
+
+`benchmark --verify` spawned `node --import tsx <script> <checkout>` with no
+`cwd`, so node resolved `tsx` from the operator's shell directory instead of
+from the engine, where it is installed. The invocation now lives in
+`verifierInvocation()` in `src/benchmark.ts`: it runs from the script's own
+directory and resolves the checkout to an absolute path before that move, so a
+relative checkout does not shift under it. `test/benchmark-verify.test.ts`
+spawns the real oracle against a temporary git checkout from a foreign working
+directory and asserts both the resolved and unresolved outcomes.
+
+`scripts/copy-assets.mjs` never copied the oracle into `dist/`, so an installed
+engine resolved `../scripts/benchmark-verify.mjs` to a path that does not exist
+and every installed run would have reported `Resolved: no` for that reason
+alone. It is copied now, and `scripts/validate-installation.mjs` requires
+`dist/scripts/benchmark-verify.mjs` among its build assets, so a future
+omission fails the installation instead of silently voiding the measurement.
+
+A third defect surfaced while testing the fix. The oracle located the produced
+function with `git grep -E "(export[^\n]*slugify|slugify[^\n]*=)"`. POSIX ERE
+has no escapes inside a bracket expression, so `[^\n]` excluded the letter `n`
+and `export function slugify` — the most ordinary form a Builder writes — never
+matched. It was found only through the second alternative when the code
+happened to be an assignment. The pattern is now `(export.*slugify|slugify.*=)`;
+`git grep` is line-oriented, so the class was doing nothing but harm. A correct
+implementation was reading as "produced nothing".
+
+Verified: `npm test` (364/364) and a build followed by running
+`dist/scripts/benchmark-verify.mjs` from `dist/scripts` against a temporary
+checkout, which resolved 8/8 behaviours. The original operator-side failure was
+not reproduced from the operator's machine.
+
+## Cost per role, not tokens per role — 2026-09-22
+
+`ai-factory activity` summarized roles by provider events and omitted cost.
+With Claude the event count is always 1, so the ordering carried no
+information, and token totals are a poor proxy for spend: on issue #10 the
+Builder held 40.5% of the tokens but 29.2% of the cost, while the Architect
+held 13.9% of the tokens and 21.4% of the cost. The summary now sums
+`totalTokens` and `costUsd` per role and orders by cost where the provider
+reported it, falling back to tokens and then to events.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

@@ -1,3 +1,5 @@
+import path from "node:path";
+
 // One run of the benchmark issue, reduced to numbers that can be compared against another run.
 // Everything here is read back from what the workflow already records; nothing is estimated and
 // a value the provider did not report stays null rather than becoming zero.
@@ -25,6 +27,14 @@ export interface RoleMetrics {
 // The run's own verdict is what the agents reported. `resolved` is what an independent oracle
 // found by exercising the produced code. Only the second one can tell a cheaper run apart from
 // a lazier one, so only runs that resolved the issue are comparable to each other.
+// How the oracle is launched. It is a .mjs script that imports the TypeScript the run produced, so
+// it needs tsx, and node resolves `--import tsx` against the working directory. Running it from the
+// engine's own directory is what makes the operator's shell irrelevant: launched from a home
+// directory it dies with ERR_MODULE_NOT_FOUND and the run reads as unresolved for a reason that has
+// nothing to do with the code under test. The checkout is resolved before that move, not after it.
+export function verifierInvocation(scriptPath:string,checkout:string):{command:string;args:string[];cwd:string} {
+  return {command:process.execPath,args:["--import","tsx",scriptPath,path.resolve(checkout)],cwd:path.dirname(scriptPath)};
+}
 export interface Verification { resolved:boolean; module:string|null; failures:number|null; error:string|null;
   checks:Array<{behaviour:number;input:string;expected:string;actual:unknown;passed:boolean}> }
 export interface BenchmarkReport {

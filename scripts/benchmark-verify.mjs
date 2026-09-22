@@ -35,7 +35,10 @@ const listed = spawnSync("git", ["ls-files", "-z"], { cwd: checkout, encoding: "
 if (listed.status !== 0) fail(`Not a git checkout: ${listed.stderr?.trim() || checkout}`);
 
 const candidates = listed.stdout.split("\0").filter(file => /\.(ts|tsx|mts|cts|js|mjs|cjs|jsx)$/.test(file) && !file.includes("node_modules"));
-const grep = spawnSync("git", ["grep", "-l", "-E", "(export[^\\n]*slugify|slugify[^\\n]*=)", "--", ...candidates], { cwd: checkout, encoding: "utf8", timeout: 30000 });
+// git grep is line-oriented, so `.` is already bounded by the line. A character class written as
+// `[^\n]` is not: POSIX ERE has no escapes inside a bracket expression, so it excluded the letter
+// n and `export function slugify` went unfound — a correct run reading as "produced nothing".
+const grep = spawnSync("git", ["grep", "-l", "-E", "(export.*slugify|slugify.*=)", "--", ...candidates], { cwd: checkout, encoding: "utf8", timeout: 30000 });
 const named = (grep.stdout || "").split("\n").map(file => file.trim()).filter(Boolean);
 if (!named.length) fail("No file in the checkout exports a slugify function", { searched: candidates.length });
 

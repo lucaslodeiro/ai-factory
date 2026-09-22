@@ -47,7 +47,8 @@ export function progression(rows:ActivityRow[]):RunProgression[] {
 }
 export interface RoleActivity {
   role:string; runs:number; events:number|null; eventsPerRun:number|null; turns:number|null;
-  cacheReadTokens:number|null; cacheWriteTokens:number|null; outputTokens:number|null; topTypes:string;
+  cacheReadTokens:number|null; cacheWriteTokens:number|null; outputTokens:number|null;
+  totalTokens:number|null; costUsd:number|null; topTypes:string;
 }
 
 const add = (total:number|null, value:number|null) => value === null ? total : (total ?? 0)+value;
@@ -56,14 +57,18 @@ export function summarizeActivity(rows:ActivityRow[]):RoleActivity[] {
   const byRole=new Map<string,ActivityRow[]>();
   for (const row of rows) byRole.set(row.role,[...(byRole.get(row.role) ?? []),row]);
   return [...byRole.entries()].map(([role,runs])=>{
-    const sum=(field:"events"|"turns"|"cacheReadTokens"|"cacheWriteTokens"|"outputTokens")=>runs.reduce<number|null>((total,row)=>add(total,row[field]),null);
+    const sum=(field:"events"|"turns"|"cacheReadTokens"|"cacheWriteTokens"|"outputTokens"|"totalTokens"|"costUsd")=>runs.reduce<number|null>((total,row)=>add(total,row[field]),null);
     const types=new Map<string,number>();
     for (const row of runs) for (const [type,count] of Object.entries(row.eventTypes)) types.set(type,(types.get(type) ?? 0)+count);
-    const events=sum("events");
+    const events=sum("events"),cost=sum("costUsd");
     return {role,runs:runs.length,events,eventsPerRun:events === null ? null : Math.round(events/runs.length),
       turns:sum("turns"),cacheReadTokens:sum("cacheReadTokens"),cacheWriteTokens:sum("cacheWriteTokens"),outputTokens:sum("outputTokens"),
+      totalTokens:sum("totalTokens"),costUsd:cost===null ? null : Math.round(cost*1e6)/1e6,
       topTypes:[...types.entries()].sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0])).slice(0,4).map(([type,count])=>`${type}:${count}`).join(" ")};
-  }).sort((a,b)=>(b.events ?? 0)-(a.events ?? 0) || a.role.localeCompare(b.role));
+  // The objective is stated in cost, and with a provider whose event count is always 1 an
+  // events-first ordering puts every role on the same rung. Cost leads where it was reported.
+  }).sort((a,b)=>(b.costUsd ?? 0)-(a.costUsd ?? 0) || (b.totalTokens ?? 0)-(a.totalTokens ?? 0) ||
+    (b.events ?? 0)-(a.events ?? 0) || a.role.localeCompare(b.role));
 }
 
 export function activityRow(payload:unknown, role:string, stage:string|null, startedAt:string|null):ActivityRow {

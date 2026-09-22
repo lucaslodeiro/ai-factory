@@ -90,6 +90,13 @@ the Tester wrote and never trusts a reported PASS. It locates the exported
 preferring a source file over a test file. The report then prints
 `Resolved: yes` or `no` with the failing cases.
 
+The oracle is a `.mjs` script that imports the TypeScript the run produced, so
+it needs `tsx`, which node resolves from the working directory. The command
+therefore runs it from the engine's own directory and resolves the checkout to
+an absolute path first. `<path-to-checkout>` is the worktree the run used —
+`ai-factory status` prints it; substitute the real path, because a literal
+placeholder produces `Resolved: no` with an unrelated error.
+
 Without it, the cost figures are the system grading its own homework, so a run
 that got cheaper by getting lazier reads as an improvement. `--baseline`
 therefore refuses to compare when either side was unverified or unresolved: the

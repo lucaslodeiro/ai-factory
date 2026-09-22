@@ -21,7 +21,7 @@ import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {readIssueState} from "./workflow-github.js";
 import {activityRow,summarizeActivity,progression} from "./execution-activity.js";
 import {resolveWorkItem} from "./work-item-reference.js";
-import {buildBenchmarkReport,compareBenchmarks,comparable,type BenchmarkReport,type ExecutionSample,type Verification} from "./benchmark.js";
+import {buildBenchmarkReport,compareBenchmarks,comparable,verifierInvocation,type BenchmarkReport,type ExecutionSample,type Verification} from "./benchmark.js";
 import {spawnSync as spawnVerifier} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import fs from "node:fs";
@@ -121,7 +121,8 @@ p.command("benchmark").argument("<work-item-id-or-issue-number>").option("--save
   let verification:Verification|null=null;
   if (options.verify) {
    const script=fileURLToPath(new URL("../scripts/benchmark-verify.mjs",import.meta.url));
-   const run=spawnVerifier(process.execPath,["--import","tsx",script,options.verify],{encoding:"utf8",timeout:120000,maxBuffer:10_000_000});
+   const call=verifierInvocation(script,options.verify);
+   const run=spawnVerifier(call.command,call.args,{cwd:call.cwd,encoding:"utf8",timeout:120000,maxBuffer:10_000_000});
    try { verification=JSON.parse(run.stdout) as Verification; }
    catch { verification={resolved:false,module:null,failures:null,checks:[],error:run.stderr?.trim() || run.error?.message || "The verifier produced no result"}; }
   }

@@ -76,3 +76,21 @@ test("a run with no measurement is skipped as a baseline instead of breaking the
  assert.equal(sequence[1].vsPreviousPercent,null,"the unmeasured run compares as unknown");
  assert.equal(sequence[2].vsPreviousPercent,-50,"and the next run compares against the last measured one");
 });
+
+test("the summary carries cost per role and leads with it, because that is the stated objective",()=>{
+ const rows=[
+  activityRow({activity:{events:1,turns:13,costUsd:1.042143},usage:{totalTokens:451498}},"qa","TEST","t2"),
+  activityRow({activity:{events:1,turns:8,costUsd:0.5},usage:{totalTokens:400000}},"qa","TEST","t3"),
+  activityRow({activity:{events:1,turns:15,costUsd:1.174109},usage:{totalTokens:565902}},"developer","BUILD","t1"),
+ ];
+ const summary=summarizeActivity(rows);
+ assert.deepEqual(summary.map(entry=>entry.role),["qa","developer"],"the most expensive role first, not the one with most events");
+ assert.equal(summary[0].costUsd,1.542143);
+ assert.equal(summary[0].totalTokens,851498);
+ assert.equal(summary[1].costUsd,1.174109);
+});
+
+test("a role whose provider reported no cost keeps a null total rather than a free-looking zero",()=>{
+ const summary=summarizeActivity([activityRow({activity:{events:3}},"reviewer","REVIEW","t1")]);
+ assert.deepEqual([summary[0].costUsd,summary[0].totalTokens],[null,null]);
+});
