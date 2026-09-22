@@ -304,12 +304,14 @@ recovery                             = executions WHERE status='interrupted' AND
 | Builder summary (last `agent.result`) | if consultation originated in Build | previous attempt only | **no** | no |
 | Changed-file manifest + `git diff --stat` | on consultation | yes | yes | yes |
 | Full diff | no | no | no | **on disk**, path in prompt (6.5) |
-| Tester execution evidence (tests, coverage) | if consultation originated in Test | no | own | yes, attributed |
+| Tester execution evidence (outcome, tests, coverage) | if consultation originated in Test | no | own | yes, attributed and **protected** |
 | Resolved / superseded records | no | no | no | no |
 | Recovery note | if interrupted | if interrupted | if interrupted | if interrupted |
 | Previous attempt | after dashboard interrupt/retry | after dashboard interrupt/retry | after dashboard interrupt/retry | after dashboard interrupt/retry |
 
 `Previous attempt` is an optional section assembled after **Interrupt and retry with this**. It records the interruption time and reason, the file list and `diff --stat` from the interrupted stage's starting commit to the preserved HEAD, the latest result for that stage when one exists, and the guidance record id. It is scoped to the stage and attempt created by that retry, included only for that matching execution and removed atomically when the execution starts, so later stages and attempts cannot receive stale recovery context. Builder also receives **Changed files** when `attempt > 1`, so it can distinguish preserved code from the next requested delta. Both sections are unprotected and may be omitted by the deterministic context budget; active human guidance itself remains protected.
+
+**Tester execution evidence is protected for the Delivery Reviewer.** It is projected to the Tester's outcome, `coverage` and `tests` before assembly: its `summary`, `findings`, `decisions` and `dependencies` never reach the Reviewer, which must reach an independent verdict from the code and the executed evidence. The projection also keeps the section small, so protecting it does not realistically exhaust the budget. Leaving it unprotected made the Reviewer's contract unsatisfiable: that contract requires returning `decision` or `changes` when Tester evidence is missing, so an omitted section produced a rejection whose stated reason was not the real one.
 
 ### 6.4 Budget
 

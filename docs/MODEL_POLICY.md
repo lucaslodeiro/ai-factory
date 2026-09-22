@@ -30,6 +30,7 @@ All providers receive the same canonical role contract. Product Architect and De
 | Capability | Codex | Claude | Cursor |
 |---|---|---|---|
 | Structured result | `--output-schema` enforced by the CLI | `--json-schema` enforced by the CLI | No schema flag; the orchestrator appends the schema to the prompt as an output contract and validates the final message locally |
+| Result contract prose | role specialization omitted; the schema enforces it | role specialization omitted; the schema enforces it | role specialization kept; prose is the only constraint |
 | Read-only roles | `--sandbox read-only` | read-only tool allowlist | `--mode ask` |
 | Writing roles | `--sandbox workspace-write` with network | edit, write and shell tools | `--force` |
 | Token usage | reported on stderr | reported in the JSON envelope | not reported; executions show Unavailable |

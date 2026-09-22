@@ -38,8 +38,8 @@ test("optional sections are omitted deterministically when the budget is exhaust
   const {store,assembler}=setup();
   try {
     const baseline=assembler.assemble({workItemId:"work-1",role:"reviewer",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"}});
-    const result=assembler.assemble({workItemId:"work-1",role:"reviewer",specVersion:1,budgetBytes:Buffer.byteLength(baseline.markdown)+20,budgetSource:"provider/model",issue:{title:"Issue",body:"Body"},diffStat:"large",qaEvidence:{tests:["large"]}});
-    assert.deepEqual(result.manifest.excludedSections,["Changed files","Tester execution evidence"]);
+    const result=assembler.assemble({workItemId:"work-1",role:"reviewer",specVersion:1,budgetBytes:Buffer.byteLength(baseline.markdown)+20,budgetSource:"provider/model",issue:{title:"Issue",body:"Body"},diffStat:"large",previousAttempt:{stage:"REVIEW",reason:"interrupted"}});
+    assert.deepEqual(result.manifest.excludedSections,["Previous attempt","Changed files"]);
     assert.equal(result.manifest.budgetSource,"provider/model");
     assert.ok(Buffer.byteLength(result.markdown)<=result.manifest.budgetBytes);
   } finally { store.db.close(); }
@@ -58,5 +58,40 @@ test("delivery context requires an approved stored specification",()=>{
   try {
     store.db.prepare("DELETE FROM specs").run();
     assert.throws(()=>assembler.assemble({workItemId:"work-1",role:"qa",specVersion:1,budgetBytes:10_000,budgetSource:"default",issue:{title:"Issue",body:"Body"}}),/Approved SPEC v1 is unavailable/);
+  } finally { store.db.close(); }
+});
+
+const testerResult={outcome:"pass",summary:"I concluded the implementation is solid and well factored.",spec:"",questions:[],
+ findings:[{classification:"defer",evidence:"Tester opinion about style"}],acceptanceCriteria:[],
+ coverage:[{criterionId:"AC-1",status:"passed",evidence:"greet returns Hello world"}],
+ tests:[{command:"node --test",exitCode:0,evidence:"1 passing"}],
+ dependencies:[{name:"left-pad",change:"added",rationale:"padding"}],changedFiles:["test/greet.test.mjs"],
+ decisions:[{kind:"tactical",decision:"Used node:test",rationale:"no new dependency",conflictsWithHuman:false,supersedes:[]}],
+ nextRole:null,reviewChecks:[],taskAssessment:null};
+
+test("Reviewer receives the Tester's executed evidence without its conclusions or opinions",()=>{
+  const {store,assembler}=setup();
+  try {
+    const result=assembler.assemble({workItemId:"work-1",role:"reviewer",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"},qaEvidence:testerResult});
+    assert.match(result.markdown,/greet returns Hello world/);
+    assert.match(result.markdown,/node --test/);
+    assert.doesNotMatch(result.markdown,/solid and well factored/);
+    assert.doesNotMatch(result.markdown,/Tester opinion about style/);
+    assert.doesNotMatch(result.markdown,/no new dependency/);
+    assert.doesNotMatch(result.markdown,/left-pad/);
+  } finally { store.db.close(); }
+});
+
+test("Reviewer evidence outranks optional context and never disappears silently",()=>{
+  const {store,assembler}=setup();
+  try {
+    const full=assembler.assemble({workItemId:"work-1",role:"reviewer",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"},qaEvidence:testerResult});
+    const tight=assembler.assemble({workItemId:"work-1",role:"reviewer",specVersion:1,budgetBytes:Buffer.byteLength(full.markdown),budgetSource:"default",issue:{title:"Issue",body:"Body"},qaEvidence:testerResult,
+      changedFiles:["a.ts","b.ts"],diffStat:"2 files changed",previousAttempt:{stage:"REVIEW",reason:"interrupted"}});
+    assert.match(tight.markdown,/greet returns Hello world/);
+    assert.ok(!tight.manifest.excludedSections.includes("Tester execution evidence"));
+    assert.ok(tight.manifest.excludedSections.length>0);
+    assert.throws(()=>assembler.assemble({workItemId:"work-1",role:"reviewer",specVersion:1,budgetBytes:400,budgetSource:"default",issue:{title:"Issue",body:"Body"},qaEvidence:testerResult}),
+      error=>error instanceof InvalidContextError);
   } finally { store.db.close(); }
 });

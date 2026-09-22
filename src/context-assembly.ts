@@ -43,6 +43,19 @@ const bytes=(value:string)=>Buffer.byteLength(value,"utf8");
 const shortIssue=(issue:ContextAssemblyInput["issue"])=>({title:issue.title,body:issue.body.slice(0,2048),bodyTruncated:bytes(issue.body)>bytes(issue.body.slice(0,2048))});
 const payload=(record:WorkflowRecord)=>({id:record.id,sequence:record.sequence,createdAt:record.createdAt,...record.payload});
 
+// The Delivery Reviewer must reach its own verdict. It receives what the Tester executed and
+// measured, never the Tester's conclusions, opinions or tactical reasoning, which would bias a
+// review that is supposed to be independent. The projection also keeps the section small enough
+// to stay protected, so a Reviewer never rejects a delivery because its evidence silently
+// fell outside the context budget.
+export function testerExecutionEvidence(result:unknown) {
+  if (!result || typeof result !== "object") return undefined;
+  const value=result as Record<string,unknown>;
+  const list=(field:string)=>Array.isArray(value[field]) ? value[field] as unknown[] : [];
+  const evidence={outcome:typeof value.outcome === "string" ? value.outcome : null,coverage:list("coverage"),tests:list("tests")};
+  return evidence.outcome === null && !evidence.coverage.length && !evidence.tests.length ? undefined : evidence;
+}
+
 function render(sections:Section[]) {
   return sections.map(section=>`## ${section.name}\n\n${JSON.stringify(section.value,null,2)}`).join("\n\n");
 }
@@ -70,6 +83,7 @@ export class ContextAssembler {
     const issue=["product-architect","developer"].includes(input.role) ? input.issue : shortIssue(input.issue);
     const specification=spec ? {version:input.specVersion,body:spec.body,criteria:this.json<Criterion[]>(spec.criteria,[]),assessment:this.json<TaskAssessment|null>(spec.assessment,null)} : {version:0,body:null,criteria:[],assessment:null};
 
+    const testerEvidence=input.role === "reviewer" ? testerExecutionEvidence(input.qaEvidence) : undefined;
     const sections:Section[]=[
       {name:"Issue",value:issue,protected:true},
       {name:"Approved specification",value:specification,protected:true},
@@ -82,7 +96,7 @@ export class ContextAssembler {
       ...(input.previousAttempt ? [{name:"Previous attempt",value:input.previousAttempt,protected:false}] : []),
       ...(input.rejectedResult ? [{name:"Rejected previous result",value:{message:`Your previous result for this stage was rejected: ${input.rejectedResult.message}. Return a corrected result. In tests report only the acceptance verification commands; put diagnostic runs in the summary.`},protected:false}] : []),
       ...(["developer","qa","reviewer"].includes(input.role) && (input.changedFiles || input.diffStat) ? [{name:"Changed files",value:{files:input.changedFiles??[],diffStat:input.diffStat??"",...(input.role==="reviewer"&&input.diffPath?{diffPath:input.diffPath}:{})},protected:false}] : []),
-      ...(input.role === "reviewer" && input.qaEvidence ? [{name:"Tester execution evidence",value:input.qaEvidence,protected:false}] : []),
+      ...(input.role === "reviewer" && testerEvidence ? [{name:"Tester execution evidence",value:testerEvidence,protected:true}] : []),
     ];
     const protectedSections=sections.filter(section=>section.protected);
     const protectedMarkdown=render(protectedSections);

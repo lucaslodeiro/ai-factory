@@ -68,3 +68,12 @@ test("Cursor prompts carry the Cursor worker instructions instead of another pro
  assert.ok(!output.includes("Codex Worker Instructions")&&!output.includes("Claude Worker Instructions"));
  assert.ok(output.includes("OUTPUT CONTRACT"));
 });
+
+test("only a provider without schema enforcement is told in prose which fields are forbidden",()=>{
+ assert.ok(promptContract("developer","cursor").includes("delivery roles cannot return"));
+ assert.ok(!promptContract("developer","codex").includes("delivery roles cannot return"));
+ assert.ok(!promptContract("developer","claude").includes("delivery roles cannot return"));
+ // The rest of that paragraph is guidance the schema cannot express, so it stays for every provider.
+ for (const provider of ["codex","claude","cursor"] as const) assert.ok(promptContract("developer",provider).includes("A failed required verification blocks PASS."));
+ assert.equal(promptContractParts("product-architect","codex").prefix,promptContractParts("qa","codex").prefix);
+});

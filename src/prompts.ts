@@ -2,18 +2,25 @@ import path from "node:path";
 import { config } from "./config.js";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { AgentProvider, AgentRole } from "./types.js";
+import { providerEnforcesResultSchema, type AgentProvider, type AgentRole } from "./types.js";
 import { deliveryStageName } from "./tactical-routing.js";
 import type { TacticalNextRole } from "./tactical-routing.js";
 const root = new URL("../", import.meta.url);
 const read = (p: string) => fs.readFileSync(fileURLToPath(new URL(p, root)), "utf8");
 export interface PromptContractOptions {tacticalRoute?:{from:import("./types.js").DeliveryStage;allowedNextRoles:TacticalNextRole[]};}
+// The role schema already forbids a delivery role from returning a spec, criteria, an assessment
+// or nextRole. Only a provider that cannot be given that schema needs the rule restated in prose.
+const specializationSentence="Provider schemas are specialized by role: delivery roles cannot return a replacement spec, acceptance criteria, task assessment or nextRole. ";
+export function resultContract(selectedProvider:AgentProvider) {
+  const contract=read("templates/EXECUTION_RESULT.md");
+  return providerEnforcesResultSchema[selectedProvider] ? contract.replace(specializationSentence,"") : contract;
+}
 export function promptContractParts(role:AgentRole,selectedProvider:AgentProvider,options:PromptContractOptions={}) {
   const provider = selectedProvider === "codex" ? "codex/AGENTS.md" : selectedProvider === "cursor" ? "cursor/AGENTS.md" : "claude/CLAUDE.md";
   const template = role === "product-architect" ? "SPEC" : role === "qa" ? "QA_REPORT" : role === "reviewer" ? "REVIEW_REPORT" : null;
   const toolDirs = [path.dirname(process.execPath), ...(path.isAbsolute(config.gitCommand) ? [path.dirname(config.gitCommand)] : [])].join(path.delimiter);
   const shellPrefix = `export PATH='${toolDirs.replaceAll("'", "'\\''") }':"$PATH";`;
-  const prefix=["Use environment-blocked only when an unavailable execution capability is essential to complete the current stage. Evidence must explain the failure and what must change before Retry. An optional research or validation limitation belongs in summary and must not be an environment-blocked finding. An initial Architect pairs a real blocker with outcome questions; delivery roles use decision; a consulting Architect uses resolved and its permitted nextRole. A blocker produces FAILED, not an architectural consultation. defer is only optional, non-blocking follow-up; never use it for an unmet acceptance prerequisite.",read("agents/common/RULES.md"),read("templates/EXECUTION_RESULT.md"),read(`agents/${provider}`),
+  const prefix=["Use environment-blocked only when an unavailable execution capability is essential to complete the current stage. Evidence must explain the failure and what must change before Retry. An optional research or validation limitation belongs in summary and must not be an environment-blocked finding. An initial Architect pairs a real blocker with outcome questions; delivery roles use decision; a consulting Architect uses resolved and its permitted nextRole. A blocker produces FAILED, not an architectural consultation. defer is only optional, non-blocking follow-up; never use it for an unmet acceptance prerequisite.",read("agents/common/RULES.md"),resultContract(selectedProvider),read(`agents/${provider}`),
     "Return every field in the JSON schema. summary is at most three sentences and 600 characters: what you did and the one thing the next reader must know. Details belong in coverage, tests, findings and decisions. supersedes lists only record ids shown under the active decisions sections of this prompt; leave it empty otherwise and explain what the decision replaces in rationale. A new spec must include taskAssessment with complexity and risk (low/medium/high) plus a concrete rationale; use null in other outcomes. Low complexity means a small localized change with clear behavior; high means broad architecture, difficult algorithms, concurrency or migrations. High risk includes authentication/authorization, secrets, payments, destructive data changes or security boundaries. Unknown scope requires questions or a conservative assessment. Never choose model names; the orchestrator owns model selection. Use empty arrays and null nextRole where inapplicable. A spec needs stable acceptanceCriteria IDs also present in its markdown. Delivery reports need coverage for those exact IDs, executed tests with command/exitCode/evidence, changedFiles and dependencies with rationale. Delivery Reviewer must report each review dimension, including evidence for not-applicable. Never claim a test passed without executing it.",
     `Runtime: use Node at ${process.execPath} and Git at ${config.gitCommand}. Login shells can replace PATH: prefix EVERY shell command that uses node/npm/git with ${shellPrefix} Verify node --version before tests.`,
     "The orchestrator synchronizes the assigned branch and remote base immediately before this execution. Do not run git fetch, pull, merge, rebase, worktree, commit or push: those commands write protected Git metadata and are owned by the orchestrator. You may inspect the prepared checkout with read-only Git commands. A sandbox refusal for a prohibited Git synchronization command is not an environment blocker.",

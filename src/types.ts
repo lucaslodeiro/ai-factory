@@ -1,6 +1,9 @@
 export type AgentRole = "product-architect" | "developer" | "qa" | "reviewer";
 export const agentProviders = ["codex", "claude", "cursor"] as const;
 export type AgentProvider = typeof agentProviders[number];
+// A provider that accepts a JSON Schema constrains generation itself, so the prompt
+// does not have to restate in prose what the schema already forbids.
+export const providerEnforcesResultSchema: Record<AgentProvider, boolean> = { codex: true, claude: true, cursor: false };
 export type DeliveryStage = "BUILD" | "TEST" | "REVIEW";
 export interface Criterion { id: string; description: string; }
 export interface Finding { classification: "auto-fix" | "decision-required" | "defer" | "environment-blocked"; evidence: string; }
