@@ -296,6 +296,24 @@ held 13.9% of the tokens and 21.4% of the cost. The summary now sums
 `totalTokens` and `costUsd` per role and orders by cost where the provider
 reported it, falling back to tokens and then to events.
 
+## Providers stream their events — 2026-09-22
+
+Codex now runs with `--json` and Claude with `--output-format stream-json --verbose`, so both write every event to `stdout.log` while the run happens instead of one envelope at the end. A run that is stopped keeps what it had done: the last event shows the command still running. This is the input for rebuilding the context of an interrupted attempt; nothing reads it for that yet.
+
+The fixtures under `test/fixtures/providers/` are real output, sanitized only of local paths, session ids and account-level fields:
+
+- `codex-complete.jsonl` and `codex-interrupted.jsonl` come from `codex exec` 0.156.0 pointed at a local Responses API stub that asks for two shell commands and then answers. The CLI, its event stream and its command execution are real; the model is not, so its `item.completed` warning about unknown model metadata is part of the fixture. The interrupted run was stopped with SIGTERM to its process group while `sleep 30` ran.
+- `claude-stream.jsonl` and `claude-interrupted.jsonl` come from Claude Code 2.1.280 `-p` against the real model; the second was stopped with SIGTERM during a foreground command, whose result reads `Exit code 137`.
+
+What changed with the format:
+
+- Claude's result envelope is not the last line: a `task_summary` event follows it. The adapter takes the last `type: "result"` event instead of parsing stdout as one object.
+- Codex no longer prints `tokens used` on stderr. Usage now comes from its `turn.completed` events, which count cached input inside `input_tokens`; the Factory records uncached input apart from cache reads and counts the total as input plus output. Codex totals recorded before this change came from the CLI's own `tokens used` figure and are not guaranteed to be the same measure.
+- Codex's human-readable progress also left stderr, so the stderr tail in a failure diagnosis now holds only the CLI's own warnings and errors.
+- The transcript carries tool output and can be much larger than the result. It is read once, in chunks, with no size limit on the file; a single line over 10 MB, or one cut off by a killed process, is skipped and counted. The 10 MB limit on the whole of stdout now applies only to Cursor, which still answers with one envelope.
+
+Cursor is unchanged. Its CLI could not be installed from this environment (cursor.com is not reachable), and switching its format without a captured stream would be a guess.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

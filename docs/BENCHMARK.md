@@ -133,12 +133,14 @@ resolved run that was 4,314 for the Builder against a prompt of 7,269 tokens,
 so deleting *half* the Builder's prompt did not pay for one extra turn.
 
 Only the bytes-to-tokens conversion is an estimate there, at 4 bytes per token;
-everything else is measured. Claude's `--output-format json` reports usage for
-the whole run and never for its first turn, so the prompt cannot be isolated
-from what the agent pulled in afterwards. The conclusion was checked across 3.5
-to 4.5 bytes per token, where the prompt's share moves between 10% and 13% of
-the run and the ranking of the roles does not change. Getting the exact number
-would mean switching the adapter to `stream-json` and reading per-turn usage.
+everything else is measured. The runs measured here used Claude's
+`--output-format json`, which reports usage for the whole run and never for its
+first turn, so the prompt cannot be isolated from what the agent pulled in
+afterwards. The conclusion was checked across 3.5 to 4.5 bytes per token, where
+the prompt's share moves between 10% and 13% of the run and the ranking of the
+roles does not change. The Claude adapter now uses `stream-json`, whose
+assistant events carry per-turn usage, so a later run can give the exact number
+once the benchmark reads it; it does not yet.
 
 Compare a later run against a saved baseline:
 

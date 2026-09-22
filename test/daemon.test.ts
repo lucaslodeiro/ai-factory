@@ -58,7 +58,7 @@ if(developer){
 if(codex){
  fs.writeFileSync(a[a.indexOf('--output-last-message')+1],JSON.stringify(result));
 } else {
- console.log(JSON.stringify({is_error:false,structured_output:result}));
+ console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,structured_output:result}));
 }
 `);
  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, AI_FACTORY_HOME:root, FACTORY_DATA_DIR: data, FACTORY_REPO_DIR: repo,

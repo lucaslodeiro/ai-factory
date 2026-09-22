@@ -13,7 +13,7 @@ test.after(() => fs.rmSync(config.dataDir, { recursive: true, force: true }));
 test("captures output, spawn errors, nonzero exit and timeout", async () => {
  const s = new Store(":memory:"), m = new ExecutionManager(s);
  const succeeded=await m.run("w", "developer", process.execPath, ["-e", "console.log('done')"], os.tmpdir(),"exact prompt");
- assert.equal(succeeded.stdout.trim(), "done");
+ assert.equal(succeeded.readStdout().trim(), "done");assert.equal(succeeded.finalEvent,undefined);
  const runDir=path.join(config.dataDir,"runs",succeeded.id),manifest=JSON.parse(fs.readFileSync(path.join(runDir,"prompt.json"),"utf8"));
  assert.equal(fs.readFileSync(path.join(runDir,"prompt.md"),"utf8"),"exact prompt");
  assert.equal(manifest.promptBytes,12); assert.equal(manifest.sectionBytes.rawPrompt,12); assert.deepEqual(manifest.includedRecordIds,[]);

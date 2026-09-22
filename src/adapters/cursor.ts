@@ -32,9 +32,9 @@ export class CursorAdapter implements AgentAdapter {
   // Builder and Tester edit files and run commands; Architect and Reviewer use the documented read-only mode.
   const accessArgs = r.role === "developer" || r.role === "qa" ? ["--force"] : ["--mode", "ask"];
   const modelArgs = r.selection.model === "auto" ? [] : ["--model", r.selection.model];
-  const { stdout } = await this.executions.run(r.workItemId, r.role, config.cursorCommand,
+  const { readStdout } = await this.executions.run(r.workItemId, r.role, config.cursorCommand,
    ["-p", ...modelArgs, "--output-format", "json", "--trust", ...accessArgs], r.cwd, `${r.instructions}\n\n${cursorOutputContract(schema)}`, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
-  const envelope = lastJsonObject(stdout);
+  const envelope = lastJsonObject(readStdout());
   if (envelope.is_error) throw new Error("Cursor returned an error result");
   if (typeof envelope.result !== "string") throw new Error("Cursor result is missing the final message");
   return parseResult(extractCursorResult(envelope.result), r.role, r.allowedNextRoles, r.consultationFrom);

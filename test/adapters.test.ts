@@ -27,12 +27,13 @@ const claudeDelivery=!codex&&!cursor&&args[args.indexOf('--tools')+1].includes('
 const cursorDelivery=cursor&&args.includes('--force');
 const result=codex||claudeDelivery||cursorDelivery?${JSON.stringify(result("pass"))}:${JSON.stringify(result("spec"))};
 if(codex) {
- if(!args.includes('--output-schema')||args.includes('--full-auto')) process.exit(9);
+ if(!args.includes('--output-schema')||!args.includes('--json')||args.includes('--full-auto')) process.exit(9);
  const schema=JSON.parse(fs.readFileSync(args[args.indexOf('--output-schema')+1],'utf8'));
  const check=s=>{if(s.properties){if(s.additionalProperties!==false||JSON.stringify([...(s.required??[])].sort())!==JSON.stringify(Object.keys(s.properties).sort()))throw new Error('invalid_json_schema');Object.values(s.properties).forEach(check);}if(s.items)check(s.items);};check(schema);
  fs.writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(result));
- console.log(JSON.stringify({type:'progress'}));
- console.error('tokens used\\n1,234');
+ console.log(JSON.stringify({type:'turn.started'}));
+ console.log(JSON.stringify({type:'item.completed',item:{id:'item_1',type:'command_execution',command:'npm test',aggregated_output:'ok',exit_code:0,status:'completed'}}));
+ console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:1100,cached_input_tokens:300,cache_write_input_tokens:0,output_tokens:134,reasoning_output_tokens:20}}));
 } else if(cursor) {
  if(args[0]!=='-p'||args[args.indexOf('--output-format')+1]!=='json'||args.includes('--json-schema'))process.exit(9);
  if(!input.includes('OUTPUT CONTRACT')||!input.includes('"additionalProperties":false'))process.exit(11);
@@ -40,8 +41,12 @@ if(codex) {
  const fence=String.fromCharCode(96).repeat(3);
  console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,duration_ms:5,result:'Done.\\n'+fence+'json\\n'+JSON.stringify(result)+'\\n'+fence}));
 } else {
- if(!args.includes('--json-schema')||args.includes('--dangerously-skip-permissions'))process.exit(9);
- console.log(JSON.stringify({is_error:false,structured_output:result,usage:{input_tokens:100,output_tokens:20,cache_read_input_tokens:5}}));
+ if(!args.includes('--json-schema')||args[args.indexOf('--output-format')+1]!=='stream-json'||!args.includes('--verbose')||args.includes('--dangerously-skip-permissions'))process.exit(9);
+ // The real stream: the result envelope is not the last line, a task summary follows it.
+ console.log(JSON.stringify({type:'system',subtype:'init'}));
+ console.log(JSON.stringify({type:'assistant',message:{content:[{type:'tool_use',id:'t1',name:'Read',input:{file_path:'a.txt'}}]}}));
+ console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,num_turns:2,structured_output:result,usage:{input_tokens:100,output_tokens:20,cache_read_input_tokens:5}}));
+ console.log(JSON.stringify({type:'system',subtype:'task_summary',detail:null}));
 }
 `,{mode:0o755});
  config.codexCommand=script;config.claudeCommand=script;config.cursorCommand=script;
@@ -67,14 +72,18 @@ if(codex) {
  const finished=(s.db.prepare("SELECT payload FROM events WHERE type='execution.finished'").all() as Array<{payload:string}>).map(row=>JSON.parse(row.payload));
  assert.equal(finished.length,8);
  assert.ok(finished.every(event=>event.activity && event.activity.events>=1),"every provider run records what it did inside the run");
- assert.deepEqual(finished[1].activity.eventTypes,{progress:1},"Codex stream events are counted by their own type");
+ assert.deepEqual(finished[1].activity.eventTypes,{"turn.started":1,"item.completed":1,"turn.completed":1},"Codex stream events are counted by their own type");
+ assert.deepEqual(finished[0].activity.eventTypes,{system:2,assistant:1,result:1},"Claude stream events are counted by their own type");
+ assert.equal(finished[0].activity.turns,2);
+ assert.deepEqual(finished[1].usage,{inputTokens:800,outputTokens:134,cachedTokens:300,cacheReadTokens:300,cacheWriteTokens:0,totalTokens:1234},"Codex usage comes from its turn events, cached input counted once");
  assert.ok(finished.every(event=>event.usage===null||event.usage.cacheReadTokens!==undefined),"cache reads are recorded apart from writes");
  s.db.close();
 });
 
 test('Claude requires the configured structured output instead of accepting an old result envelope',async()=>{
- const execution={async run(){return {stdout:JSON.stringify({is_error:false,result:JSON.stringify(result('spec'))})};}};
+ const execution={async run(){return {finalEvent:{type:'result',is_error:false,result:JSON.stringify(result('spec'))}};}};
  await assert.rejects(new ClaudeAdapter(execution as any).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'test',selection:{...selectModel('product-architect'),provider:'claude',model:'auto'}}),/missing structured_output/);
+ await assert.rejects(new ClaudeAdapter({async run(){return {};}} as any).run({workItemId:'w',role:'product-architect',cwd:root,instructions:'test',selection:{...selectModel('product-architect'),provider:'claude',model:'auto'}}),/did not return a result event/);
 });
 
 test("Codex sandbox follows each role's write contract",async()=>{
@@ -93,7 +102,7 @@ test("Cursor final message is extracted from fences or prose and validated as th
 });
 
 test("Cursor rejects error envelopes, missing final messages and results that break the role contract",async()=>{
- const reply=(stdout:string)=>({async run(){return {stdout};}});
+ const reply=(stdout:string)=>({async run(){return {readStdout:()=>stdout};}});
  const request={workItemId:'w',role:'product-architect' as const,cwd:root,instructions:'test',selection:{...selectModel('product-architect'),provider:'cursor' as const,model:'auto'}};
  await assert.rejects(new CursorAdapter(reply(JSON.stringify({type:'result',is_error:true,result:'boom'})) as any).run(request),/error result/);
  await assert.rejects(new CursorAdapter(reply(JSON.stringify({type:'result',is_error:false})) as any).run(request),/missing the final message/);
@@ -104,7 +113,7 @@ test("Cursor rejects error envelopes, missing final messages and results that br
 
 test("Cursor access flags follow each role's write contract",async()=>{
  for(const role of ["product-architect","reviewer","developer","qa"] as const){
-  let args:string[]=[];const execution={async run(_id:string,_role:string,_command:string,argv:string[]){args=argv;return {stdout:JSON.stringify({is_error:false,result:JSON.stringify(result(role==="product-architect"?"spec":"pass"))})};}};
+  let args:string[]=[];const execution={async run(_id:string,_role:string,_command:string,argv:string[]){args=argv;return {readStdout:()=>JSON.stringify({is_error:false,result:JSON.stringify(result(role==="product-architect"?"spec":"pass"))})};}};
   await new CursorAdapter(execution as any).run({workItemId:"w",role,cwd:root,instructions:"test",selection:{...selectModel(role),provider:"cursor"}});
   const writable=["developer","qa"].includes(role);assert.equal(args.includes("--force"),writable);assert.equal(args[args.indexOf("--mode")+1]==="ask",!writable);
  }

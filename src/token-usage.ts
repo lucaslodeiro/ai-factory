@@ -26,18 +26,29 @@ function merge(values:TokenUsage[]) {
  return {inputTokens:sum("inputTokens"),outputTokens:sum("outputTokens"),cachedTokens:sum("cachedTokens"),cacheReadTokens:sum("cacheReadTokens"),cacheWriteTokens:sum("cacheWriteTokens"),totalTokens:sum("totalTokens")};
 }
 
-export function extractTokenUsage(provider: AgentProvider | undefined,stdout: string,stderr: string): TokenUsage | null {
- if (provider === "codex") {
-  const match=[...stderr.matchAll(/tokens used\s*(?:\r?\n|:)\s*([\d,]+)/gi)].at(-1);
-  if (match) return {inputTokens:null,outputTokens:null,cachedTokens:null,cacheReadTokens:null,cacheWriteTokens:null,totalTokens:Number(match[1].replaceAll(",",""))};
- }
- const envelopes:unknown[]=[];
- for (const line of stdout.split(/\r?\n/).filter(Boolean)) try { envelopes.push(JSON.parse(line)); } catch {}
- const direct=envelopes.map(envelope=>usageFromObject((envelope as Record<string,unknown>)?.usage)).filter(Boolean) as TokenUsage[];
- if (direct.length) return direct.at(-1)!;
- const modelUsage=envelopes.flatMap(envelope=>{
-  const models=(envelope as Record<string,unknown>)?.modelUsage;
-  return models && typeof models === "object" ? Object.values(models as Record<string,unknown>).map(usageFromObject).filter(Boolean) as TokenUsage[] : [];
- });
- return merge(modelUsage);
+// Codex reports usage on every turn.completed event, with cached input counted inside input_tokens
+// (OpenAI semantics); a run is the sum of its turns. Claude and Cursor state the whole run's usage
+// once, on the result envelope, with input_tokens excluding the cache (Anthropic semantics).
+function codexTurnUsage(value:unknown):TokenUsage|null {
+ if (!value || typeof value !== "object") return null;
+ const item=value as Record<string,unknown>;
+ const input=number(item.input_tokens),output=number(item.output_tokens),cacheRead=number(item.cached_input_tokens) ?? 0,cacheWrite=number(item.cache_write_input_tokens) ?? 0;
+ if (input === null && output === null) return null;
+ const cached=cacheRead+cacheWrite;
+ return {inputTokens:input === null ? null : Math.max(0,input-cached),outputTokens:output,cachedTokens:cached,cacheReadTokens:cacheRead,cacheWriteTokens:cacheWrite,totalTokens:(input ?? 0)+(output ?? 0)};
+}
+
+/** Folds a provider's events, one at a time, into the usage it reported. Nothing is estimated. */
+export function tokenUsageReducer(provider: AgentProvider | undefined) {
+ const turns:TokenUsage[]=[];let direct:TokenUsage|null=null,models:TokenUsage[]=[];
+ return {
+  add(event:Record<string,unknown>) {
+   if (provider === "codex") { if (event.type === "turn.completed") { const usage=codexTurnUsage(event.usage); if (usage) turns.push(usage); } return; }
+   const usage=usageFromObject(event.usage);
+   if (usage) direct=usage;
+   const byModel=event.modelUsage;
+   if (byModel && typeof byModel === "object") { const values=Object.values(byModel as Record<string,unknown>).map(usageFromObject).filter(Boolean) as TokenUsage[]; if (values.length) models=values; }
+  },
+  result():TokenUsage|null { return provider === "codex" ? merge(turns) : direct ?? merge(models); },
+ };
 }

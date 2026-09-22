@@ -14,8 +14,10 @@ export class CodexAdapter implements AgentAdapter {
   fs.writeFileSync(schema, JSON.stringify(resultSchemaFor(r.role, r.allowedNextRoles)));
   const sandboxArgs = ["product-architect","reviewer"].includes(r.role) ? ["--sandbox","read-only"] : ["--sandbox","workspace-write","--config","sandbox_workspace_write.network_access=true"];
   const modelArgs = r.selection.model === "auto" ? [] : ["--model", r.selection.model];
+  // --json writes every turn, command and file change to stdout as it happens, so an interrupted run
+  // leaves them on disk; the result still comes from --output-last-message.
   await this.executions.run(r.workItemId, r.role, config.codexCommand,
-   ["exec", ...modelArgs, "--ephemeral", ...sandboxArgs, "--output-schema", schema, "--output-last-message", output, "-"], r.cwd, r.instructions, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
+   ["exec", ...modelArgs, "--json", "--ephemeral", ...sandboxArgs, "--output-schema", schema, "--output-last-message", output, "-"], r.cwd, r.instructions, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
   return parseResult(JSON.parse(fs.readFileSync(output, "utf8")), r.role, r.allowedNextRoles, r.consultationFrom);
  }
 }

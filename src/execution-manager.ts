@@ -7,8 +7,9 @@ import path from "node:path";
 import { Store } from "./storage.js";
 import { config, agentEnvironment } from "./config.js";
 import type { AgentRole, ModelSelection } from "./types.js";
-import { extractTokenUsage } from "./token-usage.js";
-import { extractProviderActivity } from "./provider-activity.js";
+import { tokenUsageReducer } from "./token-usage.js";
+import { providerActivityReducer } from "./provider-activity.js";
+import { eachJsonLine, type JsonEvent } from "./provider-stream.js";
 const workflowStage: Record<AgentRole,string> = {"product-architect":"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"};
 export interface PromptManifestInput {
   includedRecordIds?:string[];
@@ -17,19 +18,24 @@ export interface PromptManifestInput {
   budgetBytes?:number|null;
   budgetSource?:string;
 }
-function readOutput(file:string,maxBytes:number,fromEnd=false) {
+function readOutput(file:string,maxBytes:number) {
   try {
     const stat=fs.statSync(file);
-    if (!fromEnd && stat.size>maxBytes) return {text:"",tooLarge:true};
-    const bytes=Math.min(stat.size,maxBytes),buffer=Buffer.alloc(bytes),handle=fs.openSync(file,"r");
-    try { if(bytes) fs.readSync(handle,buffer,0,bytes,fromEnd ? stat.size-bytes : 0); } finally { fs.closeSync(handle); }
-    return {text:buffer.toString("utf8"),tooLarge:stat.size>maxBytes};
+    if (stat.size>maxBytes) return {text:"",tooLarge:true};
+    return {text:fs.readFileSync(file,"utf8"),tooLarge:false};
   } catch { return {text:"",tooLarge:false}; }
+}
+export interface ExecutionOutput {
+  id:string;
+  /** The last `type: "result"` event of a streaming provider, when it wrote one. */
+  finalEvent?:JsonEvent;
+  /** The whole of stdout as text, for a provider that answers with a single envelope. */
+  readStdout():string;
 }
 export class ExecutionManager {
   private running = new Map<string, { child: ChildProcess; cancel: () => void; interrupt: (reason:string) => void }>();
   constructor(private store: Store) {}
-  async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs, selection?: ModelSelection, promptMetadata:PromptManifestInput = {}, executionId?:string, localRuntimeUrl?:string): Promise<{id: string; stdout: string}> {
+  async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs, selection?: ModelSelection, promptMetadata:PromptManifestInput = {}, executionId?:string, localRuntimeUrl?:string): Promise<ExecutionOutput> {
     if(browserRequired(cwd,role))input+=browserInstructions(cwd,localRuntimeUrl);
     const id = executionId??randomUUID();
     const logDir = path.join(config.dataDir, "runs", id);
@@ -75,19 +81,21 @@ export class ExecutionManager {
         const providerExitCode = completion?.code ?? code;
         interruptionReason=timedOut?"execution-timeout":cancelled?(completion?.reason??interruptionReason??"user-cancel"):completion?.reason??interruptionReason;
         const status = timedOut ? "timed_out" : cancelled||completion?.status==="cancelled" ? "cancelled" : interrupted||completion?.status==="interrupted" ? "interrupted" : code === 0 && !spawnError && completion?.status === "succeeded" ? "succeeded" : "failed";
-        const stdoutFile=path.join(logDir,"stdout.log"),stderrFile=path.join(logDir,"stderr.log");
-        const stdout=readOutput(stdoutFile,10_000_000),stderr=readOutput(stderrFile,512*1024,true);
-        const usage=extractTokenUsage(selection?.provider,stdout.text,stderr.text);
+        // One pass over the provider's event stream, however long the run was: its usage, its
+        // activity and the final result envelope. Plain-text output simply yields no events.
+        const stdoutFile=path.join(logDir,"stdout.log"),usageReducer=tokenUsageReducer(selection?.provider),activityReducer=providerActivityReducer();
+        let finalEvent:JsonEvent|undefined;
+        // A transcript that cannot be read leaves usage and activity unknown; it must not stop the
+        // execution from being recorded.
+        try { eachJsonLine(stdoutFile,event=>{usageReducer.add(event);activityReducer.add(event);if(event.type==="result")finalEvent=event;}); } catch {}
+        const usage=usageReducer.result();
         // Without a completion record the supervisor died before the agent was reaped, so the agent may
         // still be running: retry must prove its process group is gone first.
         this.store.db.prepare("UPDATE executions SET status=?,finished_at=?,exit_code=?,input_tokens=?,output_tokens=?,cached_tokens=?,total_tokens=?,interruption_reason=?,recovery_pending=? WHERE id=?")
           .run(status, new Date().toISOString(), providerExitCode, usage?.inputTokens ?? null,usage?.outputTokens ?? null,usage?.cachedTokens ?? null,usage?.totalTokens ?? null,interruptionReason??null,completion?0:1,id);
-        this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage,activity:extractProviderActivity(stdout.text),interruptionReason }, workItemId, id);
+        this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage,activity:activityReducer.result(),interruptionReason }, workItemId, id);
         if (status !== "succeeded") return reject(new Error(`Execution ${id} ${status}${spawnError ? ': ' + spawnError.message : ''}`));
-        try {
-          if (stdout.tooLarge) return reject(new Error("Agent output exceeds 10 MB"));
-          resolve({ id, stdout:stdout.text });
-        } catch (error) { reject(error); }
+        resolve({ id, finalEvent, readStdout:()=>{ const stdout=readOutput(stdoutFile,10_000_000); if(stdout.tooLarge)throw new Error("Agent output exceeds 10 MB"); return stdout.text; } });
       });
     });
   }

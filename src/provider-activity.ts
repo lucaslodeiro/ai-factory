@@ -2,9 +2,9 @@
 // single Builder execution on issue #6 moved 4.88M cached tokens against 110 uncached input
 // tokens, which only happens when the conversation is replayed over many turns.
 //
-// Codex streams one JSON object per line on stdout, so its activity is real and countable here.
-// Claude and Cursor return a single result envelope, so only what that envelope states is
-// available. The histogram is keyed by whatever type each provider emits rather than by a fixed
+// Codex (--json) and Claude (stream-json) write one JSON event per line, so their activity is real
+// and countable here. Cursor still returns a single result envelope, so only what that envelope
+// states is available. The histogram is keyed by whatever type each provider emits rather than by a fixed
 // vocabulary, so a provider renaming or adding an event shows up instead of being dropped.
 export interface ProviderActivity {
   events: number;
@@ -25,29 +25,25 @@ function eventType(value: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-export function extractProviderActivity(stdout: string): ProviderActivity | null {
-  const objects: Record<string, unknown>[] = [];
-  for (const line of stdout.split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    try {
-      const value = JSON.parse(line);
-      if (value && typeof value === "object" && !Array.isArray(value)) objects.push(value as Record<string, unknown>);
-    } catch {}
-  }
-  if (!objects.length) return null;
+/** Folds a provider's events, one at a time, into the activity they show. */
+export function providerActivityReducer() {
+  let events = 0;
   const eventTypes: Record<string, number> = {};
-  for (const value of objects) {
-    const type = eventType(value) ?? "untyped";
-    eventTypes[type] = (eventTypes[type] ?? 0) + 1;
-  }
-  // A provider that states its own turn count is believed over any count derived from the stream.
-  const reported = objects.map(value => count(value.num_turns ?? (value as {numTurns?: unknown}).numTurns)).filter(value => value !== null);
-  const api = objects.map(value => count(value.duration_api_ms ?? (value as {durationApiMs?: unknown}).durationApiMs)).filter(value => value !== null);
-  const wall = objects.map(value => count(value.duration_ms ?? (value as {durationMs?: unknown}).durationMs)).filter(value => value !== null);
-  const cost = objects.map(value => {
-    const reportedCost = value.total_cost_usd ?? (value as {totalCostUsd?: unknown}).totalCostUsd;
-    return typeof reportedCost === "number" && Number.isFinite(reportedCost) && reportedCost >= 0 ? reportedCost : null;
-  }).filter(value => value !== null);
-  return { events: objects.length, eventTypes, turns: reported.at(-1) ?? null, apiDurationMs: api.at(-1) ?? null,
-    durationMs: wall.at(-1) ?? null, costUsd: cost.at(-1) ?? null };
+  // A provider that states its own turn count, durations or cost is believed; the last statement wins.
+  let turns: number | null = null, apiDurationMs: number | null = null, durationMs: number | null = null, costUsd: number | null = null;
+  return {
+    add(value: Record<string, unknown>) {
+      events++;
+      const type = eventType(value) ?? "untyped";
+      eventTypes[type] = (eventTypes[type] ?? 0) + 1;
+      turns = count(value.num_turns ?? (value as {numTurns?: unknown}).numTurns) ?? turns;
+      apiDurationMs = count(value.duration_api_ms ?? (value as {durationApiMs?: unknown}).durationApiMs) ?? apiDurationMs;
+      durationMs = count(value.duration_ms ?? (value as {durationMs?: unknown}).durationMs) ?? durationMs;
+      const reportedCost = value.total_cost_usd ?? (value as {totalCostUsd?: unknown}).totalCostUsd;
+      if (typeof reportedCost === "number" && Number.isFinite(reportedCost) && reportedCost >= 0) costUsd = reportedCost;
+    },
+    result(): ProviderActivity | null {
+      return events ? { events, eventTypes, turns, apiDurationMs, durationMs, costUsd } : null;
+    },
+  };
 }

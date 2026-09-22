@@ -1,6 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { extractProviderActivity } from "../src/provider-activity.js";
+import path from "node:path";
+import { providerActivityReducer } from "../src/provider-activity.js";
+import { eachJsonLine, jsonLines } from "../src/provider-stream.js";
+
+const extractProviderActivity=(stdout:string)=>{const reducer=providerActivityReducer();for(const event of jsonLines(stdout))reducer.add(event);return reducer.result();};
+const fixtureActivity=(name:string)=>{const reducer=providerActivityReducer();eachJsonLine(path.join("test","fixtures","providers",name),event=>reducer.add(event));return reducer.result()!;};
+
+test("real Codex and Claude streams are counted per event, with what the provider states about the run",()=>{
+ const codex=fixtureActivity("codex-complete.jsonl");
+ assert.equal(codex.events,9);
+ assert.deepEqual(codex.eventTypes,{"thread.started":1,"item.completed":4,"turn.started":1,"item.started":2,"turn.completed":1});
+ assert.equal(codex.turns,null,"Codex does not state a turn count");
+ const claude=fixtureActivity("claude-stream.jsonl");
+ assert.equal(claude.events,17);
+ assert.equal(claude.turns,4);
+ assert.equal(claude.costUsd,0.05058940000000001);
+ assert.equal(claude.eventTypes.assistant,5);
+ // An interrupted Claude run never wrote its result envelope, so it states no turns or cost.
+ const interrupted=fixtureActivity("claude-interrupted.jsonl");
+ assert.deepEqual([interrupted.turns,interrupted.costUsd],[null,null]);
+});
 
 test("a streaming provider is counted per event and grouped by whatever type it reports",()=>{
  const stdout=[{type:"item.completed",item:{type:"command_execution"}},{type:"item.completed",item:{type:"command_execution"}},
