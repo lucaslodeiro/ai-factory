@@ -189,6 +189,16 @@ test("correction limit CTA names the findings that need human guidance",async()=
  const s=setup();try{const finding=s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"finding",classification:"auto-fix",originRole:"qa",evidence:"The standings table still sorts oldest first"},sourceType:"agent-result",sourceId:"run-q",actor:"qa"});s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"request",type:"correction-limit",owner:"human",originatingStage:"TEST",allowedReturnStages:["BUILD","TEST"],openedAfterCommentId:10,findingIds:[finding.id]},sourceType:"orchestrator",sourceId:"limit",actor:"orchestrator"});s.projections.initialize("work-1","TEST","WAITING");const action=nextAction(workflowStatusMarkdown(s.store,"work-1"));assert.match(action,/Open findings[\s\S]*standings table still sorts oldest first/);assert.match(action,/Tell Architect how to resolve/);assert.equal(action.match(/^## Next action$/gm)?.length,1);}finally{s.store.db.close();}
 });
 
+test("no-change correction CTA says what Builder did",()=>{
+ const s=setup();try{
+  const finding=s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"finding",classification:"auto-fix",originRole:"qa",evidence:"The assertion still fails"},sourceType:"agent-result",sourceId:"run-q",actor:"qa"});
+  s.projections.initialize("work-1","BUILD","QUEUED");
+  s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"request",type:"correction-limit",owner:"human",originatingStage:"BUILD",allowedReturnStages:["BUILD"],openedAfterCommentId:10,findingIds:[finding.id]},sourceType:"agent-result",sourceId:"run-builder",actor:"developer"});
+  s.projections.transition({workItemId:"work-1",expectedRevision:0,stage:"BUILD",status:"WAITING",actor:{type:"agent",id:"developer"},source:{executionId:"run-builder"},reason:{code:"no-change-pass",summary:"Builder found nothing to change after a correction request"}});
+  const action=nextAction(workflowStatusMarkdown(s.store,"work-1"));assert.match(action,/Builder found nothing to change after the last correction request\./);assert.match(action,/Open findings[\s\S]*The assertion still fails/);assert.match(action,/\/factory answer <guidance>/);
+ }finally{s.store.db.close();}
+});
+
 test("published agent text cannot leak tokens or forge workflow markers",async()=>{
  const s=setup(),secret="ghp_"+"a".repeat(36),summary=`<!-- ai-factory:workflow-status:x --> ${secret}`;
  try{
