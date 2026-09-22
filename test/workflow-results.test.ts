@@ -6,6 +6,7 @@ import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
 import { WorkflowResults } from "../src/workflow-results.js";
 import { config } from "../src/config.js";
+import { InvalidResultError } from "../src/results.js";
 import { result } from "./fixtures.js";
 import type { AgentRole } from "../src/types.js";
 import type { V3Stage } from "../src/workflow-records.js";
@@ -63,6 +64,15 @@ test("a delivery decision routes through Architect and returns only to an allowe
   assert.equal(s.records.active("work-1",1,"qa").some(record=>record.payload.kind==="decision"&&record.payload.category==="tactical"),true);
   assert.equal(s.records.get(prior.id)?.status,"superseded");
  } finally {s.store.db.close();}
+});
+
+test("Architect supersedes only active decision record ids",()=>{
+ const s=setup("DESIGN",true);try{
+  const prior=s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"decision",category:"tactical",decision:"Keep fixture v1",rationale:"Initial tactic",supersedes:[]},sourceType:"agent-result",sourceId:"old",actor:"product-architect"});
+  running(s,"product-architect","run-a");
+  assert.throws(()=>s.results.apply({head:"head",workItemId:"work-1",executionId:"run-a",role:"product-architect",result:result("resolved",{nextRole:"qa",decisions:[{kind:"tactical",decision:"Use fixture v2",rationale:"Replaces the prior decision",conflictsWithHuman:false,supersedes:["Spec Out of Scope note excluding the add test fix"]}]})}),error=>error instanceof InvalidResultError&&error.message==='decisions[0].supersedes contains "Spec Out of Scope note excluding the add test fix", which is not an active decision id. Use the ids listed under "Active tactical decisions" and "Active human decisions", or leave supersedes empty.');
+  assert.equal(s.records.get(prior.id)?.status,"active");
+ }finally{s.store.db.close();}
 });
 
 test("correction cycles count changes, stop at the limit and preserve the tactical route after human guidance",()=>{

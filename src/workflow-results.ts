@@ -19,6 +19,7 @@ export class WorkflowResults {
    this.store.event("execution.discarded",{executionId:input.executionId,role:input.role,reason:"Workflow changed before the result was applied",projection:current},input.workItemId,input.executionId);return {discarded:true,projection:current};
   }
   const specVersion=this.specVersion(input.workItemId),ids:string[]=[];
+  this.validateSupersedes(input.workItemId,specVersion,input.result);
   const blockers=input.result.findings.filter(finding=>finding.classification==="environment-blocked");
   if(blockers.length){
    const message=blockers.map(finding=>finding.evidence).join("\n");
@@ -99,6 +100,10 @@ export class WorkflowResults {
   if(role==="qa"){const fixes=active.filter(record=>record.payload.kind==="finding"&&record.payload.classification==="auto-fix"&&record.payload.originRole==="developer").map(record=>record.id);if(fixes.length)this.records.settleFindings(fixes,"resolved",executionId);}
  }
  private specVersion(workItemId:string){return (this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;}
+ private validateSupersedes(workItemId:string,specVersion:number,result:AgentResult){
+  const active=new Set(this.records.active(workItemId,specVersion,"product-architect").filter(record=>record.payload.kind==="decision").map(record=>record.id));
+  for(const [index,decision] of result.decisions.entries())for(const value of decision.supersedes)if(!active.has(value))throw new InvalidResultError(`decisions[${index}].supersedes contains "${value}", which is not an active decision id. Use the ids listed under "Active tactical decisions" and "Active human decisions", or leave supersedes empty.`);
+ }
  private cursor(workItemId:string){const row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string};return (JSON.parse(row.context||"{}") as {cursor?:number}).cursor??0;}
  private updateContext(workItemId:string,values:Record<string,unknown>){const row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string};this.store.db.prepare("UPDATE work_items SET context=? WHERE id=?").run(JSON.stringify({...JSON.parse(row.context||"{}"),...values}),workItemId);}
  private setVerifiedHead(workItemId:string,stage:"TEST"|"REVIEW",head:string){const row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string};const context=JSON.parse(row.context||"{}") as {verifiedHeads?:Record<string,string>};this.updateContext(workItemId,{verifiedHeads:{...context.verifiedHeads,[stage]:head}});}
