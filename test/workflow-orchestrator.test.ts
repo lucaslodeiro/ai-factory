@@ -12,9 +12,9 @@ import type { Comment,Issue,PullRequestState } from "../src/adapters/github.js";
 
 class Workspace implements WorkspacePort {ensure(){return "/tmp/v3-work";}assertBranch(){}sync(){return{before:"head",after:"head",merged:[]};}head(){return "head";}diff(){return "";}check(){}commit(){}publish(){}changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/v3-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){}}
 class GitHub {
- commentsByIssue=new Map<number,Comment[]>();statusBodies:string[]=[];resultBodies:string[]=[];labels:string[][]=[];issueLabels:Array<{name:string}>=[{name:`factory-instance:${config.instanceName}`}];assigned=true;labelEdits:string[]=[];removedLabels:string[]=[];unassigned:string[]=[];lastPrBody="";state:"OPEN"|"CLOSED"="OPEN";issueId=100;issueCalls=0;title="Ship V3";body="Complete the workflow";updatedAt="2026-09-20T00:00:00Z";author={login:"owner",type:"User"};discoverIssues=false;pr:PullRequestState={state:"OPEN",mergedAt:null,mergeCommit:null};
- issue(n:number):Issue{this.issueCalls++;return {id:this.issueId,nodeId:`I_${this.issueId}`,number:n,title:this.title,body:this.body,url:`https://github.com/owner/demo/issues/${n}`,state:this.state,labels:this.issueLabels,createdAt:"2026-09-20T00:00:00Z",updatedAt:this.updatedAt,author:this.author};}
- comments(n:number){return this.commentsByIssue.get(n)??[];}authenticatedLogin(){return "factory";}assignedIssues(){return this.assigned&&this.state==="OPEN"?[this.issue(1)]:[];}ensureLabel(){}addLabel(_n:number,name:string){this.labelEdits.push(name);this.issueLabels.push({name});}removeLabel(_n:number,name:string){this.removedLabels.push(name);this.issueLabels=this.issueLabels.filter(label=>label.name!==name);}replaceInstanceLabel(_n:number,name:string){this.issueLabels=this.issueLabels.filter(label=>!label.name.startsWith("factory-instance:"));this.issueLabels.push({name});}
+ commentsByIssue=new Map<number,Comment[]>();statusBodies:string[]=[];resultBodies:string[]=[];labels:string[][]=[];issueLabels:Array<{name:string}>=[{name:`factory-instance:${config.instanceName}`}];assigned=true;deleted=false;labelEdits:string[]=[];removedLabels:string[]=[];unassigned:string[]=[];lastPrBody="";state:"OPEN"|"CLOSED"="OPEN";issueId=100;issueCalls=0;title="Ship V3";body="Complete the workflow";updatedAt="2026-09-20T00:00:00Z";author={login:"owner",type:"User"};discoverIssues=false;pr:PullRequestState={state:"OPEN",mergedAt:null,mergeCommit:null};
+ issue(n:number):Issue{this.issueCalls++;if(this.deleted)throw new Error("HTTP 404: Not Found");return {id:this.issueId,nodeId:`I_${this.issueId}`,number:n,title:this.title,body:this.body,url:`https://github.com/owner/demo/issues/${n}`,state:this.state,labels:this.issueLabels,createdAt:"2026-09-20T00:00:00Z",updatedAt:this.updatedAt,author:this.author};}
+ comments(n:number){if(this.deleted)throw new Error("HTTP 404: Not Found");return this.commentsByIssue.get(n)??[];}authenticatedLogin(){return "factory";}assignedIssues(){return this.assigned&&this.state==="OPEN"&&!this.deleted?[this.issue(1)]:[];}ensureLabel(){}addLabel(_n:number,name:string){this.labelEdits.push(name);this.issueLabels.push({name});}removeLabel(_n:number,name:string){this.removedLabels.push(name);this.issueLabels=this.issueLabels.filter(label=>label.name!==name);}replaceInstanceLabel(_n:number,name:string){this.issueLabels=this.issueLabels.filter(label=>!label.name.startsWith("factory-instance:"));this.issueLabels.push({name});}
  commentOnce(){}syncState(){}ensurePR(_branch:string,_title:string,body:string){this.lastPrBody=body;return "https://github.com/owner/demo/pull/1";}pullRequestState(){return this.pr;}
  repository(){return{id:1,nodeId:"R_1",fullName:"owner/demo",defaultBranch:"main"};}
  assignees(){return [];}assign(){}unassign(_n:number,logins:string[]){this.unassigned.push(...logins);}
@@ -51,6 +51,16 @@ test("closed issues disappear operationally and reopen paused past closed-period
   github.reply(20,"/factory retry");github.state="OPEN";await orchestrator.tick();row=store.db.prepare("SELECT archived_at,status FROM work_items WHERE id=?").get(started.id) as {archived_at:string|null;status:string};assert.equal(row.archived_at,null);assert.equal(row.status,"PAUSED");
   const context=JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(started.id) as {context:string}).context);assert.equal(context.cursor,20);assert.equal(github.statusBodies.at(-1)?.match(/^## Next action$/gm)?.length,1);
  } finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
+});
+
+test("deleted issues are archived locally without turning GitHub polling into a failure",async()=>{
+ const previousRepo=config.repo;config.repo="owner/demo";
+ const store=new Store(":memory:"),github=new GitHub(),orchestrator=new WorkflowOrchestrator(store,github,new WorkflowRunner(store,{},new Workspace(),github),{enabled:false,async notify(){}});
+ try {
+  const started=await startAssigned(orchestrator,store);github.deleted=true;await orchestrator.syncRemote();
+  const row=store.db.prepare("SELECT archived_at,status FROM work_items WHERE id=?").get(started.id) as {archived_at:string|null;status:string};assert.ok(row.archived_at);assert.equal(row.status,"PAUSED");assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='github.issue_deleted' AND work_item_id=?").get(started.id) as {count:number}).count,1);
+  await orchestrator.syncRemote();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='github.issue_deleted' AND work_item_id=?").get(started.id) as {count:number}).count,1);
+ } finally {store.db.close();config.repo=previousRepo;}
 });
 
 test("dashboard start snapshots historical comments instead of replaying commands",async()=>{

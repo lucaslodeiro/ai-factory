@@ -22,7 +22,7 @@ export class WorkflowOrchestrator {
   const since=(this.store.db.prepare("SELECT COALESCE(MAX(id),0) id FROM events").get() as {id:number}).id;
   const login=this.store.metadata<string>("runtime:factory-account")??await this.github.authenticatedLogin();this.assigned=await this.github.assignedIssues(login);
   await this.reconcileAssignments(login);await this.reconcileIssueVisibility();await this.reconcilePullRequests();
-  for(const item of this.rows())if(!item.archived_at){const comments=await this.github.comments(item.issue_number);if(!this.row(item.id).archived_at)this.inbox.poll(item.id,comments);}
+  for(const item of this.rows())if(!item.archived_at){try{const comments=await this.github.comments(item.issue_number);if(!this.row(item.id).archived_at)this.inbox.poll(item.id,comments);}catch(error){if(this.issueNotFound(error)){await this.archiveDeleted(item);continue;}throw error;}}
   await this.flush();
   if(this.store.db.prepare("SELECT 1 FROM events WHERE id>? AND type IN ('github.pr_poll_failed','github.issue_state_failed') LIMIT 1").get(since))throw new Error("Some GitHub checks failed; inspect daemon logs. Local processing remains independent.");
  }
@@ -63,14 +63,14 @@ export class WorkflowOrchestrator {
   }
   for(const local of this.rows().filter(item=>!item.archived_at&&!assignedIds.has(item.issue_id??-1))){
    if(["COMPLETED","CANCELLED"].includes(local.status)){if(!this.released(local)){await this.github.unassign(local.issue_number,[login]);await this.github.removeLabel(local.issue_number,own);this.updateContext(local.id,{releasedAt:new Date().toISOString()});}continue;}
-   const remote=await this.github.issue(local.issue_number);if(remote.state!=="OPEN")continue;await this.pauseOwned(local,"unassigned");await this.github.removeLabel(local.issue_number,own);view.push({issue:local.issue_number,state:"unassigned",instances:[]});
+   let remote:Issue;try{remote=await this.github.issue(local.issue_number);}catch(error){if(this.issueNotFound(error)){await this.archiveDeleted(local);continue;}throw error;}if(remote.state!=="OPEN")continue;await this.pauseOwned(local,"unassigned");await this.github.removeLabel(local.issue_number,own);view.push({issue:local.issue_number,state:"unassigned",instances:[]});
   }
   this.store.setMetadata("runtime:assigned-issues",view);
  }
- private async pauseOwned(item:ItemRow,reason:"unassigned"|"moved"|"claim-conflict"){
+ private async pauseOwned(item:ItemRow,reason:"unassigned"|"moved"|"claim-conflict"|"issue-deleted"){
   const current=this.projections.get(item.id);if(current.status==="PAUSED"&&this.lastReason(item.id)===reason)return;
   if(["COMPLETED","CANCELLED","PAUSED"].includes(current.status))return;
-  const summary=reason==="unassigned"?"Issue unassigned from the Factory account":reason==="claim-conflict"?"Another Factory instance also claims this issue":"Issue moved to another Factory instance";
+  const summary=reason==="unassigned"?"Issue unassigned from the Factory account":reason==="claim-conflict"?"Another Factory instance also claims this issue":reason==="issue-deleted"?"GitHub issue was deleted":"Issue moved to another Factory instance";
   this.projections.transition({workItemId:item.id,expectedRevision:current.revision,stage:current.stage,status:"PAUSED",actor:{type:"github",id:"assignment"},source:{executionId:current.activeRunId},reason:{code:reason,summary}});
   if(current.activeRunId){this.executions?.interrupt(current.activeRunId,reason);const deadline=Date.now()+30_000;while(Date.now()<deadline){const row=this.store.db.prepare("SELECT status FROM executions WHERE id=?").get(current.activeRunId) as {status:string}|undefined;if(!row||row.status!=="running")break;await new Promise(resolve=>setTimeout(resolve,25));}}
   try{await this.runner.preserve(item.id);}catch(error){this.store.event("workflow.preserve_failed",{reason,error:String(error)},item.id,current.activeRunId);}
@@ -80,7 +80,7 @@ export class WorkflowOrchestrator {
  private released(item:ItemRow){return Boolean((JSON.parse(item.context||"{}") as {releasedAt?:string}).releasedAt);}
  private eventOnce(key:string,type:string,payload:Record<string,unknown>){const metadata=`ownership:${config.repo}:${key}`;if(this.store.metadata(metadata))return;this.store.event(type,payload);this.store.setMetadata(metadata,true);}
  async refreshIssueList(){
-  let updated=0;for(const item of this.rows()){let remote:Issue;try{remote=await this.github.issue(item.issue_number);}catch(error){this.store.event("github.issue_state_failed",{issue:item.issue_number,error:String(error)},item.id);continue;}await this.reconcileIssue(item,remote);if(remote.state==="OPEN"&&!this.row(item.id).archived_at){this.inbox.poll(item.id,await this.github.comments(item.issue_number));updated++;}}
+  let updated=0;for(const item of this.rows()){let remote:Issue;try{remote=await this.github.issue(item.issue_number);}catch(error){if(this.issueNotFound(error)){await this.archiveDeleted(item);continue;}this.store.event("github.issue_state_failed",{issue:item.issue_number,error:String(error)},item.id);continue;}await this.reconcileIssue(item,remote);if(remote.state==="OPEN"&&!this.row(item.id).archived_at){try{this.inbox.poll(item.id,await this.github.comments(item.issue_number));updated++;}catch(error){if(this.issueNotFound(error))await this.archiveDeleted(item);else this.store.event("github.issue_state_failed",{issue:item.issue_number,error:String(error)},item.id);}}}
   const found=this.rows().filter(item=>!item.archived_at).length;this.store.event("github.issue_list_refreshed",{found,added:0,updated});return {found,added:0,updated};
  }
  async reconcilePullRequests(){
@@ -97,7 +97,7 @@ export class WorkflowOrchestrator {
   try{await this.publisher.publishHelp();await this.publisher.publishResults();await this.publisher.publishChanged();}catch(error){this.store.event("github.projection_failed",{error:String(error)});throw error;}
   await deliverNotifications(this.store,this.notifications);
  }
- private async reconcileIssueVisibility(){for(const item of this.rows())try{await this.reconcileIssue(item,await this.github.issue(item.issue_number));}catch(error){this.store.event("github.issue_state_failed",{issue:item.issue_number,error:String(error)},item.id);}}
+ private async reconcileIssueVisibility(){for(const item of this.rows())try{await this.reconcileIssue(item,await this.github.issue(item.issue_number));}catch(error){if(this.issueNotFound(error)){await this.archiveDeleted(item);continue;}this.store.event("github.issue_state_failed",{issue:item.issue_number,error:String(error)},item.id);}}
  private async reconcileIssue(item:ItemRow,remote:Issue){
   item=this.row(item.id);
   if(this.replaced(item,remote)){const current=this.projections.get(item.id);this.store.db.transaction(()=>{if(!["PAUSED","COMPLETED","CANCELLED"].includes(current.status))this.projections.transition({workItemId:item.id,expectedRevision:current.revision,stage:current.stage,status:"PAUSED",actor:{type:"github",id:"issue"},source:{},reason:{code:"issue-replaced",summary:"GitHub issue was deleted and recreated"}});this.store.db.prepare("UPDATE work_items SET archived_at=? WHERE id=?").run(new Date().toISOString(),item.id);this.store.db.prepare("UPDATE notifications SET sent=1,last_error=? WHERE work_item_id=? AND sent=0").run("Suppressed because the GitHub issue was replaced",item.id);this.store.event("github.issue_replaced",{issue:item.issue_number,previousIssueId:item.issue_id,currentIssueId:remote.id},item.id);}).immediate();return;}
@@ -105,10 +105,16 @@ export class WorkflowOrchestrator {
   if(remote.state==="OPEN"&&item.archived_at){const current=this.projections.get(item.id),comments=(await this.github.comments(item.issue_number)),cursor=Math.max(this.cursor(item),...comments.map(comment=>comment.id),0);this.store.db.transaction(()=>{this.updateContext(item.id,{cursor});this.store.db.prepare("UPDATE work_items SET archived_at=NULL WHERE id=?").run(item.id);this.projections.present({workItemId:item.id,expectedRevision:current.revision,actor:{type:"github",id:"issue"},source:{},reason:{code:"issue-reopened",summary:"GitHub issue reopened; explicit retry required"}});this.store.event("github.issue_reopened",{issue:item.issue_number,status:"PAUSED"},item.id);}).immediate();}
   if(remote.state==="OPEN")this.updateIssueContext(item.id,remote);
  }
+ private async archiveDeleted(item:ItemRow){
+  item=this.row(item.id);if(item.archived_at)return;
+  await this.pauseOwned(item,"issue-deleted");
+  this.store.db.transaction(()=>{this.store.db.prepare("UPDATE work_items SET archived_at=? WHERE id=?").run(new Date().toISOString(),item.id);this.store.db.prepare("UPDATE notifications SET sent=1,last_error=? WHERE work_item_id=? AND sent=0").run("Suppressed because the GitHub issue was deleted",item.id);this.store.event("github.issue_deleted",{issue:item.issue_number,visibility:"archived"},item.id);}).immediate();
+ }
  private replaced(item:ItemRow,remote:Issue){if(!Number.isSafeInteger(item.issue_id)||!item.issue_id)throw new Error("Stored work item is missing its GitHub issue identity; unsupported workflow data");return item.issue_id!==remote.id;}
  private updateIssueContext(id:string,issue:Issue){const row=this.row(id),context=JSON.parse(row.context||"{}") as {title?:string;body?:string;url?:string};if(context.title===issue.title&&context.body===issue.body&&context.url===issue.url)return;if(context.title!==issue.title){const current=this.projections.get(id);this.projections.present({workItemId:id,expectedRevision:current.revision,actor:{type:"github",id:"issue"},source:{},reason:{code:"issue-title-updated",summary:"GitHub issue title updated"}},()=>this.updateContext(id,{title:issue.title,body:issue.body,url:issue.url}));}else this.updateContext(id,{title:issue.title,body:issue.body,url:issue.url});}
  private updateContext(id:string,values:Record<string,unknown>){const item=this.row(id),context=JSON.parse(item.context||"{}");this.store.db.prepare("UPDATE work_items SET context=?,updated_at=? WHERE id=?").run(JSON.stringify({...context,...values}),new Date().toISOString(),id);}
  private cursor(item:ItemRow){return (JSON.parse(item.context||"{}") as {cursor?:number}).cursor??0;}
+ private issueNotFound(error:unknown){return /(?:\bHTTP\s*)?404\b/i.test(error instanceof Error?error.message:String(error));}
  private rows(){return this.store.db.prepare("SELECT id,issue_number,issue_id,repo,stage,status,revision,archived_at,context FROM work_items ORDER BY created_at").all() as ItemRow[];}
  private row(id:string){const row=this.store.db.prepare("SELECT id,issue_number,issue_id,repo,stage,status,revision,archived_at,context FROM work_items WHERE id=?").get(id) as ItemRow|undefined;if(!row)throw new Error("Unknown work item");return row;}
  private issueNumber(reference:string){const value=reference.trim(),direct=value.match(/^#?(\d+)$/)?.[1];if(direct)return Number(direct);const escaped=config.repo.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),url=value.match(new RegExp(`^https://github\\.com/${escaped}/issues/(\\d+)/?`));if(url)return Number(url[1]);throw new Error(`Use an issue number or a URL from ${config.repo}`);}
