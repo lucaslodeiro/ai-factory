@@ -86,7 +86,8 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
   unique(r.reviewChecks.map(c => c.dimension), "review dimension");
   const allowed = role === "product-architect" ? ["spec", "questions", "resolved"] : ["pass", "changes", "decision"];
   if (!allowed.includes(r.outcome)) throw new Error(`Invalid ${role} outcome: ${r.outcome}`);
-  if (r.outcome === "spec" && (r.questions.length || !r.spec.trim() || !r.acceptanceCriteria.length || r.acceptanceCriteria.some(c => !r.spec.includes(c.id)))) throw new Error("Specification needs named acceptance criteria in markdown and structured form");
+  if (r.outcome === "spec" && r.questions.length) throw new Error('A proposed specification must return questions: []. Put non-blocking open questions and explicit assumptions in the SPEC markdown; if human input is required before proposing it, return outcome "questions" without a SPEC');
+  if (r.outcome === "spec" && (!r.spec.trim() || !r.acceptanceCriteria.length || r.acceptanceCriteria.some(c => !r.spec.includes(c.id)))) throw new Error("Specification needs named acceptance criteria in markdown and structured form");
   if (r.outcome !== "spec" && (r.spec !== "" || r.acceptanceCriteria.length)) throw new Error("Only a new specification may contain spec/acceptanceCriteria");
   if (r.outcome === "spec" && !r.taskAssessment) throw new Error("Specification requires a taskAssessment");
   if (r.taskAssessment) {

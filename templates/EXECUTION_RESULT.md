@@ -13,7 +13,7 @@ The machine-readable source of truth is `resultSchema` in `src/results.ts`, used
 | `dependencies` | Name, added/updated/removed and rationale; empty means none reported. |
 | `changedFiles` | Explicit list of changed paths. |
 | `findings` | auto-fix/decision-required/defer/environment-blocked classification and concrete evidence. |
-| `questions` | Questions requiring human input. |
+| `questions` | Blocking questions only with Architect outcome `questions`; use `[]` with outcome `spec`. Put non-blocking open questions and explicit assumptions in the SPEC markdown. |
 | `decisions` | tactical/major, decision, rationale and whether it conflicts with a human decision. |
 | `nextRole` | Non-null only for an approved-spec tactical resolution; cannot bypass gates. |
 | `reviewChecks` | Evidence per review dimension, including reasons for not-applicable. |

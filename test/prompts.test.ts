@@ -41,6 +41,9 @@ test("Architect distinguishes a required Design blocker from an optional researc
  const output=promptContract("product-architect","codex");
  assert.match(output,/initial Architect pairs a real blocker with outcome questions/);
  assert.match(output,/optional research or validation limitations in the summary/);
+ assert.match(output,/If outcome is spec, questions must be \[\]/);
+ assert.match(output,/put non-blocking open questions with explicit assumptions in the SPEC markdown/);
+ assert.match(output,/If material ambiguity prevents a responsible specification/);
 });
 
 test("architect receives an explicit, machine-aligned tactical return route", () => {

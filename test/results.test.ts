@@ -19,6 +19,9 @@ test("spec/coverage IDs are unique and correspond to the immutable approved crit
  const spec = result("spec"); spec.acceptanceCriteria.push(spec.acceptanceCriteria[0]);
  assert.throws(() => parseResult(spec, "product-architect"), /Duplicate/);
  assert.throws(() => parseResult(result("spec", { acceptanceCriteria: [{ id: "AC404", description: "Missing from markdown" }] }), "product-architect"), /named acceptance criteria/);
+ const withOpenQuestions=result("spec",{questions:["Which hosting provider should we use?"]});
+ assert.throws(() => parseResult(withOpenQuestions,"product-architect"),/questions: \[\].*non-blocking open questions/);
+ assert.doesNotThrow(() => parseResult({...withOpenQuestions,questions:[]},"product-architect"));
  const report = result("pass"); report.coverage.push(report.coverage[0]);
  assert.throws(() => parseResult(report, "qa"), /Duplicate/);
  assert.throws(() => validateCoverage(result("pass"), []), /lacks structured/);
