@@ -18,12 +18,12 @@ test('Codex credentials include a visible provider name',()=>{
  const html=vm.runInContext("credentialCards({credentials:[{id:'codex',label:'Codex',status:'connected',installed:true,description:'Agents'}]})",context);
  assert.match(html,/<span>Codex<\/span>/);
 });
-test('Connections keeps Save and apply visible and restores Slack testing details',()=>{
+test('Connections keeps Save and apply visible and keeps Slack configuration in one card',()=>{
  assert.doesNotMatch(source,/\$\('#settings-actions'\)\.hidden=id===['"]connections['"]/);
  const context=vm.createContext({escapeHtml:String,brandLabel:()=>'<span>Slack</span>',slackBusy:false,slackData:{configured:true,pending:2,failed:1,sent:3,lastError:'Webhook rejected'}});
- vm.runInContext(source.split('\n').find(line=>line.startsWith('function slackCredentialCard('))!,context);
- const html=vm.runInContext('slackCredentialCard()',context);
- assert.match(html,/Send test/);assert.match(html,/testSlack\(\)/);assert.match(html,/Last delivery error: Webhook rejected/);
+ vm.runInContext(source.split('\n').find(line=>line.startsWith('function slackWebhookCard('))!,context);
+ const html=vm.runInContext("slackWebhookCard({key:'SLACK_WEBHOOK_URL',configured:true})",context);
+ assert.match(html,/Send test/);assert.match(html,/testSlack\(\)/);assert.match(html,/Last delivery error: Webhook rejected/);assert.match(html,/data-setting="SLACK_WEBHOOK_URL"/);assert.doesNotMatch(html,/openSlackSettings/);
 });
 test('prompt viewer defaults to readable content and offers the exact agent JSON',()=>{
  const context=vm.createContext({escapeHtml:(value:string)=>String(value).replaceAll('<','&lt;')});for(const name of ['promptReadableHtml','promptAgentJson'])vm.runInContext(source.split('\n').find(line=>line.startsWith(`function ${name}(`))!,context);
