@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Store } from "../src/storage.js";
-import { startDashboard } from "../src/dashboard.js";
+import { startDashboard,versionInfo } from "../src/dashboard.js";
 import { config } from "../src/config.js";
 
 test("dashboard serves readable state and queues daemon controls", async () => {
@@ -24,7 +24,7 @@ test("dashboard serves readable state and queues daemon controls", async () => {
 case "$*" in
   "rev-parse --short HEAD") echo abc1234;;
   "rev-parse --is-inside-work-tree") echo true;;
-  "symbolic-ref --quiet --short HEAD") echo main;;
+  "symbolic-ref --quiet --short HEAD") if [[ -f "$PWD/detached-head" ]]; then exit 1; else echo main; fi;;
   "rev-parse HEAD") echo abc1234abc1234abc1234abc1234abc1234abc1;;
   "config user.name") echo 'AI Factory Test';;
   "config user.email") echo 'factory@example.com';;
@@ -200,6 +200,7 @@ echo "$*" >> "$PWD/update-actions.log"
     await reader.cancel(); controller.abort();
     const services = await fetch(`http://127.0.0.1:${port}/api/services`).then(response => response.json()) as any;
     assert.deepEqual(services.version,{number:"0.1.0",revision:"abc1234",branch:"main",display:"v0.1.0 · abc1234"});
+    fs.writeFileSync(path.join(settingsRoot,"detached-head"),"");assert.equal(versionInfo(settingsRoot).branch,"detached");fs.rmSync(path.join(settingsRoot,"detached-head"));
     assert.deepEqual(services.services.map(({service,loaded,running}: any) => ({service,loaded,running})),[
       {service:"daemon",loaded:true,running:true},
       {service:"dashboard",loaded:false,running:false}

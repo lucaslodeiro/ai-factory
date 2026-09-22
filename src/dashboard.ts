@@ -279,10 +279,10 @@ function git(root: string, args: string[], timeout = 10000) {
   if (result.status !== 0) throw new Error((result.stderr || result.stdout || `git ${args.join(" ")} failed`).trim());
   return result.stdout.trim();
 }
-function versionInfo(root: string): VersionInfo {
+export function versionInfo(root: string): VersionInfo {
   const manifest = JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8")) as { version?: string };
   const revision = git(root,["rev-parse","--short","HEAD"]);
-  const branch = git(root,["symbolic-ref","--quiet","--short","HEAD"]);
+  let branch="detached";try{branch=git(root,["symbolic-ref","--quiet","--short","HEAD"]);}catch{}
   const number = manifest.version ?? "0.0.0";
   return { number,revision,branch,display:`v${number} · ${revision}` };
 }
