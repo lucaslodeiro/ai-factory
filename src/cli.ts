@@ -20,6 +20,7 @@ import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {readIssueState} from "./workflow-github.js";
 import {activityRow,summarizeActivity,progression} from "./execution-activity.js";
+import {resolveWorkItem} from "./work-item-reference.js";
 import {buildBenchmarkReport,compareBenchmarks,comparable,type BenchmarkReport,type ExecutionSample,type Verification} from "./benchmark.js";
 import {spawnSync as spawnVerifier} from "node:child_process";
 import {fileURLToPath} from "node:url";
@@ -59,9 +60,11 @@ p.command("stop").option("--pause-active","Pause active tasks before stopping").
 p.command("events").argument("[id]").action(id => {
  const s = new Store(); console.table(id ? s.db.prepare("SELECT * FROM events WHERE work_item_id=? ORDER BY id DESC LIMIT 50").all(id) : s.db.prepare("SELECT * FROM events ORDER BY id DESC LIMIT 50").all()); s.db.close();
 });
-p.command("activity").argument("[id]").description("Per-role provider activity and cache split for one work item, or the most recent runs").action(id => {
+p.command("activity").argument("[id]").description("Per-role provider activity and cache split for one work item or issue number, or the most recent runs").action(reference => {
  const s = new Store();
  try {
+  let id:string|undefined;
+  if (reference) { const found=resolveWorkItem(s,reference); if ("error" in found) { console.log(found.error); process.exitCode=1; return; } id=found.id; }
   const rows=(s.db.prepare(`SELECT e.payload payload, x.role role, x.stage stage, x.started_at startedAt
     FROM events e JOIN executions x ON x.id=e.run_id
     WHERE e.type='execution.finished'${id?" AND e.work_item_id=?":""} ORDER BY e.id DESC LIMIT 200`)
@@ -81,16 +84,18 @@ p.command("activity").argument("[id]").description("Per-role provider activity a
   console.log("Builder receives a repository map and Tester does not. Compare them on events per run with Codex, and on turns with Claude, whose event count is always 1.");
  } finally { s.db.close(); }
 });
-p.command("benchmark").argument("<id>").option("--save <file>","Write this run as a baseline")
+p.command("benchmark").argument("<work-item-id-or-issue-number>").option("--save <file>","Write this run as a baseline")
  .option("--baseline <file>","Compare this run against a saved baseline").option("--role <role>","Role to compare, or ALL")
  .option("--verify <checkout>","Independently check the produced code against the benchmark issue")
  .description("Measure one benchmark run: tokens, cache, turns, cost, duration, transitions and health")
- .action((id:string,options:{save?:string;baseline?:string;role?:string;verify?:string}) => {
+ .action((reference:string,options:{save?:string;baseline?:string;role?:string;verify?:string}) => {
  const s = new Store();
  try {
+  const found=resolveWorkItem(s,reference);
+  if ("error" in found) { console.log(found.error); process.exitCode=1; return; }
+  const id=found.id;
   const item=s.db.prepare("SELECT issue_number,stage,status,attempt,correction_cycles FROM work_items WHERE id=?").get(id) as
-   {issue_number:number;stage:string|null;status:string|null;attempt:number;correction_cycles:number}|undefined;
-  if (!item) { console.log(`Unknown work item ${id}`); process.exitCode=1; return; }
+   {issue_number:number;stage:string|null;status:string|null;attempt:number;correction_cycles:number};
   const finished=new Map<string,{usage:Record<string,unknown>;activity:Record<string,unknown>}>();
   for (const row of s.db.prepare("SELECT run_id,payload FROM events WHERE work_item_id=? AND type='execution.finished'").all(id) as Array<{run_id:string;payload:string}>) {
    try { const payload=JSON.parse(row.payload); finished.set(row.run_id,{usage:payload.usage ?? {},activity:payload.activity ?? {}}); } catch {}

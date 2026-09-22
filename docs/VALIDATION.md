@@ -171,6 +171,14 @@ Narrowing the trigger itself was considered and rejected. Requiring a preview sc
 
 **A second defect surfaced while verifying this.** The Cursor adapter never forwarded `localRuntimeUrl`, so a Cursor-configured Builder or Tester was told to start its own preview server beside the one the Factory had already started and was supervising. Issue 6 ended with exactly that: two runtimes of the same worktree alive at once, which its Tester recorded as the deferred finding QA-1. Codex and Claude forwarded it correctly; only Cursor, added earlier the same day, did not. `test/local-runtime-optional.test.ts` now asserts all three adapters pass it through.
 
+## Work item references — 2026-09-22
+
+`activity` and `benchmark` took a work item UUID and nothing else. Two ordinary mistakes hit the same dead end: naming the issue number, which is what every human-facing surface shows and what an operator reaches for, and pasting a UUID out of a terminal table one character short. Both answered `No finished executions recorded for <reference>`, which reads as a work item that ran nothing rather than an argument that names nothing.
+
+Both commands now accept a work item id, an issue number with or without a leading hash, or an id prefix of at least eight characters, the convention `/factory replace <#N|id-prefix>` already uses. Repository and issue number are unique together, so a number names at most one work item; an ambiguous prefix is refused with the count rather than resolved to one of the matches. Prefix comparison happens in memory rather than through SQL `LIKE`, so a reference containing `%` or `_` matches literally.
+
+Covered by `test/work-item-reference.test.ts`, including the exact truncated UUID that produced the report.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

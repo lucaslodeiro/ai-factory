@@ -347,6 +347,8 @@ Worker prompts include the actual daemon Node executable and configured Git, plu
 
 `ai-factory activity <work-item-id>` groups a work item's finished executions by role and prints runs, provider events, events per run, reported turns, cache reads and cache writes apart, output tokens and the event-type histogram. When a correction cycle re-ran a role, it also lists that role's runs in order with `vsFirstPercent`: the second Builder already holds the findings and the code it wrote, so it should cost less than the first, and a run that costs more means the role starts over every cycle. `ai-factory events` dumps raw payload JSON and is not readable for this.
 
+Both `activity` and `benchmark` accept a work item id, an issue number, or an id prefix of at least eight characters, so the number shown on GitHub works as well as the UUID shown by `ai-factory status`.
+
 To compare one run against another, use the fixed issue in [docs/BENCHMARK.md](docs/BENCHMARK.md): two different issues measure the issues, not the factory. `ai-factory benchmark <work-item-id> --verify <checkout> --save <file>` records a baseline and `--baseline <file>` prints the deltas. `--verify` runs an independent oracle against the code the run produced; without it the cost figures are the system grading its own homework, and a comparison where either side was unverified or unresolved is refused.
 
 Providers do not report the same things. Codex streams one JSON object per line, so its event histogram is real, but it reports only a token total with no cache split and no cost. Claude returns a single envelope, so its event count is always 1, but it reports turns, the cache split and a cost estimate. Compare a role against itself across runs, never across providers.
