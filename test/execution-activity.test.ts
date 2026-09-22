@@ -43,6 +43,7 @@ test("each role's runs are ordered in time and compared against its own first ru
  assert.equal(sequence[0].costUsd,2,"the earliest run is run 1 regardless of query order");
  assert.equal(sequence[0].vsFirstPercent,null,"a first run has nothing to compare against");
  assert.equal(sequence[1].vsFirstPercent,-80);
+ assert.equal(sequence[1].vsPreviousPercent,-80,"with two runs both comparisons agree");
 });
 
 test("a second run that is more expensive is reported as such, not hidden by the role total",()=>{
@@ -55,4 +56,23 @@ test("a provider that reports no cost is compared on tokens, and on neither it s
  assert.equal(tokens[1].vsFirstPercent,-50);
  const nothing=progression([run("qa","t1",{costUsd:null,usage:{totalTokens:null}}),run("qa","t2",{costUsd:null,usage:{totalTokens:null}})]);
  assert.equal(nothing[1].vsFirstPercent,null);
+});
+
+test("a first run that aborted early does not make every later run look like a regression",()=>{
+ // The shape real data showed on issue 6: two stubs, then the runs that did the work.
+ const rows=[run("developer","t1",{usage:{totalTokens:23698}}),run("developer","t2",{usage:{totalTokens:57461}}),
+  run("developer","t3",{usage:{totalTokens:1402703}}),run("developer","t4",{usage:{totalTokens:1018648}})]
+  .map(row=>({...row,costUsd:null}));
+ const sequence=progression(rows);
+ assert.equal(sequence[2].vsFirstPercent,5819.1,"against the stub the real run reads as a catastrophe");
+ assert.equal(sequence[3].vsPreviousPercent,-27.4,"run over run says what actually happened");
+ assert.equal(sequence[3].vsFirstPercent,4198.5);
+});
+
+test("a run with no measurement is skipped as a baseline instead of breaking the chain",()=>{
+ const rows=[run("developer","t1",{usage:{totalTokens:1000000}}),run("developer","t2",{usage:{totalTokens:null}}),
+  run("developer","t3",{usage:{totalTokens:500000}})].map(row=>({...row,costUsd:null}));
+ const sequence=progression(rows);
+ assert.equal(sequence[1].vsPreviousPercent,null,"the unmeasured run compares as unknown");
+ assert.equal(sequence[2].vsPreviousPercent,-50,"and the next run compares against the last measured one");
 });

@@ -73,7 +73,8 @@ p.command("activity").argument("[id]").description("Per-role provider activity a
   if (sequence.length) {
    console.log("\nRuns in order, for each role that ran more than once:");
    console.table(sequence);
-   console.log("vsFirstPercent compares each run against that role's first run, by cost when the provider reports it and by tokens otherwise.");
+   console.log("vsPreviousPercent compares each run against the one before it and vsFirstPercent against that role's first run, by cost when the provider reports it and by tokens otherwise.");
+   console.log("Read vsPreviousPercent first: a role whose first run aborted early leaves a tiny baseline that makes every later run look like a regression.");
    console.log("A second Builder run that is not cheaper than the first means the role starts over every correction cycle.");
   }
   console.log("events: JSON objects the provider wrote to stdout. A streaming provider reports many; a provider that returns one result envelope reports one.");

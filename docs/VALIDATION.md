@@ -137,7 +137,13 @@ Not yet validated against a live run: nothing shows how often the Tester was ret
 
 This answers the open question behind the largest cost item: a second Builder run already has the findings and the code it wrote, so it should be cheaper than the first. If it is not, the role re-explores on every correction cycle, and that is worth more than any prompt-size work.
 
-Not answered yet. The issue #6 figures reported two Builder executions of 541,087 and 4,882,278 tokens, which would be a ninefold increase on the second, but totals alone cannot say whether the smaller one was a cycle, an interrupted attempt or a short first try. Verified against a seeded work item with one correction cycle; covered by `test/execution-activity.test.ts`.
+**Answered, on a real work item.** Issue 6 of the demo repository ran 18 executions for 15,850,719 tokens and is still Paused. The Implementation Engineer ran eight times for 9,355,388 tokens, 59% of the issue; the Verification Engineer twice for 4,579,818, 28.9%.
+
+Its Implementation Engineer runs above a hundred thousand tokens were 1,402,703, 1,018,648, 1,359,889, 559,191 and 4,933,798: run over run, -27%, +33%, -59% and +782%. There is no downward trend. A correction cycle does not get cheaper, so the role is not carrying forward what it already produced, and the last run alone was 31% of the whole issue. The Verification Engineer also got 13.6% more expensive on its re-run. Only the Delivery Reviewer improved, by 23.3%.
+
+That data also exposed a flaw in the first version of this report. The first two Implementation Engineer runs were 23,698 and 57,461 tokens, together 0.87% of what the role spent: stubs that aborted early. Comparing every later run against that baseline produced figures like +5819% and +20719%, technically correct and useless. The report now prints `vsPreviousPercent` alongside `vsFirstPercent` and says to read the run-over-run figure first. An unmeasured run compares as unknown and is skipped as a baseline rather than breaking the chain.
+
+Covered by `test/execution-activity.test.ts`, including the exact shape issue 6 showed.
 
 ## Remaining operational validation
 

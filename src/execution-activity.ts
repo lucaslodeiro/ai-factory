@@ -15,7 +15,8 @@ export interface ActivityRow {
 // Tester, which on a measured issue was 90% of its cost.
 export interface RunProgression {
   role:string; run:number; stage:string|null; turns:number|null; events:number|null;
-  totalTokens:number|null; costUsd:number|null; durationMs:number|null; vsFirstPercent:number|null;
+  totalTokens:number|null; costUsd:number|null; durationMs:number|null;
+  vsPreviousPercent:number|null; vsFirstPercent:number|null;
 }
 export function progression(rows:ActivityRow[]):RunProgression[] {
   const byRole=new Map<string,ActivityRow[]>();
@@ -27,10 +28,20 @@ export function progression(rows:ActivityRow[]):RunProgression[] {
     // Cost is the comparison when the provider reports it, tokens otherwise. A run missing both
     // compares as unknown rather than as an improvement.
     const basis=(row:ActivityRow)=>row.costUsd ?? row.totalTokens;
+    const change=(from:number|null,to:number|null)=>from === null || to === null || !from ? null : Math.round(((to-from)/from)*1000)/10;
     const first=basis(runs[0]);
-    runs.forEach((row,index)=>result.push({role,run:index+1,stage:row.stage,turns:row.turns,events:row.events,
-      totalTokens:row.totalTokens,costUsd:row.costUsd,durationMs:row.durationMs,
-      vsFirstPercent:index===0 || first === null || !first || basis(row) === null ? null : Math.round(((basis(row)!-first)/first)*1000)/10}));
+    // Run over run is the honest reading of "does a cycle get cheaper". A first run that aborted
+    // early is a tiny baseline that makes every later run look like a catastrophic regression,
+    // which real data showed: two 23K and 57K stubs preceding runs above a million.
+    let previous:number|null=null;
+    runs.forEach((row,index)=>{
+      const value=basis(row);
+      result.push({role,run:index+1,stage:row.stage,turns:row.turns,events:row.events,
+        totalTokens:row.totalTokens,costUsd:row.costUsd,durationMs:row.durationMs,
+        vsPreviousPercent:index===0 ? null : change(previous,value),
+        vsFirstPercent:index===0 ? null : change(first,value)});
+      if (value !== null) previous=value;
+    });
   }
   return result;
 }
