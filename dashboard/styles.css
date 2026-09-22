@@ -377,3 +377,8 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .thread-event-line{min-width:0}.thread-event-line .state{flex:none;white-space:nowrap}.thread-event-summary{min-width:0}
 .thread-composer{margin-top:0;padding-top:0;border-top:0;margin-bottom:.85rem;padding-bottom:.85rem;border-bottom:1px solid var(--line)}
 .thread-diagnosis-link{margin:.6rem 0 0!important;padding:.55rem .7rem;border-left:3px solid var(--danger);background:color-mix(in srgb,var(--danger) 6%,var(--panel));color:var(--muted)!important}
+
+/* Keep provider icon, provider name and model on one visual baseline in workflow prompts. */
+.thread-meta{display:inline-flex;align-items:center}
+.thread-agent{display:inline-flex;align-items:center;gap:.4rem}
+.thread-model{display:inline-flex;align-items:center;min-height:1.35em;margin-left:0}
