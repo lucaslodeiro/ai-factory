@@ -548,6 +548,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
           if(!operation.affected.length)return json(res,200,await maintenanceCoordinator(store).confirm(id));
           if(!daemonState(store).running)return json(res,409,{error:"Start the daemon before preparing maintenance: local tasks still need to be paused safely."});
         }
+        if(action==="resume"&&!daemonState(store).running)return json(res,409,{error:"Start the daemon before resuming paused tasks."});
         store.request(action==="confirm"?"maintenance-confirm":"maintenance-resume",id);return json(res,202,{ok:true,id,status:"queued"});
       }
       if (req.method === "GET" && url.pathname === "/api/logs/daemon") return json(res,200,daemonLogs(settingsRoot,url.searchParams.get("lines")));

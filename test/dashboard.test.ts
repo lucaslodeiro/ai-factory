@@ -170,6 +170,14 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.equal(daemonLogs.logs[0].truncated,true); assert.match(daemonLogs.logs[1].content,/retry scheduled/);
     const snapshot = await fetch(`http://127.0.0.1:${port}/api/snapshot`).then(response => response.json()) as any;
     assert.equal(snapshot.daemon.running,false);
+    store.db.prepare("UPDATE work_items SET status='PAUSED' WHERE id='owner-demo-7'").run();
+    store.db.prepare("INSERT INTO maintenance_operations(id,operation,actor,status,requested_at,confirmed_at,finished_at) VALUES('paused-maintenance','update','dashboard','completed','now','now','now')").run();
+    store.db.prepare("INSERT INTO maintenance_items(maintenance_id,work_item_id,confirmed_revision,paused_at) VALUES('paused-maintenance','owner-demo-7',0,'now')").run();
+    const resumeWhileStopped=await fetch(`http://127.0.0.1:${port}/api/maintenance/paused-maintenance/resume`,{method:"POST"});
+    assert.equal(resumeWhileStopped.status,409);
+    assert.deepEqual(await resumeWhileStopped.json(),{error:"Start the daemon before resuming paused tasks."});
+    assert.equal((store.db.prepare("SELECT COUNT(*) count FROM controls WHERE kind='maintenance-resume'").get() as {count:number}).count,0);
+    store.db.prepare("UPDATE work_items SET status='FAILED' WHERE id='owner-demo-7'").run();
     assert.equal(snapshot.items.length,1);
     assert.equal(snapshot.items[0].title,"Repair login");
     assert.deepEqual({stage:snapshot.items[0].stage,status:snapshot.items[0].status},{stage:"TEST",status:"FAILED"});
