@@ -1,4 +1,4 @@
-import type { AgentResult, AgentRole, Criterion, DeliveryStage } from "./types.js";
+import type { AgentResult, AgentRole, Criterion, DeliveryStage, TaskAssessment, VerificationDepth } from "./types.js";
 import { tacticalRouteError, type TacticalNextRole } from "./tactical-routing.js";
 export const reviewDimensions = ["specification", "code-quality", "security", "performance", "product-ui-copy", "test-quality", "dependencies"];
 type Schema = { type?: string | string[]; enum?: unknown[]; properties?: Record<string, Schema>; required?: string[]; additionalProperties?: boolean; items?: Schema; minLength?: number; maxLength?: number; maxItems?: number; };
@@ -7,12 +7,19 @@ const text = (maxLength = 5000): Schema => ({ type: "string", minLength: 1, maxL
 const enumeration = (...values: string[]): Schema => ({ type: "string", enum: values });
 const list = (items: Schema): Schema => ({ type: "array", items, maxItems: 100 });
 const object = (properties: Record<string, Schema>): Schema => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
+// Depth cannot be chosen freely: an Architect that declared everything minimal would make every
+// run cheap and the product worse. It is floored by the worse of complexity and risk, and the
+// human approves it with the spec.
+const levels=["low","medium","high"] as const, depths=["minimal","standard","thorough"] as const;
+export function requiredVerificationDepth(assessment:Pick<TaskAssessment,"complexity"|"risk">):VerificationDepth {
+ return depths[Math.max(levels.indexOf(assessment.complexity),levels.indexOf(assessment.risk))];
+}
 const decisionSchema=object({ kind: enumeration("tactical", "major"), decision: text(), rationale: text(), conflictsWithHuman: { type: "boolean" }, supersedes:list(text(100)) });
 export const resultSchema = object({
-  taskAssessment: { ...object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), rationale: text() }), type: ["object", "null"] },
+  taskAssessment: { ...object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), verificationDepth: enumeration("minimal", "standard", "thorough"), rationale: text() }), type: ["object", "null"] },
   outcome: enumeration("spec", "questions", "resolved", "pass", "changes", "decision"),
   summary: text(1500), spec: { type: "string", maxLength: 30000 }, questions: list(text()),
-  findings: list(object({ classification: enumeration("auto-fix", "decision-required", "defer", "environment-blocked"), evidence: text() })),
+  findings: list(object({ classification: enumeration("auto-fix", "decision-required", "defer", "environment-blocked"), severity: enumeration("critical", "major", "minor"), evidence: text() })),
   acceptanceCriteria: list(object({ id: text(100), description: text() })),
   coverage: list(object({ criterionId: text(100), status: enumeration("passed", "failed", "not-run"), evidence: text() })),
   tests: list(object({ command: text(), exitCode: { type: ["integer", "null"] }, evidence: text() })),
@@ -82,6 +89,15 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
   if (r.outcome === "spec" && (r.questions.length || !r.spec.trim() || !r.acceptanceCriteria.length || r.acceptanceCriteria.some(c => !r.spec.includes(c.id)))) throw new Error("Specification needs named acceptance criteria in markdown and structured form");
   if (r.outcome !== "spec" && (r.spec !== "" || r.acceptanceCriteria.length)) throw new Error("Only a new specification may contain spec/acceptanceCriteria");
   if (r.outcome === "spec" && !r.taskAssessment) throw new Error("Specification requires a taskAssessment");
+  if (r.taskAssessment) {
+    const floor=requiredVerificationDepth(r.taskAssessment);
+    if (depths.indexOf(r.taskAssessment.verificationDepth) < depths.indexOf(floor))
+      throw new Error(`Verification depth ${r.taskAssessment.verificationDepth} is below ${floor}, which ${r.taskAssessment.complexity} complexity and ${r.taskAssessment.risk} risk require`);
+  }
+  for (const finding of r.findings) {
+    if (finding.classification === "defer" && finding.severity !== "minor") throw new Error(`A ${finding.severity} finding cannot be deferred; fix it now or raise it as a decision`);
+    if (finding.classification === "auto-fix" && finding.severity === "minor") throw new Error("A minor finding cannot send work back to the Builder; defer it so it is recorded without a correction cycle");
+  }
   if (r.outcome !== "spec" && r.taskAssessment !== null) throw new Error("Only a new specification may change taskAssessment");
   if (r.outcome === "questions" && !r.questions.length) throw new Error("No clarification questions");
   if (r.outcome === "resolved") {

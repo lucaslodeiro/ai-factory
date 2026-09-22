@@ -8,6 +8,8 @@ The factory does not translate task complexity into `fast`, `balanced`, or `stro
 
 Complexity considers scope, algorithms, architecture and concurrency. Risk considers authentication/authorization, secrets, payments, destructive migrations and security boundaries. Unknown scope should prompt clarification or a conservative assessment. Product Architect supplies the semantic assessment; the human approves that assessment with the specification.
 
+The assessment also carries `verificationDepth`, which tells the Verification Engineer how much testing this issue earns instead of leaving it to guess. `minimal` verifies each acceptance criterion once and adds nothing; `standard` adds the obvious boundary and error cases of the changed behaviour; `thorough` adds adversarial cases. It is floored by the worse of complexity and risk, so high in either requires `thorough` and medium requires at least `standard`, and `parseResult` rejects a spec that declares less. Without that floor an Architect could make every run cheap by declaring every issue minimal, which is the cheap path that degrades the product.
+
 The assessment and rationale are published with SPEC vN and stored in its immutable snapshot. Approving the spec approves the assessment. Use `/factory answer ...` to request a correction before approval. Tactical resolutions and delivery results cannot replace it; a new assessment requires a new spec version and approval.
 
 ## Configured roles

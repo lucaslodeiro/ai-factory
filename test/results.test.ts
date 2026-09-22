@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { InvalidResultError,parseResult, validateCoverage, resultSchemaFor } from "../src/results.js";
+import { InvalidResultError,parseResult, validateCoverage, resultSchemaFor, requiredVerificationDepth } from "../src/results.js";
 import { result } from "./fixtures.js";
 test("reports require evidence fields, tests, dependency rationale and review dimensions", () => {
  const missing = result("pass") as any; delete missing.dependencies;
@@ -12,8 +12,8 @@ test("reports require evidence fields, tests, dependency rationale and review di
  assert.throws(() => parseResult(result("pass", { reviewChecks: [] }), "reviewer"), /all review dimensions/);
  const review = result("pass"); review.reviewChecks[0].status = "failed";
  assert.throws(() => parseResult(review, "reviewer"), /all review dimensions/);
- assert.throws(() => parseResult(result("changes", { findings:[{classification:"defer",evidence:"Not checked now"}] }), "developer"), /auto-fix finding/);
- assert.throws(() => parseResult(result("changes", { findings:[{classification:"decision-required",evidence:"Human choice needed"}] }), "developer"), /auto-fix finding/);
+ assert.throws(() => parseResult(result("changes", { findings:[{classification:"defer",severity:"minor",evidence:"Not checked now"}] }), "developer"), /auto-fix finding/);
+ assert.throws(() => parseResult(result("changes", { findings:[{classification:"decision-required",severity:"major",evidence:"Human choice needed"}] }), "developer"), /auto-fix finding/);
 });
 test("spec/coverage IDs are unique and correspond to the immutable approved criteria", () => {
  const spec = result("spec"); spec.acceptanceCriteria.push(spec.acceptanceCriteria[0]);
@@ -52,7 +52,7 @@ test("architect consultation schema and validation enforce the exact tactical re
 test("delivery reports discard provider attempts to populate architect-owned fields", () => {
  const parsed = parseResult(result("pass", {
   spec:"replacement scope", acceptanceCriteria:[{id:"NEW",description:"Injected criterion"}],
-  taskAssessment:{complexity:"high",risk:"high",rationale:"Override"}, nextRole:"reviewer",
+  taskAssessment:{complexity:"high",risk:"high",verificationDepth:"thorough",rationale:"Override"}, nextRole:"reviewer",
  }),"developer");
  assert.equal(parsed.spec,"");
  assert.deepEqual(parsed.acceptanceCriteria,[]);
@@ -87,4 +87,26 @@ test("decisions must include supersedes in the current result format",()=>{
  delete (raw.decisions[0] as Partial<typeof raw.decisions[0]>).supersedes;
  assert.throws(()=>parseResult(raw,"product-architect",["qa"],"TEST"),/supersedes/);
  assert.throws(()=>parseResult({...raw,decisions:[{...raw.decisions[0],supersedes:null}]},"product-architect",["qa"],"TEST"),/supersedes/);
+});
+
+test("verification depth cannot be declared below what complexity and risk require",()=>{
+ const spec=(complexity:string,risk:string,verificationDepth:string)=>({...result("spec"),taskAssessment:{complexity,risk,verificationDepth,rationale:"Assessed against the change"}});
+ assert.equal(parseResult(spec("low","low","minimal"),"product-architect").taskAssessment?.verificationDepth,"minimal");
+ assert.equal(parseResult(spec("low","low","thorough"),"product-architect").taskAssessment?.verificationDepth,"thorough","declaring more than required is allowed");
+ assert.throws(()=>parseResult(spec("low","high","standard"),"product-architect"),/below thorough/);
+ assert.throws(()=>parseResult(spec("high","low","minimal"),"product-architect"),/below thorough/);
+ assert.throws(()=>parseResult(spec("medium","low","minimal"),"product-architect"),/below standard/);
+ assert.equal(requiredVerificationDepth({complexity:"medium",risk:"low"}),"standard");
+ assert.equal(requiredVerificationDepth({complexity:"low",risk:"high"}),"thorough");
+});
+
+test("a minor finding is recorded instead of sending the Builder another cycle",()=>{
+ const withFinding=(classification:string,severity:string,outcome:"changes"|"pass"="changes")=>
+  ({...result(outcome),findings:[{classification,severity,evidence:"Naming could be clearer"}]});
+ assert.throws(()=>parseResult(withFinding("auto-fix","minor"),"qa"),/minor finding cannot send work back/);
+ assert.throws(()=>parseResult(withFinding("defer","major"),"qa"),/major finding cannot be deferred/);
+ assert.throws(()=>parseResult(withFinding("defer","critical"),"qa"),/critical finding cannot be deferred/);
+ assert.equal(parseResult(withFinding("auto-fix","major"),"qa").outcome,"changes");
+ // A deferred minor finding does not block the delivery, which is the whole point.
+ assert.equal(parseResult(withFinding("defer","minor","pass"),"qa").findings[0].severity,"minor");
 });

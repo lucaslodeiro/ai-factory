@@ -6,9 +6,14 @@ export type AgentProvider = typeof agentProviders[number];
 export const providerEnforcesResultSchema: Record<AgentProvider, boolean> = { codex: true, claude: true, cursor: false };
 export type DeliveryStage = "BUILD" | "TEST" | "REVIEW";
 export interface Criterion { id: string; description: string; }
-export interface Finding { classification: "auto-fix" | "decision-required" | "defer" | "environment-blocked"; evidence: string; }
+// Severity is the defect; classification is what to do about it. A minor finding is recorded and
+// never sent back, because one correction cycle re-runs Builder and Tester.
+export type FindingSeverity = "critical" | "major" | "minor";
+export interface Finding { classification: "auto-fix" | "decision-required" | "defer" | "environment-blocked"; severity: FindingSeverity; evidence: string; }
 export interface Decision { kind: "tactical" | "major"; decision: string; rationale: string; conflictsWithHuman: boolean; supersedes: string[]; }
-export interface TaskAssessment { complexity: "low" | "medium" | "high"; risk: "low" | "medium" | "high"; rationale: string; }
+// How much verification the issue earns, declared with the spec and approved with it.
+export type VerificationDepth = "minimal" | "standard" | "thorough";
+export interface TaskAssessment { complexity: "low" | "medium" | "high"; risk: "low" | "medium" | "high"; verificationDepth: VerificationDepth; rationale: string; }
 export interface ModelSelection { policy: string; provider: AgentProvider; model: string; reason: string; }
 export interface AgentResult {
   taskAssessment: TaskAssessment | null;

@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { requiredVerificationDepth } from "../src/results.js";
 import { selectModel } from "../src/model-policy.js";
 import { config } from "../src/config.js";
 import { parseResult } from "../src/results.js";
 import { result } from "./fixtures.js";
 import type { TaskAssessment, AgentRole } from "../src/types.js";
-const assessment = (complexity: TaskAssessment["complexity"], risk: TaskAssessment["risk"]): TaskAssessment => ({ complexity, risk, rationale: "Inspected task scope" });
+const assessment = (complexity: TaskAssessment["complexity"], risk: TaskAssessment["risk"]): TaskAssessment => ({ complexity, risk, verificationDepth: requiredVerificationDepth({ complexity, risk }), rationale: "Inspected task scope" });
 test("configured routing is unchanged by assessment, corrections or consultations",()=>{
  for(const role of ["product-architect","developer","qa","reviewer"] as AgentRole[]){
   const selection=selectModel(role);assert.equal("profile" in selection,false);

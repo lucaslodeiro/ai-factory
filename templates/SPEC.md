@@ -35,6 +35,9 @@ Use verifiable Given / When / Then criteria where appropriate.
 
 ## Deferred Items
 
+## Verification Depth
+minimal | standard | thorough, with the reason. It cannot be below the worse of complexity and risk. State what the Verification Engineer should and should not spend effort on.
+
 ## Risks / Security / Performance Considerations
 
 ## Approval

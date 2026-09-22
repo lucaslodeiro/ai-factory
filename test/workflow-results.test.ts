@@ -14,7 +14,7 @@ import type { V3Stage } from "../src/workflow-records.js";
 function setup(stage:V3Stage="DESIGN",approved=false) {
  const store=new Store(":memory:");
  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context) VALUES('work-1',1,'owner/demo','now','now',?)").run(JSON.stringify({title:"Demo",body:"Build it",cursor:5}));
- if(approved)store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment,approved_by,approval_comment_id,approved_at) VALUES('work-1',1,'SPEC',?,?, 'owner',4,'now')").run(JSON.stringify([{id:"AC1",description:"Returns 42"}]),JSON.stringify({complexity:"medium",risk:"low",rationale:"standard"}));
+ if(approved)store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment,approved_by,approval_comment_id,approved_at) VALUES('work-1',1,'SPEC',?,?, 'owner',4,'now')").run(JSON.stringify([{id:"AC1",description:"Returns 42"}]),JSON.stringify({complexity:"medium",risk:"low",verificationDepth:"thorough",rationale:"standard"}));
  const projections=new WorkflowProjections(store);projections.initialize("work-1",stage,"QUEUED");
  return {store,projections,records:new WorkflowRecords(store),results:new WorkflowResults(store)};
 }
@@ -38,7 +38,7 @@ test("Architect specification creates a versioned approval request",()=>{
 test("delivery pass advances the stored stage and accepts role-owned deferred findings",()=>{
  const s=setup("BUILD",true);
  try {
-  const deferred=s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"finding",classification:"defer",originRole:"developer",evidence:"Optional cleanup"},sourceType:"agent-result",sourceId:"old",actor:"developer"});
+  const deferred=s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"finding",classification:"defer",severity:"minor",originRole:"developer",evidence:"Optional cleanup"},sourceType:"agent-result",sourceId:"old",actor:"developer"});
   running(s,"developer","run-b");
   const applied=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-b",role:"developer",result:result("pass")});
   assert.deepEqual({stage:applied.projection.stage,status:applied.projection.status},{stage:"TEST",status:"QUEUED"});assert.equal(s.records.get(deferred.id)?.status,"accepted-defer");
@@ -80,10 +80,10 @@ test("correction cycles count changes, stop at the limit and preserve the tactic
  const s=setup("TEST",true);
  try {
   running(s,"qa","run-1");
-  const first=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-1",role:"qa",result:result("changes",{coverage:[{criterionId:"AC1",status:"failed",evidence:"Mismatch"}],findings:[{classification:"auto-fix",evidence:"Fix it"}]})});
+  const first=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-1",role:"qa",result:result("changes",{coverage:[{criterionId:"AC1",status:"failed",evidence:"Mismatch"}],findings:[{classification:"auto-fix",severity:"major",evidence:"Fix it"}]})});
   assert.deepEqual({stage:first.projection.stage,status:first.projection.status,cycles:first.projection.correctionCycles},{stage:"BUILD",status:"QUEUED",cycles:1});
   running(s,"developer","run-2");
-  const second=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-2",role:"developer",result:result("changes",{coverage:[{criterionId:"AC1",status:"failed",evidence:"Still wrong"}],findings:[{classification:"auto-fix",evidence:"Try again"}]})});
+  const second=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-2",role:"developer",result:result("changes",{coverage:[{criterionId:"AC1",status:"failed",evidence:"Still wrong"}],findings:[{classification:"auto-fix",severity:"major",evidence:"Try again"}]})});
   assert.deepEqual({stage:second.projection.stage,status:second.projection.status,cycles:second.projection.correctionCycles},{stage:"BUILD",status:"WAITING",cycles:2});
   const limit=s.records.activeRequest("work-1");assert.equal(limit?.payload.kind==="request"&&limit.payload.type,"correction-limit");
   const answered=new WorkflowCommands(s.store).apply({kind:"answer",text:"Use deterministic data"},{workItemId:"work-1",login:"owner",commentId:6,specVersion:1});
@@ -94,12 +94,12 @@ test("correction cycles count changes, stop at the limit and preserve the tactic
 
 test("a Builder pass with no files after a correction request waits for human guidance",()=>{
  const s=setup("TEST",true);try{
-  running(s,"qa","run-q");s.results.apply({head:"head",workItemId:"work-1",executionId:"run-q",role:"qa",result:result("changes",{coverage:[{criterionId:"AC1",status:"failed",evidence:"Mismatch"}],findings:[{classification:"auto-fix",evidence:"Fix it"}]})});
+  running(s,"qa","run-q");s.results.apply({head:"head",workItemId:"work-1",executionId:"run-q",role:"qa",result:result("changes",{coverage:[{criterionId:"AC1",status:"failed",evidence:"Mismatch"}],findings:[{classification:"auto-fix",severity:"major",evidence:"Fix it"}]})});
   running(s,"developer","run-empty");const empty=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-empty",role:"developer",result:result("pass"),changedPaths:[]});
   assert.deepEqual({stage:empty.projection.stage,status:empty.projection.status},{stage:"BUILD",status:"WAITING"});const request=s.records.activeRequest("work-1");assert.equal(request?.payload.kind==="request"&&request.payload.type,"correction-limit");
  }finally{s.store.db.close();}
  const changed=setup("TEST",true);try{
-  running(changed,"qa","run-q");changed.results.apply({head:"head",workItemId:"work-1",executionId:"run-q",role:"qa",result:result("changes",{coverage:[{criterionId:"AC1",status:"failed",evidence:"Mismatch"}],findings:[{classification:"auto-fix",evidence:"Fix it"}]})});
+  running(changed,"qa","run-q");changed.results.apply({head:"head",workItemId:"work-1",executionId:"run-q",role:"qa",result:result("changes",{coverage:[{criterionId:"AC1",status:"failed",evidence:"Mismatch"}],findings:[{classification:"auto-fix",severity:"major",evidence:"Fix it"}]})});
   running(changed,"developer","run-changed");const applied=changed.results.apply({head:"head",workItemId:"work-1",executionId:"run-changed",role:"developer",result:result("pass"),changedPaths:["src/app.ts"]});assert.deepEqual({stage:applied.projection.stage,status:applied.projection.status},{stage:"TEST",status:"QUEUED"});
  }finally{changed.store.db.close();}
 });
@@ -117,17 +117,17 @@ test("late agent results are discarded after a concurrent workflow change",()=>{
 
 test('optional deferred findings do not pause a tactical resolution',()=>{
  const s=setup('BUILD',true);try{
-  running(s,'developer','builder');s.results.apply({head:"head",workItemId:'work-1',executionId:'builder',role:'developer',result:result('decision',{findings:[{classification:'decision-required',evidence:'Chrome cannot start'},{classification:'defer',evidence:'Preview cleanup pending'}]})});
+  running(s,'developer','builder');s.results.apply({head:"head",workItemId:'work-1',executionId:'builder',role:'developer',result:result('decision',{findings:[{classification:'decision-required',severity:'major',evidence:'Chrome cannot start'},{classification:'defer',severity:'minor',evidence:'Preview cleanup pending'}]})});
   const request=s.records.activeRequest('work-1')!;const deferred=s.records.active('work-1',1,'product-architect').find(row=>row.payload.kind==='finding'&&row.payload.classification==='defer')!;
-  running(s,'product-architect','architect');const applied=s.results.apply({head:"head",workItemId:'work-1',executionId:'architect',role:'product-architect',result:result('resolved',{nextRole:'developer',findings:[{classification:'defer',evidence:'Optional documentation cleanup can follow later'}]})});
+  running(s,'product-architect','architect');const applied=s.results.apply({head:"head",workItemId:'work-1',executionId:'architect',role:'product-architect',result:result('resolved',{nextRole:'developer',findings:[{classification:'defer',severity:'minor',evidence:'Optional documentation cleanup can follow later'}]})});
   assert.equal(applied.projection.status,'QUEUED');assert.equal(applied.projection.stage,'BUILD');assert.equal(s.records.get(request.id)?.status,'resolved');assert.equal(s.records.get(deferred.id)?.status,'open');
  }finally{s.store.db.close();}
 });
 
 test('environment blocker fails Build directly without sending another Architect consultation',()=>{
- const s=setup('BUILD',true);try{running(s,'developer','blocked-builder');const applied=s.results.apply({head:"head",workItemId:'work-1',executionId:'blocked-builder',role:'developer',result:result('decision',{findings:[{classification:'environment-blocked',evidence:'Chrome cannot start. Fix the browser runtime before Retry.'}]})});assert.equal(applied.projection.status,'FAILED');assert.equal(applied.projection.stage,'BUILD');assert.equal(s.records.activeRequest('work-1'),undefined);assert.equal((s.store.db.prepare("SELECT class FROM failures WHERE work_item_id='work-1'").get() as any).class,'environment');}finally{s.store.db.close();}
+ const s=setup('BUILD',true);try{running(s,'developer','blocked-builder');const applied=s.results.apply({head:"head",workItemId:'work-1',executionId:'blocked-builder',role:'developer',result:result('decision',{findings:[{classification:'environment-blocked',severity:'major',evidence:'Chrome cannot start. Fix the browser runtime before Retry.'}]})});assert.equal(applied.projection.status,'FAILED');assert.equal(applied.projection.stage,'BUILD');assert.equal(s.records.activeRequest('work-1'),undefined);assert.equal((s.store.db.prepare("SELECT class FROM failures WHERE work_item_id='work-1'").get() as any).class,'environment');}finally{s.store.db.close();}
 });
 
 test('initial Architect environment blocker becomes an environment failure with its result preserved',()=>{
- const s=setup();try{running(s,'product-architect','blocked-architect');const applied=s.results.apply({head:"head",workItemId:'work-1',executionId:'blocked-architect',role:'product-architect',result:result('questions',{summary:'Visual inspection is required before the specification can be completed',questions:['Can browser access be restored?'],findings:[{classification:'environment-blocked',evidence:'No browser is available to inspect the required rendered interface'}]})});assert.equal(applied.projection.status,'FAILED');assert.equal(applied.projection.stage,'DESIGN');assert.equal(s.records.activeRequest('work-1'),undefined);assert.equal((s.store.db.prepare("SELECT class FROM failures WHERE work_item_id='work-1'").get() as any).class,'environment');const event=s.store.db.prepare("SELECT payload FROM events WHERE work_item_id='work-1' AND type='agent.result'").get() as {payload:string};assert.match(event.payload,/Visual inspection is required/);}finally{s.store.db.close();}
+ const s=setup();try{running(s,'product-architect','blocked-architect');const applied=s.results.apply({head:"head",workItemId:'work-1',executionId:'blocked-architect',role:'product-architect',result:result('questions',{summary:'Visual inspection is required before the specification can be completed',questions:['Can browser access be restored?'],findings:[{classification:'environment-blocked',severity:'major',evidence:'No browser is available to inspect the required rendered interface'}]})});assert.equal(applied.projection.status,'FAILED');assert.equal(applied.projection.stage,'DESIGN');assert.equal(s.records.activeRequest('work-1'),undefined);assert.equal((s.store.db.prepare("SELECT class FROM failures WHERE work_item_id='work-1'").get() as any).class,'environment');const event=s.store.db.prepare("SELECT payload FROM events WHERE work_item_id='work-1' AND type='agent.result'").get() as {payload:string};assert.match(event.payload,/Visual inspection is required/);}finally{s.store.db.close();}
 });

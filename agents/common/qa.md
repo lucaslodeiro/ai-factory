@@ -12,14 +12,27 @@ May read the repository, access the Internet, execute the application/build/test
 ## Restrictions
 Must not modify production code, dependencies, credentials or repository policy. Preserve inherited changes; do not stage or revert unrelated work. Report only changes made during this execution.
 
-## Findings
-Classify every actionable finding as:
-- `auto-fix`
-- `decision-required`
-- `environment-blocked`
-- `defer`
+## Verification depth
+The approved specification carries `verificationDepth`. Honour it; it was approved by the human with the spec and is not yours to widen or narrow.
 
-Include severity, reproduction/evidence, impacted acceptance criterion, and recommended next action.
+- `minimal`: verify each acceptance criterion once, by the most direct means available. Do not add exploratory, boundary or edge-case tests beyond the criteria.
+- `standard`: the criteria, plus the obvious boundary and error cases of the behaviour this change introduced.
+- `thorough`: the criteria, boundaries, error paths and adversarial cases. State in the summary what you attempted and could not break.
+
+Testing beyond the approved depth is not diligence: it spends a budget the human did not approve and delays the delivery.
+
+## Findings
+Give every finding a severity and a classification. Severity is how bad the defect is; classification is what must happen about it.
+
+- `critical`: data loss, a security hole, or the delivered behaviour is unusable.
+- `major`: an approved acceptance criterion is not met, or a defect a user of this change would hit.
+- `minor`: everything else. Style, naming, a test you would have written differently, an optional refactor, a follow-up idea.
+
+A `critical` or `major` finding is `auto-fix` when the Builder can act on it, or `decision-required` when it needs a human. **A `minor` finding is always `defer`.** It is recorded on the issue and the work moves on; it never returns to the Builder.
+
+That line is the whole point: one correction cycle re-runs the Builder and the Tester and costs about as much as the entire rest of the issue. Sending back a nit is not thoroughness, it is a bill the human pays for nothing. When a finding is genuinely borderline, defer it and say so in the summary.
+
+Include reproduction or evidence and the impacted acceptance criterion on every finding.
 
 ## Output
 A report conforming to `templates/QA_REPORT.md` (Verification Report).

@@ -134,14 +134,14 @@ test("publisher keeps intermediate delivery results in status and publishes only
  try {
   s.projections.initialize("work-1","DESIGN","QUEUED");
   s.store.event("agent.result",{role:"developer",result:result("pass",{summary:"Builder completed implementation"}),specVersion:2},"work-1","run-builder");
-  s.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment) VALUES(?,?,?,?,?)").run("work-1",3,"Stored specification",JSON.stringify([{id:"AC-1",description:"Works"}]),JSON.stringify({complexity:"medium",risk:"low",rationale:"Bounded"}));
+  s.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment) VALUES(?,?,?,?,?)").run("work-1",3,"Stored specification",JSON.stringify([{id:"AC-1",description:"Works"}]),JSON.stringify({complexity:"medium",risk:"low",verificationDepth:"thorough",rationale:"Bounded"}));
   s.store.event("agent.result",{role:"product-architect",result:result("spec",{summary:"Specification is ready"}),specVersion:3},"work-1","run-architect");
   const comments:Array<{key:string;body:string}>=[];
   const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(){},publishWorkflowComment(_issue,key,body){comments.push({key,body});},assignees(){return[];},assign(){},unassign(){}});
   assert.equal(await publisher.publishResults(),1);
   assert.deepEqual(comments.map(comment=>comment.key),["result-run-architect"]);
   assert.equal(await publisher.publishResults(),0);
-  assert.deepEqual(payloadOf(comments[0].body),{kind:"spec",version:3,body:"Stored specification",criteria:[{id:"AC-1",description:"Works"}],assessment:{complexity:"medium",risk:"low",rationale:"Bounded"}});
+  assert.deepEqual(payloadOf(comments[0].body),{kind:"spec",version:3,body:"Stored specification",criteria:[{id:"AC-1",description:"Works"}],assessment:{complexity:"medium",risk:"low",verificationDepth:"thorough",rationale:"Bounded"}});
   assert.equal(JSON.parse((s.store.db.prepare("SELECT context FROM work_items WHERE id='work-1'").get() as {context:string}).context).specMarkers["3"],"result-run-architect");
   assert.match(workflowStatusMarkdown(s.store,"work-1"),/Latest delivery summary[\s\S]*Builder completed implementation/);
  } finally {s.store.db.close();}
@@ -186,12 +186,12 @@ test("every workflow CTA shows the exact valid commands and text semantics",asyn
 });
 
 test("correction limit CTA names the findings that need human guidance",async()=>{
- const s=setup();try{const finding=s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"finding",classification:"auto-fix",originRole:"qa",evidence:"The standings table still sorts oldest first"},sourceType:"agent-result",sourceId:"run-q",actor:"qa"});s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"request",type:"correction-limit",owner:"human",originatingStage:"TEST",allowedReturnStages:["BUILD","TEST"],openedAfterCommentId:10,findingIds:[finding.id]},sourceType:"orchestrator",sourceId:"limit",actor:"orchestrator"});s.projections.initialize("work-1","TEST","WAITING");const action=nextAction(workflowStatusMarkdown(s.store,"work-1"));assert.match(action,/Open findings[\s\S]*standings table still sorts oldest first/);assert.match(action,/Tell Architect how to resolve/);assert.equal(action.match(/^## Next action$/gm)?.length,1);}finally{s.store.db.close();}
+ const s=setup();try{const finding=s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"finding",classification:"auto-fix",severity:"major",originRole:"qa",evidence:"The standings table still sorts oldest first"},sourceType:"agent-result",sourceId:"run-q",actor:"qa"});s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"request",type:"correction-limit",owner:"human",originatingStage:"TEST",allowedReturnStages:["BUILD","TEST"],openedAfterCommentId:10,findingIds:[finding.id]},sourceType:"orchestrator",sourceId:"limit",actor:"orchestrator"});s.projections.initialize("work-1","TEST","WAITING");const action=nextAction(workflowStatusMarkdown(s.store,"work-1"));assert.match(action,/Open findings[\s\S]*standings table still sorts oldest first/);assert.match(action,/Tell Architect how to resolve/);assert.equal(action.match(/^## Next action$/gm)?.length,1);}finally{s.store.db.close();}
 });
 
 test("no-change correction CTA says what Builder did",()=>{
  const s=setup();try{
-  const finding=s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"finding",classification:"auto-fix",originRole:"qa",evidence:"The assertion still fails"},sourceType:"agent-result",sourceId:"run-q",actor:"qa"});
+  const finding=s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"finding",classification:"auto-fix",severity:"major",originRole:"qa",evidence:"The assertion still fails"},sourceType:"agent-result",sourceId:"run-q",actor:"qa"});
   s.projections.initialize("work-1","BUILD","QUEUED");
   s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"request",type:"correction-limit",owner:"human",originatingStage:"BUILD",allowedReturnStages:["BUILD"],openedAfterCommentId:10,findingIds:[finding.id]},sourceType:"agent-result",sourceId:"run-builder",actor:"developer"});
   s.projections.transition({workItemId:"work-1",expectedRevision:0,stage:"BUILD",status:"WAITING",actor:{type:"agent",id:"developer"},source:{executionId:"run-builder"},reason:{code:"no-change-pass",summary:"Builder found nothing to change after a correction request"}});

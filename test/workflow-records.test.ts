@@ -84,8 +84,8 @@ test("finding settlement records the execution and enforces defer semantics",()=
  const {store,records}=setup();
  try {
   store.db.prepare("INSERT INTO executions(id,work_item_id,role,status,started_at) VALUES('run-2','work-1','qa','succeeded','now')").run();
-  const fix=records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"finding",classification:"auto-fix",originRole:"qa",evidence:"Missing coverage"},sourceType:"agent-result",sourceId:"run-1",actor:"qa"});
-  const deferred=records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"finding",classification:"defer",originRole:"developer",evidence:"Optional cleanup"},sourceType:"agent-result",sourceId:"run-1",actor:"developer"});
+  const fix=records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"finding",classification:"auto-fix",severity:"major",originRole:"qa",evidence:"Missing coverage"},sourceType:"agent-result",sourceId:"run-1",actor:"qa"});
+  const deferred=records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"finding",classification:"defer",severity:"minor",originRole:"developer",evidence:"Optional cleanup"},sourceType:"agent-result",sourceId:"run-1",actor:"developer"});
   assert.equal(records.settleFindings([fix.id],"resolved","run-2")[0].resolvedBy,"run-2");
   assert.equal(records.settleFindings([deferred.id],"accepted-defer","run-2")[0].status,"accepted-defer");
  } finally {store.db.close();}

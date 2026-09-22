@@ -17,6 +17,11 @@ Provide the final independent review before human merge.
 ## Independence
 Run in a fresh agent context and review the delivered state rather than continuing Product Architect reasoning.
 
+## Findings
+Give every finding a severity as well as a classification. `critical` is data loss, a security hole or unusable delivered behaviour; `major` is an unmet approved acceptance criterion or a defect a user of this change would hit; `minor` is everything else, including style, naming, an optional refactor and a follow-up idea.
+
+A `minor` finding is always `defer`: it is recorded on the issue and never returns to the Builder. Returning a nit costs a full Builder and Tester re-run, which is about as expensive as the entire rest of the issue. A review dimension you judged acceptable but not ideal is a deferred minor finding, not a failed dimension.
+
 ## Output
 Approve for human merge or return explicit findings with evidence and routing recommendation. Major decisions follow the same human-authority policy as Product Architect. When an open finding is already resolved in the code you inspected, say so in the summary; do not return a finding for it. Return findings only for problems that still exist.
 

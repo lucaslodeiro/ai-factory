@@ -121,6 +121,16 @@ An independent oracle, `scripts/benchmark-verify.mjs`, grades the produced code 
 
 Verified against a seeded database covering all four roles, a saved baseline and a comparison run; the aggregation, the null handling and the transition path are covered by `test/benchmark.test.ts`. No real benchmark run has been recorded yet, so there is no baseline in `docs/benchmark/` and no variance figure. Three runs of the same issue are needed before any single difference can be called a result.
 
+## Verification depth and finding severity — 2026-09-22
+
+Two rules aimed at correction cycles, which the issue #6 measurements make the dominant cost: the Implementation Engineer was 60% of the issue's tokens and the Verification Engineer 30%, so one cycle re-runs 90% of an issue, roughly 95 times the value of every prompt-size cut made this session combined.
+
+The Product Architect now declares `verificationDepth` with the specification, floored by the worse of complexity and risk so it cannot become a way to make every run cheap, and approved by the human with the spec. Every finding now carries a severity, and only `critical` or `major` may be `auto-fix`; `minor` must be `defer`. Both are enforced in `parseResult` rather than left to the prompt, and covered by `test/results.test.ts`.
+
+The role contracts grew as a result: Architect 10601 to 11885 bytes, Builder 10084 to 10718, Tester 11039 to 12970, Reviewer 11366 to 12383. That is a deliberate trade. At roughly 100 turns the Tester's extra 1931 bytes cost about 48K cached tokens, around 2% of that role, while a single avoided correction cycle saves about 7.4M. The addition pays for itself if it prevents one cycle in something like 150 issues.
+
+Not yet validated against a live run: nothing shows how often the Tester was returning minor findings before, so the size of the saving is unknown. The benchmark's transition path and reason codes are what will show it.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.
