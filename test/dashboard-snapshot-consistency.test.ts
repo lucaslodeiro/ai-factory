@@ -67,3 +67,15 @@ test('stopped daemon controls recover without adding status noise to the issue l
  vm.runInContext('lastSnapshot.daemon.running=true;applyQueueAvailability()',context);
  assert.equal(button.disabled,false);assert.equal(readonly.disabled,true);
 });
+
+test('an open thread with a lagging status comment reloads after each GitHub cycle and when the daemon stops',()=>{
+ const nodes=new Map<string,any>();const get=(id:string)=>{if(!nodes.has(id))nodes.set(id,{});return nodes.get(id)};const reloads:string[]=[];
+ const context=vm.createContext({$:get,document:{querySelectorAll:()=>[],querySelector:()=>({open:true}),title:''},CSS:{escape:String},escapeHtml:(v:any)=>String(v??''),relative:()=>'',brandIcon:()=>'',githubLink:()=>'',statusName:(v:any)=>v,stateClass:()=>'',applySettingsLock:()=>{},usageInitialized:false,expandedUsageItems:new Set(),settingsBusy:false,setupMode:false});
+ vm.runInContext(source.split('\n').find(l=>l.startsWith('function metric('))!,context);vm.runInContext(source.slice(source.indexOf('let lastSnapshot=null;'),source.indexOf('\nasync function refresh()')),context);for(const name of ['renderRemoteIssues'])vm.runInContext(source.split('\n').find(l=>l.startsWith(`function ${name}(`))!,context);
+ vm.runInContext("threadCache.set('one',{publication:{behind:true,error:'HTTP 502'}});threadCache.set('two',{publication:{behind:false,error:null}})",context);context.recordReload=(id:string)=>{reloads.push(id)};vm.runInContext('loadWorkflowThread=(id)=>recordReload(id)',context);
+ let tick=0;const draw=(sync:any,running=true)=>{context.data={generatedAt:`2026-09-22T00:00:${String(++tick).padStart(2,'0')}Z`,items:[{id:'one',status:'WAITING',revision:1,lastEventId:5},{id:'two',status:'WAITING',revision:1,lastEventId:7}],executions:[],events:[],daemon:{running},githubSync:sync};vm.runInContext('render(data)',context)};
+ draw({state:'failed',at:'a'});reloads.length=0;
+ draw({state:'syncing',at:'b'});assert.deepEqual(reloads,['one'],'only the lagging thread reloads on a new cycle');
+ draw({state:'syncing',at:'b'});assert.deepEqual(reloads,['one'],'an unchanged cycle does not reload');
+ draw({state:'syncing',at:'b'},false);assert.deepEqual(reloads,['one','one'],'a stopped daemon reloads the lagging thread');
+});

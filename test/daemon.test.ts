@@ -86,6 +86,8 @@ if(codex){
   const state = JSON.parse(fs.readFileSync(stateFile, "utf8")); state.comments.push({ id: state.comments.length + 1, body: "/factory approve v1", user: { login: "owner", type: "User" } }); fs.writeFileSync(stateFile, JSON.stringify(state));
   await waitFor(() => fs.existsSync(path.join(root, "first-developer")));
   const workId = (store.db.prepare("SELECT id FROM work_items LIMIT 1").get() as {id:string}).id;
+  await waitFor(() => Boolean(store!.metadata<{nextAt?:string}>("runtime:github-sync")?.nextAt));
+  const sync=store.metadata<{state:string;at:string;nextAt:string}>("runtime:github-sync")!;assert.ok(Date.parse(sync.nextAt)>=Date.parse(sync.at),"each finished GitHub cycle records when the next one is due");
   assert.equal(command("status").status, 0);
   assert.equal(command("sync").status, 1, "Standalone sync must not race the active daemon");
   assert.equal((store.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='running'").get() as any).n, 1);

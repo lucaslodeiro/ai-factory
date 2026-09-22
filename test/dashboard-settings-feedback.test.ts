@@ -95,3 +95,19 @@ test('the conversation header explains a continuation and whether earlier turns 
  assert.match(html,/From desktop · 2h ago\. It has moved between installations 2 times\./);assert.doesNotMatch(html,/Earlier turns were recorded/);
  context.data={...context.data,continuations:[]};vm.runInContext("renderWorkflowThread('w',data)",context);assert.doesNotMatch(html,/Continued here/);
 });
+
+test('the status comment note says when the next attempt happens, or that the daemon is stopped',()=>{
+ let html='';const root:any={get innerHTML(){return html},set innerHTML(value){html=value},querySelector(){return null},querySelectorAll(){return []}};
+ const context=vm.createContext({applyQueueAvailability(){},document:{querySelector:()=>root},CSS:{escape:String},escapeHtml:String,relative:()=> 'now',roleName:String,statusName:String,stateClass:()=>'',actionLabel:{},brandIcon:()=>'',brandTitle:{},threadDrafts:new Map(),threadScroll:new Map(),expandedThreadTurns:new Set(),collapsedThreadTurns:new Set(),latestThreadTurns:new Map(),threadResultViews:new Map(),threadResultContent:new Map()});
+ vm.runInContext(source.split('\n').find(line=>line.startsWith('function promptReadableHtml('))!,context);vm.runInContext(source.split('\n').find(line=>line.startsWith('function nextAttemptText('))!,context);const start=source.indexOf('function renderWorkflowThread('),end=source.indexOf('\nasync function loadWorkflowThread',start);vm.runInContext(source.slice(start,end),context);
+ const failed={revision:3,publishedRevision:2,behind:true,url:null,error:'gh: HTTP 502: Bad Gateway (https://api.github.com/x)',attempts:3,needsAttention:true};
+ const show=(sync:any)=>{context.data={operator:{approver:true},actions:[],publication:failed,sync,turns:[]};vm.runInContext("renderWorkflowThread('w',data)",context);return html;};
+ const soon=new Date(Date.now()+12_400).toISOString();
+ assert.match(show({state:'failed',nextAt:soon,daemonRunning:true}),new RegExp(`data-next-attempt="${soon}">Next attempt in 13 s\\.<`));
+ assert.match(show({state:'failed',nextAt:new Date(Date.now()-1000).toISOString(),daemonRunning:true}),/>Next attempt starting\.</);
+ assert.match(show({state:'syncing',nextAt:soon,daemonRunning:true}),/Retrying now\./);
+ const stopped=show({state:'failed',nextAt:soon,daemonRunning:false});assert.match(stopped,/The daemon is stopped; publication resumes when it starts\./);assert.doesNotMatch(stopped,/Next attempt/);
+ assert.match(show(undefined),/Retries on the next daemon cycle\./);
+ context.data={operator:{approver:true},actions:[],publication:{...failed,error:null,attempts:0,needsAttention:false},sync:{state:'idle',nextAt:soon,daemonRunning:true},turns:[]};vm.runInContext("renderWorkflowThread('w',data)",context);assert.match(html,/Pending publication of the latest change\.<\/span>/);assert.doesNotMatch(html,/Next attempt/);
+ assert.match(source,/setInterval\(\(\)=>\{for\(const node of document\.querySelectorAll\('\[data-next-attempt\]'\)\)/);
+});

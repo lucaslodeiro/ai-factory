@@ -135,6 +135,7 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
   audit(); await controls(); timer = setInterval(()=>void controls(), 200);
   daemonLog("info","daemon.ready",{items:(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL").get() as {count:number}).count,recoveredExecutions:recovered,recoveredSignalMaintenance});
   let localTask:Promise<void>|undefined,remoteTask:Promise<void>|undefined,nextRemote=0;
+  // nextAt is written when a cycle ends; local work that finishes earlier can pull the next cycle forward, never push it back.
   const mark=(state:string,error?:string)=>store.setMetadata("runtime:github-sync",{state,at:new Date().toISOString(),...(error?{error}:{} )});
   while(!stopping){
    await localRuntime.reconcile(new Set((store.db.prepare("SELECT id FROM work_items WHERE archived_at IS NULL AND status NOT IN ('COMPLETED','CANCELLED')").all() as Array<{id:string}>).map(row=>row.id)));
@@ -143,7 +144,7 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
     if(!remoteTask&&(Date.now()>=nextRemote||store.db.prepare("SELECT 1 FROM controls WHERE handled=0 AND kind IN ('start-issue','claim-issue','continue-issue','refresh-list') LIMIT 1").get())){mark("syncing");remoteTask=(async()=>{
       for(const r of store.db.prepare("SELECT id,kind,target FROM controls WHERE handled=0 AND kind IN ('start-issue','claim-issue','continue-issue','refresh-list') ORDER BY id").all() as Array<{id:number;kind:string;target:string}>){if((store.db.prepare("SELECT handled FROM controls WHERE id=?").get(r.id) as {handled:number}).handled)continue;remoteControlIds.add(r.id);try{const result=r.kind==='start-issue'?await o.startIssue(r.target):r.kind==='claim-issue'?await o.claimIssue(r.target):r.kind==='continue-issue'?await o.continueIssue(r.target):await o.refreshIssueList();store.event('control.applied',{id:r.id,kind:r.kind,target:r.target,result});}catch(error){store.event('control.failed',{id:r.id,kind:r.kind,error:String(error)});}store.db.prepare('UPDATE controls SET handled=1 WHERE id=?').run(r.id);remoteControlIds.delete(r.id);}
       await o.syncRemote();
-     })().then(()=>mark("idle")).catch(error=>{mark("failed",String(error));daemonLog("error","daemon.sync_failed",{error:String(error)});}).finally(()=>{audit();nextRemote=Date.now()+config.pollMs;remoteTask=undefined;});}
+     })().then(()=>mark("idle")).catch(error=>{mark("failed",String(error));daemonLog("error","daemon.sync_failed",{error:String(error)});}).finally(()=>{audit();nextRemote=Date.now()+config.pollMs;const sync=store.metadata<Record<string,unknown>>("runtime:github-sync")??{};store.setMetadata("runtime:github-sync",{...sync,nextAt:new Date(nextRemote).toISOString()});remoteTask=undefined;});}
    }
    await new Promise(resolve=>setTimeout(resolve,200));
   }
