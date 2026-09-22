@@ -32,9 +32,9 @@ test('prompt viewer defaults to readable content and offers the exact agent JSON
  const json=vm.runInContext("promptAgentJson({id:'run-1',prompt:'# Goal',truncated:false})",context);assert.deepEqual(JSON.parse(json),{executionId:'run-1',instructions:'# Goal',truncated:false});assert.match(source,/selectPromptView\(dialog,'human'\)/);assert.match(source,/Human readable/);assert.match(source,/Agent JSON/);
 });
 test('failed issue details render a human-readable diagnosis and next action',()=>{
- const context=vm.createContext({escapeHtml:String,relative:()=>"now"});vm.runInContext(source.split('\n').find(line=>line.startsWith('function workDetails('))!,context);
- const html=vm.runInContext("workDetails({id:'w',activity:{label:'Failed',detail:'raw',diagnosis:{summary:'Required browser unavailable',evidence:'No browser',nextAction:'Restore it and retry'}}},new Set(['w']))",context);
- assert.match(html,/Failure diagnosis/);assert.match(html,/What happened/);assert.match(html,/Required browser unavailable/);assert.match(html,/What the system observed/);assert.match(html,/No browser/);assert.match(html,/What to do next/);assert.match(html,/Restore it and retry/);assert.doesNotMatch(html,/>raw</);
+ const context=vm.createContext({escapeHtml:String,relative:()=>"now"});vm.runInContext(source.split('\n').find(line=>line.startsWith('function promptReadableHtml('))!,context);vm.runInContext(source.split('\n').find(line=>line.startsWith('function workDetails('))!,context);
+ const html=vm.runInContext("workDetails({id:'w',activity:{label:'Failed',detail:'raw',diagnosis:{summary:'**Required** browser unavailable',evidence:'Use `Browser`',nextAction:'Restore it and retry'}}},new Set(['w']))",context);
+ assert.match(html,/Failure diagnosis/);assert.match(html,/What happened/);assert.match(html,/<strong>Required<\/strong> browser unavailable/);assert.match(html,/What the system observed/);assert.match(html,/<code>Browser<\/code>/);assert.match(html,/What to do next/);assert.match(html,/Restore it and retry/);assert.doesNotMatch(html,/>raw</);
 });
 test('workflow composer appears before the newest-first conversation',()=>{
  const start=source.indexOf('function renderWorkflowThread('),end=source.indexOf('\nasync function loadWorkflowThread',start),render=source.slice(start,end);
