@@ -17,7 +17,7 @@ import { config } from "./config.js";
 import { Store } from "./storage.js";
 import { readDashboardSetting, readDashboardSettings, saveDashboardSettings, validateDashboardSettings } from "./dashboard-settings.js";
 import { factoryHome } from "./home.js";
-import { connectCredential, credentialStatuses, type CredentialProvider } from "./dashboard-credentials.js";
+import { availableCursorModels, connectCredential, credentialStatuses, providerConnectionStatus, type CredentialProvider } from "./dashboard-credentials.js";
 import { SlackAdapter } from "./adapters/slack.js";
 import { publicNaming, roleShortName, stateName } from "./names.js";
 import {WorkflowMaintenance,type MaintenanceOperation} from "./workflow-maintenance.js";
@@ -449,6 +449,17 @@ function dashboardSettings(root: string) {
   return {...settings,readiness:setupReadiness(root,credentials)};
 }
 function expandSetupProvider(values:Record<string,unknown>){const result={...values};if("AGENT_PROVIDER" in result){const provider=result.AGENT_PROVIDER;if(provider!=="codex"&&provider!=="claude"&&provider!=="cursor")throw new Error("AGENT_PROVIDER: choose codex, claude or cursor");for(const role of["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"])result[`${role}_PROVIDER`]=provider;delete result.AGENT_PROVIDER;}return result;}
+function validateSelectedProviderConnections(root:string,values:Record<string,unknown>,restartServices:string[]){
+  if(!restartServices.includes("daemon"))return;
+  const selected=new Set(["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"].map(role=>String(values[`${role}_PROVIDER`]??readDashboardSetting(root,`${role}_PROVIDER`))));
+  for(const provider of ["codex","claude","cursor"] as const){
+    if(!selected.has(provider))continue;
+    const key=`${provider.toUpperCase()}_COMMAND`,command=String(values[key]??readDashboardSetting(root,key));
+    const status=providerConnectionStatus(root,provider,command);
+    if(!status.installed)throw new Error(`${provider[0].toUpperCase()+provider.slice(1)} CLI is unavailable. Install it or correct ${key} before saving.`);
+    if(!status.connected)throw new Error(`${provider[0].toUpperCase()+provider.slice(1)} is not connected. Use Connect in Connections before saving this provider selection.`);
+  }
+}
 function saveConfiguration(store: Store, root: string, values: Record<string,unknown>, clearSecrets: string[] = [],maintenanceId?:string,startDaemonWhenReady=false) {
   const candidate=expandSetupProvider(values);
   const currentRepository=readDashboardSetting(root,"GITHUB_REPOSITORY").trim(),nextRepository=typeof candidate.GITHUB_REPOSITORY==="string"?candidate.GITHUB_REPOSITORY.trim():currentRepository;
@@ -458,6 +469,7 @@ function saveConfiguration(store: Store, root: string, values: Record<string,unk
   }
   values=candidate;
   const plan = validateDashboardSettings(root,values,clearSecrets);
+  validateSelectedProviderConnections(root,values,plan.restartServices);
   const requestedRepository=typeof values.GITHUB_REPOSITORY==="string"?values.GITHUB_REPOSITORY.trim():readDashboardSetting(root,"GITHUB_REPOSITORY").trim();
   if(requestedRepository)verifyRepositoryIdentity(store,new GitHubAdapter(undefined,requestedRepository),false);
   const daemon = serviceStatus(root,"daemon"), dashboard = serviceStatus(root,"dashboard");
@@ -547,6 +559,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       }
       if (req.method === "GET" && url.pathname === "/api/settings") return json(res,200,{...dashboardSettings(settingsRoot),daemonRunning:daemonState(store).running});
       if (req.method === "GET" && url.pathname === "/api/credentials") return json(res,200,credentialStatuses(settingsRoot));
+      if (req.method === "GET" && url.pathname === "/api/models/cursor") return json(res,200,{models:await availableCursorModels(settingsRoot,readDashboardSetting(settingsRoot,"CURSOR_COMMAND"))});
       if (req.method === "GET" && url.pathname === "/api/slack") return json(res,200,slackStatus(settingsRoot,store));
       if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,servicesView());
       if(req.method==="GET"&&url.pathname==="/api/issues/remote")return json(res,200,remoteIssuesView(store,settingsRoot));
@@ -582,7 +595,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         if (!body.values || typeof body.values !== "object" || Array.isArray(body.values)) return json(res,400,{error:"Settings are required"});
         return json(res,200,saveConfiguration(store,settingsRoot,body.values,Array.isArray(body.clearSecrets) ? body.clearSecrets : [],body.maintenanceId,body.startDaemonWhenReady===true));
       }
-      if(req.method==="POST"&&url.pathname==="/api/settings/validate") {const body=await readBody(req) as {values?:Record<string,unknown>;clearSecrets?:string[]};if(!body.values||typeof body.values!=="object"||Array.isArray(body.values))return json(res,400,{error:"Settings are required"});const plan=validateDashboardSettings(settingsRoot,expandSetupProvider(body.values),Array.isArray(body.clearSecrets)?body.clearSecrets:[]),daemon=serviceStatus(settingsRoot,"daemon"),active=daemonState(store).running||daemon.running;return json(res,200,{changedKeys:plan.changedKeys,restartServices:plan.restartServices,requiresDaemonRestart:active&&plan.restartServices.includes("daemon")});}
+      if(req.method==="POST"&&url.pathname==="/api/settings/validate") {const body=await readBody(req) as {values?:Record<string,unknown>;clearSecrets?:string[]};if(!body.values||typeof body.values!=="object"||Array.isArray(body.values))return json(res,400,{error:"Settings are required"});const values=expandSetupProvider(body.values),plan=validateDashboardSettings(settingsRoot,values,Array.isArray(body.clearSecrets)?body.clearSecrets:[]);validateSelectedProviderConnections(settingsRoot,values,plan.restartServices);const daemon=serviceStatus(settingsRoot,"daemon"),active=daemonState(store).running||daemon.running;return json(res,200,{changedKeys:plan.changedKeys,restartServices:plan.restartServices,requiresDaemonRestart:active&&plan.restartServices.includes("daemon")});}
       if(req.method==="GET"&&/^\/api\/issues\/[^/]+\/diagnosis$/.test(url.pathname)) {
         try{return json(res,200,diagnoseWorkItem(store,decodeURIComponent(url.pathname.split("/")[3])));}catch(error){return json(res,(error as {statusCode?:number}).statusCode??500,{error:(error as Error).message});}
       }

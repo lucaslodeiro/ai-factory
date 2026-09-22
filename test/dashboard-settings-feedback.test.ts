@@ -26,6 +26,12 @@ test('Connections keeps Save and apply visible and configures Slack through its 
  assert.match(html,/Manage/);assert.match(html,/openSlackSettings\(\)/);assert.doesNotMatch(html,/data-setting="SLACK_WEBHOOK_URL"/);assert.doesNotMatch(html,/Send test/);
  const markup=fs.readFileSync(new URL('../dashboard/index.html',import.meta.url),'utf8');assert.match(markup,/id="slack-dialog"/);assert.match(markup,/id="slack-test"/);assert.match(source,/Last delivery error:/);
 });
+test('model picker offers suggestions and accepts an exact model ID',()=>{
+ assert.match(source,/data-role-model=.*<datalist id=/);
+ assert.match(source,/model\.value=catalog\.default/);
+ assert.match(source,/loadCursorModelCatalog\(\)/);
+ assert.doesNotMatch(source,/sonnet-4-thinking/);
+});
 test('prompt viewer defaults to readable content and offers the exact agent JSON',()=>{
  const context=vm.createContext({escapeHtml:(value:string)=>String(value).replaceAll('<','&lt;')});for(const name of ['promptReadableHtml','promptAgentJson'])vm.runInContext(source.split('\n').find(line=>line.startsWith(`function ${name}(`))!,context);
  const readable=vm.runInContext("promptReadableHtml('# Goal\\n\\n- **First** `value`\\n- <unsafe>\\n\\nAC-1\\n\\n**Given** input')",context);assert.match(readable,/<h2>Goal<\/h2>/);assert.match(readable,/<ul><li><strong>First<\/strong> <code>value<\/code><\/li><li>&lt;unsafe><\/li><\/ul>/);assert.match(readable,/<h3 class="acceptance-criterion">AC-1<\/h3>/);assert.match(readable,/<strong>Given<\/strong> input/);assert.doesNotMatch(readable,/<unsafe>/);

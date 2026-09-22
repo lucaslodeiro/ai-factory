@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { execFile, spawn, spawnSync } from "node:child_process";
 import { config } from "./config.js";
 import { factoryHome } from "./home.js";
 
@@ -38,7 +38,7 @@ function saveProviderState(root: string, provider: CredentialProvider, state: St
 function run(root: string, command: string, args: string[]) {
   return spawnSync(command,args,{cwd:root,encoding:"utf8",timeout:15000,env:process.env});
 }
-function actualStatus(root: string, provider: CredentialProvider) {
+function actualStatus(root: string, provider: CredentialProvider, commandOverride?:string) {
   if (provider === "github") {
     const auth = run(root,githubCommand(),["auth","status","--hostname","github.com"]);
     if (auth.error) return { installed:false,connected:false };
@@ -47,23 +47,32 @@ function actualStatus(root: string, provider: CredentialProvider) {
     return { installed:true,connected:true,account:account.status === 0 ? account.stdout.trim() : undefined };
   }
   if (provider === "codex") {
-    const auth = run(root,config.codexCommand,["login","status"]);
+    const auth = run(root,commandOverride??config.codexCommand,["login","status"]);
     return { installed:!auth.error,connected:!auth.error && auth.status === 0 };
   }
   if (provider === "cursor") {
-    const auth = run(root,config.cursorCommand,["status","--format","json"]);
+    const auth = run(root,commandOverride??config.cursorCommand,["status","--format","json"]);
     if (auth.error) return { installed:false,connected:false };
     try {
       const parsed = JSON.parse(auth.stdout) as { isAuthenticated?: boolean };
       return { installed:true,connected:auth.status === 0 && parsed.isAuthenticated === true };
     } catch { return { installed:true,connected:false }; }
   }
-  const auth = run(root,config.claudeCommand,["auth","status"]);
+  const auth = run(root,commandOverride??config.claudeCommand,["auth","status"]);
   if (auth.error) return { installed:false,connected:false };
   try {
     const parsed = JSON.parse(auth.stdout) as { loggedIn?: boolean; email?: string };
     return { installed:true,connected:auth.status === 0 && parsed.loggedIn === true,account:parsed.loggedIn ? parsed.email : undefined };
   } catch { return { installed:true,connected:false }; }
+}
+
+export function providerConnectionStatus(root:string,provider:Exclude<CredentialProvider,"github">,command:string){return actualStatus(root,provider,command);}
+
+export function parseCursorModelList(output:string){
+  return [...new Set(output.split(/\r?\n/).map(line=>line.match(/^\s*([a-zA-Z0-9][a-zA-Z0-9._:/-]*)\s+-\s+\S/)?.[1]).filter((id):id is string=>Boolean(id)))];
+}
+export async function availableCursorModels(root:string,command=config.cursorCommand):Promise<string[]>{
+  return new Promise(resolve=>execFile(command,["--list-models"],{cwd:root,timeout:10000,maxBuffer:1024*1024},(error,stdout)=>resolve(error?[]:parseCursorModelList(stdout))));
 }
 
 export function credentialStatuses(root: string) {
