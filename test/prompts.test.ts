@@ -14,6 +14,13 @@ test("delivery outcome instructions distinguish fixes, decisions and deferred ob
  assert.match(output,/optional research or validation limitation belongs in summary/);
 });
 
+test("the orchestrator owns Git synchronization because worktree metadata is protected",()=>{
+ const output=promptContract("developer","codex");
+ assert.match(output,/orchestrator synchronizes the assigned branch and remote base immediately before this execution/i);
+ assert.match(output,/Do not run git fetch, pull, merge, rebase, worktree, commit or push/i);
+ assert.match(output,/not an environment blocker/i);
+});
+
 test("Architect distinguishes a required Design blocker from an optional research limitation",()=>{
  const output=promptContract("product-architect","codex");
  assert.match(output,/initial Architect pairs a real blocker with outcome questions/);
