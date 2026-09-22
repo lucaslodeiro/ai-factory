@@ -52,14 +52,30 @@ test("architect receives an explicit, machine-aligned tactical return route", ()
  assert.doesNotMatch(output,/Allowed nextRole values?: qa/);
 });
 
-test("roles on one provider share a byte-identical common prefix",()=>{
- const architect=promptContractParts("product-architect","codex");
+test("the prompt prefix is deterministic per role and provider, and keeps its section order",()=>{
+ // Roles deliberately no longer share one byte-identical prefix. Issue #6 showed a single Builder
+ // execution moving 4.88M cached tokens against 110 uncached input tokens: the prompt sits at the
+ // head of an agentic conversation and is re-read on every turn, so a byte that a role cannot act
+ // on is paid hundreds of times per execution, while a prefix shared across roles saves one cache
+ // write of about 2000 tokens, once, and only inside the cache TTL.
  const tester=promptContractParts("qa","codex");
- assert.equal(architect.prefix,tester.prefix);
- assert.notEqual(architect.roleContract,tester.roleContract);
+ assert.equal(tester.prefix,promptContractParts("qa","codex").prefix);
+ assert.notEqual(promptContractParts("product-architect","codex").prefix,tester.prefix);
+ assert.notEqual(promptContractParts("product-architect","codex").roleContract,tester.roleContract);
  assert.ok(promptContract("qa","codex").startsWith(tester.prefix));
  assert.ok(tester.prefix.indexOf("AI Factory worker rules")<tester.prefix.indexOf("Codex Worker Instructions"));
  assert.ok(tester.prefix.indexOf("Codex Worker Instructions")<promptContract("qa","codex").indexOf("Verification Engineer (Tester) Contract"));
+});
+
+test("the result contract drops the rows and rules a role cannot act on",()=>{
+ const builder=promptContract("developer","codex"),architect=promptContract("product-architect","codex");
+ for (const field of ["`spec`","`acceptanceCriteria`","`taskAssessment`","`nextRole`"]) assert.ok(!builder.includes(`| ${field}`),`${field} row must not reach a delivery role`);
+ assert.ok(architect.includes("| `spec`, `acceptanceCriteria` |")&&architect.includes("| `taskAssessment` |"));
+ assert.ok(builder.includes("| `coverage` |")&&builder.includes("| `tests` |")&&builder.includes("| `reviewChecks` |"),"rows the schema still allows stay");
+ assert.ok(!builder.includes("complexity/risk low, medium or high")&&architect.includes("complexity/risk low, medium or high"));
+ assert.ok(!architect.includes("Delivery reports need coverage")&&builder.includes("Delivery reports need coverage"));
+ assert.ok(!builder.includes("must report each review dimension")&&promptContract("reviewer","codex").includes("must report each review dimension"));
+ for (const role of ["product-architect","developer","qa","reviewer"] as const) assert.ok(promptContract(role,"codex").includes("Never claim a test passed without executing it."));
 });
 
 test("Cursor prompts carry the Cursor worker instructions instead of another provider's file",()=>{
@@ -75,5 +91,4 @@ test("only a provider without schema enforcement is told in prose which fields a
  assert.ok(!promptContract("developer","claude").includes("delivery roles cannot return"));
  // The rest of that paragraph is guidance the schema cannot express, so it stays for every provider.
  for (const provider of ["codex","claude","cursor"] as const) assert.ok(promptContract("developer",provider).includes("A failed required verification blocks PASS."));
- assert.equal(promptContractParts("product-architect","codex").prefix,promptContractParts("qa","codex").prefix);
 });

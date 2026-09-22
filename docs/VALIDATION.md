@@ -84,6 +84,19 @@ The Cursor Agent CLI adapter was added with the same subprocess fixtures as Code
 
 The Delivery Reviewer's Tester evidence is now projected to outcome, `coverage` and `tests` and marked protected. On a representative Tester report the section drops from about three thousand bytes to under three hundred, and the Reviewer no longer receives the Tester's summary conclusions, findings, tactical decisions or dependency rationale, which matches the documented independence requirement that the code did not previously honour. Covered by `test/context-assembly.test.ts` and end to end by `test/workflow-runner.test.ts`.
 
+## Prompt trimmed per role — 2026-09-22
+
+Derived from the cache metrics of issue #6, where Builder and Tester executions moved millions of cached tokens against double-digit uncached input tokens. The per-role prompt contract on Claude drops as follows, and `test/prompts.test.ts` locks both the filtering and the section order.
+
+| Role | Before | After |
+|---|---:|---:|
+| Architect | 10838 | 10601 |
+| Builder | 11073 | 10084 |
+| Tester | 12028 | 11039 |
+| Reviewer | 12263 | 11366 |
+
+The previous "roles share a byte-identical prefix" invariant was retired with that evidence. It has not been re-measured against a live run: confirm on the next issue that cached tokens per execution fall rather than rise.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

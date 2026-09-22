@@ -31,6 +31,12 @@ All providers receive the same canonical role contract. Product Architect and De
 |---|---|---|---|
 | Structured result | `--output-schema` enforced by the CLI | `--json-schema` enforced by the CLI | No schema flag; the orchestrator appends the schema to the prompt as an output contract and validates the final message locally |
 | Result contract prose | role specialization omitted; the schema enforces it | role specialization omitted; the schema enforces it | role specialization kept; prose is the only constraint |
+
+### Why the prompt is trimmed per role
+
+The prompt sits at the head of an agentic conversation, so every byte is re-read on every turn of the run. Issue #6 measured one Builder execution at 4.88M cached tokens against 110 uncached input tokens, and one Tester at 2.40M. Against a contract of roughly 11 KB, that is the prompt being re-read on the order of a hundred turns or more.
+
+The result contract therefore hides the rows and rules a role cannot act on: a delivery role never sees the `spec`, `acceptanceCriteria`, `taskAssessment` or `nextRole` rows, because its schema pins all four to a single value, and the list is derived from that schema rather than maintained by hand, so prompt and schema cannot drift. Roles no longer share one byte-identical prefix. That earlier invariant saved one cache write of about 2000 tokens per execution, once and only inside the cache TTL, while a byte a role cannot use costs a cache read on every turn.
 | Read-only roles | `--sandbox read-only` | read-only tool allowlist | `--mode ask` |
 | Writing roles | `--sandbox workspace-write` with network | edit, write and shell tools | `--force` |
 | Token usage | reported on stderr | reported in the JSON envelope | not reported; executions show Unavailable |

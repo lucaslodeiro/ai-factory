@@ -22,6 +22,13 @@ export const resultSchema = object({
   nextRole: { type: ["string", "null"], enum: ["developer", "qa", "reviewer", null] },
   reviewChecks: list(object({ dimension: enumeration(...reviewDimensions), status: enumeration("passed", "failed", "not-applicable"), evidence: text() })),
 });
+// A field whose role schema admits exactly one value cannot be chosen by the agent, so naming it
+// in the prompt only describes an impossible action.
+export function pinnedResultFields(role: AgentRole, allowedNextRoles?: TacticalNextRole[]): string[] {
+ const properties=resultSchemaFor(role,allowedNextRoles).properties ?? {};
+ const pinned=(schema: Schema) => schema.type === "null" || schema.maxItems === 0 || (Array.isArray(schema.enum) && schema.enum.length === 1);
+ return Object.entries(properties).filter(([,schema])=>pinned(schema)).map(([name])=>name);
+}
 // Constrain provider generation by role as well as validating it afterwards.
 export function resultSchemaFor(role: AgentRole, allowedNextRoles?: TacticalNextRole[]): Schema {
  if (role === "product-architect") return { ...resultSchema, properties: { ...resultSchema.properties,
