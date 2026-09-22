@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { verifierInvocation } from "../src/benchmark.js";
+import { verifierInvocation, benchmarkCheckout } from "../src/benchmark.js";
 
 const oracle=fileURLToPath(new URL("../scripts/benchmark-verify.mjs",import.meta.url));
 
@@ -66,4 +66,11 @@ test("an implementation that misses a stated behaviour is reported unresolved, n
   assert.equal(result.resolved,false);
   assert.ok((result.failures ?? 0) > 0,"a failing behaviour has to be counted so the run is discarded");
  } finally { fs.rmSync(target,{recursive:true,force:true}); }
+});
+
+test("without a path the run's own worktree is graded, so there is nothing to paste wrong",()=>{
+ assert.equal(benchmarkCheckout(true,"w1","/data"),path.join("/data","worktrees","w1"));
+ assert.equal(benchmarkCheckout(undefined,"w1","/data"),path.join("/data","worktrees","w1"));
+ assert.equal(benchmarkCheckout("/elsewhere/checkout","w1","/data"),"/elsewhere/checkout");
+ assert.equal(benchmarkCheckout("checkout","w1","/data"),path.resolve("checkout"),"a relative path is still made absolute");
 });

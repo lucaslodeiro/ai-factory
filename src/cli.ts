@@ -21,7 +21,7 @@ import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {readIssueState} from "./workflow-github.js";
 import {activityRow,summarizeActivity,progression} from "./execution-activity.js";
 import {resolveWorkItem} from "./work-item-reference.js";
-import {buildBenchmarkReport,compareBenchmarks,comparable,verifierInvocation,type BenchmarkReport,type ExecutionSample,type Verification} from "./benchmark.js";
+import {buildBenchmarkReport,compareBenchmarks,comparable,verifierInvocation,benchmarkCheckout,type BenchmarkReport,type ExecutionSample,type Verification} from "./benchmark.js";
 import {spawnSync as spawnVerifier} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import fs from "node:fs";
@@ -86,9 +86,9 @@ p.command("activity").argument("[id]").description("Per-role provider activity a
 });
 p.command("benchmark").argument("<work-item-id-or-issue-number>").option("--save <file>","Write this run as a baseline")
  .option("--baseline <file>","Compare this run against a saved baseline").option("--role <role>","Role to compare, or ALL")
- .option("--verify <checkout>","Independently check the produced code against the benchmark issue")
+ .option("--verify [checkout]","Independently check the produced code against the benchmark issue; defaults to the run's own worktree")
  .description("Measure one benchmark run: tokens, cache, turns, cost, duration, transitions and health")
- .action((reference:string,options:{save?:string;baseline?:string;role?:string;verify?:string}) => {
+ .action((reference:string,options:{save?:string;baseline?:string;role?:string;verify?:string|boolean}) => {
  const s = new Store();
  try {
   const found=resolveWorkItem(s,reference);
@@ -121,10 +121,15 @@ p.command("benchmark").argument("<work-item-id-or-issue-number>").option("--save
   let verification:Verification|null=null;
   if (options.verify) {
    const script=fileURLToPath(new URL("../scripts/benchmark-verify.mjs",import.meta.url));
-   const call=verifierInvocation(script,options.verify);
-   const run=spawnVerifier(call.command,call.args,{cwd:call.cwd,encoding:"utf8",timeout:120000,maxBuffer:10_000_000});
-   try { verification=JSON.parse(run.stdout) as Verification; }
-   catch { verification={resolved:false,module:null,failures:null,checks:[],error:run.stderr?.trim() || run.error?.message || "The verifier produced no result"}; }
+   const checkout=benchmarkCheckout(options.verify,id,config.dataDir);
+   if (!fs.existsSync(checkout)) {
+    verification={resolved:false,module:null,failures:null,checks:[],error:`No checkout at ${checkout}; pass --verify <path> with the worktree this run used`};
+   } else {
+    const call=verifierInvocation(script,checkout);
+    const run=spawnVerifier(call.command,call.args,{cwd:call.cwd,encoding:"utf8",timeout:120000,maxBuffer:10_000_000});
+    try { verification=JSON.parse(run.stdout) as Verification; }
+    catch { verification={resolved:false,module:null,failures:null,checks:[],error:run.stderr?.trim() || run.error?.message || "The verifier produced no result"}; }
+   }
   }
   const report=buildBenchmarkReport({workItemId:id,issueNumber:item.issue_number,stage:item.stage,status:item.status,
    attempt:item.attempt,correctionCycles:item.correction_cycles,specVersions,executions,transitions,outcomes,eventCounts,verification});

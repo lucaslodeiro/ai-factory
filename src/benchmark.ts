@@ -32,6 +32,12 @@ export interface RoleMetrics {
 // engine's own directory is what makes the operator's shell irrelevant: launched from a home
 // directory it dies with ERR_MODULE_NOT_FOUND and the run reads as unresolved for a reason that has
 // nothing to do with the code under test. The checkout is resolved before that move, not after it.
+// Which checkout to grade. The run's worktree is `<dataDir>/worktrees/<work item id>`, so the
+// operator never has to find and paste it: pasting a placeholder instead of the real path is how
+// the first benchmark run reported a failure that had nothing to do with the code it produced.
+export function benchmarkCheckout(value:string|boolean|undefined,workItemId:string,dataDir:string):string {
+  return typeof value === "string" ? path.resolve(value) : path.join(dataDir,"worktrees",workItemId);
+}
 export function verifierInvocation(scriptPath:string,checkout:string):{command:string;args:string[];cwd:string} {
   return {command:process.execPath,args:["--import","tsx",scriptPath,path.resolve(checkout)],cwd:path.dirname(scriptPath)};
 }

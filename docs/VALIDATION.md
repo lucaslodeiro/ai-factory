@@ -212,6 +212,11 @@ alone. It is copied now, and `scripts/validate-installation.mjs` requires
 `dist/scripts/benchmark-verify.mjs` among its build assets, so a future
 omission fails the installation instead of silently voiding the measurement.
 
+`--verify` now also takes no value, grading the worktree the run used, which is
+`<dataDir>/worktrees/<work item id>`. The path that had to be pasted is the
+path that was pasted wrong; a missing checkout is reported as such instead of
+being handed to the oracle.
+
 A third defect surfaced while testing the fix. The oracle located the produced
 function with `git grep -E "(export[^\n]*slugify|slugify[^\n]*=)"`. POSIX ERE
 has no escapes inside a bracket expression, so `[^\n]` excluded the letter `n`
