@@ -17,7 +17,7 @@ class GitHub {
  comments(n:number){if(this.deleted)throw new Error("HTTP 410: Gone");return this.commentsByIssue.get(n)??[];}authenticatedLogin(){return "factory";}assignedIssues(){return this.assigned&&this.state==="OPEN"&&!this.deleted?[this.issue(1)]:[];}ensureLabel(){}addLabel(_n:number,name:string){this.labelEdits.push(name);this.issueLabels.push({name});}removeLabel(_n:number,name:string){this.removedLabels.push(name);this.issueLabels=this.issueLabels.filter(label=>label.name!==name);}replaceInstanceLabel(_n:number,name:string){this.issueLabels=this.issueLabels.filter(label=>!label.name.startsWith("factory-instance:"));this.issueLabels.push({name});}
  commentOnce(){}syncState(){}ensurePR(_branch:string,_title:string,body:string){this.lastPrBody=body;return "https://github.com/owner/demo/pull/1";}pullRequestState(){return this.pr;}
  repository(){return{id:1,nodeId:"R_1",fullName:"owner/demo",defaultBranch:"main"};}
- assignees(){return [];}assign(){}unassign(_n:number,logins:string[]){this.unassigned.push(...logins);}
+ assignees(){return [];}assign(){}unassign(_n:number,logins:string[]){if(this.deleted)throw new Error("GraphQL: Could not resolve to an issue or pull request with the number of 1. (repository.issue)");this.unassigned.push(...logins);}
  syncWorkflow(_issue:number,labels:Array<{name:string}>,body:string){this.labels.push(labels.map(label=>label.name));this.statusBodies.push(body);this.advanceIssueUpdatedAt();}
  publishWorkflowComment(_issue:number,_key:string,body:string){this.resultBodies.push(body);this.advanceIssueUpdatedAt();}
  reply(id:number,body:string){const rows=this.commentsByIssue.get(1)??[];rows.push({id,body,user:{login:"owner",type:"User"},updatedAt:`2026-09-20T00:00:${String(id).padStart(2,"0")}Z`});this.commentsByIssue.set(1,rows);}
@@ -60,6 +60,17 @@ test("deleted issues are archived locally without turning GitHub polling into a 
   const started=await startAssigned(orchestrator,store);github.deleted=true;await orchestrator.syncRemote();
   const row=store.db.prepare("SELECT archived_at,status FROM work_items WHERE id=?").get(started.id) as {archived_at:string|null;status:string};assert.ok(row.archived_at);assert.equal(row.status,"PAUSED");assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='github.issue_deleted' AND work_item_id=?").get(started.id) as {count:number}).count,1);
   await orchestrator.syncRemote();assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='github.issue_deleted' AND work_item_id=?").get(started.id) as {count:number}).count,1);
+ } finally {store.db.close();config.repo=previousRepo;}
+});
+
+test("a deleted terminal issue archives when GitHub rejects release operations",async()=>{
+ const previousRepo=config.repo;config.repo="owner/demo";
+ const store=new Store(":memory:"),github=new GitHub(),orchestrator=new WorkflowOrchestrator(store,github,new WorkflowRunner(store,{},new Workspace(),github),{enabled:false,async notify(){}});
+ try {
+  const started=await startAssigned(orchestrator,store),projections=new WorkflowProjections(store),current=projections.get(started.id);
+  projections.transition({workItemId:started.id,expectedRevision:current.revision,stage:current.stage,status:"CANCELLED",actor:{type:"human",id:"owner"},source:{},reason:{code:"cancel",summary:"Cancelled"}});
+  github.deleted=true;await orchestrator.syncRemote();
+  const row=store.db.prepare("SELECT archived_at FROM work_items WHERE id=?").get(started.id) as {archived_at:string|null};assert.ok(row.archived_at);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='github.issue_deleted' AND work_item_id=?").get(started.id) as {count:number}).count,1);
  } finally {store.db.close();config.repo=previousRepo;}
 });
 
