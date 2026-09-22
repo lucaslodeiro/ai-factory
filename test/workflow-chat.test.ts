@@ -13,6 +13,11 @@ import {WorkflowRecords} from "../src/workflow-records.js";
 import {WorkflowRunner} from "../src/workflow-runner.js";
 import {ContextAssembler} from "../src/context-assembly.js";
 import {WorkflowProjections} from "../src/workflow-projection.js";
+import {progressKey} from "../src/execution-progress.js";
+
+test("running thread exposes bounded provider progress without private tool input",()=>{
+ const store=new Store(":memory:");try{const started=new Date(Date.now()-60_000).toISOString();store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status) VALUES('w',1,'owner/demo',?,?,'{}','DESIGN','RUNNING')").run(started,started);store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at) VALUES('run','w','product-architect','DESIGN','running',?)").run(started);store.event("execution.started",{role:"product-architect",selection:{provider:"claude",model:"auto"}},"w","run");store.setMetadata(progressKey("run"),{provider:"claude",events:2,lastEventAt:started,lastProgressAt:started,tool:"Bash",toolStartedAt:started,lastTool:"Bash",repeatedToolCalls:1});const turn=workflowThread(store,"w")[0];assert.equal((turn.progress as any).events,2);assert.equal((turn.progress as any).tool,"Bash");assert.equal((turn.progress as any).warning,null);assert.equal(JSON.stringify(turn).includes("secret command"),false);}finally{store.db.close();}
+});
 
 test("workflow thread orders prompts, results, transitions, failures and human interventions without paths",()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),"workflow-chat-")),previous=config.dataDir;config.dataDir=root;const store=new Store(":memory:");try{

@@ -16,6 +16,7 @@ import type {ExecutionManager} from "./execution-manager.js";
 import type {WorkflowRunner} from "./workflow-runner.js";
 import {diagnoseWorkItem} from "./failure-diagnostics.js";
 import {executionOutcomeText,workflowExecutionSummary} from "./execution-presentation.js";
+import {progressKey,progressWarning,type ExecutionProgress} from "./execution-progress.js";
 
 export type WorkflowThreadTurn={id:number;at:string;kind:"execution"|"event"|"human";executionId?:string;[key:string]:unknown};
 export type MessageAction="answer"|"approve"|"retry"|"note"|"interrupt-retry";
@@ -134,6 +135,7 @@ export function workflowThread(store:Store,workItemId:string):WorkflowThreadTurn
   const startedAt=run?.started_at??(turn.startedAt as string|null)??null,finishedAt=run?.finished_at??(turn.finishedAt as string|null)??(turn.result?String(turn.at):null);
   const started=startedAt?Date.parse(startedAt):NaN,finished=finishedAt?Date.parse(finishedAt):NaN;
   const status=turn.status??(run?run.status==="running"&&run.finished_at?"failed":run.status:turn.result?"succeeded":finishedAt?"succeeded":"running");
+  if(status==="running"&&startedAt){const progress=store.metadata<ExecutionProgress>(progressKey(String(turn.executionId)));const warning=progressWarning(progress,startedAt);turn.progress={events:progress?.events??0,lastProgressAt:progress?.lastProgressAt??null,tool:progress?.tool??null,toolStartedAt:progress?.toolStartedAt??null,warning:warning?.reason??null};}
   // A milestone execution is one whose result GitHub gets as a permanent comment, or one whose process did not finish cleanly.
   Object.assign(turn,{startedAt,finishedAt,durationMs:Number.isFinite(started)&&Number.isFinite(finished)&&finished>=started?finished-started:null,status,milestone:Boolean(turn.publication)||!["running","succeeded"].includes(String(status))});
  }
