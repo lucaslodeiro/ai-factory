@@ -20,7 +20,9 @@ import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {readIssueState} from "./workflow-github.js";
 import {activityRow,summarizeActivity} from "./execution-activity.js";
-import {buildBenchmarkReport,compareBenchmarks,type BenchmarkReport,type ExecutionSample} from "./benchmark.js";
+import {buildBenchmarkReport,compareBenchmarks,comparable,type BenchmarkReport,type ExecutionSample,type Verification} from "./benchmark.js";
+import {spawnSync as spawnVerifier} from "node:child_process";
+import {fileURLToPath} from "node:url";
 import fs from "node:fs";
 const p = new Command().name("factory").description("Local AI Software Factory").version("0.2.0");
 p.command("models").argument("[id]").description("Show model policy or preview role selections for a work item").action(id => {
@@ -73,8 +75,9 @@ p.command("activity").argument("[id]").description("Per-role provider activity a
 });
 p.command("benchmark").argument("<id>").option("--save <file>","Write this run as a baseline")
  .option("--baseline <file>","Compare this run against a saved baseline").option("--role <role>","Role to compare, or ALL")
+ .option("--verify <checkout>","Independently check the produced code against the benchmark issue")
  .description("Measure one benchmark run: tokens, cache, turns, cost, duration, transitions and health")
- .action((id:string,options:{save?:string;baseline?:string;role?:string}) => {
+ .action((id:string,options:{save?:string;baseline?:string;role?:string;verify?:string}) => {
  const s = new Store();
  try {
   const item=s.db.prepare("SELECT issue_number,stage,status,attempt,correction_cycles FROM work_items WHERE id=?").get(id) as
@@ -102,8 +105,15 @@ p.command("benchmark").argument("<id>").option("--save <file>","Write this run a
    .filter((value):value is {role:string;outcome:string}=>value!==null);
   const eventCounts=Object.fromEntries((s.db.prepare("SELECT type,COUNT(*) n FROM events WHERE work_item_id=? GROUP BY type").all(id) as Array<{type:string;n:number}>).map(row=>[row.type,row.n]));
   const specVersions=((s.db.prepare("SELECT COUNT(*) n FROM specs WHERE work_item_id=?").get(id) as {n:number}).n);
+  let verification:Verification|null=null;
+  if (options.verify) {
+   const script=fileURLToPath(new URL("../scripts/benchmark-verify.mjs",import.meta.url));
+   const run=spawnVerifier(process.execPath,["--import","tsx",script,options.verify],{encoding:"utf8",timeout:120000,maxBuffer:10_000_000});
+   try { verification=JSON.parse(run.stdout) as Verification; }
+   catch { verification={resolved:false,module:null,failures:null,checks:[],error:run.stderr?.trim() || run.error?.message || "The verifier produced no result"}; }
+  }
   const report=buildBenchmarkReport({workItemId:id,issueNumber:item.issue_number,stage:item.stage,status:item.status,
-   attempt:item.attempt,correctionCycles:item.correction_cycles,specVersions,executions,transitions,outcomes,eventCounts});
+   attempt:item.attempt,correctionCycles:item.correction_cycles,specVersions,executions,transitions,outcomes,eventCounts,verification});
 
   console.log(`Issue #${report.issueNumber} · ${report.stage}/${report.status} · attempt ${report.attempt} · correction cycles ${report.correctionCycles} · SPEC versions ${report.specVersions}`);
   console.table(report.roles);
@@ -111,11 +121,22 @@ p.command("benchmark").argument("<id>").option("--save <file>","Write this run a
   console.log(`Transitions (${report.transitions.count}): ${report.transitions.path.join(" -> ")}`);
   console.log(`Reasons: ${Object.entries(report.transitions.reasons).map(([reason,count])=>`${reason}:${count}`).join(" ") || "none"}`);
   console.log(`Health: ${Object.entries(report.health).map(([key,value])=>`${key}:${value}`).join(" ")}`);
+  if (report.verification) {
+   const check=report.verification;
+   console.log(`Resolved: ${check.resolved?"yes":"no"}${check.module?` · ${check.module}`:""}${check.failures!==null?` · ${check.failures} failed check(s)`:""}${check.error?` · ${check.error}`:""}`);
+   for (const failed of check.checks.filter(entry=>!entry.passed).slice(0,5)) {
+    console.log(`  behaviour ${failed.behaviour}: ${JSON.stringify(failed.input)} -> ${JSON.stringify(failed.actual)}, expected ${JSON.stringify(failed.expected)}`);
+   }
+  } else { console.log("Resolved: not checked. Pass --verify <checkout> so the cost is a measurement of doing the work."); }
   if (options.baseline) {
    const previous=JSON.parse(fs.readFileSync(options.baseline,"utf8")) as BenchmarkReport;
+   const blocked=comparable(previous,report);
+   if (blocked) { console.log(`\nNot compared. ${blocked}`); process.exitCode=1; }
+   else {
    console.log(`\nAgainst ${options.baseline}, role ${options.role ?? "ALL"}:`);
    console.table(compareBenchmarks(previous,report,options.role ?? "ALL"));
    console.log("A metric missing on either side compares as null: it was never measured, so it is not an improvement.");
+   }
   }
   if (options.save) { fs.writeFileSync(options.save,JSON.stringify(report,null,2)); console.log(`\nBaseline written to ${options.save}`); }
  } finally { s.db.close(); }

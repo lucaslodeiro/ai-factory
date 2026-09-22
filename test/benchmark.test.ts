@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildBenchmarkReport, compareBenchmarks, type ExecutionSample } from "../src/benchmark.js";
+import { buildBenchmarkReport, compareBenchmarks, comparable, type ExecutionSample, type Verification } from "../src/benchmark.js";
 
 const sample=(role:string,over:Partial<ExecutionSample>={}):ExecutionSample=>({
  role,stage:"BUILD",status:"succeeded",startedAt:"t1",finishedAt:"t2",promptBytes:20000,
@@ -60,4 +60,24 @@ test("comparing two runs reports deltas, and never invents one against an unmeas
 test("a role absent from one of the runs compares as unknown rather than as a regression",()=>{
  const rows=compareBenchmarks(input(),input({executions:[sample("developer")]}),"reviewer");
  assert.ok(rows.every(row=>row.delta===null&&row.baseline===null&&row.current===null));
+});
+
+const verified=(resolved:boolean):Verification=>({resolved,module:"src/slugify.ts",failures:resolved?0:3,error:null,
+ checks:[{behaviour:1,input:"Hello World",expected:"hello-world",actual:resolved?"hello-world":"Hello World",passed:resolved}]});
+
+test("a run that was never verified is not comparable, because nobody checked it did the work",()=>{
+ const unverified=input(),resolvedRun=input({verification:verified(true)} as never);
+ assert.equal(resolvedRun.verification?.resolved,true);
+ assert.match(comparable(unverified,resolvedRun)!,/baseline run was never verified/);
+ assert.match(comparable(resolvedRun,unverified)!,/current run was never verified/);
+ assert.equal(comparable(resolvedRun,resolvedRun),null);
+});
+
+test("a cheaper run that did not resolve the issue is refused rather than reported as an improvement",()=>{
+ const good=input({verification:verified(true)} as never);
+ const cheapAndWrong=input({verification:verified(false),executions:[sample("developer",{costUsd:0.01,turns:2})]} as never);
+ assert.ok((cheapAndWrong.totals.costUsd ?? 0) < (good.totals.costUsd ?? 0),"it really is cheaper");
+ assert.match(comparable(good,cheapAndWrong)!,/did not resolve the benchmark issue/);
+ // The numbers are still produced; what is refused is calling the difference an improvement.
+ assert.equal(compareBenchmarks(good,cheapAndWrong).find(row=>row.metric==="costUsd")?.delta,-1.04);
 });

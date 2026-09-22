@@ -59,11 +59,42 @@ Let it reach DELIVERY without human guidance. A run where you answered a
 question or sent a retry is still worth recording, but it is not comparable to
 one where you did not: the extra turns are yours, not the system's.
 
+## The objective, and why it needs a fourth term
+
+The aim is to resolve an issue in the fewest iterations, the fewest tokens and
+the least time. Stated on its own, that objective is maximised by doing
+nothing, and every role has a cheap path that improves all three numbers while
+making the product worse: a vaguer specification has fewer criteria to verify,
+a Tester that runs fewer tests passes sooner, a Reviewer that skips dimensions
+returns PASS on the first attempt, a Builder that does the minimum still turns
+the tests green.
+
+So the objective is **cost and time, subject to the issue actually being
+resolved**. Cost in dollars already integrates token count and model price, and
+iterations already show up inside it, which leaves two numbers to compare and
+iterations as the diagnostic that explains them. Note also that an iteration is
+not automatically waste: a correction cycle that caught a real defect prevented
+a broken merge and was worth every token. Zero iterations with a wrong result
+is the worst outcome available, not the best.
+
 ## Measuring it
 
 ```sh
-npm run factory -- benchmark <work-item-id> --save docs/benchmark/<date>.json
+npm run factory -- benchmark <work-item-id> --verify <path-to-checkout> --save docs/benchmark/<date>.json
 ```
+
+`--verify` runs `scripts/benchmark-verify.mjs` against the checkout the run
+produced. It is an independent oracle: it never reads the tests the Builder or
+the Tester wrote and never trusts a reported PASS. It locates the exported
+`slugify` function, calls it, and checks the three behaviours the issue stated,
+preferring a source file over a test file. The report then prints
+`Resolved: yes` or `no` with the failing cases.
+
+Without it, the cost figures are the system grading its own homework, so a run
+that got cheaper by getting lazier reads as an improvement. `--baseline`
+therefore refuses to compare when either side was unverified or unresolved: the
+numbers are still printed and still saved, what is refused is calling the
+difference a result.
 
 The report prints, per role and in total: executions, turns, provider events,
 prompt bytes, input and output tokens, cache reads and cache writes apart,
@@ -87,9 +118,11 @@ because a value nobody measured is not an improvement.
 - **Cost, turns and duration are the performance numbers.** Prompt bytes only
   matter through them: the prompt sits at the head of the conversation and is
   re-read on every turn, so bytes are multiplied by turns.
-- **Correction cycles, invalid results and the transition path are the quality
-  numbers.** A change that halves tokens while adding a correction cycle made
-  the system worse. Read both tables or neither.
+- **`Resolved` decides whether the run counts at all.** A run that did not
+  resolve the issue has no comparable cost: it did not do the work. Correction
+  cycles, invalid results and the transition path then say how expensively it
+  got there. A change that halves tokens while adding a correction cycle made
+  the system worse.
 - **One run is not a measurement.** These are agents: the same issue varies
   between runs. Treat a difference under roughly 10% as noise until you have
   run the benchmark three times and seen the spread for yourself.

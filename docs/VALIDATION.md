@@ -117,6 +117,8 @@ Read the comparison with `npm run factory -- activity <work-item-id>`, which gro
 
 Cost and wall duration are newly captured. The Claude result envelope was inspected directly rather than taken from documentation: it carries `num_turns`, `duration_ms`, `duration_api_ms` and `total_cost_usd`, all of which the factory previously discarded.
 
+An independent oracle, `scripts/benchmark-verify.mjs`, grades the produced code against the three behaviours the benchmark issue states, without reading the agents' tests or trusting a reported PASS. It was exercised against four checkouts: a correct implementation (resolved, 0 failures), one that only lowercases (7 failures, the shape a run takes when it stops early and still reports PASS), one that throws (8 failures) and one with no slugify at all. A comparison where either side was unverified or unresolved is refused rather than reported, so a run that got cheaper by getting lazier cannot read as an improvement.
+
 Verified against a seeded database covering all four roles, a saved baseline and a comparison run; the aggregation, the null handling and the transition path are covered by `test/benchmark.test.ts`. No real benchmark run has been recorded yet, so there is no baseline in `docs/benchmark/` and no variance figure. Three runs of the same issue are needed before any single difference can be called a result.
 
 ## Remaining operational validation

@@ -22,12 +22,18 @@ export interface RoleMetrics {
   cacheReadTokens:number|null; cacheWriteTokens:number|null; totalTokens:number|null;
   costUsd:number|null; durationMs:number|null; outcome:string|null;
 }
+// The run's own verdict is what the agents reported. `resolved` is what an independent oracle
+// found by exercising the produced code. Only the second one can tell a cheaper run apart from
+// a lazier one, so only runs that resolved the issue are comparable to each other.
+export interface Verification { resolved:boolean; module:string|null; failures:number|null; error:string|null;
+  checks:Array<{behaviour:number;input:string;expected:string;actual:unknown;passed:boolean}> }
 export interface BenchmarkReport {
   workItemId:string; issueNumber:number|null; stage:string|null; status:string|null;
   attempt:number; correctionCycles:number; specVersions:number;
   roles:RoleMetrics[]; totals:RoleMetrics;
   transitions:{count:number;path:string[];reasons:Record<string,number>};
   health:{failedExecutions:number;invalidResults:number;interruptions:number;discarded:number};
+  verification:Verification|null;
 }
 
 const NUMERIC = ["turns","events","promptBytes","inputTokens","outputTokens","cacheReadTokens","cacheWriteTokens","totalTokens","costUsd","durationMs"] as const;
@@ -40,7 +46,7 @@ function metrics(role:string, samples:ExecutionSample[], outcome:string|null):Ro
   return {role,runs:samples.length,...totals,costUsd:round(totals.costUsd),outcome};
 }
 
-export function buildBenchmarkReport(input:BenchmarkInput):BenchmarkReport {
+export function buildBenchmarkReport(input:BenchmarkInput & {verification?:Verification|null}):BenchmarkReport {
   const byRole=new Map<string,ExecutionSample[]>();
   for (const sample of input.executions) byRole.set(sample.role,[...(byRole.get(sample.role) ?? []),sample]);
   const outcome=(role:string)=>input.outcomes.filter(entry=>entry.role===role).at(-1)?.outcome ?? null;
@@ -58,6 +64,7 @@ export function buildBenchmarkReport(input:BenchmarkInput):BenchmarkReport {
       invalidResults:input.eventCounts["execution.invalid_result"] ?? 0,
       interruptions:input.eventCounts["execution.interrupted"] ?? 0,
       discarded:input.eventCounts["execution.discarded"] ?? 0},
+    verification:input.verification ?? null,
   };
 }
 
@@ -76,4 +83,14 @@ export function compareBenchmarks(baseline:BenchmarkReport,current:BenchmarkRepo
     const delta=from === null || to === null ? null : round(to-from);
     return {metric,baseline:from,current:to,delta,percent:delta === null || !from ? null : Math.round((delta/from)*1000)/10};
   });
+}
+
+// A comparison between an unverified or unresolved run and anything else is worse than no
+// comparison: it reads as a cost improvement when the cost fell because the work was not done.
+export function comparable(baseline:BenchmarkReport,current:BenchmarkReport):string|null {
+  for (const [label,report] of [["baseline",baseline],["current",current]] as const) {
+    if (!report.verification) return `The ${label} run was never verified, so it cannot be compared. Re-run the report with --verify.`;
+    if (!report.verification.resolved) return `The ${label} run did not resolve the benchmark issue, so its cost is not a measurement of doing the work.`;
+  }
+  return null;
 }
