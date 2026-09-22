@@ -84,3 +84,14 @@ test('the issue card answers in the dashboard and shows activity only when it ad
  assert.doesNotMatch(source,/How to request changes|How to respond|Activity details/);
  assert.match(source,/class="next-step-respond" onclick="respondInDashboard\(/);assert.match(source,/Or post <code>/);assert.match(source,/window\.respondInDashboard=respondInDashboard/);
 });
+
+test('the conversation header explains a continuation and whether earlier turns live elsewhere',()=>{
+ let html='';const root:any={get innerHTML(){return html},set innerHTML(value){html=value},querySelector(){return null},querySelectorAll(){return []}};
+ const context=vm.createContext({applyQueueAvailability(){},document:{querySelector:()=>root},CSS:{escape:String},escapeHtml:String,relative:()=> '2h ago',roleName:String,statusName:String,stateClass:()=>'',actionLabel:{},brandIcon:()=>'',brandTitle:{},threadDrafts:new Map(),threadScroll:new Map(),expandedThreadTurns:new Set(),collapsedThreadTurns:new Set(),latestThreadTurns:new Map(),threadResultViews:new Map(),threadResultContent:new Map()});vm.runInContext(source.split('\n').find(line=>line.startsWith('function promptReadableHtml('))!,context);const start=source.indexOf('function renderWorkflowThread('),end=source.indexOf('\nasync function loadWorkflowThread',start);vm.runInContext(source.slice(start,end),context);
+ context.data={operator:{approver:true},actions:[],publication:null,continuations:[{at:'t',instance:'macbook-pro-7-local',revision:10,earlierTurns:false}],turns:[]};vm.runInContext("renderWorkflowThread('w',data)",context);
+ assert.match(html,/<strong>Continued here<\/strong><span>From macbook-pro-7-local at revision 10 · 2h ago\. Earlier turns were recorded on macbook-pro-7-local; this installation started from the state published on the issue\.<\/span>/);
+ assert.ok(html.indexOf('Continued here')<html.indexOf('workflow-thread"'),'the note sits above the turns');assert.match(html,/No turns on this installation yet\./);assert.match(html,/>0 turns</);context.data={...context.data,turns:[{id:7,kind:'human',login:'owner',command:'note',source:'dashboard',text:'Keep going',milestone:true}]};vm.runInContext("renderWorkflowThread('w',data)",context);assert.match(html,/>1 turn</);assert.doesNotMatch(html,/No workflow turns yet/);
+ context.data={...context.data,continuations:[{at:'t',instance:'laptop',revision:3,earlierTurns:true},{at:'t',instance:'desktop',revision:null,earlierTurns:true}]};vm.runInContext("renderWorkflowThread('w',data)",context);
+ assert.match(html,/From desktop · 2h ago\. It has moved between installations 2 times\./);assert.doesNotMatch(html,/Earlier turns were recorded/);
+ context.data={...context.data,continuations:[]};vm.runInContext("renderWorkflowThread('w',data)",context);assert.doesNotMatch(html,/Continued here/);
+});

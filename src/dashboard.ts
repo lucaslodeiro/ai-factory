@@ -25,7 +25,7 @@ import type {ExecutionManager} from "./execution-manager.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {GitHubAdapter} from "./adapters/github.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
-import {availableMessageActions,promptArtifact,workflowThread,type MessageAction,statusPublication} from "./workflow-chat.js";
+import {availableMessageActions,promptArtifact,workflowThread,workflowContinuations,type MessageAction,statusPublication} from "./workflow-chat.js";
 import {executionOutcomeText,workflowExecutionSummary} from "./execution-presentation.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
@@ -551,7 +551,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,servicesView());
       if(req.method==="GET"&&url.pathname==="/api/issues/remote")return json(res,200,remoteIssuesView(store,settingsRoot));
       if(req.method==="GET"&&url.pathname.startsWith("/api/maintenance/"))return json(res,200,maintenanceOperation(store,url.pathname.split("/").at(-1)!));
-      if(req.method==="GET"&&/^\/api\/issues\/[^/]+\/thread$/.test(url.pathname)){try{const id=decodeURIComponent(url.pathname.split("/")[3]);return json(res,200,{workItemId:id,operator:dashboardOperator(store),actions:availableMessageActions(store,id),publication:statusPublication(store,id),turns:workflowThread(store,id)});}catch(error){return json(res,(error as {statusCode?:number}).statusCode??500,{error:(error as Error).message});}}
+      if(req.method==="GET"&&/^\/api\/issues\/[^/]+\/thread$/.test(url.pathname)){try{const id=decodeURIComponent(url.pathname.split("/")[3]);return json(res,200,{workItemId:id,operator:dashboardOperator(store),actions:availableMessageActions(store,id),publication:statusPublication(store,id),continuations:workflowContinuations(store,id),turns:workflowThread(store,id)});}catch(error){return json(res,(error as {statusCode?:number}).statusCode??500,{error:(error as Error).message});}}
       if(req.method==="POST"&&url.pathname==="/api/maintenance"){
         const body=await readBody(req) as {operation?:MaintenanceOperation};const allowed:MaintenanceOperation[]=["update","daemon-stop","daemon-restart","uninstall","configuration-apply","user-pause"];
         if(!body.operation||!allowed.includes(body.operation))return json(res,400,{error:"Unknown maintenance operation"});return json(res,200,maintenanceCoordinator(store).request(body.operation,"dashboard"));

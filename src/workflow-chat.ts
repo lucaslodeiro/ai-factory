@@ -100,6 +100,20 @@ export function statusPublication(store:Store,workItemId:string):StatusPublicati
  return{revision:row.presentation_revision,publishedRevision:row.published_presentation_revision,behind:row.presentation_revision>(row.published_presentation_revision??-1),url:published?.url??null,publishedAt:published?.publishedAt??null,error:failed?.error??null,attempts:failed?.attempts??0,needsAttention:(failed?.attempts??0)>=PUBLICATION_ATTENTION_ATTEMPTS};
 }
 
+export type WorkflowContinuation={at:string;instance:string;revision:number|null;publishedAt:string|null;earlierTurns:boolean};
+/** Every time this installation adopted the item from another one, oldest first; earlierTurns says whether local history predates it. */
+export function workflowContinuations(store:Store,workItemId:string):WorkflowContinuation[]{
+ const rows=store.db.prepare("SELECT id,ts,payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id").all(workItemId) as Array<{id:number;ts:string;payload:string}>;
+ const firstTurn=(store.db.prepare("SELECT MIN(id) id FROM events WHERE work_item_id=? AND type IN ('execution.started','agent.result','command.applied','command.rejected','command.deferred','command.expired') ").get(workItemId) as {id:number|null}).id;
+ const result:WorkflowContinuation[]=[];let ordinary:number|null=null;
+ for(const row of rows){let value:any={};try{value=JSON.parse(row.payload);}catch{}
+  if(value.reason?.code!=="continued"){ordinary??=row.id;continue;}
+  const earliest=Math.min(ordinary??Infinity,firstTurn??Infinity);
+  result.push({at:row.ts,instance:String(value.reason.instance??value.reason.summary?.match(/^Continued from (.+) at revision/)?.[1]??"another instance"),revision:Number.isSafeInteger(value.reason.revision)?value.reason.revision:null,publishedAt:value.reason.publishedAt??null,earlierTurns:earliest<row.id});
+ }
+ return result;
+}
+
 export function workflowThread(store:Store,workItemId:string):WorkflowThreadTurn[]{
  if(!store.db.prepare("SELECT 1 FROM work_items WHERE id=?").get(workItemId))throw Object.assign(new Error("Unknown work item"),{statusCode:404});
  const rows=store.db.prepare("SELECT id,ts,run_id,type,payload FROM events WHERE work_item_id=? ORDER BY id").all(workItemId) as Array<{id:number;ts:string;run_id:string|null;type:string;payload:string}>;
@@ -110,6 +124,7 @@ export function workflowThread(store:Store,workItemId:string):WorkflowThreadTurn
   if(row.type==="execution.started"&&row.run_id){const turn=executionTurn(row.run_id,row);Object.assign(turn,{role:value.role??turn.role,provider:value.selection?.provider??turn.provider,model:value.selection?.model??turn.model,startedAt:row.ts});continue;}
   if(row.type==="agent.result"&&row.run_id){const role=value.role as AgentRole,result=value.result as AgentResult;const turn=executionTurn(row.run_id,row);const publication=result&&isMilestoneResult(store,{work_item_id:workItemId,run_id:row.run_id},{role,result})?threadPublication(store,resultPublicationKey(row.id)):undefined;Object.assign(turn,{at:row.ts,resultEventId:row.id,role:role??turn.role,outcome:result?.outcome,markdown:result?resultMarkdown(role,result,value.specVersion??0):"Result unavailable",result,...(publication?{publication}:{})});continue;}
   if(row.type==="execution.finished"&&row.run_id){const turn=value.status!=="succeeded"?executionTurn(row.run_id,row):executions.get(row.run_id);if(!turn)continue;turn.finishedAt=row.ts;if(value.status!=="succeeded"){Object.assign(turn,{at:row.ts,status:value.status,reason:executionOutcomeText(value.status,value.interruptionReason,value.role??turn.role)??`Execution ${value.status}`});}continue;}
+  if(row.type==="workflow.transition"&&value.reason?.code==="continued")continue;
   if(row.type==="workflow.transition"){const transition={stage:value.to?.stage,status:value.to?.status,reason:workflowExecutionSummary(value.reason?.summary??"Workflow changed",value.to?.stage),actor:value.actor??null};const turn:WorkflowThreadTurn={id:row.id,at:row.ts,kind:"event",...transition,milestone:["WAITING","FAILED","PAUSED","CANCELLED","COMPLETED"].includes(value.to?.status)&&value.reason?.code!=="continued"};if(value.to?.status==="FAILED"){const failure=new WorkflowFailures(store).active(workItemId);if(failure){turn.failure=workflowFailureEvidence(store,failure);turn.diagnosis=diagnoseWorkItem(store,workItemId);turn.publication=threadPublication(store,failurePublicationKey(failure.id));}}turns.push(turn);continue;}
   if(row.type.startsWith("command.")){const records=(store.db.prepare("SELECT id,payload,source_type FROM records WHERE work_item_id=? AND source_id=? ORDER BY sequence").all(workItemId,String(value.commentId??"")) as Array<{id:string;payload:string;source_type:string}>).map(record=>({id:record.id,...JSON.parse(record.payload)}));const transition=rows.slice(0,rows.indexOf(row)+1).reverse().find(candidate=>candidate.type==="workflow.transition"&&(()=>{try{return JSON.parse(candidate.payload).source?.commentId===value.commentId;}catch{return false;}})());let actor:any;try{actor=transition?JSON.parse(transition.payload).actor:null;}catch{}turns.push({id:row.id,at:row.ts,kind:"human",milestone:true,login:value.login??actor?.id??"unknown",command:value.command??row.type.slice(8),text:records.map(record=>(record as any).text??(record as any).decision??(record as any).evidence).filter(Boolean).join("\n")||value.text||"",source:value.source??(records.some(record=>record.source_type==="dashboard")?"dashboard":"comment"),outcome:row.type.slice(8),records});}
  }

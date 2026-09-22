@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {Store} from "../src/storage.js";
 import {config} from "../src/config.js";
-import {workflowThread,promptArtifact,messageActions,applyMessageControl,applyInterruptRetryControl,statusPublication} from "../src/workflow-chat.js";
+import {workflowThread,workflowContinuations,promptArtifact,messageActions,applyMessageControl,applyInterruptRetryControl,statusPublication} from "../src/workflow-chat.js";
 import {resultPublicationKey,failurePublicationKey,statusPublicationKey} from "../src/workflow-github.js";
 import {WorkflowFailures} from "../src/workflow-failures.js";
 import {result} from "./fixtures.js";
@@ -141,6 +141,20 @@ test("workflow thread marks milestones with the same rule that publishes them, p
   store.event("workflow.transition",{to:{stage:"BUILD",status:"QUEUED"},reason:{code:"approved",summary:"SPEC v1 approved"},actor:{type:"human",id:"owner"}},"w");
   store.event("agent.result",{role:"developer",result:result("pass"),specVersion:1},"w","run-build");
   const turns=workflowThread(store,"w");
-  assert.deepEqual(turns.map(turn=>[turn.kind,turn.milestone]),[["event",false],["event",false],["execution",true],["event",true],["human",true],["event",false],["execution",false]]);
+  assert.deepEqual(turns.map(turn=>[turn.kind,turn.milestone]),[["event",false],["execution",true],["event",true],["human",true],["event",false],["execution",false]],"the continuation is header context, not a turn");
+ }finally{store.db.close();}
+});
+
+test("continuations leave the conversation as header context and say whether local history predates them",()=>{
+ const store=new Store(":memory:");try{
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status) VALUES('w',1,'owner/demo','now','now','{}','DELIVERY','WAITING')").run();
+  store.event("workflow.transition",{to:{stage:"DELIVERY",status:"PAUSED"},reason:{code:"continued",summary:"Continued from laptop at revision 10",instance:"laptop",revision:10,publishedAt:"2026-09-22T17:36:36Z"},actor:{type:"orchestrator",id:"continuation"}},"w");
+  assert.deepEqual(workflowThread(store,"w"),[]);
+  assert.deepEqual(workflowContinuations(store,"w").map(({at,...rest})=>rest),[{instance:"laptop",revision:10,publishedAt:"2026-09-22T17:36:36Z",earlierTurns:false}]);
+  store.event("command.applied",{commentId:3,login:"owner",command:"note",text:"Keep going",source:"dashboard"},"w");
+  store.event("workflow.transition",{to:{stage:"DELIVERY",status:"PAUSED"},reason:{code:"continued",summary:"Continued from desktop at revision 12"},actor:{type:"orchestrator",id:"continuation"}},"w");
+  const both=workflowContinuations(store,"w");
+  assert.deepEqual(both.map(entry=>[entry.instance,entry.revision,entry.earlierTurns]),[["laptop",10,false],["desktop",null,true]],"an older event without structured fields still names its instance");
+  assert.deepEqual(workflowThread(store,"w").map(turn=>turn.kind),["human"]);
  }finally{store.db.close();}
 });
