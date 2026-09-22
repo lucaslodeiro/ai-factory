@@ -189,6 +189,39 @@ The update also stayed silent about it. The outcome was one line, `Start it expl
 
 Not reproduced locally: `launchctl` exists only on macOS, so this is reasoned from the script and the reported symptom rather than from a failing test. `scripts/test-maintenance.mjs` still passes, and it does not cover this path.
 
+## The daemon stayed down: SIGPIPE, not the state predicate — 2026-09-22
+
+The entry above diagnosed this from the symptom and named the wrong cause. The
+daemon was left stopped by a third update that was running the corrected
+script, and the update then reported both services as down although the
+dashboard had just been reinstalled and bootstrapped.
+
+The decision was written as
+`bash scripts/services.sh status "$service" | grep -q "^$service: loaded"`
+under `set -euo pipefail`. `grep -q` exits at its first match; the producer then
+writes into a pipe with no reader, dies of SIGPIPE and reports 141; `pipefail`
+makes that the pipeline's status. The `if` is false **because the pattern
+matched**. `status_one` prints the service line, forks awk, then prints more,
+so the reader is always gone before the later writes: a loaded service read as
+stopped every time. Reproduced directly — a producer of that shape piped into
+`grep -q` reports 141 with `pipefail` and 0 without it.
+
+That predicate was used in five places: the restore decision, both restore
+paths, the dashboard start and the end-of-update warning. The warning inverted
+it, which is why a dashboard that was running was announced as down. All five
+now call `service_loaded`, which captures the report and matches it in the
+shell with no pipeline.
+
+Choosing the predicate by process state rather than by being loaded, fixed
+earlier the same day, was a real defect and stays fixed; it was not what left
+the daemon stopped.
+
+Verified: `scripts/test-maintenance.mjs`. Its fake `status` now writes its later
+lines after forking awk, as the real one does, so a reader that stops early
+loses the same race. With the pipeline restored the service log reads
+`stop daemon / install all` and stops there, which is the reported symptom
+exactly; with `service_loaded` the daemon is started again.
+
 ## The benchmark oracle never ran — 2026-09-22
 
 The first clean benchmark run (issue #10) reported `Resolved: no` with

@@ -31,7 +31,13 @@ const validationScript=path.join(seed,'scripts','validate-installation.mjs');
 fs.writeFileSync(validationScript,"if(process.env.FAIL_INSTALL_CHECK==='1')throw new Error('fixture installation check failed');\n"+fs.readFileSync(validationScript,'utf8'));
 fs.writeFileSync(path.join(seed,'scripts','services.sh'),`#!/bin/sh
 if [ \"$1\" = status ]; then
-  case \" \${AI_FACTORY_FAKE_LOADED:-} \" in *\" $2 \"*) printf '%s: loaded\\n  state = waiting\\n  pid = 0\\n' \"$2\";; esac
+  case \" \${AI_FACTORY_FAKE_LOADED:-} \" in *\" $2 \"*)
+    printf '%s: loaded\\n' \"$2\"
+    # Shaped like the real status_one: the service line, then a forked awk, then more. A reader
+    # that stops at the first match is long gone by the time these later writes happen.
+    awk 'BEGIN{print \"  state = waiting\"; print \"  pid = 0\"}'
+    printf '  readiness = not ready\\n'
+  ;; esac
   exit 0
 fi
 printf '%s %s\\n' \"$1\" \"$2\" >> \"$AI_FACTORY_SERVICE_LOG\"
@@ -186,9 +192,11 @@ run('bash',['scripts/update.sh','--restart-services'],engine);
 const restored=fs.readFileSync(env.AI_FACTORY_SERVICE_LOG,'utf8');
 assert.match(restored,/stop daemon/);assert.match(restored,/start daemon/);assert.match(restored,/start dashboard/);assert.deepEqual(((state)=>({restoreDaemon:state.restoreDaemon,restoreDashboard:state.restoreDashboard}))(JSON.parse(fs.readFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,'utf8'))),{restoreDaemon:true,restoreDashboard:true});
 // launchd reports `state = waiting` for a service it has loaded whose process is momentarily
-// down. Deciding what to restore from the process state left the daemon stopped after an update,
-// twice, and the update said nothing about it. Being loaded is the operator's intent, so that is
-// what the decision reads, and anything left down is named on stderr.
+// down, so the decision reads whether it is loaded, which is the operator's intent. Reading it at
+// all is the harder half: `services.sh status | grep -q` fails under `set -o pipefail` because
+// grep exits at the first match and the producer dies of SIGPIPE, so a loaded daemon read as
+// stopped and was left down after three updates in a row. The fake status writes its later lines
+// after forking awk, exactly as the real one does, so a reader that stops early loses that race.
 env.AI_FACTORY_FAKE_LOADED='daemon';
 fs.rmSync(env.AI_FACTORY_UPDATE_STATE_FILE,{force:true});
 fs.writeFileSync(env.AI_FACTORY_SERVICE_LOG,'');

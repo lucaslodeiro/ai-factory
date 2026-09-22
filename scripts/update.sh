@@ -31,6 +31,17 @@ export AI_FACTORY_HOME="$home"
 export AI_FACTORY_UPDATE_STATE_FILE="${AI_FACTORY_UPDATE_STATE_FILE:-$home/data/update-state.json}"
 node -e 'if(Number(process.versions.node.split(".")[0]) < 22) { console.error("Node 22+ is required"); process.exit(1); }'
 
+# `cmd | grep -q` is unsafe under `set -o pipefail`. grep exits at its first match and the producer
+# then writes into a pipe with no reader, dies of SIGPIPE and reports 141, so the pipeline fails
+# even though the pattern matched. services.sh prints the service line, forks awk, then prints
+# more, which loses that race almost every time: a daemon that IS loaded read as stopped and was
+# left down after an update. Capture the report and match it in the shell, with no pipeline at all.
+service_loaded() {
+  local service=$1 report
+  report=$(bash scripts/services.sh status "$service" 2>/dev/null || true)
+  [[ $'\n'$report == *$'\n'"$service: loaded"* ]]
+}
+
 update_complete=false
 restore_daemon=false
 restore_dashboard=false
@@ -59,11 +70,11 @@ finish_update() {
     set +e
     if "$restore_daemon"; then
       AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install daemon
-      if ! bash scripts/services.sh status daemon 2>/dev/null | grep -q '^daemon: loaded'; then
+      if ! service_loaded daemon; then
         AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start daemon
       fi
     fi
-    if "$restore_dashboard" && ! bash scripts/services.sh status dashboard 2>/dev/null | grep -q '^dashboard: loaded'; then
+    if "$restore_dashboard" && ! service_loaded dashboard; then
       AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install dashboard
       AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start dashboard
     fi
@@ -78,7 +89,7 @@ if ( "$restart_services" || "$start_services" ) && [[ ${AI_FACTORY_SKIP_SERVICES
     restore_dashboard=true
   elif ! "$restore_intent_known"; then
     for service in daemon dashboard; do
-      if bash scripts/services.sh status "$service" 2>/dev/null | grep -q "^$service: loaded"; then
+      if service_loaded "$service"; then
         if [[ $service == daemon ]]; then restore_daemon=true; else restore_dashboard=true; fi
       fi
     done
@@ -107,10 +118,10 @@ if [[ ${AI_FACTORY_SKIP_SERVICES:-0} != 1 ]]; then
   AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh install all
   if "$restart_services" || "$start_services"; then
     if "$restore_daemon"; then AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start daemon; fi
-    if "$restore_dashboard" && ! bash scripts/services.sh status dashboard 2>/dev/null | grep -q '^dashboard: loaded'; then AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start dashboard; fi
+    if "$restore_dashboard" && ! service_loaded dashboard; then AI_FACTORY_HIDE_SERVICE_SUMMARY=1 bash scripts/services.sh start dashboard; fi
   fi
   for service in daemon dashboard; do
-    if ! bash scripts/services.sh status "$service" 2>/dev/null | grep -q "^$service: loaded"; then
+    if ! service_loaded "$service"; then
       echo "The $service is not running after this update. Start it with: ai-factory service start $service" >&2
     fi
   done
