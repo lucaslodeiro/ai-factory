@@ -20,13 +20,16 @@ export function reconcileUpdateMaintenance(store:Store,state:UpdateOutcome){
    const abandoned=store.db.prepare("SELECT id FROM maintenance_operations WHERE operation='update' AND id<>? AND requested_at<=? AND status IN ('requested','confirmed','pausing','ready')").all(current.id,current.requested_at) as {id:string}[];
    for(const row of abandoned)finish(row.id,"failed",`Superseded by finished update ${current.id}`);
   }
-  // A dashboard may be replaced while its independent updater finishes. If the
-  // durable state says that update is terminal, an otherwise empty running
-  // update barrier created during that run cannot still be doing work.
+  // A dashboard may be replaced while its independent updater finishes. A
+  // terminal durable update makes an empty update barrier from before that run
+  // stale even when the updater could not persist its maintenance id. It has
+  // no paused work to resume, so it must never block a later scheduler tick.
   const started=Date.parse(state.startedAt??''),finished=Date.parse(state.finishedAt??'');
   if(Number.isFinite(started)&&Number.isFinite(finished)&&finished>=started){
-   const orphaned=store.db.prepare("SELECT id FROM maintenance_operations WHERE operation='update' AND status='running' AND requested_at>=? AND requested_at<=? AND NOT EXISTS(SELECT 1 FROM maintenance_items WHERE maintenance_id=maintenance_operations.id)").all(new Date(started).toISOString(),new Date(finished).toISOString()) as {id:string}[];
-   for(const row of orphaned)if(row.id!==current?.id)finish(row.id,state.status!,state.status==="failed"?state.phase??"Update failed":null);
+   const barrier=`operation='update' AND status IN ('confirmed','pausing','ready','running') AND NOT EXISTS(SELECT 1 FROM maintenance_items WHERE maintenance_id=maintenance_operations.id)`;
+   const orphaned=store.db.prepare(`SELECT id FROM maintenance_operations WHERE ${barrier} AND requested_at>=? AND requested_at<=?`).all(new Date(started).toISOString(),new Date(finished).toISOString()) as {id:string}[];
+   const older=store.db.prepare(`SELECT id FROM maintenance_operations WHERE ${barrier} AND requested_at<?`).all(new Date(started).toISOString()) as {id:string}[];
+   for(const row of [...orphaned,...older])if(row.id!==current?.id)finish(row.id,state.status!,state.status==="failed"?state.phase??"Update failed":null);
   }
   return reconciled;
  }).immediate();

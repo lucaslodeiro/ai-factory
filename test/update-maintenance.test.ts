@@ -27,12 +27,25 @@ test('reconciliation requires a known terminal update and preserves newer, runni
  }finally{store.db.close();}
 });
 
-test('a terminal update state clears only an empty running update barrier created during that update',()=>{
+test('a terminal update state clears empty stale barriers from before or during that update',()=>{
  const store=new Store(':memory:');try{
   const startedAt='2026-09-21T23:52:00.000Z',finishedAt='2026-09-21T23:53:00.000Z';
   for(const [id,status,requestedAt] of [['orphan','running','2026-09-21T23:52:14.000Z'],['before','running','2026-09-21T23:51:59.000Z'],['after','running','2026-09-21T23:53:01.000Z'],['other','running','2026-09-21T23:52:14.000Z']])store.db.prepare("INSERT INTO maintenance_operations(id,operation,actor,status,requested_at) VALUES(?,?, 'dashboard',?,?)").run(id,id==='other'?'daemon-stop':'update',status,requestedAt);
+  assert.equal(reconcileUpdateMaintenance(store,{status:'completed',startedAt,finishedAt}),2);
+  for(const id of ['orphan','before'])assert.equal((store.db.prepare('SELECT status FROM maintenance_operations WHERE id=?').get(id) as any).status,'completed');
+  for(const id of ['after','other'])assert.equal((store.db.prepare('SELECT status FROM maintenance_operations WHERE id=?').get(id) as any).status,'running');
+ }finally{store.db.close();}
+});
+
+
+test('a terminal update clears an older empty ready barrier when its maintenance id was not persisted',()=>{
+ const store=new Store(':memory:');try{
+  const startedAt='2026-09-22T15:08:03.000Z',finishedAt='2026-09-22T15:08:08.000Z';
+  store.db.prepare("INSERT INTO maintenance_operations(id,operation,actor,status,requested_at) VALUES('stale','update','dashboard','ready','2026-09-22T12:22:57.000Z')").run();
+  const scheduler=new WorkflowScheduler(store);store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context) VALUES('queued',1,'owner/repo','now','now','{}')").run();new WorkflowProjections(store).initialize('queued','DESIGN','QUEUED');
+  assert.throws(()=>scheduler.begin('queued'),/maintenance prevents/);
   assert.equal(reconcileUpdateMaintenance(store,{status:'completed',startedAt,finishedAt}),1);
-  assert.equal((store.db.prepare("SELECT status FROM maintenance_operations WHERE id='orphan'").get() as any).status,'completed');
-  for(const id of ['before','after','other'])assert.equal((store.db.prepare('SELECT status FROM maintenance_operations WHERE id=?').get(id) as any).status,'running');
+  assert.equal((store.db.prepare("SELECT status FROM maintenance_operations WHERE id='stale'").get() as any).status,'completed');
+  assert.equal(scheduler.begin('queued').projection.status,'RUNNING');
  }finally{store.db.close();}
 });
