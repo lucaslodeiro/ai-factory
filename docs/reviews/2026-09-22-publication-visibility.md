@@ -38,3 +38,16 @@ The local database behind issue #10 lives on the owner's installation and was no
 - **Architect · spec** and **Reviewer · pass** show *Published on GitHub* linking to comments `5780994317` and `5781096420`, the two milestone comments the issue really has. Builder and Tester `pass` results carry no badge because they are not milestones.
 - The `/factory approve v1` comment (`5781011154`) appears as the human dashboard turn. See [issue-10-conversation.png](2026-09-22-publication-visibility/issue-10-conversation.png) (collapsed) and [issue-10-reviewer-report.png](2026-09-22-publication-visibility/issue-10-reviewer-report.png).
 - **Regression found and fixed:** with the Reviewer report open, the acceptance-evidence table (rendered by `5588650`, merged the same day) widened `.markdown-table-wrap` to 3,675 px because `min-width:max-content` on the table propagated through grid items with `min-width:auto`, pushing every badge off the panel. `contain:inline-size` and `min-width:0` on the wrapper, plus `min-width:0` on `.thread-turn`, keep the wrapper at its container width (930 px measured) with the table scrolling inside. Measured before and after in Chromium; `npm test` — **372 pass, 0 fail** after the fix.
+
+### Status comment lag, on the same adopted issue
+
+With the conversation open in Chromium, the adopted issue #10 was driven through the four states of its status comment; every change reached the open page within about 2 seconds and the page never navigated.
+
+| Step | Trigger | Rows | Note shown |
+| --- | --- | --- | --- |
+| Behind | a human note advanced the presentation revision only | local 11, published 10 | "Issue status comment is pending publication." (muted) |
+| Failed once | `syncWorkflow` refused with HTTP 502 | attempts 1 | "…not published: gh: HTTP 502…. Retrying." (muted) |
+| Stalled | two more refusals | attempts 3 | "…not published after 3 attempts: …. Retrying." (red) |
+| Recovered | read-only port resolved the real status comment | local 11, published 11 | no note; publication holds comment `5780966837` |
+
+Events recorded for the item: `github.publish_failed` once, `github.publish_stalled` once, `github.published` four times. See [issue-10-status-stalled.png](2026-09-22-publication-visibility/issue-10-status-stalled.png).
