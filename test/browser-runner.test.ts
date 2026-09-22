@@ -19,6 +19,11 @@ test('browser instructions select a transient project preview and prohibit persi
   assert.doesNotMatch(instructions,/npm run local:start/);
  }finally{fs.rmSync(root,{recursive:true,force:true})}
 });
+test('browser instructions direct the agent to a daemon-managed runtime when available',()=>{
+ const instructions=browserInstructions('/missing','http://127.0.0.1:63108/es/');
+ assert.match(instructions,/Factory has already started and is supervising the local runtime/);
+ assert.match(instructions,/Use that URL; do not start another preview server/);
+});
 test('runner verifies debugging and browser loopback load; cleanup removes only its profile',async()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'factory-browser-test-')),exe=path.join(root,'chrome'),record=path.join(root,'profile');
  fs.writeFileSync(exe,`#!${process.execPath}

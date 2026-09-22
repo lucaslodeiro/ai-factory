@@ -15,7 +15,7 @@ export class CodexAdapter implements AgentAdapter {
   const sandboxArgs = ["product-architect","reviewer"].includes(r.role) ? ["--sandbox","read-only"] : ["--sandbox","workspace-write","--config","sandbox_workspace_write.network_access=true"];
   const modelArgs = r.selection.model === "auto" ? [] : ["--model", r.selection.model];
   await this.executions.run(r.workItemId, r.role, config.codexCommand,
-   ["exec", ...modelArgs, "--ephemeral", ...sandboxArgs, "--output-schema", schema, "--output-last-message", output, "-"], r.cwd, r.instructions, config.timeoutMs, r.selection,r.promptMetadata,r.executionId);
+   ["exec", ...modelArgs, "--ephemeral", ...sandboxArgs, "--output-schema", schema, "--output-last-message", output, "-"], r.cwd, r.instructions, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
   return parseResult(JSON.parse(fs.readFileSync(output, "utf8")), r.role, r.allowedNextRoles, r.consultationFrom);
  }
 }

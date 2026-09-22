@@ -25,6 +25,7 @@ import { WorkflowMaintenance } from "./workflow-maintenance.js";
 import { WorkflowScheduler } from "./workflow-scheduler.js";
 import {applyInterruptRetryControl,applyMessageControl} from "./workflow-chat.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
+import {LocalRuntimeManager} from "./local-runtime.js";
 export function acquireLock(store: Store) {
  fs.mkdirSync(config.dataDir, { recursive: true });
  const file = path.join(config.dataDir, "daemon.lock"), token = randomUUID();
@@ -68,8 +69,8 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
   qa:adapters[config.roles.qa.provider],
   reviewer:adapters[config.roles.reviewer.provider],
  };
- const remote=backgroundGitHub();
- const runner=new WorkflowRunner(store,agents,new Workspaces(),remote.github),o=new WorkflowOrchestrator(store,remote.github,runner,new SlackAdapter(),executions);
+ const remote=backgroundGitHub(),localRuntime=new LocalRuntimeManager();
+ const runner=new WorkflowRunner(store,agents,new Workspaces(),remote.github,localRuntime),o=new WorkflowOrchestrator(store,remote.github,runner,new SlackAdapter(),executions);
  const commands=new WorkflowCommands(store),maintenance=new WorkflowMaintenance(store,executions);
  const recoveredSignalMaintenance=maintenance.reconcileSignalsAfterRestart();
  let stopping = false,stopRequested=false,stopReason="unknown",stopPromise:Promise<unknown>|undefined;
@@ -135,6 +136,7 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
   let localTask:Promise<void>|undefined,remoteTask:Promise<void>|undefined,nextRemote=0;
   const mark=(state:string,error?:string)=>store.setMetadata("runtime:github-sync",{state,at:new Date().toISOString(),...(error?{error}:{} )});
   while(!stopping){
+   await localRuntime.reconcile(new Set((store.db.prepare("SELECT id FROM work_items WHERE archived_at IS NULL AND status NOT IN ('COMPLETED','CANCELLED')").all() as Array<{id:string}>).map(row=>row.id)));
    if(!stopRequested){
     if(!localTask)localTask=o.runLocal().then(worked=>{if(worked)nextRemote=0;}).catch(error=>daemonLog("error","daemon.local_failed",{error:String(error)})).finally(()=>{audit();localTask=undefined;});
     if(!remoteTask&&(Date.now()>=nextRemote||store.db.prepare("SELECT 1 FROM controls WHERE handled=0 AND kind IN ('start-issue','claim-issue','continue-issue','refresh-list') LIMIT 1").get())){mark("syncing");remoteTask=(async()=>{
@@ -151,6 +153,7 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
  } finally {
   if (timer) clearInterval(timer); process.off("SIGINT",sigint); process.off("SIGTERM",sigterm);if(stopPromise)await stopPromise;
   try { await o.flush(); audit(); } catch (e) { daemonLog("error","daemon.final_sync_failed",{error:String(e)}); }
+  await localRuntime.close();
   await remote.close();
   release();
   daemonLog("info","daemon.stopped",{reason:stopReason});

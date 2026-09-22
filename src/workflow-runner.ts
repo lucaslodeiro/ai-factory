@@ -19,6 +19,8 @@ import { config } from "./config.js";
 import { WorkflowProjections } from "./workflow-projection.js";
 import type {PublishedLatestResult} from "./workflow-state.js";
 import {executionOutcomeText} from "./execution-presentation.js";
+import {LocalRuntimeManager} from "./local-runtime.js";
+import {browserRequired} from "./browser-runner.mjs";
 
 export interface DeliveryPort {ensurePR(branch:string,title:string,body:string):string|Promise<string>;}
 
@@ -26,7 +28,7 @@ export function commitSummary(summary:string){const line=summary.trim().split(/\
 
 export class WorkflowRunner {
  private scheduler:WorkflowScheduler;private results:WorkflowResults;private records:WorkflowRecords;private assembler:ContextAssembler;
- constructor(private store:Store,private agents:Partial<Record<AgentRole,AgentAdapter>>,private workspaces:WorkspacePort,private delivery:DeliveryPort){this.scheduler=new WorkflowScheduler(store);this.results=new WorkflowResults(store);this.records=new WorkflowRecords(store);this.assembler=new ContextAssembler(store);}
+ constructor(private store:Store,private agents:Partial<Record<AgentRole,AgentAdapter>>,private workspaces:WorkspacePort,private delivery:DeliveryPort,private localRuntime?:LocalRuntimeManager){this.scheduler=new WorkflowScheduler(store);this.results=new WorkflowResults(store);this.records=new WorkflowRecords(store);this.assembler=new ContextAssembler(store);}
  reconcileFinished(){
   const rows=this.store.db.prepare("SELECT w.id,e.id execution_id,e.status FROM work_items w JOIN executions e ON e.id=w.active_run_id WHERE w.archived_at IS NULL AND w.status='RUNNING' AND e.status<>'running'").all() as {id:string;execution_id:string;status:string}[];
   for(const row of rows){this.scheduler.fail(row.id,row.execution_id,new Error(`The agent execution ended (${row.status}), but its result was not applied. Review execution evidence before retrying.`),"recovery");}
@@ -54,6 +56,8 @@ export class WorkflowRunner {
   catch(error){this.store.event("workflow.push_failed",{branch:row.branch,error:sanitizeFailureEvidence(error instanceof Error?error.message:String(error),1600)},workItemId);}
   const head=this.workspaces.head(cwd),verified=(JSON.parse((this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string}).context||"{}") as {verifiedHeads?:Record<string,string>}).verifiedHeads;
   if(projection.stage==="REVIEW"&&verified?.TEST!==head){new WorkflowProjections(this.store).transition({workItemId,expectedRevision:projection.revision,stage:"TEST",status:"QUEUED",actor:{type:"orchestrator",id:"sync"},source:{},reason:{code:"code-changed",summary:"Code changed since the last verified test run"}});return true;}
+  let localRuntimeUrl:string|undefined;
+  if(this.localRuntime&&browserRequired(cwd,role)){const runtime=await this.localRuntime.ensure(workItemId,cwd);if(runtime){localRuntimeUrl=runtime.url;this.store.event("runtime.local_started",{script:runtime.script,url:runtime.url,log:runtime.log},workItemId);}}
   const specVersion=this.specVersion(workItemId),assessment=this.assessment(workItemId,specVersion),active=this.records.activeRequest(workItemId);
   const consultation=active?.payload.kind==="request"&&active.payload.owner==="architect";
   const selection=selectModel(role,assessment,projection.correctionCycles,consultation),budget=resolveContextBudget(role,selection);
@@ -74,7 +78,7 @@ export class WorkflowRunner {
    preparing=false;started=this.scheduler.begin(workItemId);
    this.updateContext(workItemId,{attemptStart:{executionId:started.executionId,head:before,startedAt:new Date().toISOString(),stage:projection.stage}},currentContext.previousAttempt?["previousAttempt"]:[]);
    this.store.event("model.selected",{role,specVersion,selection,budget},workItemId,started.executionId);
-   let result=await adapter.run({workItemId,role,cwd,instructions,selection,executionId:started.executionId,promptMetadata:{...assembled.manifest,budgetBytes:budget.bytes,budgetSource:budget.source,sectionBytes:{Contract:contractBytes,...assembled.manifest.sectionBytes}},allowedNextRoles:route?.allowedNextRoles,consultationFrom:route?.from});
+   let result=await adapter.run({workItemId,role,cwd,instructions,selection,executionId:started.executionId,promptMetadata:{...assembled.manifest,budgetBytes:budget.bytes,budgetSource:budget.source,sectionBytes:{Contract:contractBytes,...assembled.manifest.sectionBytes}},allowedNextRoles:route?.allowedNextRoles,consultationFrom:route?.from,localRuntimeUrl});
    const current=new WorkflowProjections(this.store).get(workItemId);if(current.status!=="RUNNING"||current.activeRunId!==started.executionId){this.store.event("execution.discarded",{executionId:started.executionId,reason:"Workflow changed before worktree validation"},workItemId,started.executionId);return true;}
    const changed=this.workspaces.check(cwd,role,before,row.branch,baseline);
    if(role==="developer"||role==="qa"){

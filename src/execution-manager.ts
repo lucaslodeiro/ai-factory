@@ -28,8 +28,8 @@ function readOutput(file:string,maxBytes:number,fromEnd=false) {
 export class ExecutionManager {
   private running = new Map<string, { child: ChildProcess; cancel: () => void; interrupt: (reason:string) => void }>();
   constructor(private store: Store) {}
-  async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs, selection?: ModelSelection, promptMetadata:PromptManifestInput = {}, executionId?:string): Promise<{id: string; stdout: string}> {
-    if(browserRequired(cwd,role))input+=browserInstructions(cwd);
+  async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs, selection?: ModelSelection, promptMetadata:PromptManifestInput = {}, executionId?:string, localRuntimeUrl?:string): Promise<{id: string; stdout: string}> {
+    if(browserRequired(cwd,role))input+=browserInstructions(cwd,localRuntimeUrl);
     const id = executionId??randomUUID();
     const logDir = path.join(config.dataDir, "runs", id);
     fs.mkdirSync(logDir, { recursive: true });

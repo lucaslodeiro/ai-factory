@@ -11,7 +11,7 @@ export class ClaudeAdapter implements AgentAdapter {
    : "Read,Glob,Grep,WebSearch,WebFetch";
   const modelArgs = r.selection.model === "auto" ? [] : ["--model", r.selection.model];
   const { stdout } = await this.executions.run(r.workItemId, r.role, config.claudeCommand,
-   ["-p", ...modelArgs, "--no-session-persistence", "--output-format", "json", "--json-schema", JSON.stringify(resultSchemaFor(r.role, r.allowedNextRoles)), "--tools", tools, "--allowedTools", tools], r.cwd, r.instructions, config.timeoutMs, r.selection,r.promptMetadata,r.executionId);
+   ["-p", ...modelArgs, "--no-session-persistence", "--output-format", "json", "--json-schema", JSON.stringify(resultSchemaFor(r.role, r.allowedNextRoles)), "--tools", tools, "--allowedTools", tools], r.cwd, r.instructions, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
   const envelope = JSON.parse(stdout);
   if (envelope.is_error) throw new Error("Claude returned an error result");
   if(envelope.structured_output==null)throw new Error("Claude result is missing structured_output");
