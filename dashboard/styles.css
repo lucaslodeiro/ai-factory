@@ -234,8 +234,8 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .setting-card select { appearance:none; cursor:pointer; padding-right:2.65rem; background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%); background-position:calc(100% - 1.05rem) calc(50% - 2px),calc(100% - .72rem) calc(50% - 2px); background-size:.34rem .34rem,.34rem .34rem; background-repeat:no-repeat }
 .setting-card select:focus { background-image:linear-gradient(45deg,transparent 50%,var(--accent) 50%),linear-gradient(135deg,var(--accent) 50%,transparent 50%) }
 .setting-card select option { color:var(--text); background:var(--panel) }
-.provider-picker { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.55rem }
-.provider-choice { display:flex; align-items:center; justify-content:center; min-height:2.75rem; background:var(--input); border-color:var(--input-line); border-radius:10px }
+.provider-picker { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.4rem }
+.provider-choice { display:flex; align-items:center; justify-content:center; min-height:2.35rem; background:var(--input); border-color:var(--input-line); border-radius:10px }
 .provider-choice:hover { border-color:var(--input-hover) }
 .provider-choice:focus-visible { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent) }
 .provider-choice[aria-pressed="true"] { color:var(--accent); border-color:var(--accent); background:color-mix(in srgb,var(--accent) 9%,var(--input)) }
@@ -382,3 +382,6 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .thread-meta{display:inline-flex;align-items:center}
 .thread-agent{display:inline-flex;align-items:center;gap:.4rem}
 .thread-model{display:inline-flex;align-items:center;min-height:1.35em;margin-left:0}
+
+.slack-dialog-error:empty,#slack-dialog-error:empty { display:none }
+.slack-dialog-error,#slack-dialog-error { color:var(--danger); font-size:.78rem; overflow-wrap:anywhere }
