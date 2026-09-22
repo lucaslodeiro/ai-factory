@@ -116,8 +116,8 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
   ].join("\n\n");
   if(kind==="execution"&&run?.status==="timed_out")return [
     "**Summary:** The agent execution exceeded its configured time limit.",
-    "**Evidence:** The execution supervisor recorded the process as timed out before the stage completed.",
-    "**Recommended action:** Inspect the last command in the evidence below, correct a stalled dependency or increase the execution timeout when the work is expected to take longer, then retry.",
+    `**Evidence:** The execution supervisor recorded the process as timed out before the stage completed. ${reason.replace(/^Error:\s*/,"")}`,
+    "**Recommended action:** Review the last observable activity. A quiet stream alone does not prove a stalled process; interrupt with guidance or increase the timeout only when appropriate, then retry.",
   ].join("\n\n");
   if(kind==="execution"&&run?.status==="cancelled")return [
     "**Summary:** The agent execution was cancelled before the stage completed.",

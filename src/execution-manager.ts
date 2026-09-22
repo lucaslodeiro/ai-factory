@@ -10,6 +10,7 @@ import type { AgentRole, ModelSelection } from "./types.js";
 import { tokenUsageReducer } from "./token-usage.js";
 import { providerActivityReducer } from "./provider-activity.js";
 import { eachJsonLine, type JsonEvent } from "./provider-stream.js";
+import {progressMonitor,progressKey} from "./execution-progress.js";
 const workflowStage: Record<AgentRole,string> = {"product-architect":"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"};
 export interface PromptManifestInput {
   includedRecordIds?:string[];
@@ -56,6 +57,8 @@ export class ExecutionManager {
     } else this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,prompt_bytes,prompt_sha256) VALUES(?,?,?,?,?,?,?,?)")
       .run(id, workItemId, role, workflowStage[role], "running", new Date().toISOString(),promptBytes,promptSha256);
     this.store.event("execution.started", { role, command, cwd, logDir, selection }, workItemId, id);
+    const monitor=progressMonitor(logDir,selection?.provider??null);
+    this.store.setMetadata(progressKey(id),monitor.poll());
     return new Promise((resolve, reject) => {
       let cancelled = false, interrupted = false, interruptionReason:string|undefined, timedOut = false;
       const child = spawn(process.execPath, [fileURLToPath(new URL("./worker-supervisor.mjs", import.meta.url)), id, logDir], { cwd, env: agentEnvironment(), detached: true, stdio: ["pipe", out, err, "ipc"] });
@@ -66,13 +69,16 @@ export class ExecutionManager {
       const interrupt = (reason:string) => { if(cancelled||interrupted)return;interrupted=true;interruptionReason=reason;send({type:"interrupt",reason}); };
       this.running.set(id, { child, cancel, interrupt });
       const timeout = setTimeout(() => { timedOut = true; cancel("execution-timeout"); }, timeoutMs);
+      let observed=0;
+      const recordProgress=()=>{try{const snapshot=monitor.poll();if(snapshot.events!==observed){observed=snapshot.events;this.store.setMetadata(progressKey(id),snapshot);}}catch{}};
+      const progressTimer=setInterval(recordProgress,2000);progressTimer.unref();
       child.stdin?.on("error", () => {});
       child.stdin?.end(JSON.stringify({ command, args, cwd, input, role, browserExecutable: process.env.FACTORY_BROWSER_EXECUTABLE }));
       let spawnError: Error | undefined;
       child.on("error", e => { spawnError = e; });
       child.on("close", code => {
         // Clean any remaining descendants even after a normal provider exit.
-        clearTimeout(timeout); this.running.delete(id);
+        clearTimeout(timeout);clearInterval(progressTimer);recordProgress();this.running.delete(id);
         let completion: { runId: string; status: string; code: number | null; reason?:string } | undefined;
         try {
           const saved = JSON.parse(fs.readFileSync(path.join(logDir, "completion.json"), "utf8"));

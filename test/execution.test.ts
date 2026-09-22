@@ -8,6 +8,7 @@ import {WorkflowProjections} from "../src/workflow-projection.js";
 import { Store } from "../src/storage.js";
 import { ExecutionManager } from "../src/execution-manager.js";
 import { config } from "../src/config.js";
+import {progressKey,type ExecutionProgress} from "../src/execution-progress.js";
 config.dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-execution-"));
 test.after(() => fs.rmSync(config.dataDir, { recursive: true, force: true }));
 test("captures output, spawn errors, nonzero exit and timeout", async () => {
@@ -51,6 +52,16 @@ test("planned interruption is distinct from cancellation and preserves its reaso
  await assert.rejects(pending, /interrupted/);
  const row=s.db.prepare("SELECT status,interruption_reason FROM executions WHERE id=?").get(id) as any;
  assert.deepEqual(row,{status:"interrupted",interruption_reason:"maintenance:update"});assert.equal(m.isRunning(id),false);s.db.close();
+});
+test("progress is persisted while an agent runs and survives interruption",{timeout:8000},async()=>{
+ const store=new Store(":memory:"),manager=new ExecutionManager(store);
+ const pending=manager.run("w","qa",process.execPath,["-e",`console.log(JSON.stringify({type:'item.started',item:{id:'one',type:'command_execution',command:'secret'}}));setInterval(()=>{},100)`],os.tmpdir(),"",5000,{provider:"codex",model:"auto",policy:"test",reason:"test"});
+ const id=(store.db.prepare("SELECT id FROM executions LIMIT 1").get() as {id:string}).id,until=Date.now()+4000;
+ let progress:ExecutionProgress|undefined;
+ while(Date.now()<until){progress=store.metadata<ExecutionProgress>(progressKey(id));if(progress?.events)break;await new Promise(resolve=>setTimeout(resolve,50));}
+ assert.equal(progress?.tool,"command_execution");assert.doesNotMatch(JSON.stringify(progress),/secret/);
+ manager.interrupt(id,"user-pause");await assert.rejects(pending,/interrupted/);
+ assert.equal(store.metadata<ExecutionProgress>(progressKey(id))?.events,1);store.db.close();
 });
 test("explicit cancellation escalates an in-progress interruption", async () => {
  const s=new Store(":memory:"),m=new ExecutionManager(s);

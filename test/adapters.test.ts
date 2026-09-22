@@ -35,7 +35,7 @@ if(codex) {
  console.log(JSON.stringify({type:'item.completed',item:{id:'item_1',type:'command_execution',command:'npm test',aggregated_output:'ok',exit_code:0,status:'completed'}}));
  console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:1100,cached_input_tokens:300,cache_write_input_tokens:0,output_tokens:134,reasoning_output_tokens:20}}));
 } else if(cursor) {
- if(args[0]!=='-p'||args[args.indexOf('--output-format')+1]!=='json'||args.includes('--json-schema'))process.exit(9);
+ if(args[0]!=='-p'||args[args.indexOf('--output-format')+1]!=='stream-json'||args.includes('--json-schema'))process.exit(9);
  if(!input.includes('OUTPUT CONTRACT')||!input.includes('"additionalProperties":false'))process.exit(11);
  if(cursorDelivery===(args.includes('--mode')&&args[args.indexOf('--mode')+1]==='ask'))process.exit(12);
  const fence=String.fromCharCode(96).repeat(3);
@@ -102,18 +102,18 @@ test("Cursor final message is extracted from fences or prose and validated as th
 });
 
 test("Cursor rejects error envelopes, missing final messages and results that break the role contract",async()=>{
- const reply=(stdout:string)=>({async run(){return {readStdout:()=>stdout};}});
+ const reply=(event:Record<string,unknown>|undefined)=>({async run(){return {finalEvent:event};}});
  const request={workItemId:'w',role:'product-architect' as const,cwd:root,instructions:'test',selection:{...selectModel('product-architect'),provider:'cursor' as const,model:'auto'}};
- await assert.rejects(new CursorAdapter(reply(JSON.stringify({type:'result',is_error:true,result:'boom'})) as any).run(request),/error result/);
- await assert.rejects(new CursorAdapter(reply(JSON.stringify({type:'result',is_error:false})) as any).run(request),/missing the final message/);
- await assert.rejects(new CursorAdapter(reply('not json at all') as any).run(request),/JSON result envelope/);
- await assert.rejects(new CursorAdapter(reply(JSON.stringify({is_error:false,result:JSON.stringify({...result('spec'),outcome:'pass'})})) as any).run(request),/outcome/);
- assert.equal((await new CursorAdapter(reply('{"type":"progress"}\n'+JSON.stringify({is_error:false,result:JSON.stringify(result('spec'))})) as any).run(request)).outcome,'spec');
+ await assert.rejects(new CursorAdapter(reply({type:'result',is_error:true,result:'boom'}) as any).run(request),/error result/);
+ await assert.rejects(new CursorAdapter(reply({type:'result',is_error:false}) as any).run(request),/missing the final message/);
+ await assert.rejects(new CursorAdapter(reply(undefined) as any).run(request),/did not return a result event/);
+ await assert.rejects(new CursorAdapter(reply({is_error:false,result:JSON.stringify({...result('spec'),outcome:'pass'})}) as any).run(request),/outcome/);
+ assert.equal((await new CursorAdapter(reply({type:'result',is_error:false,result:JSON.stringify(result('spec'))}) as any).run(request)).outcome,'spec');
 });
 
 test("Cursor access flags follow each role's write contract",async()=>{
  for(const role of ["product-architect","reviewer","developer","qa"] as const){
-  let args:string[]=[];const execution={async run(_id:string,_role:string,_command:string,argv:string[]){args=argv;return {readStdout:()=>JSON.stringify({is_error:false,result:JSON.stringify(result(role==="product-architect"?"spec":"pass"))})};}};
+  let args:string[]=[];const execution={async run(_id:string,_role:string,_command:string,argv:string[]){args=argv;return {finalEvent:{type:"result",is_error:false,result:JSON.stringify(result(role==="product-architect"?"spec":"pass"))}};}};
   await new CursorAdapter(execution as any).run({workItemId:"w",role,cwd:root,instructions:"test",selection:{...selectModel(role),provider:"cursor"}});
   const writable=["developer","qa"].includes(role);assert.equal(args.includes("--force"),writable);assert.equal(args[args.indexOf("--mode")+1]==="ask",!writable);
  }

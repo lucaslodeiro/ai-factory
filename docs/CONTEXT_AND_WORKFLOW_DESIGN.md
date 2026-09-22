@@ -538,6 +538,10 @@ CLI equivalents are `factory repo check`, `factory repo sync`, `factory repo pub
 
 Explicitly unsupported: arbitrary Git commands, credential editing, interactive merge/rebase, conflict resolution, force push, branch deletion, PR creation/edit/merge, issue administration and remote repository settings. The factory links to the terminal or provider UI when one of those operations is required.
 
+### 7.8 Live agent progress
+
+Codex, Claude and Cursor write newline-delimited provider events while an execution runs. The daemon reads only newly completed lines every two seconds and stores a bounded summary: event count, last observable activity, current tool name and repeated identical tool calls. Tool inputs, command text, prompts and outputs are never copied into that summary. The dashboard updates the progress line without repainting the issue card or losing a message draft. Five minutes without a meaningful event, or four identical tool calls, produces a **Check agent progress** warning and a shortcut to the existing **Interrupt and retry with this** control. These signals are uncertain; they never stop an execution automatically. A timeout includes the last observed activity in the failure diagnosis and GitHub failure comment. GitHub receives no progress comments while the agent is running.
+
 ## 8. GitHub projection
 
 ### 8.1 Publish only on change

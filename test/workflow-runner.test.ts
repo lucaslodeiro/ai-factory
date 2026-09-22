@@ -14,6 +14,7 @@ import type { AgentAdapter,AgentRunRequest } from "../src/adapters/agent.js";
 import { SyncConflictError,type WorkspacePort } from "../src/worktrees.js";
 import { InvalidResultError } from "../src/results.js";
 import {adoptIssueState,issueStateIndex} from "../src/workflow-state.js";
+import {progressKey} from "../src/execution-progress.js";
 
 class Workspace implements WorkspacePort {
  commits:string[]=[];cleanupCalls=0;publishCalls=0;pushError:Error|undefined;syncError:Error|undefined;syncSkipped:string|undefined;currentHead="abc";ensure(){return "/tmp/factory-work";}assertBranch(){}sync(){if(this.syncError)throw this.syncError;return{before:this.currentHead,after:this.currentHead,merged:[],skipped:this.syncSkipped};}head(){return this.currentHead;}diff(){return "";}check(){}commit(_cwd:string,message:string){this.commits.push(message);}publish(){this.publishCalls++;}
@@ -102,6 +103,15 @@ test("runner classifies failures by typed result errors rather than message text
  const run=async(error:Error)=>{const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"});try{const runner=new WorkflowRunner(store,{"product-architect":{async run(){throw error;}}},new Workspace(),{ensurePR(){throw new Error("unused");}});await runner.run(started.id);if(error instanceof InvalidResultError)await runner.run(started.id);return new WorkflowFailures(store).active(started.id)?.class;}finally{store.db.close();}};
  assert.equal(await run(new Error("provider result channel disconnected")),"execution");
  assert.equal(await run(new InvalidResultError("invalid structured output")),"invalid-result");
+});
+
+test("a timed-out agent failure includes bounded last activity without claiming it was blocked",async()=>{
+ const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"});
+ try{
+  const runner=new WorkflowRunner(store,{"product-architect":{async run(request){store.db.prepare("UPDATE executions SET status='timed_out',finished_at='now' WHERE id=?").run(request.executionId);store.setMetadata(progressKey(request.executionId!),{provider:"cursor",events:7,lastEventAt:"2026-09-22T12:00:00Z",lastProgressAt:"2026-09-22T12:00:00Z",tool:"readToolCall",toolStartedAt:"2026-09-22T12:00:00Z",lastTool:"readToolCall",repeatedToolCalls:1});throw new Error("timed out");}}},new Workspace(),{ensurePR(){return"unused";}});
+  await runner.run(item.id);const message=new WorkflowFailures(store).active(item.id)?.message??"";
+  assert.match(message,/provider events: 7/);assert.match(message,/readToolCall was still running/);assert.match(message,/does not establish whether the agent was blocked/);
+ }finally{store.db.close();}
 });
 
 test("runner retries one invalid result with the validator message and then fails the second",async()=>{

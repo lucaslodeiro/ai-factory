@@ -16,14 +16,6 @@ export function extractCursorResult(text: string): unknown {
   if (start === -1 || end <= start) throw new Error("Cursor final message does not contain a JSON object");
   try { return JSON.parse(body.slice(start, end + 1)); } catch { throw new Error("Cursor final message is not valid JSON"); }
 }
-function lastJsonObject(stdout: string): Record<string, unknown> {
-  const lines = stdout.split(/\r?\n/).filter(line => line.trim());
-  for (let index = lines.length - 1; index >= 0; index--) {
-    try { const value = JSON.parse(lines[index]); if (value && typeof value === "object" && !Array.isArray(value)) return value; } catch {}
-  }
-  try { const value = JSON.parse(stdout); if (value && typeof value === "object" && !Array.isArray(value)) return value; } catch {}
-  throw new Error("Cursor did not return a JSON result envelope");
-}
 export class CursorAdapter implements AgentAdapter {
  constructor(private executions: ExecutionManager) {}
  async run(r: AgentRunRequest) {
@@ -32,9 +24,10 @@ export class CursorAdapter implements AgentAdapter {
   // Builder and Tester edit files and run commands; Architect and Reviewer use the documented read-only mode.
   const accessArgs = r.role === "developer" || r.role === "qa" ? ["--force"] : ["--mode", "ask"];
   const modelArgs = r.selection.model === "auto" ? [] : ["--model", r.selection.model];
-  const { readStdout } = await this.executions.run(r.workItemId, r.role, config.cursorCommand,
-   ["-p", ...modelArgs, "--output-format", "json", "--trust", ...accessArgs], r.cwd, `${r.instructions}\n\n${cursorOutputContract(schema)}`, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
-  const envelope = lastJsonObject(readStdout());
+  const { finalEvent } = await this.executions.run(r.workItemId, r.role, config.cursorCommand,
+   ["-p", ...modelArgs, "--output-format", "stream-json", "--trust", ...accessArgs], r.cwd, `${r.instructions}\n\n${cursorOutputContract(schema)}`, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
+  const envelope = finalEvent;
+  if (!envelope) throw new Error("Cursor did not return a result event");
   if (envelope.is_error) throw new Error("Cursor returned an error result");
   if (typeof envelope.result !== "string") throw new Error("Cursor result is missing the final message");
   return parseResult(extractCursorResult(envelope.result), r.role, r.allowedNextRoles, r.consultationFrom);

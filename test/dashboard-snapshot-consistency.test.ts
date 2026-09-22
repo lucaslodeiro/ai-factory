@@ -41,6 +41,19 @@ test('unchanged issue snapshots do not repaint the list',()=>{
  let paints=0,html='';const itemsNode={get innerHTML(){return html},set innerHTML(value){html=value;paints++}},statusNode:any={};const context=vm.createContext({$:(id:string)=>id==='#items'?itemsNode:statusNode,document:{querySelectorAll:()=>[]},escapeHtml:(v:any)=>String(v??''),relative:()=> 'now',brandIcon:()=>'',githubLink:(_url:string,label:string)=>label,statusName:(v:any)=>v,stateClass:()=>'',loadWorkflowThread:()=>{}});const start=source.indexOf('function renderIssueList('),end=source.indexOf('\nasync function refresh()',start);vm.runInContext("const pendingControls=new Map(),threadDrafts=new Map(),expandedWorkDetails=new Set(),collapsedWorkDetails=new Set();let remoteIssueData=null,remoteIssueCheckedAt=null,remoteIssueError='',lastIssueListSignature='';",context);vm.runInContext(source.split('\n').find(line=>line.startsWith('function promptReadableHtml('))!,context);vm.runInContext(source.split('\n').find(line=>line.startsWith('function workDetails('))!,context);vm.runInContext(source.slice(start,end),context);context.snapshot={repository:'owner/demo',items:[{id:'w',issue:1,title:'Stable',stage:'DESIGN',status:'FAILED',attempt:0,actions:['retry'],activity:{diagnosis:{summary:'Cause',evidence:'Evidence',nextAction:'Retry'}}}]};vm.runInContext('renderIssueList(snapshot);renderIssueList(snapshot)',context);assert.equal(paints,1);
 });
 
+test('live progress changes its line without repainting the issue card or its composer',()=>{
+ let paints=0,html='';const line:any={dataset:{workProgress:'w'},textContent:'',classList:{toggle(){}}};
+ const itemsNode={get innerHTML(){return html},set innerHTML(value:string){html=value;paints++;}};
+ const context=vm.createContext({$:(id:string)=>id==='#items'?itemsNode:{},document:{querySelectorAll:(selector:string)=>selector==='[data-work-progress]'?[line]:[]},escapeHtml:(v:any)=>String(v??''),relative:()=> 'now',brandIcon:()=>'',githubLink:(_url:string,label:string)=>label,statusName:(v:any)=>v,stateClass:()=>'',loadWorkflowThread:()=>{}});
+ vm.runInContext("const pendingControls=new Map(),threadDrafts=new Map(),expandedWorkDetails=new Set(),collapsedWorkDetails=new Set();let remoteIssueData=null,remoteIssueCheckedAt=null,remoteIssueError='',lastIssueListSignature='';",context);
+ vm.runInContext(source.split('\n').find(text=>text.startsWith('function promptReadableHtml('))!,context);
+ vm.runInContext(source.split('\n').find(text=>text.startsWith('function workDetails('))!,context);
+ vm.runInContext(source.slice(source.indexOf('function renderIssueList('),source.indexOf('\nasync function refresh()')),context);
+ context.snapshot={repository:'owner/demo',items:[{id:'w',issue:1,title:'In progress',stage:'TEST',status:'RUNNING',revision:1,attempt:1,activity:{label:'Agent running',detail:'Read is running',since:'now'}}]};
+ vm.runInContext('renderIssueList(snapshot)',context);context.snapshot.items[0].activity.detail='Bash is running';vm.runInContext('renderIssueList(snapshot)',context);
+ assert.equal(paints,1);assert.match(line.textContent,/Bash is running/);
+});
+
 test('snapshot preserves a composer draft and skips unchanged issue lists',()=>{
  const nodes=new Map<string,any>(),textarea={value:''};let writes=0,forms:any[]=[];
  const items={get innerHTML(){return ''},set innerHTML(_value:string){writes++;forms=[];}};

@@ -77,7 +77,8 @@ test('the issue card answers in the dashboard and shows activity only when it ad
  assert.equal(render({id:'w',status:'WAITING',activity:{label:'Waiting for you',detail:'Branch published and pull request ready',blockers:[]}}),'','waiting repeats the conversation and the next step');
  assert.equal(render({id:'w',status:'QUEUED',activity:{label:'Queued',detail:'Waiting for the local scheduler and active repository control.'}}),'');
  assert.match(render({id:'w',status:'QUEUED',activity:{label:'Waiting for capacity',detail:'Another task is using the execution slot.'}}),/work-activity-line ">Another task is using the execution slot\.</);
- assert.match(render({id:'w',status:'RUNNING',activity:{label:'Agent running',detail:'Agent execution is in progress.',since:'t'}}),/>Agent started 3m ago\.</);
+ assert.match(render({id:'w',status:'RUNNING',activity:{label:'Agent running',detail:'Read is running',since:'t'}}),/>Read is running · started 3m ago/);
+ assert.match(render({id:'w',status:'RUNNING',activity:{label:'Check agent progress',detail:'No observable progress for 5 minutes',since:'t',warning:true}}),/Interrupt or guide agent/);
  assert.match(render({id:'w',status:'RUNNING',activity:{label:'Needs recovery',detail:'The agent has finished, but the workflow has not advanced.',since:'t',stalled:true}}),/work-activity-line is-stalled">The agent has finished, but the workflow has not advanced\. · 3m ago</);
  const paused=render({id:'w',status:'PAUSED',activity:{label:'Paused',detail:'Human interrupted the active attempt',blockers:['Missing test for AC-2']}});
  assert.match(paused,/>Human interrupted the active attempt</);assert.match(paused,/<summary>Open findings \(1\)<\/summary>/);assert.doesNotMatch(render({id:'w',status:'WAITING',activity:{label:'Waiting for you',detail:'x'}}),/Activity details/);
