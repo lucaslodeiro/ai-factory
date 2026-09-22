@@ -286,14 +286,17 @@ function versionInfo(root: string): VersionInfo {
   const number = manifest.version ?? "0.0.0";
   return { number,revision,branch,display:`v${number} · ${revision}` };
 }
+function gitSucceeds(root:string,args:string[],timeout=10000){return spawnSync(config.gitCommand,args,{cwd:root,encoding:"utf8",timeout}).status===0}
 function checkUpdate(root: string) {
   const current = versionInfo(root);
   const currentFull = git(root,["rev-parse","HEAD"]);
   git(root,["fetch","origin",`refs/heads/${current.branch}`],30000);
   const latestFull = git(root,["rev-parse","FETCH_HEAD"]);
   const latest = git(root,["rev-parse","--short","FETCH_HEAD"]);
-  if (latestFull !== currentFull) git(root,["merge-base","--is-ancestor",currentFull,latestFull]);
-  return { current,latest,available:latestFull !== currentFull,checkedAt:new Date().toISOString() };
+  if(latestFull===currentFull)return {current,latest,available:false,checkedAt:new Date().toISOString()};
+  if(gitSucceeds(root,["merge-base","--is-ancestor",currentFull,latestFull]))return {current,latest,available:true,checkedAt:new Date().toISOString()};
+  if(gitSucceeds(root,["merge-base","--is-ancestor",latestFull,currentFull]))return {current,latest,available:false,localAhead:true,message:"The installed engine already includes this version and has local commits that are not published to main.",checkedAt:new Date().toISOString()};
+  return {current,latest,available:true,mergeLocal:true,message:"The update will merge the downloaded version with local engine commits. A conflict leaves the installation unchanged.",checkedAt:new Date().toISOString()};
 }
 function writeUpdateState(root: string, state: UpdateState) {
   const file = updateStateFile(root);

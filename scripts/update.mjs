@@ -27,6 +27,7 @@ function run(command, args, capture = false, timeout = 600000, cwd = process.cwd
   return capture ? result.stdout.trim() : '';
 }
 const git = (...args) => run(config.gitCommand, args, true);
+const gitSucceeds = (...args) => { const result=spawnSync(config.gitCommand,args,{cwd:process.cwd(),encoding:'utf8',timeout:600000}); return result.status===0; };
 let store, release, backup, before, candidate, activated=false;
 const moved=[];
 async function acquireUpdateLock() {
@@ -53,7 +54,8 @@ try {
   step='downloading the latest source'; progress('Downloading the latest source…');
   run(config.gitCommand,['fetch','origin',`refs/heads/${branch}`],false,120000);
   const target = git('rev-parse','FETCH_HEAD');
-  git('merge-base','--is-ancestor',before,target);
+  const fastForward=gitSucceeds('merge-base','--is-ancestor',before,target);
+  const targetAlreadyIncluded=gitSucceeds('merge-base','--is-ancestor',target,before);
   step='backing up configuration and runtime data'; progress('Backing up configuration and runtime data…');
   backup = fs.mkdtempSync(path.join(config.dataDir,'update-backup-'));
   fs.chmodSync(backup,0o700);
@@ -66,7 +68,11 @@ try {
   console.log(`Backup: ${backup}`);
   step='preparing the candidate version'; progress('Preparing the candidate version…');
   candidate=path.join(backup,'candidate');
-  run(config.gitCommand,['worktree','add','--detach',candidate,target]);
+  run(config.gitCommand,['worktree','add','--detach',candidate,fastForward?target:before]);
+  if(!fastForward&&!targetAlreadyIncluded){
+    step='merging local engine commits with the downloaded version'; progress('Merging local engine commits with the downloaded version…');
+    run(config.gitCommand,['merge','--no-edit',target],false,600000,candidate);
+  }
   step='installing candidate dependencies'; progress('Installing candidate dependencies…');
   run('npm',['ci'],false,600000,candidate);
   step='building the candidate'; progress('Building the candidate…');
@@ -76,7 +82,11 @@ try {
   step='activating the validated version'; progress('Activating the validated version…');
   // Recheck before activation: a concurrent edit must not be overwritten.
   if(git('status','--porcelain')||git('rev-parse','HEAD')!==before)throw new Error('Checkout changed during update preparation');
-  run(config.gitCommand,['merge','--ff-only',target]);
+  if(fastForward)run(config.gitCommand,['merge','--ff-only',target]);
+  else if(!targetAlreadyIncluded){
+    step='merging local engine commits with the downloaded version'; progress('Merging local engine commits with the downloaded version…');
+    run(config.gitCommand,['merge','--no-edit',target]);
+  }
   activated=true;
   for(const name of ['node_modules','dist']){
     const old=path.join(backup,name);

@@ -178,8 +178,11 @@ assert.match(run('bash',['scripts/update.sh'],engine,false).stderr,/Daemon alrea
 db.prepare('DELETE FROM daemon_lock').run();db.close();
 run('git',['config','user.email','test@example.com'],engine);run('git',['config','user.name','Test'],engine);
 fs.writeFileSync(path.join(engine,'local'),'local');run('git',['add','.'],engine);run('git',['commit','-m','local'],engine);
-assert.match(run('bash',['scripts/update.sh'],engine,false).stderr,/merge-base/);
-assert.match(JSON.parse(fs.readFileSync(env.AI_FACTORY_UPDATE_STATE_FILE,'utf8')).phase,/checking the local checkout|merge-base/i);
+fs.writeFileSync(path.join(seed,'second-upstream.txt'),'upstream');run('git',['add','.'],seed);run('git',['commit','-m','second upstream'],seed);run('git',['push','origin','HEAD:main'],seed);
+run('bash',['scripts/update.sh'],engine);
+assert.equal(fs.readFileSync(path.join(engine,'local'),'utf8'),'local');
+assert.equal(fs.readFileSync(path.join(engine,'second-upstream.txt'),'utf8'),'upstream');
+assert.equal(run('git',['merge-base','--is-ancestor','origin/main','HEAD'],engine).status,0);
 env.AI_FACTORY_SKIP_SERVICES='0';
 fs.writeFileSync(path.join(engine,'scripts','services.sh'),`#!/bin/sh
 if [ "$1 $2" = "status dashboard" ]; then echo 'dashboard: loaded'; elif [ "$1" = status ]; then echo "$2: stopped"; else echo "$1 $2" >> '${path.join(temp,'service-recovery.log')}'; fi
