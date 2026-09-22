@@ -70,3 +70,17 @@ test('the milestones filter hides intermediate turns, keeps the newest milestone
  assert.match(filtered,/data-thread-filter checked/);assert.match(filtered,/2 of 5 turns/);for(const key of ['w:1','w:4','w:5'])assert.doesNotMatch(filtered,new RegExp(`data-thread-turn="${key}"`));assert.match(filtered,/data-thread-turn="w:3" open/);assert.match(filtered,/data-thread-turn="w:2"[^>]*>/);
  assert.match(source,/window\.toggleThreadFilter=toggleThreadFilter/);assert.match(source,/localStorage\.getItem\(threadFilterKey\)/);
 });
+
+test('the issue card answers in the dashboard and shows activity only when it adds information',()=>{
+ const context=vm.createContext({escapeHtml:String,relative:()=>"3m ago",collapsedWorkDetails:new Set()});vm.runInContext(source.split('\n').find(line=>line.startsWith('function promptReadableHtml('))!,context);vm.runInContext(source.split('\n').find(line=>line.startsWith('function workDetails('))!,context);
+ const render=(item:any)=>vm.runInContext("workDetails(item,new Set())",Object.assign(context,{item})) as string;
+ assert.equal(render({id:'w',status:'WAITING',activity:{label:'Waiting for you',detail:'Branch published and pull request ready',blockers:[]}}),'','waiting repeats the conversation and the next step');
+ assert.equal(render({id:'w',status:'QUEUED',activity:{label:'Queued',detail:'Waiting for the local scheduler and active repository control.'}}),'');
+ assert.match(render({id:'w',status:'QUEUED',activity:{label:'Waiting for capacity',detail:'Another task is using the execution slot.'}}),/work-activity-line ">Another task is using the execution slot\.</);
+ assert.match(render({id:'w',status:'RUNNING',activity:{label:'Agent running',detail:'Agent execution is in progress.',since:'t'}}),/>Agent started 3m ago\.</);
+ assert.match(render({id:'w',status:'RUNNING',activity:{label:'Needs recovery',detail:'The agent has finished, but the workflow has not advanced.',since:'t',stalled:true}}),/work-activity-line is-stalled">The agent has finished, but the workflow has not advanced\. · 3m ago</);
+ const paused=render({id:'w',status:'PAUSED',activity:{label:'Paused',detail:'Human interrupted the active attempt',blockers:['Missing test for AC-2']}});
+ assert.match(paused,/>Human interrupted the active attempt</);assert.match(paused,/<summary>Open findings \(1\)<\/summary>/);assert.doesNotMatch(render({id:'w',status:'WAITING',activity:{label:'Waiting for you',detail:'x'}}),/Activity details/);
+ assert.doesNotMatch(source,/How to request changes|How to respond|Activity details/);
+ assert.match(source,/class="next-step-respond" onclick="respondInDashboard\(/);assert.match(source,/Or post <code>/);assert.match(source,/window\.respondInDashboard=respondInDashboard/);
+});
