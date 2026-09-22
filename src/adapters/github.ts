@@ -11,7 +11,7 @@ export interface GitHubPort {
  assignees(n:number):string[];assign(n:number,logins:string[]):void;unassign(n:number,logins:string[]):void;
  ensurePR(branch: string, title: string, body: string): string;
 }
-export interface WorkflowGitHubPort { syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,body:string):void; publishWorkflowComment(n:number,key:string,body:string):number|void; editComment?(id:number,body:string):void; }
+export interface WorkflowGitHubPort { syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,body:string):number|void; publishWorkflowComment(n:number,key:string,body:string):number|void; editComment?(id:number,body:string):void; }
 function gh(args: string[], input?: unknown) {
  const r = spawnSync(process.env.GH_COMMAND??"gh", args, { input: input === undefined ? undefined : JSON.stringify(input), encoding: "utf8", timeout: 60000, maxBuffer: 10_000_000 });
  if (r.status !== 0) throw new Error(r.stderr || r.error?.message || "gh failed"); return r.stdout.trim();
@@ -40,8 +40,9 @@ export class GitHubAdapter implements GitHubPort {
   }
   const marker=`<!-- ai-factory:workflow-status:${this.repositoryName}:${n} -->`,body=`${progress}\n\n${marker}`;
   const existing=this.comments(n).find(comment=>comment.body.includes(marker));
-  if(!existing)this.invoke(["issue","comment",String(n),"--repo",this.repositoryName,"--body",body]);
-  else if(existing.body!==body)this.invoke(["api",`repos/${this.repositoryName}/issues/comments/${existing.id}`,"--method","PATCH","--input","-"],{body});
+  if(existing){if(existing.body!==body)this.invoke(["api",`repos/${this.repositoryName}/issues/comments/${existing.id}`,"--method","PATCH","--input","-"],{body});return existing.id;}
+  this.invoke(["issue","comment",String(n),"--repo",this.repositoryName,"--body",body]);
+  const created=this.comments(n).find(comment=>comment.body.includes(marker));if(!created)throw new Error("GitHub did not return the published status comment");return created.id;
  }
  publishWorkflowComment(n:number,key:string,content:string) {
   const marker=`<!-- ai-factory:workflow-comment:${this.repositoryName}:${n}:${key} -->`;

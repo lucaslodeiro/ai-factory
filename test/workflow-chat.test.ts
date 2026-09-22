@@ -5,7 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import {Store} from "../src/storage.js";
 import {config} from "../src/config.js";
-import {workflowThread,promptArtifact,messageActions,applyMessageControl,applyInterruptRetryControl} from "../src/workflow-chat.js";
+import {workflowThread,promptArtifact,messageActions,applyMessageControl,applyInterruptRetryControl,statusPublication} from "../src/workflow-chat.js";
+import {resultPublicationKey,failurePublicationKey,statusPublicationKey} from "../src/workflow-github.js";
+import {WorkflowFailures} from "../src/workflow-failures.js";
 import {result} from "./fixtures.js";
 import {WorkflowRecords} from "../src/workflow-records.js";
 import {WorkflowRunner} from "../src/workflow-runner.js";
@@ -76,4 +78,31 @@ test("interrupt retry rejects before changing workflow state when the process do
   const executions={interrupt(){return true;}},runner={preserve(){throw new Error("must not preserve");},recordPreviousAttempt(){throw new Error("must not record");}};
   await assert.rejects(applyInterruptRetryControl(store,github as any,executions as any,runner as any,{id:41,target:JSON.stringify({workItemId:"w",action:"interrupt-retry",text:"try another path"})},"owner",5),/did not stop/);assert.equal(new WorkflowProjections(store).get("w").status,"RUNNING");assert.equal(github.edited.length,1);assert.match(github.edited[0].body,/Rejected: The active process did not stop/);
  }finally{store.db.close();config.repo=previousRepo;}
+});
+
+test("workflow thread shows each publishable milestone as pending, published with its link or failed, and the status comment lag",()=>{
+ const store=new Store(":memory:");try{
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status,presentation_revision,published_presentation_revision) VALUES('w',1,'owner/demo','now','now','{}','DESIGN','WAITING',2,1)").run();
+  store.event("agent.result",{role:"developer",result:result("pass"),specVersion:1},"w","run-build");
+  store.event("agent.result",{role:"product-architect",result:result("questions",{questions:["Which database?"]}),specVersion:1},"w","run-design");
+  const key=resultPublicationKey((store.db.prepare("SELECT MAX(id) id FROM events").get() as {id:number}).id);
+  let turns=workflowThread(store,"w");
+  assert.equal("publication" in turns[0],false);
+  assert.deepEqual(turns[1].publication,{status:"pending"});
+  store.setMetadata(key,{status:"failed",attempts:3,error:"GitHub unavailable",failedAt:"now"});
+  assert.deepEqual(workflowThread(store,"w")[1].publication,{status:"failed",attempts:3,error:"GitHub unavailable",failedAt:"now",needsAttention:true});
+  store.setMetadata(key,{status:"published",commentId:42,url:"https://github.com/owner/demo/issues/1#issuecomment-42",publishedAt:"now"});
+  assert.deepEqual(workflowThread(store,"w")[1].publication,{status:"published",commentId:42,url:"https://github.com/owner/demo/issues/1#issuecomment-42",publishedAt:"now"});
+  const failure=new WorkflowFailures(store).open({workItemId:"w",class:"execution",message:"process exited 1",stage:"DESIGN",attempt:1});
+  store.db.prepare("UPDATE work_items SET status='FAILED',active_failure_id=? WHERE id='w'").run(failure.id);
+  store.event("workflow.transition",{to:{stage:"DESIGN",status:"FAILED"},reason:{summary:"Design failed"},actor:{type:"orchestrator",id:"runner"}},"w","run-design");
+  turns=workflowThread(store,"w");assert.deepEqual(turns.at(-1)!.publication,{status:"pending"});
+  store.setMetadata(failurePublicationKey(failure.id),{status:"failed",attempts:1,error:"GitHub unavailable",failedAt:"now"});
+  assert.deepEqual(workflowThread(store,"w").at(-1)!.publication,{status:"failed",attempts:1,error:"GitHub unavailable",failedAt:"now",needsAttention:false});
+  let status=statusPublication(store,"w");assert.deepEqual({revision:status.revision,publishedRevision:status.publishedRevision,behind:status.behind,error:status.error},{revision:2,publishedRevision:1,behind:true,error:null});
+  store.setMetadata(statusPublicationKey("w"),{status:"failed",attempts:3,error:"GitHub unavailable",failedAt:"now"});
+  status=statusPublication(store,"w");assert.equal(status.error,"GitHub unavailable");assert.equal(status.attempts,3);assert.equal(status.needsAttention,true);
+  store.db.prepare("UPDATE work_items SET published_presentation_revision=2 WHERE id='w'").run();store.setMetadata(statusPublicationKey("w"),{status:"published",commentId:5,url:"https://github.com/owner/demo/issues/1#issuecomment-5",publishedAt:"now"});
+  status=statusPublication(store,"w");assert.deepEqual({behind:status.behind,url:status.url,error:status.error},{behind:false,url:"https://github.com/owner/demo/issues/1#issuecomment-5",error:null});
+ }finally{store.db.close();}
 });

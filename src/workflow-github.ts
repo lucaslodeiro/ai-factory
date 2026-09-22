@@ -41,10 +41,45 @@ function failureMarkdown(store:Store,failure:WorkflowFailure) {
  return `# ${stageName[failure.stage]} failed\n\nThe Factory preserved this stage and its work so it can be retried safely.\n\n${failureDiagnosis(reason,"",process,failure.class)}\n\n## Exact validation message\n\n\`\`\`text\n${reason}\n\`\`\`\n\n## Next action\n\nFix the reported cause, then post:\n\n\`\`\`text\n/factory retry\n\`\`\`\n\n<sub>instance:${config.instanceName}</sub>`;
 }
 
+export type WorkflowPublication={status:"published";commentId:number|null;url:string|null;publishedAt:string}|{status:"failed";attempts:number;error:string;failedAt:string}|{status:"skipped"};
+export const PUBLICATION_ATTENTION_ATTEMPTS=3;
+export const resultPublicationKey=(eventId:number)=>`github:result:${eventId}`;
+export const failurePublicationKey=(failureId:string)=>`github:failure:${failureId}`;
+export const statusPublicationKey=(workItemId:string)=>`github:status:${workItemId}`;
+export function publicationOf(store:Store,key:string):WorkflowPublication|undefined{const value=store.metadata<WorkflowPublication|boolean>(key);return value&&typeof value==="object"?value:undefined;}
+export const commentUrl=(repo:string,issue:number,commentId:number|null|undefined)=>Number.isSafeInteger(commentId)&&(commentId as number)>0?`https://github.com/${repo}/issues/${issue}#issuecomment-${commentId}`:null;
+export function isMilestoneResult(store:Store,row:{work_item_id:string;run_id:string},payload:{role:AgentRole;result:AgentResult}) {
+ if(payload.result.outcome==="decision")return true;
+ if(payload.role==="product-architect"&&["spec","questions","resolved"].includes(payload.result.outcome))return true;
+ if(payload.role==="reviewer"&&payload.result.outcome==="pass")return true;
+ if(payload.result.outcome!=="changes")return false;
+ const transition=store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND run_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(row.work_item_id,row.run_id) as {payload:string}|undefined;
+ if(!transition)return false;
+ try{return (JSON.parse(transition.payload) as {reason?:{code?:string}}).reason?.code==="correction-limit";}catch{return false;}
+}
+
 export class WorkflowGitHubPublisher {
  constructor(private store:Store,private github:Pick<RuntimeGitHub,keyof WorkflowGitHubPort>&Partial<Pick<RuntimeGitHub,"assignees"|"assign"|"unassign">>) {}
+ /** Runs one GitHub write, records its outcome under `key` and never throws: a failure is stored with its attempt count and reported once per key, then once more when it needs attention. */
+ private async attempt(target:{workItemId:string;issue:number;repo:string;key:string;kind:"status"|"result"|"failure"|"help"},write:()=>Promise<number|void>|number|void):Promise<Error|undefined>{
+  try{
+   const commentId=await write(),id=Number.isSafeInteger(commentId)&&(commentId as number)>0?commentId as number:null;
+   const url=commentUrl(target.repo,target.issue,id);
+   this.store.setMetadata(target.key,{status:"published",commentId:id,url,publishedAt:new Date().toISOString()} satisfies WorkflowPublication);
+   // Recorded so an open dashboard conversation reloads and flips the milestone from pending to published; the events feed hides it.
+   this.store.event("github.published",{issue:target.issue,key:target.key,kind:target.kind,commentId:id,url},target.workItemId);
+   return undefined;
+  }catch(error){
+   const previous=publicationOf(this.store,target.key),attempts=(previous?.status==="failed"?previous.attempts:0)+1,message=error instanceof Error?error.message:String(error);
+   this.store.setMetadata(target.key,{status:"failed",attempts,error:message,failedAt:new Date().toISOString()} satisfies WorkflowPublication);
+   const detail={issue:target.issue,key:target.key,kind:target.kind,attempts,error:message};
+   if(attempts===1)this.store.event("github.publish_failed",detail,target.workItemId);
+   if(attempts===PUBLICATION_ATTENTION_ATTEMPTS)this.store.event("github.publish_stalled",detail,target.workItemId);
+   return error instanceof Error?error:new Error(message);
+  }
+ }
  async publish(workItemId:string) {
-  const row=this.store.db.prepare("SELECT issue_number,revision,presentation_revision,published_presentation_revision,archived_at FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;revision:number;presentation_revision:number;published_presentation_revision:number|null;archived_at:string|null}|undefined;
+  const row=this.store.db.prepare("SELECT issue_number,repo,revision,presentation_revision,published_presentation_revision,archived_at FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;repo:string;revision:number;presentation_revision:number;published_presentation_revision:number|null;archived_at:string|null}|undefined;
   if(!row)throw new Error("Unknown work item");
   if(row.archived_at||row.presentation_revision<=(row.published_presentation_revision??-1))return false;
   const revision=row.revision,presentationRevision=row.presentation_revision;
@@ -63,49 +98,55 @@ export class WorkflowGitHubPublisher {
   const body=indexed ?? status;
   if(indexed===undefined&&index!==undefined){const key=`github:state-too-large:${workItemId}:${presentationRevision}`;if(!this.store.metadata(key)){this.store.event("github.state_too_large",{issue:row.issue_number,bytes:withPayload(status,index).length,revision},workItemId);this.store.setMetadata(key,true);}}
   if(clippedTo!==null&&clippedTo!==undefined){const key=`github:state-compacted:${workItemId}:${presentationRevision}`;if(!this.store.metadata(key)){this.store.event("github.state_compacted",{issue:row.issue_number,clippedTo,revision},workItemId);this.store.setMetadata(key,true);}}
-  await this.github.syncWorkflow(row.issue_number,workflowLabels(this.store,workItemId),body);
+  const error=await this.attempt({workItemId,issue:row.issue_number,repo:row.repo,key:statusPublicationKey(workItemId),kind:"status"},()=>this.github.syncWorkflow(row.issue_number,workflowLabels(this.store,workItemId),body));
+  if(error)throw error;
   this.store.db.prepare("UPDATE work_items SET published_presentation_revision=? WHERE id=? AND (published_presentation_revision IS NULL OR published_presentation_revision<?)").run(presentationRevision,workItemId,presentationRevision);
   return true;
  }
+ /** Publishes every changed status comment. One work item's failure never blocks the others; the first error is rethrown after the pass. */
  async publishChanged() {
-  let count=0;for(const row of this.store.db.prepare("SELECT id FROM work_items WHERE archived_at IS NULL AND presentation_revision>COALESCE(published_presentation_revision,-1)").all() as Array<{id:string}>)if(await this.publish(row.id))count++;return count;}
+  let count=0,first:Error|undefined;
+  for(const row of this.store.db.prepare("SELECT id FROM work_items WHERE archived_at IS NULL AND presentation_revision>COALESCE(published_presentation_revision,-1)").all() as Array<{id:string}>){
+   try{if(await this.publish(row.id))count++;}catch(error){first??=error instanceof Error?error:new Error(String(error));}
+  }
+  if(first)throw first;
+  return count;
+ }
  async publishHelp() {
-  let count=0;const rows=this.store.db.prepare("SELECT DISTINCT e.work_item_id,w.issue_number,w.archived_at FROM events e JOIN work_items w ON w.id=e.work_item_id WHERE e.type='command.help' ORDER BY e.id").all() as Array<{work_item_id:string;issue_number:number;archived_at:string|null}>;
-  for(const row of rows){const key=`github:help:${row.work_item_id}`;if(row.archived_at||this.store.metadata<boolean>(key))continue;await this.github.publishWorkflowComment(row.issue_number,"help",factoryHelpMarkdown());this.store.setMetadata(key,true);count++;}
+  let count=0,first:Error|undefined;const rows=this.store.db.prepare("SELECT DISTINCT e.work_item_id,w.issue_number,w.repo,w.archived_at FROM events e JOIN work_items w ON w.id=e.work_item_id WHERE e.type='command.help' ORDER BY e.id").all() as Array<{work_item_id:string;issue_number:number;repo:string;archived_at:string|null}>;
+  for(const row of rows){const key=`github:help:${row.work_item_id}`;if(row.archived_at||publicationOf(this.store,key)?.status==="published")continue;const error=await this.attempt({workItemId:row.work_item_id,issue:row.issue_number,repo:row.repo,key,kind:"help"},()=>this.github.publishWorkflowComment(row.issue_number,"help",factoryHelpMarkdown()));if(error)first??=error;else count++;}
+  if(first)throw first;
   return count;
  }
  async publishResults() {
-  let count=0;
-  const rows=this.store.db.prepare("SELECT e.id,e.work_item_id,e.run_id,e.payload,w.issue_number,w.archived_at,w.context FROM events e JOIN work_items w ON w.id=e.work_item_id WHERE e.type='agent.result' ORDER BY e.id").all() as Array<{id:number;work_item_id:string;run_id:string;payload:string;issue_number:number;archived_at:string|null;context:string}>;
+  let count=0,first:Error|undefined;
+  const rows=this.store.db.prepare("SELECT e.id,e.work_item_id,e.run_id,e.payload,w.issue_number,w.repo,w.archived_at,w.context FROM events e JOIN work_items w ON w.id=e.work_item_id WHERE e.type='agent.result' ORDER BY e.id").all() as Array<{id:number;work_item_id:string;run_id:string;payload:string;issue_number:number;repo:string;archived_at:string|null;context:string}>;
   for(const row of rows) {
-   if(row.archived_at||this.store.metadata<boolean>(`github:result:${row.id}`))continue;
+   const key=resultPublicationKey(row.id),current=publicationOf(this.store,key);
+   if(row.archived_at||current?.status==="published"||current?.status==="skipped")continue;
    const payload=JSON.parse(row.payload) as {role:AgentRole;result:AgentResult;specVersion:number};
-   if(!this.isMilestone(row,payload)) {this.store.setMetadata(`github:result:${row.id}`,true);continue;}
+   if(!isMilestoneResult(this.store,row,payload)) {this.store.setMetadata(key,{status:"skipped"} satisfies WorkflowPublication);continue;}
    const version=payload.specVersion||((this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(row.work_item_id) as {version:number|null}).version??0);
    const context=JSON.parse(row.context||"{}") as {pr?:string};let machine:Record<string,unknown>;
    if(payload.role==="product-architect"&&payload.result.outcome==="spec"){
     const spec=this.store.db.prepare("SELECT version,body,criteria,assessment FROM specs WHERE work_item_id=? AND version=?").get(row.work_item_id,version) as {version:number;body:string;criteria:string;assessment:string|null};machine={kind:"spec",version:spec.version,body:spec.body,criteria:JSON.parse(spec.criteria),assessment:spec.assessment?JSON.parse(spec.assessment):null};
    }else machine={kind:"result",role:payload.role,executionId:row.run_id,outcome:payload.result.outcome,findings:payload.result.findings,decisions:payload.result.decisions,coverage:payload.result.coverage,tests:payload.result.tests,changedFiles:payload.result.changedFiles,summary:payload.result.summary};
-   const marker=`result-${row.run_id}`;await this.github.publishWorkflowComment(row.issue_number,marker,withPayload(`${resultMarkdown(payload.role,payload.result,version,context.pr)}\n\n<sub>instance:${config.instanceName}</sub>`,publishedAgentData(machine)));
+   const marker=`result-${row.run_id}`;
+   const error=await this.attempt({workItemId:row.work_item_id,issue:row.issue_number,repo:row.repo,key,kind:"result"},()=>this.github.publishWorkflowComment(row.issue_number,marker,withPayload(`${resultMarkdown(payload.role,payload.result,version,context.pr)}\n\n<sub>instance:${config.instanceName}</sub>`,publishedAgentData(machine))));
+   if(error){first??=error;continue;}
    if(payload.role==="product-architect"&&payload.result.outcome==="spec"){const current=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(row.work_item_id) as {context:string},value=JSON.parse(current.context||"{}") as Record<string,unknown>,specMarkers=value.specMarkers&&typeof value.specMarkers==="object"&&!Array.isArray(value.specMarkers)?value.specMarkers as Record<string,string>:{};this.store.db.prepare("UPDATE work_items SET context=? WHERE id=?").run(JSON.stringify({...value,specMarkers:{...specMarkers,[String(version)]:marker}}),row.work_item_id);}
-   this.store.setMetadata(`github:result:${row.id}`,true);count++;
+   count++;
   }
-  return count+await this.publishFailures();
+  const failures=await this.publishFailures();
+  if(first)throw first;
+  if(failures instanceof Error)throw failures;
+  return count+failures;
  }
- private async publishFailures() {
-  let count=0;
-  const rows=this.store.db.prepare("SELECT f.id,f.work_item_id,w.issue_number,w.archived_at FROM failures f JOIN work_items w ON w.id=f.work_item_id WHERE f.resolved_at IS NULL ORDER BY f.created_at").all() as Array<{id:string;work_item_id:string;issue_number:number;archived_at:string|null}>;
+ private async publishFailures():Promise<number|Error> {
+  let count=0,first:Error|undefined;
+  const rows=this.store.db.prepare("SELECT f.id,f.work_item_id,w.issue_number,w.repo,w.archived_at FROM failures f JOIN work_items w ON w.id=f.work_item_id WHERE f.resolved_at IS NULL ORDER BY f.created_at").all() as Array<{id:string;work_item_id:string;issue_number:number;repo:string;archived_at:string|null}>;
   const failures=new WorkflowFailures(this.store);
-  for(const row of rows){const key=`github:failure:${row.id}`;if(row.archived_at||this.store.metadata<boolean>(key))continue;const failure=failures.get(row.id);if(!failure)continue;await this.github.publishWorkflowComment(row.issue_number,`failure-${row.id}`,failureMarkdown(this.store,failure));this.store.setMetadata(key,true);count++;}
-  return count;
- }
- private isMilestone(row:{work_item_id:string;run_id:string},payload:{role:AgentRole;result:AgentResult}) {
-  if(payload.result.outcome==="decision")return true;
-  if(payload.role==="product-architect"&&["spec","questions","resolved"].includes(payload.result.outcome))return true;
-  if(payload.role==="reviewer"&&payload.result.outcome==="pass")return true;
-  if(payload.result.outcome!=="changes")return false;
-  const transition=this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND run_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(row.work_item_id,row.run_id) as {payload:string}|undefined;
-  if(!transition)return false;
-  try{return (JSON.parse(transition.payload) as {reason?:{code?:string}}).reason?.code==="correction-limit";}catch{return false;}
+  for(const row of rows){const key=failurePublicationKey(row.id);if(row.archived_at||publicationOf(this.store,key)?.status==="published")continue;const failure=failures.get(row.id);if(!failure)continue;const error=await this.attempt({workItemId:row.work_item_id,issue:row.issue_number,repo:row.repo,key,kind:"failure"},()=>this.github.publishWorkflowComment(row.issue_number,`failure-${row.id}`,failureMarkdown(this.store,failure)));if(error)first??=error;else count++;}
+  return first??count;
  }
 }

@@ -25,7 +25,7 @@ import type {ExecutionManager} from "./execution-manager.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {GitHubAdapter} from "./adapters/github.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
-import {availableMessageActions,promptArtifact,workflowThread,type MessageAction} from "./workflow-chat.js";
+import {availableMessageActions,promptArtifact,workflowThread,type MessageAction,statusPublication} from "./workflow-chat.js";
 import {executionOutcomeText,workflowExecutionSummary} from "./execution-presentation.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
@@ -40,6 +40,7 @@ function daemonState(store: Store) {
   return { running:Boolean(lock && alive(lock.pid)), pid:lock?.pid ?? null };
 }
 function maintenanceCoordinator(store:Store){const executionView={isRunning:(id:string)=>Boolean(store.db.prepare("SELECT 1 FROM executions WHERE id=? AND status='running'").get(id))} as ExecutionManager;return new WorkflowMaintenance(store,executionView);}
+const publicationKindLabel=(kind:unknown)=>({status:"The issue status comment",result:"A milestone comment",failure:"A failure comment",help:"The command reference"} as Record<string,string>)[String(kind)]??"A GitHub comment";
 function maintenanceOperation(store:Store,id:string){const operation=store.db.prepare("SELECT id,operation,actor,status,requested_at,confirmed_at,finished_at,error FROM maintenance_operations WHERE id=?").get(id) as any;if(!operation)throw new Error("Unknown maintenance operation");const affected=store.db.prepare(`SELECT mi.work_item_id,mi.confirmed_revision,mi.paused_at,mi.resumed_at,w.issue_number,w.stage,w.status,w.context FROM maintenance_items mi JOIN work_items w ON w.id=mi.work_item_id WHERE mi.maintenance_id=? ORDER BY w.issue_number`).all(id) as any[];return{...operation,affected:affected.map(item=>{let context:any={};try{context=JSON.parse(item.context||"{}");}catch{}return{...item,title:context.title??`Issue #${item.issue_number}`};})};}
 function requireMaintenance(store:Store,id:string|undefined,operations:string[]){const active=(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL AND status IN ('QUEUED','RUNNING')").get() as {count:number}).count;if(!active&&!id)return;if(!id)throw Object.assign(new Error(`${active} active task${active===1?"":"s"} must be paused before this operation.`),{maintenanceRequired:true});const operation=maintenanceOperation(store,id);if(!operations.includes(operation.operation)||operation.status!=="ready")throw new Error("Maintenance confirmation is missing, expired, or not ready");}
 function json(res: http.ServerResponse, status: number, body: unknown) {
@@ -90,6 +91,8 @@ function eventPresentation(type: string, payload: string, runRole?: string) {
     if (type === "model.selected") return { title:`Model selected for ${role}`,details:`${value.selection?.model ?? "Automatic model"}${value.selection?.reason ? ` — ${value.selection.reason}` : ""}`,severity:"info",category:"Routing",brand:value.selection?.provider };
     if (type === "start.command_rejected") return { title:"Factory start command rejected",details:`Issue #${value.issueNumber ?? "?"}: ${value.reason ?? "The command was not authorized"}.`,severity:"warning",category:"Issue" };
     if (type === "github.issue_list_refreshed") return { title:"Issue list refreshed",details:`Found ${value.found ?? 0}; added ${value.added ?? 0}; updated ${value.updated ?? 0}.`,severity:"success",category:"GitHub" };
+    if (type === "github.publish_failed") return { title:"GitHub publication delayed",details:`${publicationKindLabel(value.kind)} could not be published: ${value.error ?? "unknown error"}. The Factory keeps the local record and retries on the next cycle.`,severity:"warning",category:"GitHub" };
+    if (type === "github.publish_stalled") return { title:"GitHub publication needs attention",details:`${publicationKindLabel(value.kind)} failed ${value.attempts ?? "several"} times: ${value.error ?? "unknown error"}. Check GitHub access; retries continue.`,severity:"error",category:"GitHub" };
     if (["github.issue_state_failed","github.projection_failed","github.pr_poll_failed"].includes(type)) return { title:"GitHub synchronization failed",details:value.error ?? "The operation will be retried.",severity:"error",category:"GitHub" };
     if (type === "slack.delivery_failed") return { title:"Slack notification delayed",details:"Delivery failed and was scheduled for another attempt.",severity:"warning",category:"Notification",brand:"slack" };
     if(type.startsWith("maintenance.")){const action=type.split(".")[1],titles:Record<string,string>={requested:"Maintenance requested",confirmed:"Maintenance confirmed",task_paused:"Task paused for maintenance",ready:"Tasks safely paused",started:"Maintenance started",completed:"Maintenance completed",failed:"Maintenance failed",tasks_resumed:"Paused tasks resumed"};return{title:titles[action]??"Maintenance update",details:value.error??`${value.operation??"Service operation"}${value.affected?.length!==undefined?` · ${value.affected.length} task${value.affected.length===1?"":"s"}`:""}`,severity:action==="failed"?"error":["completed","tasks_resumed"].includes(action)?"success":"warning",category:"Maintenance"};}
@@ -116,12 +119,13 @@ function dashboardOperator(store:Store){const login=store.metadata<string>("runt
 function buildSnapshot(store: Store) {
   const storedItems=(store.db.prepare("SELECT id,issue_number,repo,stage,status,attempt,revision,branch,updated_at,archived_at,context FROM work_items ORDER BY created_at").all() as any[]).map(item=>({...item,context:JSON.parse(item.context||"{}")}));
   const itemById=new Map(storedItems.map(item=>[item.id,item]));
+  const lastEventIds=new Map((store.db.prepare("SELECT work_item_id,MAX(id) id FROM events WHERE work_item_id IS NOT NULL GROUP BY work_item_id").all() as Array<{work_item_id:string;id:number}>).map(row=>[row.work_item_id,row.id]));
   const visibleItems=storedItems.filter(item=>!item.archived_at);
   const latestControls=new Map<string,{id:number;kind:string;pending:boolean;error?:string}>();
   for(const control of store.db.prepare("SELECT id,kind,target,handled FROM controls WHERE kind IN ('pause','resume','retry','cancel','message') ORDER BY id DESC").all() as Array<{id:number;kind:string;target:string;handled:number}>){let target=control.target,kind=control.kind;if(control.kind==="message")try{const message=JSON.parse(control.target) as {workItemId?:string;action?:string};target=message.workItemId??"";kind=message.action??"message";}catch{}if(!target||latestControls.has(target))continue;const failure=control.handled?store.db.prepare("SELECT payload FROM events WHERE type='control.failed' AND json_extract(payload,'$.id')=? ORDER BY id DESC LIMIT 1").get(control.id) as {payload:string}|undefined:undefined;latestControls.set(target,{id:control.id,kind,pending:!control.handled,...(failure?{error:sanitizeFailureEvidence(JSON.parse(failure.payload).error,500)}:{})});}
   const priority:Record<string,number>={WAITING:0,FAILED:1,PAUSED:2,RUNNING:3,QUEUED:4};
   const items = visibleItems.slice().sort((a,b)=>(priority[a.status]??5)-(priority[b.status]??5)||b.updated_at.localeCompare(a.updated_at)).map(item => ({
-    control:latestControls.get(item.id)??null,id:item.id,issue:item.issue_number,repo:item.repo,stage:item.stage,status:item.status,attempt:item.attempt,revision:item.revision,title:item.context.title,
+    control:latestControls.get(item.id)??null,id:item.id,issue:item.issue_number,repo:item.repo,stage:item.stage,status:item.status,attempt:item.attempt,revision:item.revision,lastEventId:lastEventIds.get(item.id)??0,title:item.context.title,
     nextStep:workflowNextStep(store,item.id,item.status,item.context.pr),activity:workflowActivity(store,item.id,item.status),actions:workActions(item.status),url:item.context.url,pr:item.context.pr??null,updatedAt:item.updated_at,continuity:item.context.continuedFrom??null,
   }));
   const executionRows=(store.db.prepare("SELECT id,work_item_id,role,stage,status,pid,started_at,finished_at,exit_code,input_tokens,output_tokens,cached_tokens,total_tokens,interruption_reason,maintenance_id FROM executions ORDER BY started_at DESC LIMIT 30").all() as any[]).filter(run=>!itemById.get(run.work_item_id)?.archived_at);
@@ -149,7 +153,7 @@ function buildSnapshot(store: Store) {
   }
   const normalize=(value:any)=>({...value,totalTokens:value.unreportedTokenRuns===value.runs ? null : value.totalTokens});
   const usage=[...usageMap.values()].map(total=>{const item=itemById.get(total.workItemId);return {...normalize(total),stages:[...total.stages.values()].map(normalize),issue:item?.issue_number ?? null,title:item?.context.title ?? "Unknown issue",url:item?.context.url ?? null};}).sort((a,b)=>(b.issue ?? 0)-(a.issue ?? 0));
-  const events = (store.db.prepare("SELECT id,ts,work_item_id,run_id,type,payload FROM events ORDER BY id DESC LIMIT 60").all() as any[])
+  const events = (store.db.prepare("SELECT id,ts,work_item_id,run_id,type,payload FROM events WHERE type<>'github.published' ORDER BY id DESC LIMIT 60").all() as any[])
     .filter(event=>!event.work_item_id||!itemById.get(event.work_item_id)?.archived_at)
     .map(event => { const item=itemById.get(event.work_item_id),presentation=eventPresentation(event.type,event.payload,runRoles.get(event.run_id)); const description=String(presentation.details ?? ""); return {
       id:event.id,ts:event.ts,workItemId:event.work_item_id,runId:event.run_id,type:event.type,...presentation,details:description.length>500 ? `${description.slice(0,497)}…` : description,
@@ -547,7 +551,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
       if (req.method === "GET" && url.pathname === "/api/services") return json(res,200,servicesView());
       if(req.method==="GET"&&url.pathname==="/api/issues/remote")return json(res,200,remoteIssuesView(store,settingsRoot));
       if(req.method==="GET"&&url.pathname.startsWith("/api/maintenance/"))return json(res,200,maintenanceOperation(store,url.pathname.split("/").at(-1)!));
-      if(req.method==="GET"&&/^\/api\/issues\/[^/]+\/thread$/.test(url.pathname)){try{const id=decodeURIComponent(url.pathname.split("/")[3]);return json(res,200,{workItemId:id,operator:dashboardOperator(store),actions:availableMessageActions(store,id),turns:workflowThread(store,id)});}catch(error){return json(res,(error as {statusCode?:number}).statusCode??500,{error:(error as Error).message});}}
+      if(req.method==="GET"&&/^\/api\/issues\/[^/]+\/thread$/.test(url.pathname)){try{const id=decodeURIComponent(url.pathname.split("/")[3]);return json(res,200,{workItemId:id,operator:dashboardOperator(store),actions:availableMessageActions(store,id),publication:statusPublication(store,id),turns:workflowThread(store,id)});}catch(error){return json(res,(error as {statusCode?:number}).statusCode??500,{error:(error as Error).message});}}
       if(req.method==="POST"&&url.pathname==="/api/maintenance"){
         const body=await readBody(req) as {operation?:MaintenanceOperation};const allowed:MaintenanceOperation[]=["update","daemon-stop","daemon-restart","uninstall","configuration-apply","user-pause"];
         if(!body.operation||!allowed.includes(body.operation))return json(res,400,{error:"Unknown maintenance operation"});return json(res,200,maintenanceCoordinator(store).request(body.operation,"dashboard"));

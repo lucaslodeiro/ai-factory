@@ -94,7 +94,9 @@ export class WorkflowOrchestrator {
  }
  async flush(){
 
-  try{await this.publisher.publishHelp();await this.publisher.publishResults();await this.publisher.publishChanged();}catch(error){this.store.event("github.projection_failed",{error:String(error)});throw error;}
+  const errors:unknown[]=[];
+  for(const step of [()=>this.publisher.publishHelp(),()=>this.publisher.publishResults(),()=>this.publisher.publishChanged()])try{await step();}catch(error){errors.push(error);}
+  if(errors.length){this.store.event("github.projection_failed",{error:errors.map(String).join("; ")});throw errors[0];}
   await deliverNotifications(this.store,this.notifications);
  }
  private async reconcileIssueVisibility(){for(const item of this.rows())try{await this.reconcileIssue(item,await this.github.issue(item.issue_number));}catch(error){if(this.issueNotFound(error)){await this.archiveDeleted(item);continue;}this.store.event("github.issue_state_failed",{issue:item.issue_number,error:String(error)},item.id);}}

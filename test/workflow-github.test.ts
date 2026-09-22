@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import { Store } from "../src/storage.js";
-import { WorkflowGitHubPublisher,payloadOf,withPayload,resultMarkdown,readIssueState,publishedText } from "../src/workflow-github.js";
+import { WorkflowGitHubPublisher,payloadOf,withPayload,resultMarkdown,readIssueState,publishedText,publicationOf,resultPublicationKey,statusPublicationKey } from "../src/workflow-github.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
 import { workflowLabels,workflowStatusMarkdown } from "../src/workflow-status.js";
@@ -230,4 +230,40 @@ test("published specifications preserve code fences, paths and whitespace throug
   assert.ok(comments[0].body.includes(body));
   const state=await readIssueState({comments:async()=>comments as any},7);assert.equal(state?.specs[0].body,body);
  }finally{config.repoDir=previous;s.store.db.close();}
+});
+
+test("a milestone that cannot be published keeps its attempts, never blocks other work items and publishes once after recovery",async()=>{
+ const s=setup();
+ try {
+  s.store.db.prepare("INSERT INTO work_items(id,issue_number,issue_id,repo,branch,created_at,updated_at,context) VALUES('work-2',8,800,'owner/demo','factory/issue-8','now','now',?)").run(JSON.stringify({title:"Second item",issueNodeId:"I_800",specMarkers:{}}));
+  s.projections.initialize("work-1","DESIGN","QUEUED");s.projections.initialize("work-2","DESIGN","QUEUED");
+  s.store.event("agent.result",{role:"product-architect",result:result("questions",{questions:["Which database?"]}),specVersion:2},"work-1","run-1");
+  s.store.event("agent.result",{role:"product-architect",result:result("questions",{questions:["Which queue?"]}),specVersion:0},"work-2","run-2");
+  const eventId=(item:string)=>(s.store.db.prepare("SELECT id FROM events WHERE type='agent.result' AND work_item_id=?").get(item) as {id:number}).id;
+  const count=(type:string,item:string)=>(s.store.db.prepare("SELECT COUNT(*) n FROM events WHERE type=? AND work_item_id=?").get(type,item) as {n:number}).n;
+  const published:string[]=[];let issue7Down=true;
+  const publisher=new WorkflowGitHubPublisher(s.store,{syncWorkflow(issue){if(issue===7&&issue7Down)throw new Error("GitHub unavailable");return issue*10;},publishWorkflowComment(issue,key){if(issue===7&&issue7Down)throw new Error("GitHub unavailable");published.push(`${issue}:${key}`);return issue*100;},assignees(){return[];},assign(){},unassign(){}});
+  await assert.rejects(async()=>await publisher.publishResults(),/GitHub unavailable/);
+  assert.deepEqual(published,["8:result-run-2"]);
+  assert.deepEqual(publicationOf(s.store,resultPublicationKey(eventId("work-2"))),{status:"published",commentId:800,url:"https://github.com/owner/demo/issues/8#issuecomment-800",publishedAt:(publicationOf(s.store,resultPublicationKey(eventId("work-2"))) as any).publishedAt});
+  const failed=publicationOf(s.store,resultPublicationKey(eventId("work-1")));
+  assert.equal(failed?.status,"failed");assert.equal((failed as any).attempts,1);assert.equal((failed as any).error,"GitHub unavailable");
+  assert.equal(count("github.publish_failed","work-1"),1);assert.equal(count("github.publish_failed","work-2"),0);
+  assert.equal(count("github.published","work-2"),1);assert.equal(count("github.published","work-1"),0);
+  assert.deepEqual(JSON.parse((s.store.db.prepare("SELECT payload FROM events WHERE type='github.published' AND work_item_id='work-2'").get() as {payload:string}).payload),{issue:8,key:resultPublicationKey(eventId("work-2")),kind:"result",commentId:800,url:"https://github.com/owner/demo/issues/8#issuecomment-800"});
+  await assert.rejects(async()=>await publisher.publishResults(),/GitHub unavailable/);await assert.rejects(async()=>await publisher.publishResults(),/GitHub unavailable/);
+  assert.equal((publicationOf(s.store,resultPublicationKey(eventId("work-1"))) as any).attempts,3);
+  assert.equal(count("github.publish_failed","work-1"),1);assert.equal(count("github.publish_stalled","work-1"),1);
+  assert.deepEqual(published,["8:result-run-2"]);
+  await assert.rejects(async()=>await publisher.publishChanged(),/GitHub unavailable/);
+  assert.equal(s.projections.get("work-2").publishedPresentationRevision,0);assert.equal(s.projections.get("work-1").publishedPresentationRevision,undefined);
+  assert.equal(publicationOf(s.store,statusPublicationKey("work-2"))?.status,"published");assert.equal(publicationOf(s.store,statusPublicationKey("work-1"))?.status,"failed");
+  issue7Down=false;
+  assert.equal(await publisher.publishResults(),1);assert.deepEqual(published,["8:result-run-2","7:result-run-1"]);
+  assert.equal(publicationOf(s.store,resultPublicationKey(eventId("work-1")))?.status,"published");assert.equal((publicationOf(s.store,resultPublicationKey(eventId("work-1"))) as any).url,"https://github.com/owner/demo/issues/7#issuecomment-700");
+  assert.equal(await publisher.publishResults(),0);assert.equal(published.length,2);
+  assert.equal(await publisher.publishChanged(),1);assert.equal(s.projections.get("work-1").publishedPresentationRevision,0);
+  assert.equal(count("github.published","work-1"),2,"one confirmation for the milestone and one for the status comment");
+  assert.deepEqual(publicationOf(s.store,statusPublicationKey("work-1")),{status:"published",commentId:70,url:"https://github.com/owner/demo/issues/7#issuecomment-70",publishedAt:(publicationOf(s.store,statusPublicationKey("work-1")) as any).publishedAt});
+ } finally {s.store.db.close();}
 });

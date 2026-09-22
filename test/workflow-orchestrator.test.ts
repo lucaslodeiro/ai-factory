@@ -129,3 +129,27 @@ test("unassignment pauses and preserves local work; reassignment resumes; termin
   new WorkflowProjections(store).transition({workItemId:row.id,expectedRevision:projection.revision,stage:projection.stage,status:"CANCELLED",actor:{type:"human",id:"owner"},source:{},reason:{code:"cancel",summary:"Cancelled"}});await orchestrator.syncRemote();assert.deepEqual(github.unassigned,["factory"]);assert.equal(github.removedLabels.at(-1),"factory-instance:local");
  }finally{store.db.close();config.repo=previousRepo;config.instanceName=previousInstance;}
 });
+
+test("flush still updates the issue status when a milestone comment cannot be published, and publishes it once GitHub recovers",async()=>{
+ const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
+ const store=new Store(":memory:"),github=new GitHub(),workspace=new Workspace();
+ const adapter:AgentAdapter={async run(request){store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return result("spec");}};
+ const runner=new WorkflowRunner(store,{"product-architect":adapter,developer:adapter,qa:adapter,reviewer:adapter},workspace,github);
+ const orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
+ const publishComment=github.publishWorkflowComment.bind(github);
+ try {
+  const started=await startAssigned(orchestrator,store);
+  github.publishWorkflowComment=()=>{throw new Error("GitHub unavailable");};
+  await orchestrator.runLocal();await orchestrator.runLocal();
+  const statusesBefore=github.statusBodies.length;
+  await assert.rejects(async()=>await orchestrator.flush(),/GitHub unavailable/);
+  assert.equal(github.resultBodies.length,0);
+  assert.equal(github.statusBodies.length,statusesBefore+1,"the status comment is published although the milestone comment failed");
+  assert.match(github.statusBodies.at(-1)!,/\/factory approve v1/);
+  assert.equal((store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='github.publish_failed' AND work_item_id=?").get(started.id) as {n:number}).n,1);
+  github.publishWorkflowComment=publishComment;
+  await orchestrator.flush();
+  assert.equal(github.resultBodies.length,1);assert.match(github.resultBodies[0],/^# Specification v1/m);
+  await orchestrator.flush();assert.equal(github.resultBodies.length,1,"a recovered milestone is published exactly once");
+ } finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
+});
