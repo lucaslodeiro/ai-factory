@@ -342,10 +342,11 @@ echo "$*" >> "$PWD/update-actions.log"
     // the daemon process while saveConfiguration waits for the old daemon PID to exit.
     store.db.prepare("DELETE FROM daemon_lock").run();
     const serviceActionsBeforeProviderCheck=fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8");
-    const cursorValidation=await fetch(`http://127.0.0.1:${port}/api/settings/validate`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({values:{DEVELOPER_PROVIDER:"cursor",CURSOR_COMMAND:fakeCursor}})});
+    // The other roles stay on Codex, and validation checks every selected provider, so it needs the fake Codex too.
+    const cursorValidation=await fetch(`http://127.0.0.1:${port}/api/settings/validate`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({values:{DEVELOPER_PROVIDER:"cursor",CURSOR_COMMAND:fakeCursor,CODEX_COMMAND:fakeCodex}})});
     const cursorValidationResult=await cursorValidation.json() as any;
     assert.equal(cursorValidation.status,400,JSON.stringify(cursorValidationResult));assert.match(cursorValidationResult.error,/Cursor is not connected.*Connect in Connections/);
-    const cursorSave=await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{DEVELOPER_PROVIDER:"cursor",CURSOR_COMMAND:fakeCursor}})});
+    const cursorSave=await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{DEVELOPER_PROVIDER:"cursor",CURSOR_COMMAND:fakeCursor,CODEX_COMMAND:fakeCodex}})});
     assert.equal(cursorSave.status,400);assert.match((await cursorSave.json() as any).error,/Cursor is not connected/);
     assert.equal(fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8"),serviceActionsBeforeProviderCheck,"a disconnected provider must not stop the daemon");
     const saved = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_POLL_INTERVAL_MS:"5000",SLACK_WEBHOOK_URL:"",AGENT_PROVIDER:"claude",DEVELOPER_MODEL:"auto"}})});
