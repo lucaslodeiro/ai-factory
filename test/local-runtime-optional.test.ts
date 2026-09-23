@@ -31,7 +31,7 @@ test("a preview server that will not start does not fail the stage",async()=>{
  let instructions="";
  const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){
   instructions=request.instructions;
-  store.db.prepare("UPDATE executions SET status='succeeded' WHERE id=?").run(request.executionId);
+  store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000 WHERE id=?").run(request.executionId);
   return value;}});
  const runtime={async ensure(){throw new Error("Factory local runtime did not become ready. See /data/x.log");},
   async stop(){},async reconcile(){},async close(){}};

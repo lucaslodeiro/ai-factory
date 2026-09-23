@@ -116,6 +116,7 @@ export class WorkflowInbox {
   if(command.kind==="approve"||command.kind==="retry")return command.guidance;
   if(command.kind==="answer"||command.kind==="note"||command.kind==="replace")return command.text;
   if(command.kind==="pause"||command.kind==="cancel")return command.reason;
+  if(command.kind==="budget")return `+${command.tokens}${command.reason?` ${command.reason}`:""}`;
   return "";
  }
  private errorMessage(error:unknown){return error instanceof Error?error.message:String(error);}

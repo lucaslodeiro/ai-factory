@@ -13,9 +13,19 @@ test("real Codex and Claude streams yield the usage they report, cached input co
  assert.deepEqual(usageOfFixture("codex","codex-complete.jsonl"),{inputTokens:180,outputTokens:60,cachedTokens:120,cacheReadTokens:120,cacheWriteTokens:0,totalTokens:360});
  // claude -p stream-json: the result envelope states the run's usage with the cache apart from input.
  assert.deepEqual(usageOfFixture("claude","claude-stream.jsonl"),{inputTokens:4,outputTokens:307,cachedTokens:22382,cacheReadTokens:11057,cacheWriteTokens:11325,totalTokens:22693});
- // An interrupted run never reached turn.completed or a result envelope: unknown, not zero.
+ // An interrupted Codex run never reached turn.completed: unknown, not zero.
  assert.equal(usageOfFixture("codex","codex-interrupted.jsonl"),null);
- assert.equal(usageOfFixture("claude","claude-interrupted.jsonl"),null);
+ // An interrupted Claude run keeps what its assistant events reported, the repeated response counted
+ // once, and says it is partial.
+ assert.deepEqual(usageOfFixture("claude","claude-interrupted.jsonl"),{inputTokens:2,outputTokens:8,cachedTokens:10083,cacheReadTokens:8865,cacheWriteTokens:1218,totalTokens:10093,partial:true});
+});
+
+test("a Claude run cut before its result counts each API response once and leaves subagents out",()=>{
+ const step={input_tokens:5,cache_read_input_tokens:1000,cache_creation_input_tokens:200,output_tokens:1};
+ const stdout=[{type:"system",subtype:"init"},{type:"assistant",message:{id:"m1",usage:step}},{type:"assistant",message:{id:"m1",usage:step}},
+  {type:"assistant",message:{id:"m2",usage:{...step,cache_read_input_tokens:1200}}},{type:"assistant",parent_tool_use_id:"t1",message:{id:"s1",usage:step}}].map(value=>JSON.stringify(value)).join("\n");
+ assert.deepEqual(usageOf("claude",stdout),{inputTokens:10,outputTokens:2,cachedTokens:2600,cacheReadTokens:2200,cacheWriteTokens:400,totalTokens:2612,partial:true});
+ assert.equal(usageOf("claude",JSON.stringify({type:"system",subtype:"init"})),null,"no reported response is unknown, not zero");
 });
 
 test("a Codex run with several turns is the sum of its turns",()=>{

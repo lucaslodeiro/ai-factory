@@ -177,8 +177,9 @@ because a value nobody measured is not an improvement.
 - **One run is not a measurement.** These are agents: the same issue varies
   between runs. Treat a difference under roughly 10% as noise until you have
   run the benchmark three times and seen the spread for yourself.
-- **Providers do not report the same things.** Codex streams one JSON object
-  per line, so its event histogram is real, but it reports only a token total
-  with no cache split and no cost. Claude returns a single envelope, so its
-  event count is always 1, but it reports turns, the cache split and a cost
-  estimate. Compare a role against itself across runs, never across providers.
+- **Providers do not report the same things.** Codex (`exec --json`) and
+  Claude (`stream-json`) both stream one JSON object per line, so both have a
+  real event histogram and report tokens with cached input apart; only Claude
+  reports turns and a cost estimate. Token totals mean the same thing for
+  both, but event counts and turns are shaped by each provider. Compare a role
+  against itself across runs, never across providers.

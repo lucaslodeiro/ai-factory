@@ -29,7 +29,7 @@ async function startAssigned(orchestrator:WorkflowOrchestrator,store:Store){stor
 test("V3 orchestrator completes Design, Build, Test, Review and merge with one authoritative CTA",async()=>{
  const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
  const store=new Store(":memory:"),github=new GitHub(),workspace=new Workspace();
- const adapter=(role:string):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return role==="architect"?result("spec"):result("pass");}});
+ const adapter=(role:string):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return role==="architect"?result("spec"):result("pass");}});
  const runner=new WorkflowRunner(store,{"product-architect":adapter("architect"),developer:adapter("builder"),qa:adapter("tester"),reviewer:adapter("reviewer")},workspace,github);
  const orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
  try {
@@ -133,7 +133,7 @@ test("unassignment pauses and preserves local work; reassignment resumes; termin
 test("flush still updates the issue status when a milestone comment cannot be published, and publishes it once GitHub recovers",async()=>{
  const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
  const store=new Store(":memory:"),github=new GitHub(),workspace=new Workspace();
- const adapter:AgentAdapter={async run(request){store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return result("spec");}};
+ const adapter:AgentAdapter={async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return result("spec");}};
  const runner=new WorkflowRunner(store,{"product-architect":adapter,developer:adapter,qa:adapter,reviewer:adapter},workspace,github);
  const orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
  const publishComment=github.publishWorkflowComment.bind(github);

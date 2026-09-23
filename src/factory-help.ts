@@ -7,6 +7,7 @@ export const factoryCommandReference=`To start work, assign the issue to the Fac
 - \`/factory note [--issue] [--for <roles>] <text>\` — add guidance without changing state. Example: \`/factory note --issue Keep dependencies minimal\`.
 - \`/factory replace <#N|id-prefix> [--issue] [--for <roles>] <text>\` — replace active guidance. Example: \`/factory replace #2 Use WebKit\`.
 - \`/factory revoke <#N|id-prefix>\` — revoke active guidance. Example: \`/factory revoke #2\`.
+- \`/factory budget +<tokens> [reason]\` — extend this issue's token budget and acknowledge runs that finished without reported usage; \`+0\` only acknowledges them. Example: \`/factory budget +250000 Larger refactor than expected\`.
 - \`/factory pause [reason]\` — pause active work; the reason is audit evidence only. Example: \`/factory pause Waiting for product review\`.
 - \`/factory cancel [reason]\` — cancel work; the reason is audit evidence only. Example: \`/factory cancel Product direction changed\`.`;
 

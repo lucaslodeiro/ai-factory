@@ -76,7 +76,9 @@ Delivery Reviewer PASS requires evidence for every approved criterion and each r
 - `decision-required`: consult Product Architect; tactical resolution follows F05, otherwise the human gate applies.
 - `defer`: record the finding in the full report; it does not block a PASS when all acceptance criteria pass.
 
-Correction cycles are bounded by configuration. Reaching the limit requires human guidance instead of an infinite retry loop.
+Correction cycles are bounded by configuration: `FACTORY_MAX_FIX_CYCLES` is the number of automatic Builder corrections (default 1; 0 asks a person at the first change request). Reaching the limit requires human guidance instead of an infinite retry loop.
+
+Each issue has a token budget (`FACTORY_ISSUE_BUDGET_TOKENS`, default 500,000): every token the providers processed for the issue, cache included, across every stage, retry and correction. It is checked before a run starts. A run in progress always finishes and its result is kept, so the budget can be exceeded by at most one run; the next run does not start and the issue waits for an authorized approver to post `/factory budget +<tokens> [reason]`. A run that finished without reported usage is never counted as zero: the issue waits until an approver acknowledges it (`+0` acknowledges without extending), unless its role is listed in `FACTORY_BUDGET_UNMETERED_ROLES`. Consumption and extensions travel with the published issue state, so continuing an issue on another installation does not reset them.
 
 ### F10 — Pull request delivery
 

@@ -284,7 +284,7 @@ The proposed spec is versioned in SQLite and posted to GitHub. Approve its exact
 
 Only configured approvers with GitHub user accounts can approve. Quoted commands, stale versions and bot comments are ignored. Every role runs in a separate fresh provider process using its configured Codex, Claude or Cursor mapping. Passing review pushes the work branch and creates a PR. The factory never merges it.
 
-Findings route automatically to Builder or Architect. Architect can resolve tactical consultations under the same approved spec without human interruption. Major changes and revised specs require a new approval. After the configured correction limit, human guidance is required. The Verification Engineer (Tester) may change files under test/tests/spec directories or files named `.test.*` / `.spec.*`; other changes fail the run for inspection. Adjust your test layout to this MVP policy.
+Findings route automatically to Builder or Architect. Architect can resolve tactical consultations under the same approved spec without human interruption. Major changes and revised specs require a new approval. `FACTORY_MAX_FIX_CYCLES` is the number of automatic Builder corrections (default 1; 0 asks at the first change request); after it, human guidance is required. The Verification Engineer (Tester) may change files under test/tests/spec directories or files named `.test.*` / `.spec.*`; other changes fail the run for inspection. Adjust your test layout to this MVP policy.
 
 ## Credentials and isolation
 
@@ -351,7 +351,23 @@ Both `activity` and `benchmark` accept a work item id, an issue number, or an id
 
 To compare one run against another, use the fixed issue in [docs/BENCHMARK.md](docs/BENCHMARK.md): two different issues measure the issues, not the factory. `ai-factory benchmark <work-item-id> --verify <checkout> --save <file>` records a baseline and `--baseline <file>` prints the deltas. `--verify` runs an independent oracle against the code the run produced; without it the cost figures are the system grading its own homework, and a comparison where either side was unverified or unresolved is refused.
 
-Providers do not report the same things. Codex streams one JSON object per line, so its event histogram is real, but it reports only a token total with no cache split and no cost. Claude returns a single envelope, so its event count is always 1, but it reports turns, the cache split and a cost estimate. Compare a role against itself across runs, never across providers.
+Providers do not report the same things. Codex (`exec --json`) and Claude (`stream-json`) both stream one JSON object per line, so both have a real event histogram and report tokens with cached input apart; only Claude reports turns and a cost estimate. Token totals mean the same thing for both, so the issue budget can compare them, but event counts and turns are shaped by each provider. Compare a role against itself across runs, never across providers.
+
+## Token budget per issue
+
+Every issue may consume `FACTORY_ISSUE_BUDGET_TOKENS` tokens (500,000 by default) across all its runs: every stage, retry, invalid-result retry and correction spends from the same budget. A token is anything the provider processed, cache reads and writes included, so a Claude run and a Codex run doing the same work spend comparable amounts.
+
+The budget is checked before each run starts. A run in progress is never cut: it finishes, its result is applied, and the next run does not start. The issue then waits with reason `budget-exhausted`, the status comment shows how much was consumed, and an authorized approver extends it:
+
+```text
+/factory budget +250000 Larger refactor than expected
+```
+
+The extension is recorded with the approver and the comment it came from. The dashboard offers **Extend token budget** in the issue conversation while the issue waits for it and after a budget warning; the command is always available in GitHub. Warnings are announced once at 60% and 80% of the granted budget, on the issue, the dashboard and Slack.
+
+A run that finished without reported usage is never counted as zero. That happens when a Codex run is cut before it finishes, when the daemon stops unexpectedly, and on every Cursor run. The issue waits with reason `budget-unknown` until an approver acknowledges it; `/factory budget +0` acknowledges without extending. A Claude run that is cut keeps the usage it streamed before the cut, recorded as partial. List roles routed to a provider that never reports usage in `FACTORY_BUDGET_UNMETERED_ROLES` (for example `builder,tester` when they run on Cursor) so they do not wait after every run.
+
+Retry, a new SPEC and continuing the issue on another installation do not reset consumption or extensions.
 
 ## After PR delivery
 

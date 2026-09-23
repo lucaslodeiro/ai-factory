@@ -17,8 +17,9 @@ GITHUB_DEFAULT_BRANCH=main
 FACTORY_APPROVERS=<your login>
 FACTORY_INSTANCE_NAME=<short name>
 FACTORY_VERIFY_COMMAND=npm test
-FACTORY_MAX_FIX_CYCLES=3
-FACTORY_EXECUTION_TIMEOUT_MS=1200000
+FACTORY_MAX_FIX_CYCLES=1
+FACTORY_EXECUTION_TIMEOUT_MS=600000
+FACTORY_ISSUE_BUDGET_TOKENS=500000
 ```
 
 Before starting:
@@ -86,14 +87,14 @@ New issue. Change the configuration before assigning it:
 
 ```
 FACTORY_VERIFY_COMMAND=sh -c 'npm test && exit 1'
-FACTORY_MAX_FIX_CYCLES=1
+FACTORY_MAX_FIX_CYCLES=0
 ```
 
 Verification now always fails, even when the tests pass.
 
 | Step | Expected |
 | --- | --- |
-| C1 | With `FACTORY_MAX_FIX_CYCLES=1`, Tester pass → verification exit 1 → **Test · Waiting** with reason `correction-limit` and a human request, before any Builder correction cycle |
+| C1 | With `FACTORY_MAX_FIX_CYCLES=0`, Tester pass → verification exit 1 → **Test · Waiting** with reason `correction-limit` and a human request, before any Builder correction |
 | C2 | The issue carries `factory:waiting`; the status comment says the limit was reached and shows the finding with `exited 1`; the item is first in the dashboard queue with its conversation open |
 | C3 | Fix the configuration (`FACTORY_VERIFY_COMMAND=npm test`), restart the daemon, and from the dashboard thread click **Send answer** with guidance such as "Verification was misconfigured; change nothing" |
 | C4 | The answer is published on the issue before the transition; the item goes to Design · Queued (`human-answer`), Architect resolves the consultation (`tactical-resolved`), and Builder continues with `correctionCycles` back to 0; the rest proceeds as in A |
@@ -103,8 +104,9 @@ What matters here is how much it cost you to understand what happened and what t
 ## 5. Interventions during a run (optional, pick two)
 
 - **Note in flight**: while Builder runs, send "Add note" with a constraint ("do not add dependencies"). Expected: the comment appears on the issue immediately; the note is in the next agent's prompt; the current execution is not interrupted.
-- **Interrupt and retry**: while Builder runs, "Interrupt and retry with this" with a correction. Expected: the execution ends, the item goes Paused `interrupted-for-guidance` and is re-queued; the new Builder prompt has a "Previous attempt" section with the files and diff stat of the cut attempt.
+- **Interrupt and retry**: while Builder runs, "Interrupt and retry with this" with a correction. Expected: the execution ends, the item goes Paused `interrupted-for-guidance` and is re-queued; the new Builder prompt has a "Previous attempt" section with the files and diff stat of the cut attempt. If that role runs on Codex, the cut run has no reported usage, so the item then waits for `/factory budget +0`; on Claude the usage streamed before the cut is kept as partial and it does not wait.
 - **Human commit on the branch**: between Build and Test, push a commit of yours to `factory/issue-<n>`. Expected: Tester syncs and includes it. Between Test and Review: Review sees a HEAD different from the verified one and returns to Test with reason `code-changed`.
+- **Budget hold**: before assigning a new issue, set `FACTORY_ISSUE_BUDGET_TOKENS` to a value below one run (for example `1000`) and restart the daemon. Expected: Architect runs and finishes, its SPEC is published, and after approval the item goes to **Build · Waiting** with reason `budget-exhausted`, a "Token budget" row in the status comment and no Builder execution. From the dashboard thread click **Extend token budget** with `+2000000 test`: the command is published on the issue with your login, and Builder starts on the next tick.
 - **Unassign and reassign**: during Build, unassign the issue. Expected: item Paused `unassigned`, instance label removed, no active execution. Reassign: the Factory restores its label and resumes where it was.
 
 ## 6. What to record

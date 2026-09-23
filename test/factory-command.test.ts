@@ -48,6 +48,6 @@ test("note and replace parse scope and human-facing role aliases",()=>{
 });
 
 test("every documented factory verb is accepted by the parser",()=>{
- const args:Record<string,string>={approve:" v1",answer:" feedback",note:" guidance",replace:" #1 guidance",revoke:" #1"};
+ const args:Record<string,string>={budget:" +1000",approve:" v1",answer:" feedback",note:" guidance",replace:" #1 guidance",revoke:" #1"};
  for(const verb of new Set([...factoryCommandReference.matchAll(/`\/factory (\w+)/g)].map(match=>match[1])))assert.equal(parseFactoryCommand(`/factory ${verb}${args[verb]??""}`)?.kind,verb);
 });

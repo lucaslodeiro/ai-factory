@@ -42,7 +42,7 @@ The prompt sits at the head of an agentic conversation, so every byte is re-read
 The result contract therefore hides the rows and rules a role cannot act on: a delivery role never sees the `spec`, `acceptanceCriteria`, `taskAssessment` or `nextRole` rows, because its schema pins all four to a single value, and the list is derived from that schema rather than maintained by hand, so prompt and schema cannot drift. Roles no longer share one byte-identical prefix. That earlier invariant saved one cache write of about 2000 tokens per execution, once and only inside the cache TTL, while a byte a role cannot use costs a cache read on every turn.
 | Read-only roles | `--sandbox read-only` | read-only tool allowlist | `--mode ask` |
 | Writing roles | `--sandbox workspace-write` with network | edit, write and shell tools | `--force` |
-| Token usage | reported on stderr | reported in the JSON envelope | not reported; executions show Unavailable |
+| Token usage | `turn.completed` in the `--json` stream; cached input is counted inside input and split out | per message in the `stream-json` stream and cumulative on the final `result` | not reported; each run needs an approver's acknowledgement unless its role is listed in `FACTORY_BUDGET_UNMETERED_ROLES` |
 | Authentication check | `codex login status` | `claude auth status` | `cursor-agent status --format json` |
 
 An invalid Cursor final message fails the execution with a readable reason instead of being re-run silently; `/factory retry` restarts it under human control.

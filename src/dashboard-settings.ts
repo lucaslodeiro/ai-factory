@@ -41,7 +41,10 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   FACTORY_POLL_INTERVAL_MS:{label:"GitHub polling interval",description:"How often the daemon checks issues and comments.",group:"service",type:"number",unit:"milliseconds",restart:"daemon"},
   FACTORY_EXECUTION_TIMEOUT_MS:{label:"Agent execution timeout",description:"Maximum duration of one agent process.",group:"workflow",type:"number",unit:"milliseconds",restart:"daemon"},
   FACTORY_VERIFY_COMMAND:{label:"Verification command",description:"Shell command the factory runs after the Tester stage. Empty disables factory verification.",group:"workflow",restart:"daemon"},
-  FACTORY_MAX_FIX_CYCLES:{label:"Automatic correction cycles",description:"Maximum Builder and Tester correction loops before human input.",group:"workflow",type:"number",unit:"cycles",restart:"daemon"},
+  FACTORY_MAX_FIX_CYCLES:{label:"Automatic corrections",description:"Builder corrections the factory makes on its own before asking for human guidance. 0 asks at the first change request.",group:"workflow",type:"number",unit:"corrections",restart:"daemon"},
+  FACTORY_VERIFY_TIMEOUT_MS:{label:"Verification timeout",description:"Maximum duration of the verification command.",group:"workflow",type:"number",unit:"milliseconds",restart:"daemon"},
+  FACTORY_ISSUE_BUDGET_TOKENS:{label:"Token budget per issue",description:"Tokens one issue may consume across every run, cache included, before an approver must extend it.",group:"workflow",type:"number",unit:"tokens",restart:"daemon"},
+  FACTORY_BUDGET_UNMETERED_ROLES:{label:"Roles without usage reporting",description:"Comma-separated roles (architect, designer, builder, tester, reviewer) allowed to run without reported token usage.",group:"workflow",restart:"daemon"},
   FACTORY_CONTEXT_BUDGET_BYTES:{label:"Default context budget",description:"Maximum prompt bytes before optional context is omitted.",group:"advanced",type:"number",unit:"bytes",restart:"daemon"},
   FACTORY_ARTIFACT_RETENTION_DAYS:{label:"Artifact retention",description:"Days to retain exact prompt and execution output after completion or cancellation. Use 0 to disable pruning.",group:"service",type:"number",unit:"days",restart:"daemon"},
   FACTORY_CONTEXT_BUDGET_OVERRIDES:{label:"Context budget overrides",description:'Optional JSON object keyed by role or "provider/model". Provider/model wins over role.',group:"advanced",restart:"daemon"},
@@ -67,7 +70,7 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   REVIEWER_PROVIDER:roleField(roleFullName("reviewer"),"reviewer",roleFullName("reviewer")),
   REVIEWER_MODEL:modelField(roleFullName("reviewer"),"reviewer"),
 };
-const fieldOrder=["SLACK_WEBHOOK_URL","GITHUB_REPOSITORY","FACTORY_REPO_DIR","GITHUB_DEFAULT_BRANCH","FACTORY_APPROVERS","FACTORY_INSTANCE_NAME","FACTORY_VERIFY_COMMAND","FACTORY_MAX_FIX_CYCLES","FACTORY_EXECUTION_TIMEOUT_MS","PRODUCT_ARCHITECT_PROVIDER","PRODUCT_ARCHITECT_MODEL","DESIGNER_PROVIDER","DESIGNER_MODEL","DEVELOPER_PROVIDER","DEVELOPER_MODEL","QA_PROVIDER","QA_MODEL","REVIEWER_PROVIDER","REVIEWER_MODEL","CODEX_COMMAND","CLAUDE_COMMAND","CURSOR_COMMAND","GIT_COMMAND","FACTORY_DATA_DIR","FACTORY_POLL_INTERVAL_MS","FACTORY_ARTIFACT_RETENTION_DAYS","FACTORY_DASHBOARD_HOST","FACTORY_DASHBOARD_PORT","FACTORY_CONTEXT_BUDGET_BYTES","FACTORY_CONTEXT_BUDGET_OVERRIDES","AGENT_SECRET_ALLOWLIST"];
+const fieldOrder=["SLACK_WEBHOOK_URL","GITHUB_REPOSITORY","FACTORY_REPO_DIR","GITHUB_DEFAULT_BRANCH","FACTORY_APPROVERS","FACTORY_INSTANCE_NAME","FACTORY_VERIFY_COMMAND","FACTORY_MAX_FIX_CYCLES","FACTORY_ISSUE_BUDGET_TOKENS","FACTORY_BUDGET_UNMETERED_ROLES","FACTORY_EXECUTION_TIMEOUT_MS","FACTORY_VERIFY_TIMEOUT_MS","PRODUCT_ARCHITECT_PROVIDER","PRODUCT_ARCHITECT_MODEL","DESIGNER_PROVIDER","DESIGNER_MODEL","DEVELOPER_PROVIDER","DEVELOPER_MODEL","QA_PROVIDER","QA_MODEL","REVIEWER_PROVIDER","REVIEWER_MODEL","CODEX_COMMAND","CLAUDE_COMMAND","CURSOR_COMMAND","GIT_COMMAND","FACTORY_DATA_DIR","FACTORY_POLL_INTERVAL_MS","FACTORY_ARTIFACT_RETENTION_DAYS","FACTORY_DASHBOARD_HOST","FACTORY_DASHBOARD_PORT","FACTORY_CONTEXT_BUDGET_BYTES","FACTORY_CONTEXT_BUDGET_OVERRIDES","AGENT_SECRET_ALLOWLIST"];
 const fieldRank=new Map(fieldOrder.map((key,index)=>[key,index]));
 
 function encode(value: string) {
@@ -77,7 +80,8 @@ function encode(value: string) {
 }
 export function validateSetting(key: string, value: string) {
   encode(value);
-  if (/_MS$/.test(key) || ["FACTORY_MAX_FIX_CYCLES","FACTORY_CONTEXT_BUDGET_BYTES"].includes(key)) {
+  if (key === "FACTORY_MAX_FIX_CYCLES" && !/^\d+$/.test(value)) throw new Error(`${key}: enter 0 or a positive integer`);
+  if (/_MS$/.test(key) || ["FACTORY_CONTEXT_BUDGET_BYTES","FACTORY_ISSUE_BUDGET_TOKENS"].includes(key)) {
     if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1) throw new Error(`${key}: enter a positive integer`);
   }
   if(key==="FACTORY_ARTIFACT_RETENTION_DAYS"&&!/^\d+$/.test(value))throw new Error(`${key} must be a nonnegative integer`);
@@ -96,6 +100,7 @@ export function validateSetting(key: string, value: string) {
   if (key === "FACTORY_APPROVERS" && value && !value.split(",").every(item => /^[a-zA-Z0-9-]+$/.test(item.trim()))) throw new Error(`${key}: use comma-separated GitHub usernames`);
   if(key==="FACTORY_INSTANCE_NAME"&&value&&!/^[a-zA-Z0-9-]{1,40}$/.test(value))throw new Error(`${key}: use at most 40 letters, numbers or hyphens`);
   if (key === "AGENT_SECRET_ALLOWLIST" && value && !value.split(",").every(item => /^[A-Za-z_][A-Za-z0-9_]*$/.test(item.trim()))) throw new Error(`${key}: use comma-separated environment variable names`);
+  if (key === "FACTORY_BUDGET_UNMETERED_ROLES" && value && !value.split(",").every(item => ["architect","designer","builder","tester","reviewer","product-architect","developer","qa"].includes(item.trim().toLowerCase()))) throw new Error(`${key}: use comma-separated roles: architect, designer, builder, tester, reviewer`);
   if (key.includes("_MODEL") && !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(value)) throw new Error(`${key}: enter a model identifier`);
   if (key.endsWith("_PROVIDER") && !["codex","claude","cursor"].includes(value)) throw new Error(`${key}: choose codex, claude or cursor`);
   if (["FACTORY_DATA_DIR","GITHUB_DEFAULT_BRANCH","CODEX_COMMAND","CLAUDE_COMMAND","CURSOR_COMMAND","GIT_COMMAND","FACTORY_DASHBOARD_HOST","FACTORY_DASHBOARD_PORT"].includes(key) && !value.trim()) throw new Error(`${key}: this value cannot be empty`);

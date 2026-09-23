@@ -1,0 +1,202 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { Store } from "../src/storage.js";
+import { config } from "../src/config.js";
+import { WorkflowIntake } from "../src/workflow-inbox.js";
+import { WorkflowRunner } from "../src/workflow-runner.js";
+import { WorkflowProjections } from "../src/workflow-projection.js";
+import { WorkflowCommands } from "../src/workflow-commands.js";
+import { WorkflowRecords } from "../src/workflow-records.js";
+import { announceBudgetWarnings, budgetState, holdForBudget } from "../src/budget.js";
+import { adoptIssueState, issueStateIndex } from "../src/workflow-state.js";
+import { parseFactoryCommand } from "../src/factory-command.js";
+import { applyMessageControl, messageActions } from "../src/workflow-chat.js";
+import { workflowStatusMarkdown } from "../src/workflow-status.js";
+import { result } from "./fixtures.js";
+import type { AgentAdapter } from "../src/adapters/agent.js";
+import type { WorkspacePort } from "../src/worktrees.js";
+
+const issue={id:300,nodeId:"I_300",number:3,title:"Budgeted",body:"Build it",url:"https://github.com/owner/demo/issues/3",state:"OPEN" as const,createdAt:"2026-09-22T00:00:00Z",updatedAt:"2026-09-22T00:00:00Z",author:{login:"owner",type:"User"}};
+const settings=(limit:number,unmetered:Array<"product-architect"|"developer"|"qa"|"reviewer">=[])=>({issueBudgetTokens:limit,budgetUnmeteredRoles:unmetered});
+
+function setup() {
+ const store=new Store(":memory:");store.setMetadata("repository_identity",{id:1,nodeId:"R_1",fullName:"owner/demo"});
+ const id=new WorkflowIntake(store).start(issue,{actor:"owner",source:"control"}).id;
+ return {store,id};
+}
+function run(store:Store,workItemId:string,role:string,tokens:number|null,options:{status?:string;partial?:boolean;id?:string}={}) {
+ const id=options.id??randomUUID();
+ store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,finished_at,total_tokens) VALUES(?,?,?,?,?,?,?,?)").run(id,workItemId,role,"BUILD",options.status??"succeeded",new Date().toISOString(),new Date().toISOString(),tokens);
+ if(options.partial)store.event("execution.finished",{status:options.status??"timed_out",usage:{totalTokens:tokens,partial:true}},workItemId,id);
+ return id;
+}
+function withBudget<T>(limit:number,unmetered:typeof config.budgetUnmeteredRoles,body:()=>T|Promise<T>) {
+ const previous={limit:config.issueBudgetTokens,unmetered:config.budgetUnmeteredRoles};config.issueBudgetTokens=limit;config.budgetUnmeteredRoles=unmetered;
+ const restore=()=>{config.issueBudgetTokens=previous.limit;config.budgetUnmeteredRoles=previous.unmetered;};
+ try{const value=body();if(value instanceof Promise)return value.finally(restore);restore();return value;}catch(error){restore();throw error;}
+}
+const unused={} as WorkspacePort;
+const neverCalled:AgentAdapter={async run(){throw new Error("A held item must not start an agent");}};
+const command=(store:Store,id:string,text:string,commentId:number)=>new WorkflowCommands(store).apply(parseFactoryCommand(text)!,{workItemId:id,login:"owner",commentId,specVersion:0});
+
+test("the budget counts every reported token and names unmeasured runs instead of counting them as zero",()=>{
+ const {store,id}=setup();
+ try {
+  run(store,id,"developer",300_000);run(store,id,"qa",120_000,{partial:true});const unknown=run(store,id,"qa",null,{status:"timed_out"});run(store,id,"reviewer",null,{status:"running"});
+  const state=budgetState(store,id,settings(500_000));
+  assert.deepEqual({consumed:state.consumed,granted:state.granted,remaining:state.remaining,percent:state.percent,runs:state.runs,partialRuns:state.partialRuns,unknownRuns:state.unknownRuns,block:state.block},
+   {consumed:420_000,granted:500_000,remaining:80_000,percent:84,runs:3,partialRuns:1,unknownRuns:[unknown],block:"unknown"});
+  assert.equal(budgetState(store,id,settings(500_000,["qa"])).block,null,"a role listed as unmetered may run without reported usage");
+  assert.equal(budgetState(store,id,settings(400_000,["qa"])).block,"exhausted");
+ } finally { store.db.close(); }
+});
+
+test("a queued item over budget waits for an approver before anything is prepared, once",async()=>withBudget(1000,[],async()=>{
+ const {store,id}=setup();
+ try {
+  run(store,id,"product-architect",1000);
+  const runner=new WorkflowRunner(store,{"product-architect":neverCalled},unused,{ensurePR(){throw new Error("unused");}});
+  assert.equal(await runner.run(id),true);
+  const projection=new WorkflowProjections(store).get(id),request=new WorkflowRecords(store).activeRequest(id);
+  assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"DESIGN",status:"WAITING"});
+  assert.equal(request?.payload.kind==="request"&&request.payload.type,"budget");
+  assert.equal(request?.payload.kind==="request"&&request.payload.budget,"exhausted");
+  assert.equal((store.db.prepare("SELECT COUNT(*) n FROM executions").get() as {n:number}).n,1,"no execution was started");
+  assert.equal(await runner.run(id),false,"a waiting item is not held twice");
+  assert.equal((store.db.prepare("SELECT COUNT(*) n FROM records WHERE kind='request'").get() as {n:number}).n,1);
+  const status=workflowStatusMarkdown(store,id);
+  assert.match(status,/1,000 of its 1,000-token budget/);assert.match(status,/\/factory budget \+<tokens>/);assert.match(status,/\| Token budget \| 100% · 1,000 of 1,000 tokens \|/);
+  assert.match((store.db.prepare("SELECT body FROM notifications ORDER BY id DESC LIMIT 1").get() as {body:string}).body,/\/factory budget \+<tokens>/);
+ } finally { store.db.close(); }
+}));
+
+test("an extension must cover what is missing, is recorded with its approver and resumes the held item",()=>withBudget(1000,[],()=>{
+ const {store,id}=setup();
+ try {
+  run(store,id,"product-architect",1500);holdForBudget(store,id,budgetState(store,id));
+  assert.throws(()=>command(store,id,"/factory budget +500",11),/extend by more than 500/);
+  assert.equal(new WorkflowProjections(store).get(id).status,"WAITING");
+  const extended=command(store,id,"/factory budget +2000 Larger than expected",12);
+  assert.equal(extended.projection.status,"QUEUED");
+  const grant=store.db.prepare("SELECT actor,source_id,payload FROM records WHERE kind='budget'").get() as {actor:string;source_id:string;payload:string};
+  assert.deepEqual({actor:grant.actor,source:grant.source_id,payload:JSON.parse(grant.payload)},{actor:"owner",source:"12",payload:{kind:"budget",tokens:2000,reason:"Larger than expected",acknowledges:[]}});
+  assert.deepEqual([budgetState(store,id).granted,budgetState(store,id).block],[3000,null]);
+ } finally { store.db.close(); }
+}));
+
+test("an unmeasured run holds the next run until acknowledged, and +0 acknowledges without extending",async()=>withBudget(500_000,[],async()=>{
+ const {store,id}=setup();
+ try {
+  run(store,id,"product-architect",null,{status:"cancelled"});
+  const runner=new WorkflowRunner(store,{"product-architect":neverCalled},unused,{ensurePR(){throw new Error("unused");}});
+  await runner.run(id);
+  const request=new WorkflowRecords(store).activeRequest(id);assert.equal(request?.payload.kind==="request"&&request.payload.budget,"unknown");
+  assert.match(workflowStatusMarkdown(store,id),/finished without reported token usage/);
+  assert.equal(command(store,id,"/factory budget +0",13).projection.status,"QUEUED");
+  const state=budgetState(store,id);assert.deepEqual([state.extended,state.unknownRuns.length,state.unacknowledgedRuns.length,state.block],[0,1,0,null]);
+ } finally { store.db.close(); }
+}));
+
+test("neither answer, pause nor retry gets past a budget hold, and retry does not reset consumption",()=>withBudget(1000,[],()=>{
+ const {store,id}=setup();
+ try {
+  run(store,id,"product-architect",1200);holdForBudget(store,id,budgetState(store,id));
+  assert.throws(()=>command(store,id,"/factory answer continue",14),/use \/factory budget/);
+  assert.equal(command(store,id,"/factory pause",15).projection.status,"PAUSED");
+  assert.equal(command(store,id,"/factory retry",16).projection.status,"WAITING","the open budget request still needs an approver");
+  assert.equal(budgetState(store,id).consumed,1200);
+ } finally { store.db.close(); }
+}));
+
+test("the run in progress finishes and keeps its result; the next stage does not start",async()=>withBudget(1000,[],async()=>{
+ const {store,id}=setup();
+ try {
+  const spec:AgentAdapter={async run(request){store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now',total_tokens=1600 WHERE id=?").run(request.executionId);return result("spec");}};
+  const runner=new WorkflowRunner(store,{"product-architect":spec},{ensure(){return "/tmp/factory-budget";},assertBranch(){},sync(){return{before:"a",after:"a",merged:[]};},publish(){},head(){return "a";},diff(){return "";},check(){},commit(){},changeSummary(){return{files:[],stat:""};},prepareReviewerContext(){return{path:"",files:[],stat:""};},cleanupReviewerContext(){}} as unknown as WorkspacePort,{ensurePR(){throw new Error("unused");}});
+  assert.equal(await runner.run(id),true);
+  assert.equal(new WorkflowProjections(store).get(id).status,"WAITING");
+  const request=new WorkflowRecords(store).activeRequest(id);assert.equal(request?.payload.kind==="request"&&request.payload.type,"spec-approval","the overrunning result was applied");
+  new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:id,login:"owner",commentId:20,specVersion:1});
+  const builder=new WorkflowRunner(store,{developer:neverCalled},unused,{ensurePR(){throw new Error("unused");}});
+  assert.equal(await builder.run(id),true);
+  const held=new WorkflowProjections(store).get(id);assert.deepEqual({stage:held.stage,status:held.status},{stage:"BUILD",status:"WAITING"});
+ } finally { store.db.close(); }
+}));
+
+test("a hold during an Architect consultation extends the request chain and returns to it",()=>withBudget(1000,[],()=>{
+ const {store,id}=setup();
+ try {
+  const records=new WorkflowRecords(store);
+  const consultation=records.create({workItemId:id,specVersion:0,scope:"spec",payload:{kind:"request",type:"tactical-decision",owner:"architect",originatingStage:"BUILD",allowedReturnStages:["BUILD"],openedAfterCommentId:0},sourceType:"orchestrator",sourceId:"c",actor:"qa"});
+  store.db.prepare("UPDATE work_items SET active_request_id=? WHERE id=?").run(consultation.id,id);
+  run(store,id,"qa",1000);holdForBudget(store,id,budgetState(store,id));
+  assert.equal(records.activeRequest(id)?.parentId,consultation.id);
+  assert.equal(command(store,id,"/factory budget +1000",21).projection.status,"QUEUED");
+  assert.equal(records.activeRequest(id)?.id,consultation.id);
+ } finally { store.db.close(); }
+}));
+
+test("a hold while the Designer owns the next step returns to the Designer after the extension",()=>withBudget(1000,[],()=>{
+ const {store,id}=setup();
+ try {
+  const records=new WorkflowRecords(store);
+  const prototype=records.create({workItemId:id,specVersion:0,scope:"spec",payload:{kind:"request",type:"prototype",owner:"designer",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:0},sourceType:"orchestrator",sourceId:"p",actor:"product-architect"});
+  store.db.prepare("UPDATE work_items SET active_request_id=? WHERE id=?").run(prototype.id,id);
+  run(store,id,"product-architect",1000);holdForBudget(store,id,budgetState(store,id));
+  assert.equal(new WorkflowProjections(store).get(id).status,"WAITING");
+  assert.equal(command(store,id,"/factory budget +1000",24).projection.status,"QUEUED");
+  assert.equal(records.activeRequest(id)?.id,prototype.id);
+ } finally { store.db.close(); }
+}));
+
+test("budget warnings are announced once per threshold and re-armed by an extension",()=>withBudget(1000,[],()=>{
+ const {store,id}=setup();
+ try {
+  run(store,id,"developer",650);assert.deepEqual(announceBudgetWarnings(store,id),[60]);assert.deepEqual(announceBudgetWarnings(store,id),[]);
+  run(store,id,"qa",200);assert.deepEqual(announceBudgetWarnings(store,id),[80]);
+  command(store,id,"/factory budget +500",22);assert.deepEqual(announceBudgetWarnings(store,id),[],"850 of 1,500 is 56%");
+  run(store,id,"qa",100);assert.deepEqual(announceBudgetWarnings(store,id),[60],"a new granted amount announces its own thresholds");
+  assert.equal((store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='budget.warning'").get() as {n:number}).n,3);
+  assert.equal((store.db.prepare("SELECT COUNT(*) n FROM notifications WHERE body LIKE '%Token budget at%'").get() as {n:number}).n,3);
+ } finally { store.db.close(); }
+}));
+
+test("consumption and extensions travel with the published issue state and are never counted twice",()=>withBudget(1000,[],()=>{
+ const {store:source,id}=setup(),target=new Store(":memory:");target.setMetadata("repository_identity",{id:1,nodeId:"R_1",fullName:"owner/demo"});
+ try {
+  run(source,id,"product-architect",400);run(source,id,"developer",null,{status:"timed_out"});command(source,id,"/factory budget +0",23);
+  source.db.prepare("UPDATE work_items SET status='PAUSED' WHERE id=?").run(id);
+  const before=budgetState(source,id),index=issueStateIndex(source,id);
+  assert.equal(index.context.budgetUsage?.length,2);
+  adoptIssueState(target,{index,specs:[]},{issue});
+  const moved=budgetState(target,id);
+  assert.deepEqual([moved.consumed,moved.unknownRuns,moved.block],[before.consumed,before.unknownRuns,null],"the acknowledgement travels with the grant record");
+  run(target,id,"developer",300);
+  adoptIssueState(source,{index:issueStateIndex(target,id),specs:[]},{issue});
+  assert.equal(budgetState(source,id).consumed,700,"runs the source already holds are not added again");
+ } finally { source.db.close();target.db.close(); }
+}));
+
+test("budget commands parse an explicit signed amount and a reason",()=>{
+ assert.deepEqual(parseFactoryCommand("/factory budget +250000 Larger refactor"),{kind:"budget",tokens:250000,reason:"Larger refactor"});
+ assert.deepEqual(parseFactoryCommand("/factory budget +0\n\nCancelled on purpose"),{kind:"budget",tokens:0,reason:"Cancelled on purpose"});
+ for(const text of ["/factory budget","/factory budget 250000","/factory budget +2.5e5","/factory budget -100"])assert.throws(()=>parseFactoryCommand(text),/token amount/);
+});
+
+test("the dashboard offers the extension while the issue waits for it or after a warning, and publishes it as a command",async()=>withBudget(1000,[],async()=>{
+ const budgetRequest={payload:{kind:"request",type:"budget",owner:"human"}} as any;
+ assert.deepEqual(messageActions({status:"WAITING"},budgetRequest),["budget"]);
+ assert.deepEqual(messageActions({status:"RUNNING"},undefined,false,true),["note","interrupt-retry","budget"]);
+ assert.deepEqual(messageActions({status:"COMPLETED"},undefined,false,true),[]);
+ const {store,id}=setup(),published:string[]=[],previous={repo:config.repo,instance:config.instanceName};config.repo="owner/demo";config.instanceName="mac";
+ try {
+  run(store,id,"developer",1000);holdForBudget(store,id,budgetState(store,id));
+  const github={publishWorkflowComment(_issue:number,_key:string,body:string){published.push(body);return 40;},editComment(){}} as any;
+  await assert.rejects(applyMessageControl(store,github,{id:1,target:JSON.stringify({workItemId:id,action:"budget",text:"lots"})},"owner"),/tokens to add/);
+  assert.equal(published.length,0,"a malformed extension is never published");
+  const applied=await applyMessageControl(store,github,{id:2,target:JSON.stringify({workItemId:id,action:"budget",text:"+5000 Needed for the migration"})},"owner");
+  assert.equal(applied.projection.status,"QUEUED");assert.match(published[0],/^\/factory budget \+5000\n\nNeeded for the migration\n\nby @owner from mac/);
+  assert.equal((store.db.prepare("SELECT source_type FROM records WHERE kind='budget'").get() as {source_type:string}).source_type,"dashboard");
+ } finally { config.repo=previous.repo;config.instanceName=previous.instance;store.db.close(); }
+}));

@@ -57,8 +57,9 @@ if(developer){
 }
 if(codex){
  fs.writeFileSync(a[a.indexOf('--output-last-message')+1],JSON.stringify(result));
+ console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:900,cached_input_tokens:600,output_tokens:40}}));
 } else {
- console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,structured_output:result}));
+ console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,structured_output:result,usage:{input_tokens:10,output_tokens:40,cache_read_input_tokens:500,cache_creation_input_tokens:100}}));
 }
 `);
  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, AI_FACTORY_HOME:root, FACTORY_DATA_DIR: data, FACTORY_REPO_DIR: repo,
@@ -94,7 +95,13 @@ if(codex){
   assert.equal(command("cancel", workId).status, 0);
   await waitFor(() => (store!.db.prepare("SELECT status FROM work_items LIMIT 1").get() as any)?.status === "CANCELLED" && (store!.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='running'").get() as any).n === 0);
   assert.equal(command("retry", workId).status, 0);
+  // The cancelled Builder run reported no usage, so the retry waits until an approver acknowledges it.
+  await waitFor(() => {const row=store!.db.prepare("SELECT stage,status FROM work_items LIMIT 1").get() as any;return row?.stage==="BUILD"&&row?.status==="WAITING";});
+  assert.equal((store.db.prepare("SELECT json_extract(payload,'$.budget') budget FROM records WHERE kind='request' AND status='open'").get() as any)?.budget,"unknown");
+  const waiting = JSON.parse(fs.readFileSync(stateFile, "utf8")); waiting.comments.push({ id: waiting.comments.length + 1, body: "/factory budget +0 Cancelled on purpose", user: { login: "owner", type: "User" } }); fs.writeFileSync(stateFile, JSON.stringify(waiting));
   await waitFor(() => {const row=store!.db.prepare("SELECT stage,status FROM work_items LIMIT 1").get() as any;return row?.stage==="DELIVERY"&&row?.status==="WAITING";});
+  const grant=store.db.prepare("SELECT actor,payload FROM records WHERE kind='budget'").get() as {actor:string;payload:string};
+  assert.equal(grant.actor,"owner");assert.equal(JSON.parse(grant.payload).acknowledges.length,1);
   assert.equal(git(origin,["rev-parse","refs/ai-factory/lease"]),obsoleteLease);
   const workRow=store.db.prepare("SELECT branch,context FROM work_items LIMIT 1").get() as {branch:string;context:string};const w={branch:workRow.branch,context:JSON.parse(workRow.context)}; assert.equal(w.context.pr, "https://example.test/pull/1");
   assert.equal(git(origin, ["show", `${w.branch}:src/greet.mjs`]), 'export const greet = name => "Hello " + name;');

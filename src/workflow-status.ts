@@ -8,6 +8,7 @@ import { roleShortName } from "./names.js";
 import type { LastCommandOutcome } from "./workflow-inbox.js";
 import { factoryCommandReference } from "./factory-help.js";
 import {config} from "./config.js";
+import {budgetState,budgetSummary,formatTokens} from "./budget.js";
 
 const stages={DESIGN:"Design",BUILD:"Build",TEST:"Test",REVIEW:"Review",DELIVERY:"Delivery"} as const;
 const stageActors={DESIGN:"Architect",BUILD:"Builder",TEST:"Tester",REVIEW:"Reviewer",DELIVERY:"Orchestrator"} as const;
@@ -20,6 +21,7 @@ const utcMinute=(value:string)=>{const date=new Date(value);return Number.isNaN(
 
 function humanRequestAction(store:Store,request:NonNullable<ReturnType<WorkflowRecords["activeRequest"]>>) {
  if(request.payload.kind!=="request"||request.payload.owner!=="human")return "";
+ if(request.payload.type==="budget"){const state=budgetState(store,request.workItemId),cause=request.payload.budget==="unknown"?`${state.unacknowledgedRuns.length||"Some"} run${state.unacknowledgedRuns.length===1?"":"s"} finished without reported token usage, so the budget cannot tell how much was spent. Acknowledge ${state.unacknowledgedRuns.length===1?"it":"them"} to continue; \`+0\` acknowledges without extending.`:`This issue has consumed ${formatTokens(state.consumed)} of its ${formatTokens(state.granted)}-token budget. The work so far is kept. Extend the budget to let the next run start.`;return `${cause}${command("/factory budget +<tokens> [reason]")}\nOnly an authorized approver can extend the budget. The extension and its reason are recorded on this issue.`;}
  if(request.payload.type==="spec-approval")return `Read the brief in the SPEC v${request.specVersion} comment: the decisions that need you, the solution and the acceptance criteria. The full specification is folded below it; you do not need to read it. When the change has significant UX impact, the prototype comment shows its screenshots; you approve both together. Post one new comment.\n\n**Approve**${command(`/factory approve v${request.specVersion} [guidance]`)}\nApproving accepts every recommendation in the brief. Optional guidance becomes a spec-scoped instruction.\n\n**Change a decision or request changes**${command("/factory answer <feedback>")}\nFeedback becomes a human decision for Architect, who proposes a new version.`;
  if(request.payload.type==="merge") {const row=store.db.prepare("SELECT context FROM work_items WHERE id=?").get(request.workItemId) as {context:string}|undefined;const pr=JSON.parse(row?.context||"{}").pr;const link=typeof pr==="string"&&/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/.test(pr)?`**[Open pull request](${pr})**\n\n`:"";return `${link}Review and merge the pull request in GitHub when it is ready, or request changes.\n\n**Merge** in GitHub.\n\n**Request changes**${command("/factory answer <changes>")}\nThe text becomes a human auto-fix finding for Builder.`;}
  if(request.payload.type==="correction-limit") {const transition=store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(request.workItemId) as {payload:string}|undefined;let noChange=false;try{noChange=JSON.parse(transition?.payload??"{}").reason?.code==="no-change-pass";}catch{}const findings=(request.payload.findingIds??[]).map(id=>new WorkflowRecords(store).get(id)).filter(record=>record?.payload.kind==="finding").slice(0,4);const details=findings.length?`\n\n**Open findings**\n${findings.map(record=>`- ${record!.payload.kind==="finding"?clipSummary(publishedText(record!.payload.evidence),360).text:""}`).join("\n")}`:"";return `${noChange?"Builder found nothing to change after the last correction request.":"Automatic correction stopped after reaching its configured limit."}${details}\n\nTell Architect how to resolve these findings.${command("/factory answer <guidance>")}\nThe text becomes a human decision for Architect.`;}
@@ -54,6 +56,7 @@ function requestLabel(request:ReturnType<WorkflowRecords["activeRequest"]>) {
  if(request.payload.type==="tactical-decision")return "Architect is deciding";
  if(request.payload.type==="prototype")return "Designer is preparing a prototype";
  if(request.payload.type==="correction-limit")return "Waiting for your correction guidance";
+ if(request.payload.type==="budget")return request.payload.budget==="unknown"?"Waiting for acknowledgement of unmeasured runs":"Waiting for a token budget extension";
  return "Waiting for merge";
 }
 
@@ -67,6 +70,7 @@ export function workflowStatusMarkdown(store:Store,workItemId:string) {
  const rows=[["Stage",stages[projection.stage]],["Status",statuses[projection.status]],["Current actor",actor],["Instance",config.instanceName],["SPEC version",spec?`v${spec}`:"Not proposed"],["Attempt",String(projection.attempt)]];
  if(request?.payload.kind==="request")rows.push(["Open request",requestLabel(request)]);
  if(failure)rows.push(["Failure",publishedText(sanitizeFailureEvidence(failure.message,240))]);
+ const budget=budgetState(store,workItemId);if(budget.runs)rows.push(["Token budget",budgetSummary(budget)]);
  if(context.pr)rows.push(["Pull request",context.pr]);
  if(context.continuedFrom)rows.push(["Continuity",`Continued from ${context.continuedFrom.instance} at revision ${context.continuedFrom.revision}`]);
  if(context.observedComments?.length)rows.push(["Approver comments since last command",`${context.observedComments.length} — use \`/factory note\` to make guidance actionable`]);

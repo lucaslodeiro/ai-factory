@@ -92,7 +92,7 @@ export class WorkflowResults {
    return {discarded:false,projection,recordIds:ids};
   }
   if(result.outcome==="changes") {
-   const current=this.projections.get(input.workItemId),cycles=current.correctionCycles+1,limited=cycles>=config.maxCycles;
+   const current=this.projections.get(input.workItemId),cycles=current.correctionCycles+1,limited=cycles>config.maxCycles;
    const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:limited?stage:"BUILD",status:limited?"WAITING":"QUEUED",actor:{type:"agent",id:input.role},source:{executionId:input.executionId},reason:{code:limited?"correction-limit":"changes",summary:limited?"Automatic correction limit reached":"Changes requested from Builder"},recordIds:ids,correctionCycles:cycles},()=>{this.resultEvent(input);createFindings();if(limited){const findingIds=ids.slice();ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"correction-limit",owner:"human",originatingStage:stage,allowedReturnStages:this.returnStages(stage),openedAfterCommentId:this.cursor(input.workItemId),findingIds},sourceType:"agent-result",sourceId:input.executionId,actor:input.role}).id);}});
    return {discarded:false,projection,recordIds:ids};
   }

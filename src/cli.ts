@@ -80,8 +80,8 @@ p.command("activity").argument("[id]").description("Per-role provider activity a
    console.log("Read vsPreviousPercent first: a role whose first run aborted early leaves a tiny baseline that makes every later run look like a regression.");
    console.log("A second Builder run that is not cheaper than the first means the role starts over every correction cycle.");
   }
-  console.log("events: JSON objects the provider wrote to stdout. A streaming provider reports many; a provider that returns one result envelope reports one.");
-  console.log("Builder receives a repository map and Tester does not. Compare them on events per run with Codex, and on turns with Claude, whose event count is always 1.");
+  console.log("events: JSON objects the provider wrote to stdout. Codex and Claude stream one per event; Cursor returns one result envelope.");
+  console.log("Builder receives a repository map and Tester does not. Compare them on events per run within one provider, and on turns with Claude.");
  } finally { s.db.close(); }
 });
 p.command("benchmark").argument("<work-item-id-or-issue-number>").option("--save <file>","Write this run as a baseline")

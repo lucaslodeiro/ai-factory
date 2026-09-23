@@ -65,8 +65,8 @@ export function summarizeActivity(rows:ActivityRow[]):RoleActivity[] {
       turns:sum("turns"),cacheReadTokens:sum("cacheReadTokens"),cacheWriteTokens:sum("cacheWriteTokens"),outputTokens:sum("outputTokens"),
       totalTokens:sum("totalTokens"),costUsd:cost===null ? null : Math.round(cost*1e6)/1e6,
       topTypes:[...types.entries()].sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0])).slice(0,4).map(([type,count])=>`${type}:${count}`).join(" ")};
-  // The objective is stated in cost, and with a provider whose event count is always 1 an
-  // events-first ordering puts every role on the same rung. Cost leads where it was reported.
+  // The objective is stated in cost, and event counts are shaped by each provider's stream, so an
+  // events-first ordering compares formats rather than work. Cost leads where it was reported.
   }).sort((a,b)=>(b.costUsd ?? 0)-(a.costUsd ?? 0) || (b.totalTokens ?? 0)-(a.totalTokens ?? 0) ||
     (b.events ?? 0)-(a.events ?? 0) || a.role.localeCompare(b.role));
 }

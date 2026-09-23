@@ -2,7 +2,7 @@ import path from "node:path";
 import os from "node:os";
 import { config as loadEnvironment } from "dotenv";
 import { factoryHome } from "./home.js";
-import { agentProviders, type AgentProvider } from "./types.js";
+import { agentProviders, type AgentProvider, type AgentRole } from "./types.js";
 const home=factoryHome();
 loadEnvironment({path:path.join(home,".env"),quiet:true});
 function positive(name: string, fallback: number) {
@@ -11,6 +11,12 @@ function positive(name: string, fallback: number) {
   return n;
 }
 function nonnegative(name:string,fallback:number){const n=Number(process.env[name]??fallback);if(!Number.isSafeInteger(n)||n<0)throw new Error(`${name} must be a nonnegative integer`);return n;}
+// Roles whose runs may finish without reported usage without pausing the issue for acknowledgement.
+// Cursor reports no usage at all, so a role routed to it would otherwise stop after every run.
+function unmeteredRoles(){
+  const names:Record<string,AgentRole>={"product-architect":"product-architect",architect:"product-architect",designer:"designer",developer:"developer",builder:"developer",qa:"qa",tester:"qa",reviewer:"reviewer"};
+  return [...new Set((process.env.FACTORY_BUDGET_UNMETERED_ROLES ?? "").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean).map(value=>{const role=names[value];if(!role)throw new Error(`FACTORY_BUDGET_UNMETERED_ROLES: unknown role ${value}; use architect, designer, builder, tester or reviewer`);return role;}))];
+}
 function model(name: string, fallback: string) {
   const value = (process.env[name] ?? fallback).trim();
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(value)) throw new Error(`${name} must be a nonempty model identifier`);
@@ -62,9 +68,13 @@ export const config = {
   dataDir: path.resolve(home,process.env.FACTORY_DATA_DIR ?? "data"),
   repoDir: process.env.FACTORY_REPO_DIR?.trim() ? path.resolve(home,process.env.FACTORY_REPO_DIR.trim()) : undefined,
   pollMs: positive("FACTORY_POLL_INTERVAL_MS", 15000),
-  timeoutMs: positive("FACTORY_EXECUTION_TIMEOUT_MS", 1800000),
+  timeoutMs: positive("FACTORY_EXECUTION_TIMEOUT_MS", 600000),
+  verifyTimeoutMs: positive("FACTORY_VERIFY_TIMEOUT_MS", 1800000),
   verifyCommand: process.env.FACTORY_VERIFY_COMMAND?.trim() || undefined,
-  maxCycles: positive("FACTORY_MAX_FIX_CYCLES", 3),
+  // Automatic Builder corrections allowed before the issue waits for human guidance.
+  maxCycles: nonnegative("FACTORY_MAX_FIX_CYCLES", 1),
+  issueBudgetTokens: positive("FACTORY_ISSUE_BUDGET_TOKENS", 500000),
+  budgetUnmeteredRoles: unmeteredRoles(),
   contextBudget:{defaultBytes:positive("FACTORY_CONTEXT_BUDGET_BYTES",200000),overrides:contextBudgetOverrides()},
   artifactRetentionDays:nonnegative("FACTORY_ARTIFACT_RETENTION_DAYS",30),
   dashboardHost: dashboardHost(),

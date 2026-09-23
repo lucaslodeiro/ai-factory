@@ -3,7 +3,10 @@ import type { AgentProvider } from "./types.js";
 // cachedTokens keeps the historical sum for the executions table. The split matters because a
 // cache write is a miss that populated the cache and a cache read is a hit: summed, an improvement
 // and a regression look identical. It rides the execution.finished event, so no schema change.
-export interface TokenUsage { inputTokens:number|null; outputTokens:number|null; cachedTokens:number|null; cacheReadTokens:number|null; cacheWriteTokens:number|null; totalTokens:number|null; }
+// `partial` marks a run that stopped before the provider stated its total: what is recorded is the
+// sum of what it had reported by then, a lower bound and never an estimate. The issue budget counts
+// it; a run with no usage at all stays unknown.
+export interface TokenUsage { inputTokens:number|null; outputTokens:number|null; cachedTokens:number|null; cacheReadTokens:number|null; cacheWriteTokens:number|null; totalTokens:number|null; partial?:boolean; }
 const number = (value:unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
 const first = (...values:unknown[]) => values.map(number).find(value=>value !== null) ?? null;
 
@@ -22,7 +25,7 @@ function usageFromObject(value:unknown): TokenUsage | null {
 
 function merge(values:TokenUsage[]) {
  if (!values.length) return null;
- const sum=(field:keyof TokenUsage)=>values.some(value=>value[field] !== null) ? values.reduce((total,value)=>total+(value[field] ?? 0),0) : null;
+ const sum=(field:Exclude<keyof TokenUsage,"partial">)=>values.some(value=>value[field] !== null) ? values.reduce((total,value)=>total+(value[field] ?? 0),0) : null;
  return {inputTokens:sum("inputTokens"),outputTokens:sum("outputTokens"),cachedTokens:sum("cachedTokens"),cacheReadTokens:sum("cacheReadTokens"),cacheWriteTokens:sum("cacheWriteTokens"),totalTokens:sum("totalTokens")};
 }
 
@@ -41,14 +44,30 @@ function codexTurnUsage(value:unknown):TokenUsage|null {
 /** Folds a provider's events, one at a time, into the usage it reported. Nothing is estimated. */
 export function tokenUsageReducer(provider: AgentProvider | undefined) {
  const turns:TokenUsage[]=[];let direct:TokenUsage|null=null,models:TokenUsage[]=[];
+ // Before its result, Claude states each API response's usage on its assistant events. Parallel tool
+ // calls repeat one response under the same message id, so each id counts once; subagent responses
+ // are left out like the result's own usage leaves them out. Their output count is only the one known
+ // when the response started, which is why a run cut before its result is partial.
+ const steps=new Map<string,TokenUsage>();
  return {
   add(event:Record<string,unknown>) {
    if (provider === "codex") { if (event.type === "turn.completed") { const usage=codexTurnUsage(event.usage); if (usage) turns.push(usage); } return; }
+   if (event.type === "assistant" && !event.parent_tool_use_id && event.message && typeof event.message === "object") {
+    const message=event.message as Record<string,unknown>,usage=typeof message.id === "string" && !steps.has(message.id) ? usageFromObject(message.usage) : null;
+    if (usage) steps.set(message.id as string,usage);
+    return;
+   }
    const usage=usageFromObject(event.usage);
    if (usage) direct=usage;
    const byModel=event.modelUsage;
    if (byModel && typeof byModel === "object") { const values=Object.values(byModel as Record<string,unknown>).map(usageFromObject).filter(Boolean) as TokenUsage[]; if (values.length) models=values; }
   },
-  result():TokenUsage|null { return provider === "codex" ? merge(turns) : direct ?? merge(models); },
+  result():TokenUsage|null {
+   if (provider === "codex") return merge(turns);
+   const stated=direct ?? merge(models);
+   if (stated) return stated;
+   const cut=merge([...steps.values()]);
+   return cut ? {...cut,partial:true} : null;
+  },
  };
 }

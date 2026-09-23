@@ -314,6 +314,21 @@ What changed with the format:
 
 Cursor is unchanged. Its CLI could not be installed from this environment (cursor.com is not reachable), and switching its format without a captured stream would be a guess.
 
+## Token budget per issue — 2026-09-23
+
+Each issue now has a token budget, 500,000 tokens by default, and the default limits changed with it: the agent timeout is 10 minutes, `FACTORY_MAX_FIX_CYCLES` means automatic Builder corrections and defaults to 1, and the verification command has its own 30-minute timeout. The values are the owner's tolerance, not a calibration: the only issue with published absolute figures, issue 6, had single Builder runs between 1.0M and 4.9M tokens, so the first issues are expected to pause at their first Builder run and be extended.
+
+The budget spends the provider-reported `totalTokens` of every run. Since the providers now stream (see "Providers stream their events" above), that total means the same thing for Codex and Claude: uncached input, cache reads, cache writes and output. What streaming did not yet give was the usage of a Claude run cut before its result. The usage reducer now keeps the usage each assistant event states, one per API response id, and records it as `partial`: a lower bound the budget counts. A Codex run still reports usage only on `turn.completed`, so a cut Codex run, like every Cursor run, has no usage. Those are never counted as zero: the issue waits for an approver's `/factory budget +0` unless the role is listed in `FACTORY_BUDGET_UNMETERED_ROLES`.
+
+Verified here:
+
+- `test/fixtures/providers/claude-interrupted.jsonl`, the real run stopped with SIGTERM, now yields 10,093 partial tokens instead of unknown. It repeats one API response under the same message id, which is counted once.
+- `npm test`: 431 tests, 430 passed. The failure, `dashboard serves readable state and queues daemon controls`, fails identically on `5cd9b5f` without this change: it requires a Codex CLI on the machine, and this environment has none.
+- The new `test/budget.test.ts` (12 tests) covers the hold before preparation, the overrun that keeps its result, insufficient and sufficient extensions, `+0` acknowledgement, answer/pause/retry not bypassing a hold, the Architect consultation chain, the Designer's pending prototype, warnings once per threshold and re-armed by an extension, continuation to another installation and back without double counting, the command parser and the dashboard action. With the runner's budget check disabled, three of them fail.
+- `test/daemon.test.ts` runs the budget end to end: a cancelled Builder run without usage makes the retry wait, and an approver comment `/factory budget +0` resumes it to delivery.
+
+Not verified against a live provider: the budget itself has not run on a real issue. The benchmark issue with Builder or Tester on Codex is the first check; compare `ai-factory activity` with the provider's usage page.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

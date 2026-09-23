@@ -17,13 +17,21 @@ import type {WorkflowRunner} from "./workflow-runner.js";
 import {diagnoseWorkItem} from "./failure-diagnostics.js";
 import {executionOutcomeText,workflowExecutionSummary} from "./execution-presentation.js";
 import {progressKey,progressWarning,type ExecutionProgress} from "./execution-progress.js";
+import {budgetState,budgetWarningThresholds} from "./budget.js";
 
 export type WorkflowThreadTurn={id:number;at:string;kind:"execution"|"event"|"human";executionId?:string;[key:string]:unknown};
-export type MessageAction="answer"|"approve"|"retry"|"note"|"interrupt-retry";
+export type MessageAction="answer"|"approve"|"retry"|"note"|"interrupt-retry"|"budget";
 type ActiveRequest=WorkflowRecord<Extract<WorkflowRecord["payload"],{kind:"request"}>>|undefined;
 
-export function messageActions(projection:Pick<WorkflowProjection,"status">,request?:ActiveRequest,canReviseSpecification=false):MessageAction[]{
+// Extending the budget is offered where it matters: when the issue waits for it, and once a budget
+// warning has been announced. It stays available as a GitHub command at any other time.
+export function messageActions(projection:Pick<WorkflowProjection,"status">,request?:ActiveRequest,canReviseSpecification=false,budgetWarned=false):MessageAction[]{
+ const actions=baseMessageActions(projection,request,canReviseSpecification);
+ return budgetWarned&&!actions.includes("budget")&&!["COMPLETED","CANCELLED"].includes(projection.status)?[...actions,"budget"]:actions;
+}
+function baseMessageActions(projection:Pick<WorkflowProjection,"status">,request?:ActiveRequest,canReviseSpecification=false):MessageAction[]{
  if(projection.status==="WAITING"&&request?.payload.kind==="request"){
+  if(request.payload.type==="budget")return["budget"];
   if(["clarification","correction-limit","merge"].includes(request.payload.type))return["answer"];
   if(request.payload.type==="spec-approval")return["approve","answer"];
  }
@@ -34,15 +42,17 @@ export function messageActions(projection:Pick<WorkflowProjection,"status">,requ
  return[];
 }
 
-export function availableMessageActions(store:Store,workItemId:string){const row=store.db.prepare("SELECT status FROM work_items WHERE id=? AND archived_at IS NULL").get(workItemId) as {status:WorkflowProjection["status"]}|undefined;if(!row)throw Object.assign(new Error("Unknown work item"),{statusCode:404});return messageActions(row,new WorkflowRecords(store).activeRequest(workItemId) as ActiveRequest,new WorkflowFailures(store).active(workItemId)?.class==="invalid-result");}
+export function availableMessageActions(store:Store,workItemId:string){const row=store.db.prepare("SELECT status FROM work_items WHERE id=? AND archived_at IS NULL").get(workItemId) as {status:WorkflowProjection["status"]}|undefined;if(!row)throw Object.assign(new Error("Unknown work item"),{statusCode:404});return messageActions(row,new WorkflowRecords(store).activeRequest(workItemId) as ActiveRequest,new WorkflowFailures(store).active(workItemId)?.class==="invalid-result",budgetState(store,workItemId).percent>=budgetWarningThresholds[0]);}
 
+function budgetMessage(text:string){const match=text.match(/^\+?\s*(\d+)(?:\s+([\s\S]*))?$/);if(!match||!Number.isSafeInteger(Number(match[1])))throw new Error("Enter the tokens to add, for example +250000, optionally followed by a reason");return{tokens:Number(match[1]),reason:(match[2]??"").trim()};}
 function messageCommand(action:Exclude<MessageAction,"interrupt-retry">,text:string,specVersion:number):FactoryCommand{
+ if(action==="budget")return{kind:"budget",...budgetMessage(text)};
  if(action==="answer")return{kind:"answer",text};
  if(action==="approve")return{kind:"approve",version:specVersion,guidance:text};
  if(action==="retry")return{kind:"retry",guidance:text,scope:"spec",appliesTo:[]};
  return{kind:"note",text,scope:"spec",appliesTo:[]};
 }
-function commandBody(action:Exclude<MessageAction,"interrupt-retry">,text:string,specVersion:number,login:string){const line=action==="approve"?`/factory approve v${specVersion}`:`/factory ${action}`;return `${line}${text?`\n\n${text}`:""}\n\nby @${login} from ${config.instanceName}`;}
+function commandBody(action:Exclude<MessageAction,"interrupt-retry">,text:string,specVersion:number,login:string){if(action==="budget"){const budget=budgetMessage(text);return `/factory budget +${budget.tokens}${budget.reason?`\n\n${budget.reason}`:""}\n\nby @${login} from ${config.instanceName}`;}const line=action==="approve"?`/factory approve v${specVersion}`:`/factory ${action}`;return `${line}${text?`\n\n${text}`:""}\n\nby @${login} from ${config.instanceName}`;}
 
 export async function applyMessageControl(store:Store,github:RuntimeGitHub,control:{id:number;target:string},login:string){
  const input=JSON.parse(control.target) as {workItemId?:string;text?:string;action?:MessageAction},workItemId=String(input.workItemId??""),text=String(input.text??"").trim(),action=input.action;

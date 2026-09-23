@@ -22,6 +22,7 @@ import {executionOutcomeText} from "./execution-presentation.js";
 import {LocalRuntimeManager} from "./local-runtime.js";
 import {browserRequired} from "./browser-runner.mjs";
 import {progressKey,type ExecutionProgress} from "./execution-progress.js";
+import {announceBudgetWarnings,budgetState,holdForBudget} from "./budget.js";
 
 export interface DeliveryPort {ensurePR(branch:string,title:string,body:string):string|Promise<string>;}
 
@@ -45,6 +46,8 @@ export class WorkflowRunner {
  async run(workItemId:string) {
   const projection=new WorkflowProjections(this.store).get(workItemId);if(projection.status!=="QUEUED")return false;
   if(projection.stage==="DELIVERY")return this.publish(workItemId);
+  // Checked before anything is prepared: a held item costs nothing, keeps its worktree and waits for an approver.
+  const issueBudget=budgetState(this.store,workItemId);if(issueBudget.block){holdForBudget(this.store,workItemId,issueBudget);return true;}
   const role=this.scheduler.role(workItemId),adapter=this.agents[role];if(!adapter)throw new Error(`No adapter configured for ${role}`);
   let started:ReturnType<WorkflowScheduler["begin"]>|undefined,preparing=true;
   let reviewerContext:ReturnType<WorkspacePort["prepareReviewerContext"]>|undefined,cwd:string|undefined;
@@ -109,7 +112,7 @@ export class WorkflowRunner {
    }
    const resultHead=this.workspaces.head(cwd);
    if(role==="qa"&&config.verifyCommand){
-    const verification=await runVerification({cwd,command:config.verifyCommand,timeoutMs:config.timeoutMs});
+    const verification=await runVerification({cwd,command:config.verifyCommand,timeoutMs:config.verifyTimeoutMs});
     verification.outputTail=sanitizeFailureEvidence(verification.outputTail);
     this.store.event("verification.completed",verification,workItemId,started.executionId);
     this.updateContext(workItemId,{verification:{head:resultHead,command:verification.command,exitCode:verification.exitCode}});
@@ -118,6 +121,7 @@ export class WorkflowRunner {
    const applied=this.results.apply({workItemId,executionId:started.executionId,role,result,head:resultHead,changedPaths:changed??[]});if(invalidResultRetry&&!applied.discarded)this.updateContext(workItemId,{},["invalidResultRetry"]);return true;
   } catch(error){if(!started){if(!preparing)throw error;this.scheduler.rejectQueued(workItemId,new Error(`Could not prepare workflow execution: ${error instanceof Error?error.message:String(error)}`),error instanceof InvalidContextError?"invalid-context":error instanceof SyncConflictError?"integration":"execution");return true;}const interrupted=this.store.db.prepare("SELECT status,interruption_reason FROM executions WHERE id=?").get(started.executionId) as {status:string;interruption_reason:string|null}|undefined;if(interrupted?.status==="interrupted"&&interrupted.interruption_reason==="interrupted-for-guidance"){this.store.event("execution.discarded",{executionId:started.executionId,reason:"Human interrupted the attempt with new guidance"},workItemId,started.executionId);return true;}if(error instanceof InvalidResultError){const current=new WorkflowProjections(this.store).get(workItemId),row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string},context=JSON.parse(row.context||"{}") as {invalidResultRetry?:{stage?:DeliveryStage;attempt?:number}};if(current.status==="RUNNING"&&current.activeRunId===started.executionId&&!(context.invalidResultRetry?.stage===current.stage&&context.invalidResultRetry.attempt===current.attempt)){const message=sanitizeFailureEvidence(error.message,1600);this.store.event("execution.invalid_result",{message},workItemId,started.executionId);this.updateContext(workItemId,{invalidResultRetry:{stage:current.stage,attempt:current.attempt,executionId:started.executionId,message}});new WorkflowProjections(this.store).transition({workItemId,expectedRevision:current.revision,stage:current.stage,status:"QUEUED",actor:{type:"orchestrator",id:"runner"},source:{executionId:started.executionId},reason:{code:"invalid-result-retry",summary:"Result rejected by the validator; retrying once with the message"}});return true;}}this.store.event("workflow.result_failed",{error:error instanceof Error?error.message:String(error)},workItemId,started.executionId);const summary=executionOutcomeText(interrupted?.status,interrupted?.interruption_reason??undefined,started.role);const progress=interrupted?.status==="timed_out"?this.store.metadata<ExecutionProgress>(progressKey(started.executionId)):undefined;const evidence=progress?` Last observable activity: ${progress.lastProgressAt??"none"}; provider events: ${progress.events}; ${progress.tool?`${progress.tool} was still running`:`last tool: ${progress.lastTool??"unknown"}`}. This does not establish whether the agent was blocked.`:"";this.scheduler.fail(workItemId,started.executionId,summary?new Error(summary+evidence):error,error instanceof InvalidContextError?"invalid-context":error instanceof InvalidResultError?"invalid-result":"execution");return true;}
   finally{
+   if(started)try{announceBudgetWarnings(this.store,workItemId);}catch(error){this.store.event("budget.warning_failed",{error:error instanceof Error?error.message:String(error)},workItemId,started.executionId);}
    if(started&&cwd&&(started.role==="developer"||started.role==="qa")){
     const execution=this.store.db.prepare("SELECT status FROM executions WHERE id=?").get(started.executionId) as {status:string}|undefined;
     if(execution&&["failed","timed_out"].includes(execution.status))try{await this.preserve(workItemId);}catch(error){this.store.event("workflow.preserve_failed",{error:sanitizeFailureEvidence(error instanceof Error?error.message:String(error),1600)},workItemId,started.executionId);}

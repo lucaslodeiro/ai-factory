@@ -2,7 +2,8 @@ import fs from "node:fs";
 import {normalizedRepository} from "./repository-setup.js";
 import { spawnSync } from "node:child_process";
 import { config } from "./config.js";
-import { agentProviders, type AgentProvider } from "./types.js";
+import { agentProviders, type AgentProvider, type AgentRole } from "./types.js";
+import { roleShortName } from "./names.js";
 import { Store } from "./storage.js";
 import { workflowProjectionProblems } from "./workflow-doctor.js";
 import {GitHubAdapter,type GitHubPort} from "./adapters/github.js";
@@ -58,5 +59,9 @@ export function doctor(existingStore?:Store,github:Pick<GitHubPort,"repository">
   console.log(`  - ${error instanceof Error ? error.message : String(error)}`);
  }
  console.log(`Slack: ${config.slackWebhook ? "configured" : "optional, disabled"}`);
+ console.log(`Token budget per issue: ${config.issueBudgetTokens.toLocaleString("en-US")} tokens`);
+ // Cursor reports no usage, so such a role would pause its issue for acknowledgement after every run.
+ const unmeasured=(Object.entries(config.roles) as Array<[AgentRole,{provider:string}]>).filter(([role,routing])=>routing.provider==="cursor"&&!config.budgetUnmeteredRoles.includes(role)).map(([role])=>roleShortName(role));
+ if(unmeasured.length)console.log(`  - ${unmeasured.join(", ")} run${unmeasured.length===1?"s":""} on Cursor, which reports no token usage: each run will wait for /factory budget +0 unless listed in FACTORY_BUDGET_UNMETERED_ROLES`);
  return ok;
 }

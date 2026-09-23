@@ -25,6 +25,7 @@ import type {ExecutionManager} from "./execution-manager.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {GitHubAdapter} from "./adapters/github.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
+import {budgetState} from "./budget.js";
 import {availableMessageActions,promptArtifact,workflowThread,workflowContinuations,type MessageAction,statusPublication} from "./workflow-chat.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
@@ -133,7 +134,8 @@ function buildSnapshot(store: Store) {
     let stage=item.stages.get(key);if(!stage){stage={state,role:run.role,runs:0,durationMs:0,inputTokens:0,outputTokens:0,cachedTokens:0,totalTokens:0,unreportedTokenRuns:0};item.stages.set(key,stage);}add(stage,run,elapsed);
   }
   const normalize=(value:any)=>({...value,totalTokens:value.unreportedTokenRuns===value.runs ? null : value.totalTokens});
-  const usage=[...usageMap.values()].map(total=>{const item=itemById.get(total.workItemId);return {...normalize(total),stages:[...total.stages.values()].map(normalize),issue:item?.issue_number ?? null,title:item?.context.title ?? "Unknown issue",url:item?.context.url ?? null};}).sort((a,b)=>(b.issue ?? 0)-(a.issue ?? 0));
+  const budgetView=(id:string)=>{const state=budgetState(store,id);return {consumed:state.consumed,granted:state.granted,extended:state.extended,percent:state.percent,unknownRuns:state.unknownRuns.length,unacknowledgedRuns:state.unacknowledgedRuns.length,partialRuns:state.partialRuns,block:state.block};};
+  const usage=[...usageMap.values()].map(total=>{const item=itemById.get(total.workItemId);return {...normalize(total),stages:[...total.stages.values()].map(normalize),issue:item?.issue_number ?? null,title:item?.context.title ?? "Unknown issue",url:item?.context.url ?? null,budget:budgetView(total.workItemId)};}).sort((a,b)=>(b.issue ?? 0)-(a.issue ?? 0));
   // System activity: everything an issue conversation does not already show. Workflow transitions, agent results,
   // executions and commands live in their issue's conversation; a new event type appears here unless it is listed.
   const events = (store.db.prepare(`SELECT id,ts,work_item_id,run_id,type,payload FROM events WHERE type NOT IN (${conversationEventTypes.map(()=>"?").join(",")}) AND type NOT LIKE 'execution.%' AND type NOT LIKE 'command.%' ORDER BY id DESC LIMIT 60`).all(...conversationEventTypes) as any[])
@@ -592,7 +594,7 @@ export function createDashboardServer(store: Store, settingsRoot = process.cwd()
         if (!["stop","cancel","retry","pause","resume","refresh-list","start-issue","claim-issue","continue-issue","message"].includes(body.kind ?? "")) return json(res,400,{error:"Unknown control"});
         if (body.kind !== "stop" && !daemonState(store).running) return json(res,409,{error:"Start the daemon before sending controls."});
         if (!["stop","refresh-list"].includes(body.kind ?? "") && !body.target) return json(res,400,{error:body.kind === "start-issue" ? "An issue number or URL is required" : "A work item or run id is required"});
-        if (["pause","resume","retry","cancel","message"].includes(body.kind??"")) {const operator=dashboardOperator(store);if(!operator.approver)return json(res,403,{error:"The authenticated GitHub operator is not an authorized approver"});try{if(body.kind==="message"){if(!body.target||!body.action||typeof body.text!=="string")throw new Error("A work item, message text and action are required");if(!availableMessageActions(store,body.target).includes(body.action))throw new Error(`Cannot ${body.action} in the current workflow state`);if(["answer","note"].includes(body.action)&&!body.text.trim())throw new Error(`${body.action} requires message text`);}else validateWorkControl(store,body.kind!,body.target!);}catch(error){return json(res,409,{error:(error as Error).message});}}
+        if (["pause","resume","retry","cancel","message"].includes(body.kind??"")) {const operator=dashboardOperator(store);if(!operator.approver)return json(res,403,{error:"The authenticated GitHub operator is not an authorized approver"});try{if(body.kind==="message"){if(!body.target||!body.action||typeof body.text!=="string")throw new Error("A work item, message text and action are required");if(!availableMessageActions(store,body.target).includes(body.action))throw new Error(`Cannot ${body.action} in the current workflow state`);if(["answer","note"].includes(body.action)&&!body.text.trim())throw new Error(`${body.action} requires message text`);if(body.action==="budget"&&!/^\+?\s*\d+(?:\s|$)/.test(body.text.trim()))throw new Error("Enter the tokens to add, for example +250000, optionally followed by a reason");}else validateWorkControl(store,body.kind!,body.target!);}catch(error){return json(res,409,{error:(error as Error).message});}}
         const target=body.kind==="message"?JSON.stringify({workItemId:body.target,text:body.text,action:body.action}):body.target??"";
         const requestId=store.request(body.kind!,target);
         return json(res,202,{ok:true,requestId,message:body.kind === "refresh-list" ? "GitHub issue refresh queued." : body.kind === "start-issue" ? "Issue start queued." : `${body.kind} queued`});

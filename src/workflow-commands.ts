@@ -4,6 +4,7 @@ import { WorkflowFailures } from "./workflow-failures.js";
 import { WorkflowProjections } from "./workflow-projection.js";
 import { WorkflowRecords } from "./workflow-records.js";
 import {assertExecutionStopped} from "./execution-manager.js";
+import {budgetState,formatTokens} from "./budget.js";
 
 export interface CommandContext { workItemId:string;login:string;commentId:number;specVersion:number; }
 
@@ -74,6 +75,7 @@ export class WorkflowCommands {
     });
     return {projection:result,recordIds:ids};
    }
+   if(request.payload.kind==="request"&&request.payload.type==="budget")throw new Error("This issue is waiting for a token budget extension; use /factory budget +<tokens>");
    if(!["clarification","correction-limit"].includes(request.payload.kind==="request"?request.payload.type:""))throw new Error(`Request ${request.id} cannot be answered with /factory answer`);
    const ids:string[]=[request.id];
    const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:"DESIGN",status:"QUEUED",actor,source,reason:{code:"human-answer",summary:"Human guidance recorded"},recordIds:ids,correctionCycles:0},()=>{
@@ -92,6 +94,22 @@ export class WorkflowCommands {
     if(command.guidance)ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:command.scope,appliesTo:command.appliesTo,payload:{kind:"instruction",text:command.guidance},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
     if(failure)this.failures.resolve(failure.id,`comment:${context.commentId}`);
    });
+   return {projection:result,recordIds:ids};
+  }
+  if(command.kind==="budget") {
+   this.requireMutable(current.status,command.kind);
+   const before=budgetState(this.store,context.workItemId),request=this.records.activeRequest(context.workItemId);
+   const waiting=request?.payload.kind==="request"&&request.payload.type==="budget"&&request.payload.owner==="human";
+   // Resuming only to pause again on the next tick helps nobody: say how much is still missing.
+   if(waiting&&before.consumed>=before.granted+command.tokens)throw new Error(`The extension is not enough: ${formatTokens(before.consumed)} of ${formatTokens(before.granted)} tokens are consumed, so extend by more than ${formatTokens(before.consumed-before.granted)}`);
+   const ids:string[]=[],create=()=>{ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:"issue",payload:{kind:"budget",tokens:command.tokens,reason:command.reason,acknowledges:before.unknownRuns},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);};
+   const summary=`Token budget extended by ${formatTokens(command.tokens)} to ${formatTokens(before.granted+command.tokens)}${before.unknownRuns.length?`; ${before.unknownRuns.length} run${before.unknownRuns.length===1?"":"s"} without reported usage acknowledged`:""}`;
+   if(waiting&&current.status==="WAITING"){
+    ids.push(request.id);
+    const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:current.stage,status:"QUEUED",actor,source,reason:{code:"budget-extended",summary},recordIds:ids},()=>{create();this.records.resolveRequest(request.id);});
+    return {projection:result,recordIds:ids};
+   }
+   const result=this.projections.present({workItemId:context.workItemId,expectedRevision:current.revision,actor,source,reason:{code:"budget-extended",summary},recordIds:ids},()=>{create();if(waiting)this.records.resolveRequest(request.id);});
    return {projection:result,recordIds:ids};
   }
   if(command.kind==="pause") {

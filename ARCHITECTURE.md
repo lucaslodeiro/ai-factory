@@ -22,6 +22,8 @@ The Architect assesses `uxImpact` as none, minor or significant. Only significan
 
 Findings can return to Builder, request an Architect tactical decision, or be explicitly deferred. A tactical decision retains the approved SPEC and can return only to an allowed unfinished stage. Automatic correction cycles are bounded.
 
+Each issue has a token budget. `WorkflowRunner` checks it before preparing a run; an exhausted budget, or a finished run without reported usage that nobody acknowledged, moves the queued item to `WAITING` with a human `budget` request instead of starting an agent. A run in progress always finishes. Approvers extend the budget with `/factory budget +<tokens>`, stored as a `budget` record; consumption is the sum of each execution's provider-reported total and travels with the published issue state keyed by execution id.
+
 ## Authoritative data
 
 SQLite is authoritative. `work_items` stores the current projection and monotonic revision. Typed `records` store instructions, decisions, findings and requests with provenance and lifecycle. `failures`, immutable SPEC versions, executions, maintenance operations, outboxes and audit events remain separate durable concepts. Runtime never rebuilds state by replaying events.

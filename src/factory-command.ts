@@ -10,7 +10,8 @@ export type FactoryCommand=
  | {kind:"replace";recordId:string;text:string;scope:RecordScope;appliesTo:AgentRole[]}
  | {kind:"revoke";recordId:string}
  | {kind:"pause";reason:string}
- | {kind:"cancel";reason:string};
+ | {kind:"cancel";reason:string}
+ | {kind:"budget";tokens:number;reason:string};
 
 const roles:Record<string,AgentRole>={architect:"product-architect",designer:"designer",builder:"developer",tester:"qa",reviewer:"reviewer"};
 
@@ -52,6 +53,12 @@ export function parseFactoryCommand(body:string):FactoryCommand|null {
  if (cancel) return {kind:"cancel",reason:[cancel[1]??"",payload].filter(Boolean).join("\n").trim()};
  const approve=commandLine.match(/^\/factory approve v(\d+)(?:\s+(.*))?$/);
  if (approve) return {kind:"approve",version:Number(approve[1]),guidance:[approve[2]??"",payload].filter(Boolean).join("\n").trim()};
+ const budget=commandLine.match(/^\/factory budget(?:\s+(.*))?$/);
+ if (budget) {
+  const amount=(budget[1]??"").match(/^\+(\d+)(?:\s+(.*))?$/);
+  if(!amount||!Number.isSafeInteger(Number(amount[1])))throw new Error("/factory budget requires a token amount such as +250000");
+  return {kind:"budget",tokens:Number(amount[1]),reason:[amount[2]??"",payload].filter(Boolean).join("\n").trim()};
+ }
  const revoke=commandLine.match(/^\/factory revoke (#[1-9]\d*|[a-zA-Z0-9-]+)$/);
  if (revoke) return {kind:"revoke",recordId:revoke[1]};
  const note=commandLine.match(/^\/factory note(?:\s+(.*))?$/);

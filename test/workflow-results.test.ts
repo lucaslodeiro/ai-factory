@@ -75,8 +75,9 @@ test("Architect supersedes only active decision record ids",()=>{
  }finally{s.store.db.close();}
 });
 
-test("correction cycles count changes, stop at the limit and preserve the tactical route after human guidance",()=>{
- const previous=config.maxCycles;config.maxCycles=2;
+test("the correction limit is the number of automatic Builder corrections, and human guidance keeps the tactical route",()=>{
+ // One automatic correction: the first change request goes back to Builder, the second waits for a person.
+ const previous=config.maxCycles;config.maxCycles=1;
  const s=setup("TEST",true);
  try {
   running(s,"qa","run-1");

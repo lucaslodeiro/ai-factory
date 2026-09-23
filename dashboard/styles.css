@@ -131,7 +131,10 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .usage-head a { color:var(--text); font-weight:750; text-decoration:none }
 .usage-head a,.usage-head strong { overflow-wrap:anywhere }
 .usage-head small,.usage-table-wrap small { color:var(--muted); font-size:.65rem }
-.usage-head dl { display:grid; grid-template-columns:repeat(3,minmax(6rem,1fr)); gap:.55rem; margin:0 }
+.usage-head dl { display:grid; grid-template-columns:repeat(4,minmax(6rem,1fr)); gap:.55rem; margin:0 }
+.budget-cell small { display:block; margin-top:.1rem }
+.budget-warning dd { color:var(--warn) }
+.budget-blocked dd,.budget-blocked small { color:var(--danger) }
 .usage-head dl div { min-width:6rem; padding:.55rem .7rem; text-align:center; background:var(--panel); border:1px solid var(--line); border-radius:9px }
 .usage-head dt { color:var(--muted); font-size:.58rem; font-weight:700; letter-spacing:.07em; text-transform:uppercase }
 .usage-head dd { margin:.18rem 0 0; font-size:.9rem; font-weight:800 }
