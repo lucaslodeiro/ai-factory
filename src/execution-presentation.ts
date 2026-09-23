@@ -7,7 +7,7 @@ function subject(role?:AgentRole){return role?`${roleShortName(role)} execution`
 export function executionOutcomeText(status?:string,reason?:string,role?:AgentRole){
  const execution=subject(role);
  if(status==="timed_out")return `${execution} exceeded its time limit. The Factory stopped the process before it completed.`;
- if(reason==="token-budget-limit")return `${execution} reached 125% of the issue token budget. The Factory stopped it and preserved its work.`;
+ if(reason==="token-budget-limit")return `${execution} reached 125% of the issue's cost-weighted token budget. The Factory stopped it and preserved its work.`;
  if(reason==="unexpected-shutdown")return `The Factory stopped unexpectedly while ${execution.toLowerCase()} was running. Retry to continue from preserved work.`;
  if(reason==="host-interrupted")return `The machine interrupted ${execution.toLowerCase()}. Retry to continue from preserved work.`;
  if(status==="cancelled"||reason==="user-cancel")return `${execution} was cancelled by a user.`;

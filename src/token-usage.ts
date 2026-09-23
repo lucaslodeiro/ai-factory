@@ -7,6 +7,17 @@ import type { AgentProvider } from "./types.js";
 // sum of what it had reported by then, a lower bound and never an estimate. The issue budget counts
 // it; a run with no usage at all stays unknown.
 export interface TokenUsage { inputTokens:number|null; outputTokens:number|null; cachedTokens:number|null; cacheReadTokens:number|null; cacheWriteTokens:number|null; totalTokens:number|null; partial?:boolean; }
+/** Input-token equivalents approximate provider charges; cached reads are discounted, not free. */
+export function billableTokenUnits(usage:Partial<TokenUsage>|null|undefined,provider?:AgentProvider|null):number|null {
+ if(!usage||usage.totalTokens===null||usage.totalTokens===undefined)return null;
+ if(!provider)return Math.round(usage.totalTokens); // older runs did not preserve the provider
+ if(provider==="cursor")return null; // Cursor CLI does not publish a reliable billable usage split
+ if(usage.inputTokens===null||usage.inputTokens===undefined||usage.outputTokens===null||usage.outputTokens===undefined)return Math.round(usage.totalTokens);
+ if(usage.cacheReadTokens===null||usage.cacheReadTokens===undefined||usage.cacheWriteTokens===null||usage.cacheWriteTokens===undefined)return Math.ceil(usage.inputTokens+5*usage.outputTokens);
+ // Claude CLI currently writes a one-hour cache (2x). OpenAI cache writes are ordinary input;
+ // both providers discount cached reads. These are cost proxies, not model-specific invoices.
+ return Math.ceil(usage.inputTokens+5*usage.outputTokens+0.1*usage.cacheReadTokens+(provider==="claude"?2:1)*usage.cacheWriteTokens);
+}
 const number = (value:unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
 const first = (...values:unknown[]) => values.map(number).find(value=>value !== null) ?? null;
 

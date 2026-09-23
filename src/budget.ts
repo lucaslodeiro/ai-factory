@@ -3,9 +3,11 @@ import type { Store } from "./storage.js";
 import type { AgentRole } from "./types.js";
 import { WorkflowProjections } from "./workflow-projection.js";
 import { WorkflowRecords } from "./workflow-records.js";
+import {billableTokenUnits,type TokenUsage} from "./token-usage.js";
 
-// The issue budget counts every token the providers processed for an issue, cache included, across
-// every stage, retry and correction. It is checked before a run starts and never interrupts one:
+// The issue budget uses cost-weighted input-token equivalents across every stage, retry and
+// correction. Cache reads count at their discounted rate. It is checked before a run starts and
+// gives an active execution the configured grace period:
 // the run in progress finishes and its result is kept, so the budget can be exceeded by at most one
 // run. A run that finished without reported usage is not counted as zero; the issue waits until an
 // approver acknowledges it, unless its role is listed as unmetered.
@@ -43,8 +45,13 @@ export function budgetLedger(store:Store,workItemId:string):BudgetEntry[] {
  const ledger=new Map<string,BudgetEntry>();
  for (const entry of Array.isArray(carried) ? carried : []) if (validBudgetEntry(entry)) ledger.set(entry.executionId,entry);
  const partial=new Set((store.db.prepare("SELECT run_id FROM events WHERE work_item_id=? AND type='execution.finished' AND json_extract(payload,'$.usage.partial')=1").all(workItemId) as Array<{run_id:string}>).map(item=>item.run_id));
- for (const run of store.db.prepare("SELECT id,role,total_tokens FROM executions WHERE work_item_id=? AND status<>'running' ORDER BY started_at").all(workItemId) as Array<{id:string;role:string;total_tokens:number|null}>)
-  ledger.set(run.id,{executionId:run.id,role:run.role,tokens:tokens(run.total_tokens),partial:partial.has(run.id)});
+ for (const run of store.db.prepare("SELECT id,role,total_tokens FROM executions WHERE work_item_id=? AND status<>'running' ORDER BY started_at").all(workItemId) as Array<{id:string;role:string;total_tokens:number|null}>){
+  const event=store.db.prepare("SELECT payload FROM events WHERE run_id=? AND type='execution.finished' ORDER BY id DESC LIMIT 1").get(run.id) as {payload:string}|undefined;
+  const start=store.db.prepare("SELECT payload FROM events WHERE run_id=? AND type='execution.started' ORDER BY id LIMIT 1").get(run.id) as {payload:string}|undefined;
+  const provider=start?(JSON.parse(start.payload) as {selection?:{provider?:string}}).selection?.provider:undefined;
+  const usage=event?(JSON.parse(event.payload) as {usage?:Partial<TokenUsage>}).usage:undefined;
+  ledger.set(run.id,{executionId:run.id,role:run.role,tokens:provider==="cursor"?null:billableTokenUnits(usage,provider as "claude"|"codex"|undefined)??tokens(run.total_tokens),partial:partial.has(run.id)});
+ }
  return [...ledger.values()];
 }
 

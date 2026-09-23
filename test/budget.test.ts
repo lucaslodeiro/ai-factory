@@ -9,6 +9,7 @@ import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowCommands } from "../src/workflow-commands.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
 import { announceBudgetWarnings, budgetState, holdForBudget, liveBudget } from "../src/budget.js";
+import {billableTokenUnits} from "../src/token-usage.js";
 
 test("a running agent gets a 25% grace after the issue budget alert",()=>{
  assert.deepEqual(liveBudget(500000,0,null),{consumed:null,percent:null,alert:false,stop:false});
@@ -16,6 +17,25 @@ test("a running agent gets a 25% grace after the issue budget alert",()=>{
  assert.deepEqual(liveBudget(500000,0,500000),{consumed:500000,percent:100,alert:true,stop:false});
  assert.equal(liveBudget(500000,100000,524999).stop,false);
  assert.equal(liveBudget(500000,100000,525000).stop,true);
+});
+test("the issue limit weights provider-reported cache reads instead of charging them as new input",()=>{
+ const usage={inputTokens:24,outputTokens:98,cacheReadTokens:587566,cacheWriteTokens:82797,totalTokens:670485};
+ const weighted=billableTokenUnits(usage,"claude")!;
+ assert.equal(weighted,224865);
+ const {store,id}=setup();
+ try{
+  const execution=run(store,id,"product-architect",usage.totalTokens);
+  store.event("execution.started",{selection:{provider:"claude"}},id,execution);
+  store.event("execution.finished",{status:"cancelled",usage},id,execution);
+  assert.equal(budgetState(store,id,settings(500000)).consumed,weighted);
+  assert.equal(budgetState(store,id,settings(500000)).block,null);
+ }finally{store.db.close();}
+});
+test("budget weights cache writes per provider and leaves Cursor runs unmeasured",()=>{
+ const usage={inputTokens:10,outputTokens:2,cacheReadTokens:100,cacheWriteTokens:20,totalTokens:132};
+ assert.equal(billableTokenUnits(usage,"claude"),70);
+ assert.equal(billableTokenUnits(usage,"codex"),50);
+ assert.equal(billableTokenUnits(usage,"cursor"),null);
 });
 import { adoptIssueState, issueStateIndex } from "../src/workflow-state.js";
 import { parseFactoryCommand } from "../src/factory-command.js";

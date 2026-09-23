@@ -1,4 +1,5 @@
-import {failureDiagnosis,redactSecrets,sanitizeFailureEvidence} from "./failure-report.js";
+import {agentOutputExcerpt,failureDiagnosis,redactSecrets,sanitizeFailureEvidence} from "./failure-report.js";
+import path from "node:path";
 import type {RuntimeGitHub} from "./github-runtime.js";
 import type { Store } from "./storage.js";
 import type { WorkflowGitHubPort } from "./adapters/github.js";
@@ -54,7 +55,9 @@ function failureMarkdown(store:Store,failure:WorkflowFailure) {
  const run=failure.executionId?store.db.prepare("SELECT status,exit_code,finished_at FROM executions WHERE id=? AND work_item_id=?").get(failure.executionId,failure.workItemId) as {status:string;exit_code:number|null;finished_at:string|null}|undefined:undefined;
  const process=run?{status:run.status==="running"&&run.finished_at?"failed":run.status,exit_code:run.exit_code}:undefined;
  const reason=publishedText(sanitizeFailureEvidence(failure.message,1600))||"The workflow stopped without an error message.";
- return `# ${stageName[failure.stage]} failed\n\nThe Factory preserved this stage and its work so it can be retried safely.\n\n${failureDiagnosis(reason,"",process,failure.class)}\n\n## Exact validation message\n\n\`\`\`text\n${reason}\n\`\`\`\n\n## Next action\n\nFix the reported cause, then post:\n\n\`\`\`text\n/factory retry\n\`\`\`\n\n<sub>instance:${config.instanceName}</sub>`;
+ const agent=failure.executionId&&path.basename(failure.executionId)===failure.executionId?agentOutputExcerpt(path.join(config.dataDir,"runs",failure.executionId,"stdout.log")):{message:"",tool:""};
+ const output=agent.message||agent.tool?`\n\n## Last agent output\n\n${agent.message?publishedText(agent.message):"No agent-authored message was recorded."}${agent.tool?`\n\nLast tool: ${publishedText(agent.tool)}`:""}`:"";
+ return `# ${stageName[failure.stage]} failed\n\nThe Factory preserved this stage and its work so it can be retried safely.\n\n${failureDiagnosis(reason,"",process,failure.class)}\n\n## Exact validation message\n\n\`\`\`text\n${reason}\n\`\`\`${output}\n\n## Next action\n\nFix the reported cause, then post:\n\n\`\`\`text\n/factory retry\n\`\`\`\n\n<sub>instance:${config.instanceName}</sub>`;
 }
 
 export type WorkflowPublication={status:"published";commentId:number|null;url:string|null;publishedAt:string}|{status:"failed";attempts:number;error:string;failedAt:string}|{status:"skipped"};

@@ -26,7 +26,7 @@ export function workflowActivity(store:Store,id:string,status:string,now=Date.no
   const warningText=warning?.reason==="repeated-action"?`${activity}. The same action was attempted ${warning.repeated} times; review it before interrupting.`:warning?`${activity}. No observable progress for ${Math.floor(warning.idleMs/60000)} minutes; this does not prove the agent is stuck.`:activity;
   return {label:warning?'Check agent progress':'Agent running',detail:warningText,since:run.started_at,lastProgressAt:progress?.lastProgressAt??null,progressEvents:progress?.events??0,warning:Boolean(warning),stalled:false};
  }
- if(failure){const diagnosis=diagnoseWorkItem(store,id);return {label:'Failed',detail:failure.message,diagnosis:{summary:diagnosis.summary,evidence:diagnosis.evidence,nextAction:diagnosis.nextAction},stalled:false};}
+ if(failure){const diagnosis=diagnoseWorkItem(store,id);const agent=[diagnosis.agentOutput&&`Last agent message: ${diagnosis.agentOutput}`,diagnosis.lastAgentTool&&`Last tool: ${diagnosis.lastAgentTool}`].filter(Boolean).join("\n");return {label:'Failed',detail:failure.message,diagnosis:{summary:diagnosis.summary,evidence:[diagnosis.evidence,agent].filter(Boolean).join("\n\n"),nextAction:diagnosis.nextAction},stalled:false};}
  const last=store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition' ORDER BY id DESC LIMIT 1").get(id) as {payload:string}|undefined;
  let reason='';try{reason=JSON.parse(last?.payload??'{}').reason?.summary??'';}catch{}
  const findings=status==='PAUSED'?store.db.prepare("SELECT payload FROM records WHERE work_item_id=? AND kind='finding' AND status='open' ORDER BY sequence DESC LIMIT 3").all(id) as {payload:string}[]:[];

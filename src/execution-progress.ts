@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {createHash} from "node:crypto";
 import type {AgentProvider} from "./types.js";
-import {tokenUsageReducer} from "./token-usage.js";
+import {billableTokenUnits,tokenUsageReducer} from "./token-usage.js";
 import {sanitizeFailureEvidence} from "./failure-report.js";
 
 /** Bounded, content-free progress derived from a provider's NDJSON stream. */
@@ -37,7 +37,7 @@ export function progressMonitor(logDir:string,provider:AgentProvider|null){
  const end=(id:string)=>{const tool=active.get(id);if(tool)progress.lastTool=tool.name;active.delete(id);};
  const event=(value:Record<string,unknown>,at:string)=>{
   progress.events++;progress.lastEventAt=at;
-  usage.add(value);progress.usageTokens=usage.result()?.totalTokens??null;
+  usage.add(value);progress.usageTokens=billableTokenUnits(usage.result(),provider);
   const type=value.type;
   if(type!=="system"&&type!=="rate_limit_event"&&type!=="autocompact_state"&&type!=="active_goal")progress.lastProgressAt=at;
   if(provider==="codex"){

@@ -48,7 +48,7 @@ test("a running metered agent is stopped after the 25% budget grace",{timeout:10
  const prior=config.issueBudgetTokens;config.issueBudgetTokens=100;
  const s=new Store(":memory:"),m=new ExecutionManager(s);try{
   const at=new Date().toISOString();s.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status) VALUES('budget-run',1,'owner/repo',?,?,'{}','DESIGN','RUNNING')").run(at,at);
-  const script="console.log(JSON.stringify({type:'assistant',message:{id:'m1',usage:{input_tokens:20,cache_read_input_tokens:110,output_tokens:0},content:[]}}));setInterval(()=>{},100)";
+  const script="console.log(JSON.stringify({type:'assistant',message:{id:'m1',usage:{input_tokens:20,cache_read_input_tokens:110,cache_creation_input_tokens:0,output_tokens:25},content:[]}}));setInterval(()=>{},100)";
   await assert.rejects(m.run("budget-run","product-architect",process.execPath,["-e",script],os.tmpdir(),"",8000,{provider:"claude",model:"auto",policy:"test",reason:"test"}),/cancelled/);
   assert.deepEqual(s.db.prepare("SELECT status,interruption_reason FROM executions WHERE work_item_id='budget-run'").get(),{status:"cancelled",interruption_reason:"token-budget-limit"});
  }finally{config.issueBudgetTokens=prior;s.db.close();}

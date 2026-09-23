@@ -2,7 +2,7 @@ import path from "node:path";
 import {config} from "./config.js";
 import type {Store} from "./storage.js";
 import {WorkflowFailures,type FailureClass} from "./workflow-failures.js";
-import {failureDiagnosis,failureLogTail,sanitizeFailureEvidence} from "./failure-report.js";
+import {agentOutputExcerpt,failureDiagnosis,failureLogTail,sanitizeFailureEvidence} from "./failure-report.js";
 
 // Evidence analysis only: no shell commands, network probes, mutations or retries.
 export function diagnoseOperation(operation:string,message:string,stderr="",kind?:FailureClass,run?:{status:string;exit_code:number|null}) {
@@ -18,5 +18,7 @@ export function diagnoseWorkItem(store:Store,id:string) {
  if(item.status!=="FAILED"||!failure||failure.resolvedAt||failure.workItemId!==id)throw Object.assign(new Error("This issue no longer has an active failure. Refresh its current state."),{statusCode:409});
  const run=failure.executionId?store.db.prepare("SELECT id,status,exit_code FROM executions WHERE id=? AND work_item_id=?").get(failure.executionId,id) as {id:string;status:string;exit_code:number|null}|undefined:undefined;
  const stderr=run&&/^[a-zA-Z0-9_-]+$/.test(run.id)?failureLogTail(path.join(config.dataDir,"runs",run.id,"stderr.log"),25):"";
- return {...diagnoseOperation(`Issue #${item.issue_number} · ${failure.stage}`,failure.message,stderr,failure.class,run),failureId:failure.id,failedAt:failure.createdAt,attempt:failure.attempt,resume:failure.stage==="DELIVERY"?"Retry resumes Delivery using the completed review. It attempts branch publication and pull request creation; it does not rerun Build, Test or Review.":`Retry resumes the saved ${failure.stage} stage. Review the cause and preserved work before retrying.`};
+ const agent=run&&/^[a-zA-Z0-9_-]+$/.test(run.id)?agentOutputExcerpt(path.join(config.dataDir,"runs",run.id,"stdout.log")):{message:"",tool:""};
+ const diagnosis=diagnoseOperation(`Issue #${item.issue_number} · ${failure.stage}`,failure.message,stderr,failure.class,run);
+ return {...diagnosis,agentOutput:agent.message||null,lastAgentTool:agent.tool||null,technical:[diagnosis.technical,agent.message&&`Last agent message: ${agent.message}`,agent.tool&&`Last agent tool: ${agent.tool}`].filter(Boolean).join("\n\n"),failureId:failure.id,failedAt:failure.createdAt,attempt:failure.attempt,resume:failure.stage==="DELIVERY"?"Retry resumes Delivery using the completed review. It attempts branch publication and pull request creation; it does not rerun Build, Test or Review.":`Retry resumes the saved ${failure.stage} stage. Review the cause and preserved work before retrying.`};
 }

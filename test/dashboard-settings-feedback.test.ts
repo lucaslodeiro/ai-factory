@@ -6,6 +6,15 @@ const source=fs.readFileSync(new URL('../dashboard/app.js',import.meta.url),'utf
 test('every inline dashboard action is exported by the module',()=>{const actions=[...source.matchAll(/onclick="([A-Za-z_$][\w$]*)\(/g)].map(match=>match[1]);assert.ok(actions.includes('sendWorkflowMessage'));for(const action of new Set(actions))assert.match(source,new RegExp(`window\\.${action}\\s*=`),`${action} must be available to inline onclick handlers`);});
 test('setup mode leaves the URL once readiness has no missing requirements',()=>{assert.match(source,/if\(typeof setupMode!=="undefined"&&setupMode&&!data\.readiness\?\.missing\?\.length\)\{setupMode=false;history\.replaceState\(\{\},'',location\.pathname\)\}/);assert.doesNotMatch(source,/setupMode&&!field\.setup\?'advanced'/);});
 test('limit cards display the scope supplied by settings',()=>{assert.match(source,/field\.scope\?`<i class="setting-scope">\$\{escapeHtml\(field\.scope\)\}<\/i>`/);});
+test('a newly assigned GitHub issue does not claim an unknown active workflow',()=>{
+ const context=vm.createContext({statusName:(value:string)=>value[0].toUpperCase()+value.slice(1)});
+ vm.runInContext(source.split('\n').find(line=>line.startsWith('function remoteIssueBadge('))!,context);
+ const badge=(issue:unknown)=>vm.runInContext('remoteIssueBadge(issue)',Object.assign(context,{issue})) as string;
+ assert.equal(badge({stage:null,status:null}),'Assigned on GitHub');
+ assert.equal(badge({stage:'unknown',status:'active'}),'Assigned on GitHub','older API snapshots also remain readable');
+ assert.equal(badge({stage:null,status:'paused'}),'GitHub · Paused');
+ assert.equal(badge({stage:'design',status:'active'}),'GitHub · Design · Active');
+});
 test('settings progress stays beside the save button and exposes busy and completion states',()=>{
  const elements=new Map<string,any>();const context=vm.createContext({$:(key:string)=>{if(!elements.has(key))elements.set(key,{dataset:{},setAttribute(name:string,value:string){this[name]=value;}});return elements.get(key)}});
  vm.runInContext(source.split('\n').find(line=>line.startsWith('function settingsProgress('))!,context);

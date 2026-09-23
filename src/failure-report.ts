@@ -46,6 +46,27 @@ export function failureLogTail(file: string, maxLines = 30) {
   } catch { return ""; }
 }
 
+/** Only agent-authored text is safe to quote; tool results may contain source or credentials. */
+export function agentOutputExcerpt(file:string) {
+  try {
+    const stat=fs.statSync(file),bytes=Math.min(stat.size,2*1024*1024),buffer=Buffer.alloc(bytes),handle=fs.openSync(file,"r");
+    try { if(bytes)fs.readSync(handle,buffer,0,bytes,stat.size-bytes); } finally { fs.closeSync(handle); }
+    let text=buffer.toString("utf8");
+    if(stat.size>bytes)text=text.slice(text.indexOf("\n")+1);
+    let lastMessage="",lastTool="";
+    for(const line of text.split("\n")){
+      let event:any;try{event=JSON.parse(line);}catch{continue;}
+      if(event.type==="assistant")for(const part of event.message?.content??[]){
+        if(part.type==="text"&&typeof part.text==="string"&&part.text.trim())lastMessage=part.text;
+        if(part.type==="tool_use"&&typeof part.name==="string")lastTool=part.name;
+      }
+      if(event.type==="item.completed"&&event.item?.type==="agent_message"&&typeof event.item.text==="string")lastMessage=event.item.text;
+      if(event.type==="result"&&typeof event.result==="string"&&event.result.trim())lastMessage=event.result;
+    }
+    return {message:sanitizeFailureEvidence(lastMessage,600),tool:sanitizeFailureEvidence(lastTool,80)};
+  }catch{return {message:"",tool:""};}
+}
+
 export function failureDiagnosis(reason: string, stderr: string, run?: {status:string;exit_code:number|null},failureClass?:WorkflowFailure["class"]) {
   const evidence=`${reason}\n${stderr}`;
   const kind=failureClass??reason.match(/^\[([^\]]+)\]/)?.[1] as WorkflowFailure["class"]|undefined;
@@ -123,6 +144,11 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
     "**Summary:** A required factory setting or external integration prevented the stage from running safely.",
     "**Evidence:** The orchestrator stopped at its configuration or integration boundary before advancing the workflow.",
     "**Recommended action:** Inspect the exact operation and error below. Run the relevant connection or configuration check; do not change credentials unless the evidence identifies an access failure. Retry after the reported cause is resolved.",
+  ].join("\n\n");
+  if(kind==="execution"&&/token budget/i.test(reason))return [
+    "**Summary:** The agent used the issue's cost-weighted token allowance before finishing this stage.",
+    `**Evidence:** ${sanitizeFailureEvidence(reason,600)} Cached reads are discounted in the budget; the provider's raw token count is shown separately in execution usage.`,
+    "**Recommended action:** Inspect the last agent message and tool below. Reduce repeated repository reads or choose a cheaper model before retrying; extend the shared budget only if the extra work is justified.",
   ].join("\n\n");
   if(kind==="execution"&&run?.status==="timed_out")return [
     "**Summary:** The agent execution exceeded its configured time limit.",
@@ -229,10 +255,12 @@ export function workflowFailureEvidence(store:Store,failure:WorkflowFailure,publ
   const storedRun=failure.executionId ? store.db.prepare("SELECT id,role,status,exit_code,finished_at FROM executions WHERE id=? AND work_item_id=?").get(failure.executionId,failure.workItemId) as {id:string;role:AgentRole;status:string;exit_code:number|null;finished_at:string|null}|undefined : undefined;
   const run=storedRun?{...storedRun,status:storedRun.status==="running"&&storedRun.finished_at?"failed":storedRun.status}:undefined;
   const stderr=run && path.basename(run.id)===run.id ? publishText(failureLogTail(path.join(config.dataDir,"runs",run.id,"stderr.log"),25)) : "";
+  const agent=run && path.basename(run.id)===run.id ? agentOutputExcerpt(path.join(config.dataDir,"runs",run.id,"stdout.log")) : {message:"",tool:""};
   const reason=publishText(sanitizeFailureEvidence(failure.message,1600))||"The workflow stopped without an error message.";
   const analysis=failureDiagnosis(reason,stderr,run,failure.class);
   const facts=[`- **Failure class:** ${failure.class}`,`- **Stage:** ${failure.stage}`,`- **Attempt:** ${failure.attempt}`];
   if(run)facts.push(`- **Agent:** ${roleShortName(run.role)}`,`- **Execution:** \`${run.id}\``,`- **Process result:** ${run.status}${run.exit_code===null?"":` · exit ${run.exit_code}`}`);
-  const output=stderr?`\n\n<details><summary>Last ${Math.min(25,stderr.split("\n").length)} stderr lines</summary>\n\n\`\`\`text\n${stderr}\n\`\`\`\n\n</details>`:`\n\n_No stderr output was available. Use **Daemon logs** in the dashboard for additional context._`;
-  return `### Failure details\n\n${facts.join("\n")}\n\n#### What happened\n\n${reason}\n\n#### Diagnosis\n\n${analysis}${output}`;
+  const agentOutput=agent.message||agent.tool?`\n\n#### Last agent output\n\n${agent.message?publishText(agent.message):"No agent-authored message was recorded."}${agent.tool?`\n\nLast tool: ${publishText(agent.tool)}`:""}`:"";
+  const output=stderr?`\n\n<details><summary>Last ${Math.min(25,stderr.split("\n").length)} stderr lines</summary>\n\n\`\`\`text\n${stderr}\n\`\`\`\n\n</details>`:`\n\n_No stderr output was available._`;
+  return `### Failure details\n\n${facts.join("\n")}\n\n#### What happened\n\n${reason}\n\n#### Diagnosis\n\n${analysis}${agentOutput}${output}`;
 }
