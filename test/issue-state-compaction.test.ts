@@ -5,7 +5,7 @@ import { compactIssueState, stateTextBudgets, validateIssueState, type IssueStat
 const long=(n:number)=>"x".repeat(n);
 const index=(size:number):IssueStateIndex=>validateIssueState({
  kind:"state",schemaVersion:1,repository:{id:1,nodeId:"R_1",fullName:"owner/demo"},
- issue:{id:9,nodeId:"I_9",number:6},workflowId:"w1",instance:"test",publishedAt:"2026-09-22T00:00:00Z",branch:"factory/issue-6",
+ issue:{id:9,nodeId:"I_9",number:6},workflowId:"w1",instance:"test",publishedAt:"2026-09-22T00:00:00Z",branch:"factory/issue-6",base:"main",
  projection:{stage:"BUILD",status:"QUEUED",attempt:7,revision:52,correctionCycles:0},
  context:{cursor:5,pr:"https://github.com/owner/demo/pull/7"},
  specs:[{version:1,marker:"result-run-spec",approvedBy:"owner",approvalCommentId:12,approvedAt:"2026-09-22T00:00:00Z"}],

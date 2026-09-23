@@ -24,7 +24,11 @@ import {browserRequired} from "./browser-runner.mjs";
 import {progressKey,type ExecutionProgress} from "./execution-progress.js";
 import {announceBudgetWarnings,budgetState,holdForBudget} from "./budget.js";
 
-export interface DeliveryPort {ensurePR(branch:string,title:string,body:string):string|Promise<string>;}
+export interface DeliveryPort {ensurePR(branch:string,title:string,body:string,base:string):string|Promise<string>;}
+
+// Every work item records the branch it grew from. A missing base is a broken row, not a case
+// to paper over with the repository default.
+export function workItemBase(row:{base_branch:string|null}):string {if(!row.base_branch)throw new Error("Work item has no base branch");return row.base_branch;}
 
 export function commitSummary(summary:string){const line=summary.trim().split(/\r?\n/)[0].trim();if(line.length<=72)return line;const cut=line.lastIndexOf(" ",72);return `${line.slice(0,cut>0?cut:72).trimEnd()}…`;}
 
@@ -36,11 +40,11 @@ export class WorkflowRunner {
   for(const row of rows){this.scheduler.fail(row.id,row.execution_id,new Error(`The agent execution ended (${row.status}), but its result was not applied. Review execution evidence before retrying.`),"recovery");}
  }
  async preserve(workItemId:string){
-  const row=this.store.db.prepare("SELECT issue_number,branch,stage,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;stage:string;context:string};
+  const row=this.store.db.prepare("SELECT issue_number,branch,base_branch,stage,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;base_branch:string|null;stage:string;context:string};
   const context=JSON.parse(row.context||"{}") as {cwd?:string};if(!context.cwd)return;
   // The scheduler knows whether Design belongs to the Designer, whose unfinished prototype is kept.
   const role=row.stage==="DELIVERY"?"reviewer":this.scheduler.role(workItemId);
-  const synchronization=this.workspaces.sync(context.cwd,row.branch,config.defaultBranch,role);if(synchronization.skipped)this.store.event("workflow.sync_skipped",{branch:row.branch,error:sanitizeFailureEvidence(synchronization.skipped,1600)},workItemId);
+  const synchronization=this.workspaces.sync(context.cwd,row.branch,workItemBase(row),role);if(synchronization.skipped)this.store.event("workflow.sync_skipped",{branch:row.branch,error:sanitizeFailureEvidence(synchronization.skipped,1600)},workItemId);
   try{if(this.workspaces.publishAsync)await this.workspaces.publishAsync(context.cwd,row.branch);else this.workspaces.publish(context.cwd,row.branch);}catch(error){this.store.event("workflow.push_failed",{branch:row.branch,error:sanitizeFailureEvidence(error instanceof Error?error.message:String(error),1600)},workItemId);}
  }
  async run(workItemId:string) {
@@ -52,11 +56,11 @@ export class WorkflowRunner {
   let started:ReturnType<WorkflowScheduler["begin"]>|undefined,preparing=true;
   let reviewerContext:ReturnType<WorkspacePort["prepareReviewerContext"]>|undefined,cwd:string|undefined;
   try {
-  const row=this.store.db.prepare("SELECT issue_number,branch,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;context:string};
+  const row=this.store.db.prepare("SELECT issue_number,branch,base_branch,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;base_branch:string|null;context:string},base=workItemBase(row);
   const context=JSON.parse(row.context||"{}") as {title?:string;body?:string;url?:string;cwd?:string};
-  cwd=context.cwd??this.workspaces.ensure(workItemId,row.branch);if(!context.cwd)this.updateContext(workItemId,{cwd});
+  cwd=context.cwd??this.workspaces.ensure(workItemId,row.branch,base);if(!context.cwd)this.updateContext(workItemId,{cwd});
   this.workspaces.assertBranch(cwd,row.branch);
-  const synchronization=this.workspaces.sync(cwd,row.branch,config.defaultBranch,role);if(synchronization.skipped)this.store.event("workflow.sync_skipped",{branch:row.branch,error:sanitizeFailureEvidence(synchronization.skipped,1600)},workItemId);
+  const synchronization=this.workspaces.sync(cwd,row.branch,base,role);if(synchronization.skipped)this.store.event("workflow.sync_skipped",{branch:row.branch,error:sanitizeFailureEvidence(synchronization.skipped,1600)},workItemId);
   if(role==="developer"&&this.workspaces.archivePrototype?.(cwd,row.branch,`factory: move the approved prototype out of the delivery (#${row.issue_number})`))this.store.event("workflow.prototype_archived",{branch:row.branch},workItemId);
   try {if(this.workspaces.publishAsync)await this.workspaces.publishAsync(cwd,row.branch);else this.workspaces.publish(cwd,row.branch);}
   catch(error){this.store.event("workflow.push_failed",{branch:row.branch,error:sanitizeFailureEvidence(error instanceof Error?error.message:String(error),1600)},workItemId);}
@@ -84,9 +88,9 @@ export class WorkflowRunner {
   const baseline=this.workspaces.capture?.(cwd);
   const policyText=role==="qa"&&baseline?`\n\nVerification write policy for this execution: ${JSON.stringify(baseline.policy)}. Evidence directories allow regular, non-executable JSON, Markdown, text, CSV and raster images only. Production, dependency, credential and policy changes are forbidden.`:"";
   const contract=promptContract(role,selection.provider,{tacticalRoute:route})+policyText,contractBytes=Buffer.byteLength(contract);
-  const summary=["qa","reviewer"].includes(role)?this.workspaces.changeSummary(cwd):undefined;
-  const retrySummary=role==="developer"&&(projection.attempt>0||projection.correctionCycles>0)?this.workspaces.changeSummary(cwd):undefined;
-  reviewerContext=role==="reviewer"?this.workspaces.prepareReviewerContext(cwd,workItemId):undefined;
+  const summary=["qa","reviewer"].includes(role)?this.workspaces.changeSummary(cwd,base):undefined;
+  const retrySummary=role==="developer"&&(projection.attempt>0||projection.correctionCycles>0)?this.workspaces.changeSummary(cwd,base):undefined;
+  reviewerContext=role==="reviewer"?this.workspaces.prepareReviewerContext(cwd,workItemId,base):undefined;
 
    if(contractBytes+2>=budget.bytes)throw new InvalidContextError(`Protected prompt contract requires ${contractBytes} bytes but the budget is ${budget.bytes}`);
    const currentContext=JSON.parse((this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string}).context||"{}") as {previousAttempt?:{stage?:DeliveryStage;attempt?:number};invalidResultRetry?:{stage?:DeliveryStage;attempt?:number;executionId?:string;message?:string}};
@@ -129,10 +133,10 @@ export class WorkflowRunner {
    if(reviewerContext&&cwd)try{this.workspaces.cleanupReviewerContext(cwd,workItemId);}catch(error){this.store.event("workflow.context_cleanup_failed",{error:error instanceof Error?error.message:String(error)},workItemId,started?.executionId);}
   }
  }
- recordPreviousAttempt(workItemId:string,executionId:string,interruptedAt:string,reason:string,guidanceRecordId?:string){const row=this.store.db.prepare("SELECT context,stage,attempt FROM work_items WHERE id=?").get(workItemId) as {context:string;stage:DeliveryStage;attempt:number},context=JSON.parse(row.context||"{}") as {cwd?:string;attemptStart?:{executionId?:string;head?:string;startedAt?:string;stage?:string}};if(!context.cwd)return;const baseline=context.attemptStart?.executionId===executionId?context.attemptStart.head:undefined,summary=baseline&&this.workspaces.changeSummarySince?this.workspaces.changeSummarySince(context.cwd,baseline):this.workspaces.changeSummary(context.cwd),role=({DESIGN:"product-architect",BUILD:"developer",TEST:"qa",REVIEW:"reviewer",DELIVERY:"reviewer"} as Record<string,AgentRole>)[context.attemptStart?.stage??row.stage],lastResult=this.latestResult(workItemId,role);this.updateContext(workItemId,{previousAttempt:{stage:row.stage,attempt:row.attempt,interruptedAt,reason,startingCommit:baseline??null,files:summary.files,diffStat:summary.stat,lastResult:lastResult??null,guidanceRecordId:guidanceRecordId??null}});}
+ recordPreviousAttempt(workItemId:string,executionId:string,interruptedAt:string,reason:string,guidanceRecordId?:string){const row=this.store.db.prepare("SELECT context,stage,attempt,base_branch FROM work_items WHERE id=?").get(workItemId) as {context:string;stage:DeliveryStage;attempt:number;base_branch:string|null},context=JSON.parse(row.context||"{}") as {cwd?:string;attemptStart?:{executionId?:string;head?:string;startedAt?:string;stage?:string}};if(!context.cwd)return;const baseline=context.attemptStart?.executionId===executionId?context.attemptStart.head:undefined,summary=baseline&&this.workspaces.changeSummarySince?this.workspaces.changeSummarySince(context.cwd,baseline):this.workspaces.changeSummary(context.cwd,workItemBase(row)),role=({DESIGN:"product-architect",BUILD:"developer",TEST:"qa",REVIEW:"reviewer",DELIVERY:"reviewer"} as Record<string,AgentRole>)[context.attemptStart?.stage??row.stage],lastResult=this.latestResult(workItemId,role);this.updateContext(workItemId,{previousAttempt:{stage:row.stage,attempt:row.attempt,interruptedAt,reason,startingCommit:baseline??null,files:summary.files,diffStat:summary.stat,lastResult:lastResult??null,guidanceRecordId:guidanceRecordId??null}});}
  private async publish(workItemId:string) {
-  const row=this.store.db.prepare("SELECT issue_number,branch,context,revision FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;context:string;revision:number};const context=JSON.parse(row.context||"{}") as {title?:string;cwd?:string};
-  try {const cwd=context.cwd??this.workspaces.ensure(workItemId,row.branch);if(!context.cwd)this.updateContext(workItemId,{cwd});this.workspaces.assertBranch(cwd,row.branch);const synchronization=this.workspaces.sync(cwd,row.branch,config.defaultBranch,"reviewer");if(synchronization.skipped)this.store.event("workflow.sync_skipped",{branch:row.branch,error:sanitizeFailureEvidence(synchronization.skipped,1600)},workItemId);const head=this.workspaces.head(cwd),verified=(JSON.parse((this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string}).context||"{}") as {verifiedHeads?:Record<string,string>}).verifiedHeads;if(verified?.TEST!==head){new WorkflowProjections(this.store).transition({workItemId,expectedRevision:row.revision,stage:"TEST",status:"QUEUED",actor:{type:"orchestrator",id:"sync"},source:{},reason:{code:"code-changed",summary:"Code changed since the last verified test run"}});return true;}const review=this.latestResult(workItemId,"reviewer");if(!review||review.outcome!=="pass")throw new InvalidResultError("Delivery requires a successful Reviewer result");if(this.workspaces.publishAsync)await this.workspaces.publishAsync(cwd,row.branch);else this.workspaces.publish(cwd,row.branch);if(this.deliveryInterrupted(workItemId,row.revision))return false;const pullRequestUrl=await this.delivery.ensurePR(row.branch,`#${row.issue_number}: ${context.title??"Factory delivery"}`,this.prBody(workItemId,row.issue_number,review));if(this.deliveryInterrupted(workItemId,row.revision))return false;this.results.published({workItemId,pullRequestUrl});return true;}
+  const row=this.store.db.prepare("SELECT issue_number,branch,base_branch,context,revision FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;base_branch:string|null;context:string;revision:number},base=workItemBase(row);const context=JSON.parse(row.context||"{}") as {title?:string;cwd?:string};
+  try {const cwd=context.cwd??this.workspaces.ensure(workItemId,row.branch,base);if(!context.cwd)this.updateContext(workItemId,{cwd});this.workspaces.assertBranch(cwd,row.branch);const synchronization=this.workspaces.sync(cwd,row.branch,base,"reviewer");if(synchronization.skipped)this.store.event("workflow.sync_skipped",{branch:row.branch,error:sanitizeFailureEvidence(synchronization.skipped,1600)},workItemId);const head=this.workspaces.head(cwd),verified=(JSON.parse((this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string}).context||"{}") as {verifiedHeads?:Record<string,string>}).verifiedHeads;if(verified?.TEST!==head){new WorkflowProjections(this.store).transition({workItemId,expectedRevision:row.revision,stage:"TEST",status:"QUEUED",actor:{type:"orchestrator",id:"sync"},source:{},reason:{code:"code-changed",summary:"Code changed since the last verified test run"}});return true;}const review=this.latestResult(workItemId,"reviewer");if(!review||review.outcome!=="pass")throw new InvalidResultError("Delivery requires a successful Reviewer result");if(this.workspaces.publishAsync)await this.workspaces.publishAsync(cwd,row.branch);else this.workspaces.publish(cwd,row.branch);if(this.deliveryInterrupted(workItemId,row.revision))return false;const pullRequestUrl=await this.delivery.ensurePR(row.branch,`#${row.issue_number}: ${context.title??"Factory delivery"}`,this.prBody(workItemId,row.issue_number,review),base);if(this.deliveryInterrupted(workItemId,row.revision))return false;this.results.published({workItemId,pullRequestUrl});return true;}
   catch(error){if(this.deliveryInterrupted(workItemId,row.revision))return false;this.scheduler.rejectQueued(workItemId,error,"integration");return true;}
  }
  private deliveryInterrupted(id:string,revision:number){const row=this.store.db.prepare("SELECT stage,status,archived_at,revision FROM work_items WHERE id=?").get(id) as {stage:string;status:string;archived_at:string|null;revision:number};return row.revision!==revision||row.stage!=="DELIVERY"||row.status!=="QUEUED"||Boolean(row.archived_at);}

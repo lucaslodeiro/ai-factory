@@ -52,7 +52,7 @@ completion.
 
 ## Repository and delivery
 
-Each work item owns a `factory/*` branch and isolated worktree. Agents cannot commit or push; the orchestrator verifies role mutation boundaries, creates commits and publishes only the assigned branch. Reviewer pass creates or reuses a PR. Human merge is mandatory.
+Each work item owns a `factory/*` branch and isolated worktree, and records the base branch it grew from: the repository default branch for an issue, so that an epic can later give its stories its own branch as their base. The worktree is created from that base, every stage merges it in, the diff the Tester and Reviewer see is measured against it, and the pull request targets it. Agents cannot commit or push; the orchestrator verifies role mutation boundaries, creates commits and publishes only the assigned branch. Reviewer pass creates or reuses a PR. Human merge is mandatory.
 
 Repository recovery exposes only Check, Sync from remote, Publish branch, Clear local copy and Restore from remote. Check is read-only; Sync is clean fast-forward only; Publish refuses unrelated/default branches; Clear requires the exact configured path twice and pauses affected work; Restore requires an empty directory.
 

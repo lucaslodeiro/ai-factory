@@ -20,7 +20,7 @@ const stableState=(value:any)=>{const copy=structuredClone(value);delete copy.pu
 function setup() {
  const store=new Store(":memory:");
  store.setMetadata("repository_identity",{id:1,nodeId:"R_1",fullName:"owner/demo"});
- store.db.prepare("INSERT INTO work_items(id,issue_number,issue_id,repo,branch,created_at,updated_at,context) VALUES('work-1',7,700,'owner/demo','factory/issue-7','now','now',?)").run(JSON.stringify({title:"Readable workflow",issueNodeId:"I_700",specMarkers:{"2":"result-spec-fixture"}}));
+ store.db.prepare("INSERT INTO work_items(id,issue_number,issue_id,repo,branch,base_branch,created_at,updated_at,context) VALUES('work-1',7,700,'owner/demo','factory/issue-7','main','now','now',?)").run(JSON.stringify({title:"Readable workflow",issueNodeId:"I_700",specMarkers:{"2":"result-spec-fixture"}}));
  store.db.prepare("INSERT INTO specs(work_item_id,version,body) VALUES('work-1',2,'SPEC')").run();
  return {store,records:new WorkflowRecords(store),projections:new WorkflowProjections(store)};
 }
@@ -235,7 +235,7 @@ test("published specifications preserve code fences, paths and whitespace throug
 test("a milestone that cannot be published keeps its attempts, never blocks other work items and publishes once after recovery",async()=>{
  const s=setup();
  try {
-  s.store.db.prepare("INSERT INTO work_items(id,issue_number,issue_id,repo,branch,created_at,updated_at,context) VALUES('work-2',8,800,'owner/demo','factory/issue-8','now','now',?)").run(JSON.stringify({title:"Second item",issueNodeId:"I_800",specMarkers:{}}));
+  s.store.db.prepare("INSERT INTO work_items(id,issue_number,issue_id,repo,branch,base_branch,created_at,updated_at,context) VALUES('work-2',8,800,'owner/demo','factory/issue-8','main','now','now',?)").run(JSON.stringify({title:"Second item",issueNodeId:"I_800",specMarkers:{}}));
   s.projections.initialize("work-1","DESIGN","QUEUED");s.projections.initialize("work-2","DESIGN","QUEUED");
   s.store.event("agent.result",{role:"product-architect",result:result("questions",{questions:["Which database?"]}),specVersion:2},"work-1","run-1");
   s.store.event("agent.result",{role:"product-architect",result:result("questions",{questions:["Which queue?"]}),specVersion:0},"work-2","run-2");

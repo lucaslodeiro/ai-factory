@@ -16,7 +16,7 @@ test('GitHub subprocess waits do not block local timers; worker failures reject 
 
 test('slow remote sync does not own the local execution lane',async()=>{
  const store=new Store(':memory:');let release!:(value:any[])=>void;store.setMetadata('repository_identity',{id:1,nodeId:'R_1',fullName:'owner/demo'});
- store.db.prepare("INSERT INTO work_items(id,issue_number,issue_id,repo,branch,created_at,updated_at,context,stage,status) VALUES('w',2,22,'owner/demo','factory/issue-2','now','now',?,'BUILD','QUEUED')").run(JSON.stringify({issueNodeId:'I_22'}));
+ store.db.prepare("INSERT INTO work_items(id,issue_number,issue_id,repo,branch,base_branch,created_at,updated_at,context,stage,status) VALUES('w',2,22,'owner/demo','factory/issue-2','main','now','now',?,'BUILD','QUEUED')").run(JSON.stringify({issueNodeId:'I_22'}));
  const remote={authenticatedLogin:()=>"factory",assignedIssues:()=>new Promise<any[]>(resolve=>{release=resolve;}),ensureLabel(){},removeLabel(){},issue:()=>({id:22,nodeId:'I_22',number:2,state:'OPEN',title:'Test',body:'',url:'https://github.com/owner/demo/issues/2'}),comments:()=>[],syncWorkflow(){},assignees:()=>[],assign(){},unassign(){}};
  let runs=0;const runner={reconcileFinished(){},async run(){runs++;store.db.prepare("UPDATE work_items SET status='PAUSED'").run();}};
  const o=new WorkflowOrchestrator(store,remote as any,runner as any,{enabled:false,async notify(){}});

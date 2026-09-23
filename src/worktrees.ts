@@ -39,18 +39,18 @@ export class SyncConflictError extends Error {
 export interface WorkspacePort {
  capture?(cwd:string):WorkspaceSnapshot;
  assertBranch(cwd: string, branch: string): void;
- ensure(id: string, branch: string): string;
+ ensure(id: string, branch: string, base: string): string;
  sync(cwd:string,branch:string,base:string,role:AgentRole):WorkspaceSync;
  head(cwd: string): string;
- diff(cwd: string): string;
+ diff(cwd: string, base: string): string;
  check(cwd: string, role: string, before: string, branch: string, baseline?:WorkspaceSnapshot): string[]|void;
  commit(cwd: string, message: string, branch: string, files?:string[]): void;
  publish(cwd: string, branch: string): void;
  publishAsync?(cwd:string,branch:string):Promise<void>;
- changeSummary(cwd:string):{files:string[];stat:string};
+ changeSummary(cwd:string,base:string):{files:string[];stat:string};
  changeSummarySince?(cwd:string,base:string):{files:string[];stat:string};
  repositoryMap?(cwd:string):RepositoryMap|undefined;
- prepareReviewerContext(cwd:string,workItemId:string):{path:string;files:string[];stat:string};
+ prepareReviewerContext(cwd:string,workItemId:string,base:string):{path:string;files:string[];stat:string};
  archivePrototype?(cwd:string,branch:string,message:string):boolean;
  cleanupReviewerContext(cwd:string,workItemId:string):void;
 }
@@ -58,7 +58,9 @@ export class Workspaces implements WorkspacePort {
  assertBranch(cwd: string, branch: string) {
   if (!branch.startsWith("factory/") || branch === config.defaultBranch || git(cwd, ["branch", "--show-current"]) !== branch) throw new Error("Worktree branch mismatch; expected assigned factory branch");
  }
- ensure(id: string, branch: string) {
+ // A work item branches from its own base: the repository default branch for an issue, the epic
+ // branch for a story. The base must already exist on origin; nothing here creates it.
+ ensure(id: string, branch: string, base: string) {
   const repoDir=requiredRepoDir();
   const root = path.join(config.dataDir, "worktrees"); fs.mkdirSync(root, { recursive: true });
   const target = path.join(root, id);
@@ -66,14 +68,14 @@ export class Workspaces implements WorkspacePort {
    this.assertBranch(target, branch);
    return target;
   }
-  git(repoDir, ["fetch", "origin", config.defaultBranch]);
+  git(repoDir, ["fetch", "origin", `+${base}:refs/remotes/origin/${base}`]);
   git(repoDir,["worktree","prune"]);
   if (gitSucceeds(repoDir,["show-ref","--verify","--quiet",`refs/heads/${branch}`])) {
    git(repoDir,["worktree","add",target,branch]);
   } else {
    const remoteBranch = gitSucceeds(repoDir,["fetch","origin",`${branch}:refs/remotes/origin/${branch}`])
     && gitSucceeds(repoDir,["show-ref","--verify","--quiet",`refs/remotes/origin/${branch}`]);
-   git(repoDir,["worktree","add","-b",branch,target,remoteBranch ? `origin/${branch}` : `origin/${config.defaultBranch}`]);
+   git(repoDir,["worktree","add","-b",branch,target,remoteBranch ? `origin/${branch}` : `origin/${base}`]);
   }
   return target;
  }
@@ -107,7 +109,7 @@ export class Workspaces implements WorkspacePort {
   return{before,after:this.head(cwd),merged};
  }
  head(cwd: string) { return git(cwd, ["rev-parse", "HEAD"]); }
- diff(cwd: string) { return git(cwd, ["diff", `origin/${config.defaultBranch}...HEAD`]); }
+ diff(cwd: string, base: string) { return git(cwd, ["diff", `origin/${base}...HEAD`]); }
  capture(cwd:string,policy?:VerificationPolicy):WorkspaceSnapshot {
   const index=new Map<string,string>();
   for(const entry of gitOutput(cwd,["ls-files","--stage","-z"]).split("\0").filter(Boolean)){const tab=entry.indexOf("\t");index.set(entry.slice(tab+1),entry.slice(0,tab));}
@@ -185,14 +187,14 @@ export class Workspaces implements WorkspacePort {
   if (!branch.startsWith("factory/") || branch === config.defaultBranch || git(cwd, ["branch", "--show-current"]) !== branch) throw new Error("Refusing to push unexpected branch");
   git(cwd, ["push", "--set-upstream", "origin", `HEAD:refs/heads/${branch}`]);
  }
- changeSummary(cwd:string){const range=`origin/${config.defaultBranch}...HEAD`,files=gitOutput(cwd,["diff","--name-only","--no-renames","-z",range]).split("\0").filter(Boolean),stat=gitOutput(cwd,["diff","--stat",range]).trim();return{files,stat};}
+ changeSummary(cwd:string,base:string){const range=`origin/${base}...HEAD`,files=gitOutput(cwd,["diff","--name-only","--no-renames","-z",range]).split("\0").filter(Boolean),stat=gitOutput(cwd,["diff","--stat",range]).trim();return{files,stat};}
  changeSummarySince(cwd:string,base:string){const range=`${base}..HEAD`,files=gitOutput(cwd,["diff","--name-only","--no-renames","-z",range]).split("\0").filter(Boolean),stat=gitOutput(cwd,["diff","--stat",range]).trim();return{files,stat};}
  // Tracked files only: what .gitignore excludes is not part of the repository a Builder edits.
  repositoryMap(cwd:string){
   try { return buildRepositoryMap(gitOutput(cwd,["ls-files","-z"]).split("\0")); } catch { return undefined; }
  }
- prepareReviewerContext(cwd:string,workItemId:string){const directory=path.join(cwd,".factory-context"),owner=path.join(directory,"OWNER"),diff=path.join(directory,"review.diff"),expected=`ai-factory:${workItemId}\n`;
-  this.assertContextSafe(cwd,directory,owner,expected,true);if(fs.existsSync(directory))fs.rmSync(directory,{recursive:true});fs.mkdirSync(directory,{mode:0o700});fs.writeFileSync(owner,expected,{mode:0o600});try{const summary=this.changeSummary(cwd);gitFile(cwd,["diff","--no-ext-diff","--no-textconv","--binary",`origin/${config.defaultBranch}...HEAD`],diff);
+ prepareReviewerContext(cwd:string,workItemId:string,base:string){const directory=path.join(cwd,".factory-context"),owner=path.join(directory,"OWNER"),diff=path.join(directory,"review.diff"),expected=`ai-factory:${workItemId}\n`;
+  this.assertContextSafe(cwd,directory,owner,expected,true);if(fs.existsSync(directory))fs.rmSync(directory,{recursive:true});fs.mkdirSync(directory,{mode:0o700});fs.writeFileSync(owner,expected,{mode:0o600});try{const summary=this.changeSummary(cwd,base);gitFile(cwd,["diff","--no-ext-diff","--no-textconv","--binary",`origin/${base}...HEAD`],diff);
   excludeFromGit(cwd,"/.factory-context/");
   return{path:diff,files:summary.files,stat:summary.stat};
   }catch(error){try{this.cleanupReviewerContext(cwd,workItemId);}catch{}throw error;}

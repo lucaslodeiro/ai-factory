@@ -18,7 +18,7 @@ test("intake creates one initialized V3 item and audits its initial transition",
   const intake=new WorkflowIntake(store),first=intake.start(issue,{actor:"owner",commentId:10,source:"github-comment"}),again=intake.start(issue,{actor:"owner",commentId:10,source:"github-comment"});
   assert.equal(first.created,true);assert.deepEqual(again,{id:first.id,created:false});
   const projection=new WorkflowProjections(store).get(first.id);assert.deepEqual({stage:projection.stage,status:projection.status,revision:projection.revision},{stage:"DESIGN",status:"QUEUED",revision:0});
-  assert.deepEqual(store.db.prepare("SELECT issue_id,branch FROM work_items WHERE id=?").get(first.id),{issue_id:700,branch:"factory/issue-7"});
+  assert.deepEqual(store.db.prepare("SELECT issue_id,branch,base_branch FROM work_items WHERE id=?").get(first.id),{issue_id:700,branch:"factory/issue-7",base_branch:"main"});
   const event=JSON.parse((store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='workflow.transition'").get(first.id) as {payload:string}).payload);
   assert.equal(event.from,null);assert.equal(event.reason.code,"work-started");assert.equal(event.source.commentId,10);
  } finally {store.db.close();}

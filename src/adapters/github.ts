@@ -9,7 +9,7 @@ export interface GitHubPort {
  authenticatedLogin():string;assignedIssues(login:string):Issue[];issue(n: number): Issue; comments(n: number): Comment[]; repository():Repository;
  ensureLabel(name:string,color:string,description:string):void;addLabel(n:number,name:string):void;removeLabel(n:number,name:string):void;replaceInstanceLabel(n:number,name:string):void;
  assignees(n:number):string[];assign(n:number,logins:string[]):void;unassign(n:number,logins:string[]):void;
- ensurePR(branch: string, title: string, body: string): string;
+ ensurePR(branch: string, title: string, body: string, base: string): string;
 }
 export interface WorkflowGitHubPort { syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,body:string):number|void; publishWorkflowComment(n:number,key:string,body:string):number|void; editComment?(id:number,body:string):void; }
 function gh(args: string[], input?: unknown) {
@@ -67,10 +67,10 @@ export class GitHubAdapter implements GitHubPort {
   if (!["OPEN", "CLOSED", "MERGED"].includes(result.state) || (result.state === "MERGED" && !result.mergedAt)) throw new Error("Invalid pull request state from GitHub");
   return result;
  }
- ensurePR(branch: string, title: string, body: string) {
-  const prs = JSON.parse(this.invoke(["pr", "list", "--repo", this.repositoryName, "--head", branch, "--base", config.defaultBranch, "--state", "open", "--json", "url"]));
+ ensurePR(branch: string, title: string, body: string, base: string) {
+  const prs = JSON.parse(this.invoke(["pr", "list", "--repo", this.repositoryName, "--head", branch, "--base", base, "--state", "open", "--json", "url"]));
   if (prs.length) return prs[0].url as string;
-  return this.invoke(["pr", "create", "--repo", this.repositoryName, "--head", branch, "--base", config.defaultBranch, "--title", title, "--body", body]);
+  return this.invoke(["pr", "create", "--repo", this.repositoryName, "--head", branch, "--base", base, "--title", title, "--body", body]);
  }
  private toIssue(value:unknown):Issue {const raw=value as Record<string,any>,state=String(raw.state).toUpperCase();if(state!=="OPEN"&&state!=="CLOSED")throw new Error(`Invalid issue state: ${raw.state}`);return {id:Number(raw.id),nodeId:String(raw.node_id),number:Number(raw.number),title:String(raw.title),body:String(raw.body??""),url:String(raw.html_url),state,pullRequest:Boolean(raw.pull_request),labels:Array.isArray(raw.labels)?raw.labels.map((label:any)=>({name:String(label.name)})):[],assignees:Array.isArray(raw.assignees)?raw.assignees.map((value:any)=>String(value.login)):[],createdAt:String(raw.created_at),updatedAt:String(raw.updated_at),author:{login:String(raw.user?.login??""),type:String(raw.user?.type??"")}};}
  private toComment(value:unknown):Comment {const raw=value as Record<string,any>;return {id:Number(raw.id),body:String(raw.body??""),user:{login:String(raw.user?.login??""),type:String(raw.user?.type??"")},updatedAt:String(raw.updated_at)};}
