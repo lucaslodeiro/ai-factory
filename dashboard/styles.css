@@ -251,6 +251,8 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .settings-actions { display:flex; align-items:center; gap:1rem; margin-top:1.25rem; padding-top:1.25rem; border-top:1px solid var(--line) }
 .settings-actions[hidden] { display:none }
 .settings-actions .changed { color:var(--warn); font-weight:700 }
+.model-picker{display:grid;gap:.6rem}
+.model-picker input[hidden]{display:none}
 #toast { position:fixed; right:1.5rem; bottom:1.5rem; background:var(--text); color:var(--bg); padding:.8rem 1rem; border-radius:9px; font-weight:700; opacity:0; transform:translateY(1rem); transition:.2s; pointer-events:none }
 #toast.show { opacity:1; transform:none }
 @media(max-width:850px) {

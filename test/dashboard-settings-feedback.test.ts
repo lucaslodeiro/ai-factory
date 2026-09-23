@@ -8,8 +8,8 @@ test('setup mode leaves the URL once readiness has no missing requirements',()=>
 test('settings progress stays beside the save button and exposes busy and completion states',()=>{
  const elements=new Map<string,any>();const context=vm.createContext({$:(key:string)=>{if(!elements.has(key))elements.set(key,{dataset:{},setAttribute(name:string,value:string){this[name]=value;}});return elements.get(key)}});
  vm.runInContext(source.split('\n').find(line=>line.startsWith('function settingsProgress('))!,context);
- vm.runInContext("settingsProgress('Validating…')",context);assert.equal(elements.get('#settings-save').textContent,'Applying…');assert.equal(elements.get('#settings-form')['aria-busy'],'true');
- vm.runInContext("settingsProgress('Saved.','success')",context);assert.equal(elements.get('#settings-progress').textContent,'Saved.');assert.equal(elements.get('#settings-progress').dataset.state,'success');assert.equal(elements.get('#settings-form')['aria-busy'],'false');
+ vm.runInContext("settingsProgress('Validating…')",context);assert.equal(elements.get('#settings-save').textContent,'Applying…');assert.equal(elements.get('#settings-form')['aria-busy'],'true');assert.equal(elements.get('#settings-change-status').hidden,true);
+ vm.runInContext("settingsProgress('Saved.','success')",context);assert.equal(elements.get('#settings-progress').textContent,'Saved.');assert.equal(elements.get('#settings-progress').dataset.state,'success');assert.equal(elements.get('#settings-form')['aria-busy'],'false');assert.equal(elements.get('#settings-change-status').hidden,false);
  vm.runInContext("settingsProgress('Could not save.','error')",context);assert.equal(elements.get('#settings-progress').dataset.state,'error');
 });
 test('Codex credentials include a visible provider name',()=>{
@@ -27,9 +27,16 @@ test('Connections keeps Save and apply visible and configures Slack through its 
  const markup=fs.readFileSync(new URL('../dashboard/index.html',import.meta.url),'utf8');assert.match(markup,/id="slack-dialog"/);assert.match(markup,/id="slack-test"/);assert.match(source,/Last delivery error:/);
 });
 test('model picker offers suggestions and accepts an exact model ID',()=>{
- assert.match(source,/data-role-model=.*<datalist id=/);
- assert.match(source,/model\.value=catalog\.default/);
- assert.match(source,/loadCursorModelCatalog\(\)/);
+ assert.match(source,/data-role-model=.*Other model ID/);
+ const select:any={innerHTML:'',value:''},input:any={value:'auto',hidden:true,required:false};
+ const context=vm.createContext({escapeHtml:String,document:{querySelector:(query:string)=>query.startsWith('[data-role-model-input')?input:select}});
+ vm.runInContext(source.split('\n').find(line=>line.startsWith('function updateModelChoices('))!,context);
+ context.catalog={default:'auto',options:[{value:'auto',label:'Auto (provider recommended)'},{value:'sonnet',label:'sonnet'}]};
+ vm.runInContext("updateModelChoices('developer',catalog)",context);
+ assert.equal((select.innerHTML.match(/value="auto"/g)||[]).length,1);assert.equal(select.value,'auto');assert.equal(input.hidden,true);
+ input.value='claude-custom-1';vm.runInContext("updateModelChoices('developer',catalog)",context);
+ assert.equal(select.value,'custom');assert.equal(input.hidden,false);assert.equal(input.value,'claude-custom-1');
+ assert.doesNotMatch(source,/loadCursorModelCatalog\(\)/);
  assert.doesNotMatch(source,/sonnet-4-thinking/);
 });
 test('prompt viewer defaults to readable content and offers the exact agent JSON',()=>{

@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { parse } from "dotenv";
 import { roleFullName } from "./names.js";
@@ -18,18 +17,10 @@ const groups = [
   {id:"advanced",label:"Advanced",description:"Prompt budgets and worker environment. Only for debugging."},
 ];
 const automaticModel = {value:"auto",label:"Auto (provider recommended)"};
-const knownCodexModels = ["gpt-6-astra","gpt-6-sol","gpt-6-luna","gpt-5.6-sol","gpt-5.6-terra","gpt-5.6-luna","gpt-5.5"];
-export function codexModelOptions(cacheFile=path.join(process.env.CODEX_HOME||path.join(os.homedir(),".codex"),"models_cache.json")){
-  try{
-    const cache=JSON.parse(fs.readFileSync(cacheFile,"utf8")) as {models?:Array<{slug?:unknown;visibility?:unknown}>};
-    const visible=cache.models?.filter(model=>model.visibility==="list"&&typeof model.slug==="string"&&/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(model.slug)).map(model=>model.slug as string)??[];
-    if(visible.length)return [automaticModel,...visible.map(value=>({value,label:value}))];
-  }catch{}
-  return [automaticModel,...knownCodexModels.map(value=>({value,label:value}))];
-}
+const codexModels = [automaticModel,...["gpt-6-astra","gpt-6-sol","gpt-6-luna","gpt-5.6-sol","gpt-5.6-terra","gpt-5.6-luna","gpt-5.5"].map(value=>({value,label:value}))];
 const claudeModels = [automaticModel,...["fable","opus","sonnet","haiku"].map(value => ({value,label:value}))];
-// Cursor's model IDs depend on the account; the authenticated CLI supplies them separately.
-const cursorModels = [automaticModel];
+// Curated CLI IDs; account availability still varies. Other IDs can be entered manually.
+const cursorModels = [automaticModel,...["composer-2.5","gpt-5","sonnet-4-thinking"].map(value=>({value,label:value}))];
 const providerOptions = [{value:"codex",label:"Codex"},{value:"claude",label:"Claude"},{value:"cursor",label:"Cursor"}];
 const roleField = (section: string, role: string, label: string): Omit<Field,"key"> => ({label:"Provider",description:`Provider used for the ${label} role.`,group:"agents",type:"select",options:providerOptions,required:true,restart:"daemon",section,role,kind:"provider"});
 const modelField = (section: string, role: string): Omit<Field,"key"> => ({label:"Model",description:"Choose a suggested model or type an exact model ID. Auto lets the provider choose; available models depend on the connected account.",group:"agents",type:"select",required:true,restart:"daemon",section,role,kind:"role-model"});
@@ -157,7 +148,7 @@ export function readDashboardSettings(root: string, suggestions: Record<string,s
   const values: Record<string,string> = {...defaults,...saved};
   for (const [key,value] of Object.entries(suggestions)) if (key in defaults && !values[key]) values[key]=value;
   const providerCatalog = {
-    codex:{options:codexModelOptions(),default:"auto"},
+    codex:{options:codexModels,default:"auto"},
     claude:{options:claudeModels,default:"auto"},
     cursor:{options:cursorModels,default:"auto"},
   };
