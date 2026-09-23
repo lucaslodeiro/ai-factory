@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { config } from "./config.js";
-export const schemaVersion=10;
+export const schemaVersion=11;
 export class Store {
   db: Database.Database;
   constructor(filename = path.join(config.dataDir, "factory.db")) {
@@ -44,7 +44,7 @@ export class Store {
       CREATE UNIQUE INDEX IF NOT EXISTS issue_identity ON work_items(repo,issue_number) WHERE archived_at IS NULL;
       CREATE TABLE IF NOT EXISTS stories(
         epic_work_item_id TEXT NOT NULL REFERENCES work_items(id),spec_version INTEGER NOT NULL,key TEXT NOT NULL,title TEXT NOT NULL,scope TEXT NOT NULL,
-        criteria TEXT NOT NULL,depends_on TEXT NOT NULL,issue_number INTEGER,issue_id INTEGER,dependencies_declared INTEGER NOT NULL DEFAULT 0,work_item_id TEXT,created_at TEXT NOT NULL,
+        criteria TEXT NOT NULL,depends_on TEXT NOT NULL,assessment TEXT NOT NULL,issue_number INTEGER,issue_id INTEGER,dependencies_declared INTEGER NOT NULL DEFAULT 0,work_item_id TEXT,created_at TEXT NOT NULL,
         PRIMARY KEY(epic_work_item_id,spec_version,key)
       );`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS records(

@@ -139,7 +139,7 @@ test("a Designer result is the prototype and its screenshots, or an environment 
 test("a split into stories is a small acyclic graph over the specification's own criteria",()=>{
  const criteria=[{id:"AC1",description:"Tokens"},{id:"AC2",description:"Hero"},{id:"AC3",description:"Whole page a11y"}];
  const spec=(stories:unknown)=>result("spec",{acceptanceCriteria:criteria,spec:"# Spec\nAC1 AC2 AC3",stories:stories as never});
- const story=(key:string,criteria:string[],dependsOn:string[]=[])=>({key,title:`Story ${key}`,scope:`Deliver ${key}`,criteria,dependsOn});
+ const story=(key:string,criteria:string[],dependsOn:string[]=[],assessment:{complexity:"low"|"medium"|"high";risk:"low"|"medium"|"high";verificationDepth:"minimal"|"standard"|"thorough"}={complexity:"low",risk:"low",verificationDepth:"minimal"})=>({key,title:`Story ${key}`,scope:`Deliver ${key}`,criteria,dependsOn,assessment});
  const parsed=parseResult(spec([story("A",["AC1"]),story("B",["AC2"],["A"])]),"product-architect");
  assert.deepEqual(parsed.stories.map(s=>s.key),["A","B"]);
  assert.equal(parseResult(result("spec"),"product-architect").stories.length,0,"no split by default");
@@ -152,6 +152,7 @@ test("a split into stories is a small acyclic graph over the specification's own
  assert.throws(()=>parseResult(spec([story("A",["AC1"],["Z"]),story("B",["AC2"])]),"product-architect"),/unknown story Z/);
  assert.throws(()=>parseResult(spec([story("A",["AC1"],["A"]),story("B",["AC2"])]),"product-architect"),/depends on itself/);
  assert.throws(()=>parseResult(spec([story("A",["AC1"],["C"]),story("B",["AC2"],["A"]),story("C",["AC3"],["B"])]),"product-architect"),/cycle: A -> C -> B -> A/);
+ assert.throws(()=>parseResult(spec([story("A",["AC1"],[],{complexity:"low",risk:"high",verificationDepth:"minimal"}),story("B",["AC2"])]),"product-architect"),/Story A verification depth minimal is below thorough/);
  assert.throws(()=>parseResult(result("questions",{questions:["Split?"],stories:[story("A",["AC1"]),story("B",["AC1"])]}),"product-architect"),/Only a new specification may contain/);
  // Delivery roles cannot introduce a split: the schema pins the field and the parser drops it.
  assert.deepEqual(resultSchemaFor("developer").properties?.stories?.maxItems,0);

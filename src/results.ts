@@ -29,7 +29,7 @@ export const resultSchema = object({
   summary: text(1500), brief: { type: "string", maxLength: briefMaxLength }, spec: { type: "string", maxLength: 30000 }, questions: list(text()),
   findings: list(object({ classification: enumeration("auto-fix", "decision-required", "defer", "environment-blocked"), severity: enumeration("critical", "major", "minor"), evidence: text() })),
   acceptanceCriteria: list(object({ id: text(100), description: text() })),
-  stories: list(object({ key: text(40), title: text(200), scope: text(2000), criteria: list(text(100)), dependsOn: list(text(40)) })),
+  stories: list(object({ key: text(40), title: text(200), scope: text(2000), criteria: list(text(100)), dependsOn: list(text(40)), assessment: object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), verificationDepth: enumeration("minimal", "standard", "thorough") }) })),
   coverage: list(object({ criterionId: text(100), status: enumeration("passed", "failed", "not-run"), evidence: text() })),
   tests: list(object({ command: text(), exitCode: { type: ["integer", "null"] }, evidence: text() })),
   dependencies: list(object({ name: text(200), change: enumeration("added", "updated", "removed"), rationale: text() })),
@@ -86,6 +86,8 @@ export function validateStories(stories: Story[], criteria: Criterion[]) {
   const keys = new Set(stories.map(s => s.key)), known = new Set(criteria.map(c => c.id)), owner = new Map<string, string>();
   for (const story of stories) {
     if (!story.criteria.length) throw new Error(`Story ${story.key} owns no acceptance criterion`);
+    const floor=requiredVerificationDepth(story.assessment);
+    if (depths.indexOf(story.assessment.verificationDepth) < depths.indexOf(floor)) throw new Error(`Story ${story.key} verification depth ${story.assessment.verificationDepth} is below ${floor}, which its ${story.assessment.complexity} complexity and ${story.assessment.risk} risk require`);
     for (const id of story.criteria) {
       if (!known.has(id)) throw new Error(`Story ${story.key} names unknown acceptance criterion ${id}`);
       if (owner.has(id)) throw new Error(`Acceptance criterion ${id} belongs to both ${owner.get(id)} and ${story.key}`);

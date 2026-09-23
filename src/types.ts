@@ -20,7 +20,10 @@ export interface TaskAssessment { complexity: "low" | "medium" | "high"; risk: "
 export interface ModelSelection { policy: string; provider: AgentProvider; model: string; reason: string; }
 // A story is a slice of an epic that Builder and Tester deliver on its own branch from the epic's
 // branch. The Architect proposes the split with the spec and the human approves it with the brief.
-export interface Story { key: string; title: string; scope: string; criteria: string[]; dependsOn: string[]; }
+// Each story earns its own verification: its risk and complexity set the depth its Tester works
+// to, floored like the epic's, so a low-risk slice is not tested to the epic's worst case.
+export type StoryAssessment = Pick<TaskAssessment, "complexity" | "risk" | "verificationDepth">;
+export interface Story { key: string; title: string; scope: string; criteria: string[]; dependsOn: string[]; assessment: StoryAssessment; }
 export interface AgentResult {
   taskAssessment: TaskAssessment | null;
   outcome: "spec" | "questions" | "resolved" | "pass" | "changes" | "decision";

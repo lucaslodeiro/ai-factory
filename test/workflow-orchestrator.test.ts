@@ -169,7 +169,7 @@ function epicFixture(){
  const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
  const store=new Store(":memory:"),github=new GitHub(),workspace=new Workspace();
  const criteria=[{id:"AC1",description:"Tokens"},{id:"AC2",description:"Hero"},{id:"AC3",description:"Whole page"}];
- const stories=[{key:"S1",title:"Design tokens",scope:"Palette and spacing",criteria:["AC1"],dependsOn:[]},{key:"S2",title:"Hero",scope:"First screen",criteria:["AC2"],dependsOn:["S1"]}];
+ const stories=[{key:"S1",title:"Design tokens",scope:"Palette and spacing",criteria:["AC1"],dependsOn:[],assessment:{complexity:"low" as const,risk:"low" as const,verificationDepth:"minimal" as const}},{key:"S2",title:"Hero",scope:"First screen",criteria:["AC2"],dependsOn:["S1"],assessment:{complexity:"medium" as const,risk:"low" as const,verificationDepth:"standard" as const}}];
  const succeed=(executionId:string)=>store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(executionId);
  const architect:AgentAdapter={async run(request){succeed(request.executionId!);return result("spec",{acceptanceCriteria:criteria,spec:"# Spec\nAC1 AC2 AC3",stories});}};
  // Delivery roles cover exactly the criteria of the work item they run on: a story's slice, or the epic's whole.
@@ -196,8 +196,8 @@ test("an approved split creates sub-issues with dependencies, runs each story fr
   assert.equal(f.github.subIssuesByParent.get(1)?.length,2);
   const s1=rows[0],s2=rows[1];assert.deepEqual(f.github.blockedByIssue.get(s2.issue_number!),[s1.issue_id]);assert.equal(f.github.blockedByIssue.get(s1.issue_number!),undefined);
   assert.deepEqual(f.item(s1.work_item_id!),{stage:"TEST",status:"QUEUED",base_branch:"factory/issue-1",epic_work_item_id:epic.id});
-  const s1Spec=f.store.db.prepare("SELECT criteria,approved_by,stories FROM specs WHERE work_item_id=?").get(s1.work_item_id) as {criteria:string;approved_by:string;stories:string};
-  assert.deepEqual({criteria:JSON.parse(s1Spec.criteria).map((c:{id:string})=>c.id),approved_by:s1Spec.approved_by,stories:s1Spec.stories},{criteria:["AC1"],approved_by:"owner",stories:"[]"});
+  const s1Spec=f.store.db.prepare("SELECT criteria,approved_by,stories,assessment FROM specs WHERE work_item_id=?").get(s1.work_item_id) as {criteria:string;approved_by:string;stories:string;assessment:string};
+  assert.deepEqual({criteria:JSON.parse(s1Spec.criteria).map((c:{id:string})=>c.id),approved_by:s1Spec.approved_by,stories:s1Spec.stories,depth:JSON.parse(s1Spec.assessment).verificationDepth,ux:JSON.parse(s1Spec.assessment).uxImpact},{criteria:["AC1"],approved_by:"owner",stories:"[]",depth:"minimal",ux:"none"},"the story runs at its own depth with the epic UX impact");
   // S1: Tester, then integration into the epic branch instead of Review.
   await f.orchestrator.runLocal();assert.deepEqual(f.item(s1.work_item_id!),{stage:"DELIVERY",status:"QUEUED",base_branch:"factory/issue-1",epic_work_item_id:epic.id});
   await f.orchestrator.runLocal();assert.equal(f.item(s1.work_item_id!).status,"COMPLETED");assert.deepEqual(f.workspace.integrations,[`factory/issue-${s1.issue_number}->factory/issue-1`]);assert.deepEqual(f.github.closed,[{number:s1.issue_number,reason:"completed"}]);

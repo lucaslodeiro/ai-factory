@@ -18,7 +18,7 @@ One line per criterion, same IDs as the structured acceptanceCriteria.
 Operational choices you made yourself. The human can correct them; they do not block approval.
 
 ## Stories
-"None." when the issue is delivered whole. Otherwise one line per story: key, title, the criteria it owns and the stories it waits for. Splitting is a decision above, with the reason the parts are independent.
+"None." when the issue is delivered whole. Otherwise one line per story: key, title, the criteria it owns, the stories it waits for, and its risk and verification depth. Splitting is a decision above, with the reason the parts are independent.
 
 ## Assessment
 Complexity, risk, verification depth and UX impact (none / minor / significant), one line each.
