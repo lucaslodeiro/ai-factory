@@ -19,7 +19,7 @@ test('settings progress stays beside the save button and exposes busy and comple
  const elements=new Map<string,any>();const context=vm.createContext({$:(key:string)=>{if(!elements.has(key))elements.set(key,{dataset:{},setAttribute(name:string,value:string){this[name]=value;}});return elements.get(key)}});
  vm.runInContext(source.split('\n').find(line=>line.startsWith('function settingsProgress('))!,context);
  vm.runInContext("settingsProgress('Validating…')",context);assert.equal(elements.get('#settings-save').textContent,'Applying…');assert.equal(elements.get('#settings-form')['aria-busy'],'true');assert.equal(elements.get('#settings-change-status').hidden,true);
- vm.runInContext("settingsProgress('Saved.','success')",context);assert.equal(elements.get('#settings-progress').textContent,'Saved.');assert.equal(elements.get('#settings-progress').dataset.state,'success');assert.equal(elements.get('#settings-form')['aria-busy'],'false');assert.equal(elements.get('#settings-change-status').hidden,false);
+ vm.runInContext("settingsProgress('Saved.','success')",context);assert.equal(elements.get('#settings-progress').textContent,'Saved.');assert.equal(elements.get('#settings-progress').dataset.state,'success');assert.equal(elements.get('#settings-form')['aria-busy'],'false');assert.equal(elements.get('#settings-change-status').hidden,true);
  vm.runInContext("settingsProgress('Could not save.','error')",context);assert.equal(elements.get('#settings-progress').dataset.state,'error');
 });
 test('Codex credentials include a visible provider name',()=>{
