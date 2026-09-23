@@ -445,7 +445,7 @@ function dashboardSettings(root: string) {
   } : {});
   const providers=["PRODUCT_ARCHITECT","DESIGNER","DEVELOPER","QA","REVIEWER"].map(role=>readDashboardSetting(root,`${role}_PROVIDER`));
   const setupProvider=providers.every(value=>value===providers[0])?providers[0]:"codex";
-  settings.fields.push({key:"AGENT_PROVIDER",label:"Agent provider",description:"Use one provider for all four roles during first-time setup.",group:"connections",type:"select",options:[{value:"codex",label:"Codex"},{value:"claude",label:"Claude"},{value:"cursor",label:"Cursor"}],value:setupProvider,required:true,restart:"daemon",setup:true,setupOnly:true} as any);
+  settings.fields.push({key:"AGENT_PROVIDER",label:"Agent provider",description:"Use one provider for all five roles during first-time setup.",group:"connections",type:"select",options:[{value:"codex",label:"Codex"},{value:"claude",label:"Claude"},{value:"cursor",label:"Cursor"}],value:setupProvider,required:true,restart:"daemon",setup:true,setupOnly:true} as any);
   return {...settings,readiness:setupReadiness(root,credentials)};
 }
 function expandSetupProvider(values:Record<string,unknown>){const result={...values};if("AGENT_PROVIDER" in result){const provider=result.AGENT_PROVIDER;if(provider!=="codex"&&provider!=="claude"&&provider!=="cursor")throw new Error("AGENT_PROVIDER: choose codex, claude or cursor");for(const role of["PRODUCT_ARCHITECT","DESIGNER","DEVELOPER","QA","REVIEWER"])result[`${role}_PROVIDER`]=provider;delete result.AGENT_PROVIDER;}return result;}

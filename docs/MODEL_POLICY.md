@@ -17,15 +17,16 @@ The assessment and rationale are published with SPEC vN and stored in its immuta
 | Role | Short name | Stage | Default provider | Default model |
 |---|---|---|---|---|
 | Product Architect | Architect | Design | Claude | auto |
+| Product Designer | Designer | Design | Claude | auto |
 | Implementation Engineer | Builder | Build | Codex | auto |
 | Verification Engineer | Tester | Test | Codex | auto |
 | Delivery Reviewer | Reviewer | Review | Claude | auto |
 
-Dashboard → Configuration → Agent roles exposes one card per role. Each card writes `<ROLE>_PROVIDER` and `<ROLE>_MODEL`, where `<ROLE>` is `PRODUCT_ARCHITECT`, `DEVELOPER`, `QA`, or `REVIEWER`. The model selector offers `Auto (provider recommended)`, known model IDs for the selected provider, and preserves an existing custom ID.
+Dashboard → Configuration → Agent roles exposes one card per role. Each card writes `<ROLE>_PROVIDER` and `<ROLE>_MODEL`, where `<ROLE>` is `PRODUCT_ARCHITECT`, `DESIGNER`, `DEVELOPER`, `QA`, or `REVIEWER`. The model selector offers `Auto (provider recommended)`, known model IDs for the selected provider, and preserves an existing custom ID.
 
 The Codex choices follow the [official model catalog](https://developers.openai.com/es-419/docs/models). OpenAI documents that Codex uses a recommended model when none is specified. Claude's [official CLI reference](https://code.claude.com/docs/en/cli-usage) documents `--model` as an override. Cursor's [Agent CLI parameters](https://docs.cursor.com/en/cli/reference/parameters) document `--model` and `cursor-agent models` lists the identifiers the signed-in Cursor account may use; the dashboard offers the identifiers named in that documentation and preserves a custom one. Cursor brokers models from several vendors through a Cursor subscription, so choosing it changes the harness and the billing route rather than adding a model. Availability depends on the account and provider. A rejected model fails the run; the factory never silently changes provider or model. Changing role settings requires restarting the daemon and affects future attempts.
 
-All providers receive the same canonical role contract. Product Architect and Delivery Reviewer remain read-only; Implementation Engineer can edit the worktree; Verification Engineer remains restricted to test files by the orchestrator's mutation checks.
+All providers receive the same canonical role contract. Product Architect and Delivery Reviewer remain read-only; Product Designer can write only its disposable prototype under `.factory/prototype/`; Implementation Engineer can edit the worktree; Verification Engineer remains restricted to test files by the orchestrator's mutation checks.
 
 ## Provider differences
 

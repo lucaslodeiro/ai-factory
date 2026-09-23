@@ -9,11 +9,12 @@ A GitHub Issue becomes a work item. The local orchestrator coordinates four inde
 | Role | Short name | Stage | Responsibility | Default provider |
 |---|---|---|---|---|
 | **Product Architect** | **Architect** | **Design** | Clarifies the request, challenges assumptions, proposes alternatives, and produces the specification. | Claude |
+| **Product Designer** | **Designer** | **Design** | Runs only when the Architect assesses a significant UX impact: builds a disposable prototype with screenshots that the human approves together with the brief. It never reaches the pull request. | Claude |
 | **Implementation Engineer** | **Builder** | **Build** | Implements the approved specification in an isolated Git worktree. | Codex |
 | **Verification Engineer** | **Tester** | **Test** | Independently derives tests from the specification, may change test code, and reports findings without modifying production code. | Codex |
 | **Delivery Reviewer** | **Reviewer** | **Review** | Reviews specification compliance, code quality, security, performance, and product/UI/copy consistency. | Claude |
 
-The role identifiers are `product-architect`, `developer`, `qa` and `reviewer`. Workflow projections store stage (`DESIGN`, `BUILD`, `TEST`, `REVIEW`, `DELIVERY`) independently from status (`QUEUED`, `RUNNING`, `WAITING`, `FAILED`, `PAUSED`, `CANCELLED`, `COMPLETED`). Human-facing surfaces use the names in the table.
+The role identifiers are `product-architect`, `designer`, `developer`, `qa` and `reviewer`. Workflow projections store stage (`DESIGN`, `BUILD`, `TEST`, `REVIEW`, `DELIVERY`) independently from status (`QUEUED`, `RUNNING`, `WAITING`, `FAILED`, `PAUSED`, `CANCELLED`, `COMPLETED`). Human-facing surfaces use the names in the table.
 
 Each role can use Codex, Claude or Cursor independently. In **Configuration → Agent roles**, the operator chooses the provider and either a concrete model or **Auto**, which lets that provider use its recommended model. Cursor runs through the Cursor Agent CLI and a Cursor subscription: it brokers models from several vendors rather than adding one, has no JSON Schema flag (the orchestrator sends the schema in the prompt and validates the final message), uses its documented read-only mode for Architect and Reviewer, and reports no token usage.
 
