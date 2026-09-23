@@ -171,9 +171,9 @@ function epicFixture(){
  const criteria=[{id:"AC1",description:"Tokens"},{id:"AC2",description:"Hero"},{id:"AC3",description:"Whole page"}];
  const stories=[{key:"S1",title:"Design tokens",scope:"Palette and spacing",criteria:["AC1"],dependsOn:[]},{key:"S2",title:"Hero",scope:"First screen",criteria:["AC2"],dependsOn:["S1"]}];
  const succeed=(executionId:string)=>store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(executionId);
- const architect:AgentAdapter={async run(request){succeed(request.executionId);return result("spec",{acceptanceCriteria:criteria,spec:"# Spec\nAC1 AC2 AC3",stories});}};
+ const architect:AgentAdapter={async run(request){succeed(request.executionId!);return result("spec",{acceptanceCriteria:criteria,spec:"# Spec\nAC1 AC2 AC3",stories});}};
  // Delivery roles cover exactly the criteria of the work item they run on: a story's slice, or the epic's whole.
- const delivery:AgentAdapter={async run(request){succeed(request.executionId);const spec=store.db.prepare("SELECT criteria FROM specs WHERE work_item_id=? ORDER BY version DESC LIMIT 1").get(request.workItemId) as {criteria:string};return result("pass",{coverage:(JSON.parse(spec.criteria) as Array<{id:string}>).map(criterion=>({criterionId:criterion.id,status:"passed" as const,evidence:"Verified"}))});}};
+ const delivery:AgentAdapter={async run(request){succeed(request.executionId!);const spec=store.db.prepare("SELECT criteria FROM specs WHERE work_item_id=? ORDER BY version DESC LIMIT 1").get(request.workItemId) as {criteria:string};return result("pass",{coverage:(JSON.parse(spec.criteria) as Array<{id:string}>).map(criterion=>({criterionId:criterion.id,status:"passed" as const,evidence:"Verified"}))});}};
  const runner=new WorkflowRunner(store,{"product-architect":architect,developer:delivery,qa:delivery,reviewer:delivery},workspace,github);
  const orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
  const item=(id:string)=>store.db.prepare("SELECT stage,status,base_branch,epic_work_item_id FROM work_items WHERE id=?").get(id) as {stage:string;status:string;base_branch:string;epic_work_item_id:string|null};

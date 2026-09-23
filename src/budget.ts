@@ -42,9 +42,19 @@ export function budgetLedger(store:Store,workItemId:string):BudgetEntry[] {
  return [...ledger.values()];
 }
 
+// An epic and its stories share one budget: splitting an issue must not multiply what it may
+// spend. The family is the epic plus every story planned under it, and an extension granted on any
+// of their issues counts for all of them.
+export function budgetFamily(store:Store,workItemId:string):string[] {
+ const row=store.db.prepare("SELECT epic_work_item_id FROM work_items WHERE id=?").get(workItemId) as {epic_work_item_id:string|null}|undefined;
+ if (!row) throw new Error("Unknown work item");
+ const owner=row.epic_work_item_id ?? workItemId;
+ return [owner,...(store.db.prepare("SELECT id FROM work_items WHERE epic_work_item_id=? ORDER BY created_at").all(owner) as Array<{id:string}>).map(item=>item.id)];
+}
+
 export function budgetState(store:Store,workItemId:string,settings:BudgetSettings=config):BudgetState {
- const ledger=budgetLedger(store,workItemId);
- const grants=(store.db.prepare("SELECT payload FROM records WHERE work_item_id=? AND kind='budget' AND status='active' ORDER BY sequence").all(workItemId) as Array<{payload:string}>)
+ const family=budgetFamily(store,workItemId),ledger=family.flatMap(member=>budgetLedger(store,member));
+ const grants=(store.db.prepare(`SELECT payload FROM records WHERE work_item_id IN (${family.map(()=>"?").join(",")}) AND kind='budget' AND status='active' ORDER BY sequence`).all(...family) as Array<{payload:string}>)
   .map(row=>JSON.parse(row.payload) as {tokens?:unknown;acknowledges?:unknown});
  const extended=grants.reduce((total,grant)=>total+(tokens(grant.tokens) ?? 0),0);
  const acknowledged=new Set(grants.flatMap(grant=>Array.isArray(grant.acknowledges) ? grant.acknowledges.filter((id):id is string=>typeof id === "string") : []));

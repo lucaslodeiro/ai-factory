@@ -200,3 +200,21 @@ test("the dashboard offers the extension while the issue waits for it or after a
   assert.equal((store.db.prepare("SELECT source_type FROM records WHERE kind='budget'").get() as {source_type:string}).source_type,"dashboard");
  } finally { config.repo=previous.repo;config.instanceName=previous.instance;store.db.close(); }
 }));
+
+test("an epic and its stories share one budget, and an extension on any of their issues counts for all",()=>withBudget(1000,[],()=>{
+ const {store,id:epic}=setup();
+ try {
+  store.db.prepare("UPDATE specs SET approved_by='owner' WHERE work_item_id=?").run(epic);
+  const story=(number:number)=>new WorkflowIntake(store).start({...issue,id:300+number,nodeId:`I_${300+number}`,number,title:`Story ${number}`,url:`https://github.com/owner/demo/issues/${number}`},{actor:"factory",source:"assignment"},{epicWorkItemId:epic,epicBranch:"factory/issue-3",specVersion:1,key:`S${number}`,specification:{body:"Story",criteria:[{id:"AC1",description:"Works"}],assessment:null,approvedBy:"owner",approvalCommentId:1,approvedAt:"now"}}).id;
+  store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,approved_by) VALUES(?,1,'SPEC','[]','owner')").run(epic);
+  const s1=story(4),s2=story(5);
+  run(store,epic,"product-architect",300);run(store,s1,"developer",400);run(store,s2,"developer",200);
+  for(const member of [epic,s1,s2])assert.deepEqual([budgetState(store,member).consumed,budgetState(store,member).granted],[900,1000],"every member sees the family total");
+  run(store,s2,"qa",200);
+  assert.equal(budgetState(store,s1).block,"exhausted","a story cannot start once the family spent the epic budget");
+  store.db.prepare("UPDATE work_items SET status='WAITING' WHERE id=?").run(s2);
+  new WorkflowRecords(store).create({workItemId:s2,specVersion:1,scope:"issue",payload:{kind:"request",type:"budget",owner:"human",originatingStage:"BUILD",allowedReturnStages:["BUILD"],openedAfterCommentId:0,budget:"exhausted"},sourceType:"orchestrator",sourceId:"budget:1",actor:"orchestrator"});
+  command(store,s2,"/factory budget +500",30);
+  assert.deepEqual([budgetState(store,epic).granted,budgetState(store,s1).block],[1500,null],"the extension granted on a story issue lifts the hold on the family");
+ } finally { store.db.close(); }
+}));
