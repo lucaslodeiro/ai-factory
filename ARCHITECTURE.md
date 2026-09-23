@@ -7,13 +7,15 @@ The workflow stores **stage** and **status** independently. Stage is one of `DES
 ```text
 Open GitHub issue + /factory start
   → DESIGN/QUEUED → Architect → DESIGN/WAITING
-  → exact SPEC approval
+  → exact SPEC approval, read through its brief
   → BUILD/QUEUED → Builder
   → TEST/QUEUED → Tester
   → REVIEW/QUEUED → Reviewer
   → DELIVERY/WAITING → human PR merge
   → DELIVERY/COMPLETED
 ```
+
+The Architect returns two documents in one run. The brief holds only what needs the human: decisions with a recommendation and the consequence of getting them wrong, the solution in a few lines, the acceptance criteria and the assessment. The SPEC is the full technical contract for Builder, Tester and Reviewer. The human approves the brief; the SPEC is folded under it in the same comment and approved with it as one version. The stored specification body leads with the brief, so delivery roles see what the human decided, and the Reviewer flags product decisions the brief does not contain. Changing a decision is `/factory answer`, which produces a new version.
 
 Findings can return to Builder, request an Architect tactical decision, or be explicitly deferred. A tactical decision retains the approved SPEC and can return only to an allowed unfinished stage. Automatic correction cycles are bounded.
 

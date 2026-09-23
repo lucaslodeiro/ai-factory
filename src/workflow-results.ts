@@ -7,6 +7,10 @@ import { WorkflowProjections } from "./workflow-projection.js";
 import { WorkflowRecords,type V3Stage,type WorkflowRecord } from "./workflow-records.js";
 import {roleShortName} from "./names.js";
 
+// The stored body leads with the brief the human approved, so every delivery role and a
+// recovered issue see the decisions the human made before the technical detail.
+export function specificationBody(result:Pick<AgentResult,"brief"|"spec">){return `${result.brief.trim()}\n\n---\n\n${result.spec.trim()}`;}
+
 const roleStage:Record<AgentRole,V3Stage>={"product-architect":"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"};
 const nextRoleStage={developer:"BUILD",qa:"TEST",reviewer:"REVIEW"} as const;
 
@@ -46,7 +50,7 @@ export class WorkflowResults {
    const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:"DESIGN",status:"WAITING",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"spec-proposed",summary:`SPEC v${next} proposed`},recordIds:ids,correctionCycles:0},()=>{
     this.resultEvent(input,next);
     if(specVersion)this.records.supersedeSpec(input.workItemId,specVersion);
-    this.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment) VALUES(?,?,?,?,?)").run(input.workItemId,next,result.spec,JSON.stringify(result.acceptanceCriteria),JSON.stringify(result.taskAssessment));
+    this.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment) VALUES(?,?,?,?,?)").run(input.workItemId,next,specificationBody(result),JSON.stringify(result.acceptanceCriteria),JSON.stringify(result.taskAssessment));
     ids.push(this.records.create({workItemId:input.workItemId,specVersion:next,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
    });return {discarded:false,projection,recordIds:ids};
   }

@@ -20,7 +20,7 @@ test("spec/coverage IDs are unique and correspond to the immutable approved crit
  assert.throws(() => parseResult(spec, "product-architect"), /Duplicate/);
  assert.throws(() => parseResult(result("spec", { acceptanceCriteria: [{ id: "AC404", description: "Missing from markdown" }] }), "product-architect"), /named acceptance criteria/);
  const withOpenQuestions=result("spec",{questions:["Which hosting provider should we use?"]});
- assert.throws(() => parseResult(withOpenQuestions,"product-architect"),/questions: \[\].*non-blocking open questions/);
+ assert.throws(() => parseResult(withOpenQuestions,"product-architect"),/questions: \[\].*in the brief with your recommendation/);
  assert.doesNotThrow(() => parseResult({...withOpenQuestions,questions:[]},"product-architect"));
  const report = result("pass"); report.coverage.push(report.coverage[0]);
  assert.throws(() => parseResult(report, "qa"), /Duplicate/);
@@ -112,4 +112,13 @@ test("a minor finding is recorded instead of sending the Builder another cycle",
  assert.equal(parseResult(withFinding("auto-fix","major"),"qa").outcome,"changes");
  // A deferred minor finding does not block the delivery, which is the whole point.
  assert.equal(parseResult(withFinding("defer","minor","pass"),"qa").findings[0].severity,"minor");
+});
+
+test("a proposed specification needs a brief the human can read in place of the SPEC",()=>{
+ assert.throws(()=>parseResult(result("spec",{brief:""}),"product-architect"),error=>error instanceof InvalidResultError&&/needs a brief/.test(error.message));
+ assert.throws(()=>parseResult(result("spec",{brief:"x".repeat(4001)}),"product-architect"),/invalid text length/);
+ assert.throws(()=>parseResult(result("questions",{questions:["Which plan?"],brief:"Decisions"}),"product-architect"),/Only a new specification may contain brief/);
+ assert.equal(parseResult(result("spec"),"product-architect").brief.startsWith("## Decisions for you"),true);
+ assert.equal(parseResult(result("pass",{brief:"injected"}),"developer").brief,"");
+ assert.deepEqual(resultSchemaFor("developer").properties?.brief,{type:"string",enum:[""]});
 });

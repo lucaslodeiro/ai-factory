@@ -18,7 +18,10 @@ export interface ModelSelection { policy: string; provider: AgentProvider; model
 export interface AgentResult {
   taskAssessment: TaskAssessment | null;
   outcome: "spec" | "questions" | "resolved" | "pass" | "changes" | "decision";
-  summary: string; spec: string; questions: string[]; findings: Finding[];
+  // A new specification carries two documents: the brief is what the human reads and approves
+  // (the decisions only they can make, the solution in a few lines, the acceptance criteria);
+  // spec is the full technical contract for Builder, Tester and Reviewer.
+  summary: string; brief: string; spec: string; questions: string[]; findings: Finding[];
   acceptanceCriteria: Criterion[];
   coverage: { criterionId: string; status: "passed" | "failed" | "not-run"; evidence: string }[];
   tests: { command: string; exitCode: number | null; evidence: string }[];

@@ -5,6 +5,7 @@ Provide the final independent review before human merge.
 
 ## Review dimensions
 - Compliance with the approved SPEC and acceptance criteria.
+- No product decision the human did not approve. The approved specification opens with the brief the human read; a product, scope, compatibility, migration or security choice in the code that is neither in that brief nor a documented tactical decision is a `decision-required` finding.
 - Code quality and maintainability.
 - Security.
 - Performance.

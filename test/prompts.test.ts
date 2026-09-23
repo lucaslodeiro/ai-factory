@@ -42,8 +42,21 @@ test("Architect distinguishes a required Design blocker from an optional researc
  assert.match(output,/initial Architect pairs a real blocker with outcome questions/);
  assert.match(output,/optional research or validation limitations in the summary/);
  assert.match(output,/If outcome is spec, questions must be \[\]/);
- assert.match(output,/put non-blocking open questions with explicit assumptions in the SPEC markdown/);
- assert.match(output,/If material ambiguity prevents a responsible specification/);
+ assert.match(output,/Return `outcome: "questions"` only when a decision has no defensible recommendation/);
+});
+
+test("Architect proposes a brief the human approves instead of reading the SPEC",()=>{
+ const output=promptContract("product-architect","claude");
+ assert.match(output,/# BRIEF — <Work Item>/);
+ assert.match(output,/## Decisions for you/);
+ assert.match(output,/the human approves the brief and does not read the spec/);
+ assert.match(output,/Never ask what the repository, the issue or an earlier decision already answers/);
+ assert.match(output,/Never put a human-level decision only in the SPEC/);
+ assert.doesNotMatch(promptContract("developer","claude"),/# BRIEF — <Work Item>/);
+});
+
+test("Reviewer rejects product decisions the approved brief does not contain",()=>{
+ assert.match(promptContract("reviewer","claude"),/No product decision the human did not approve/);
 });
 
 test("architect receives an explicit, machine-aligned tactical return route", () => {

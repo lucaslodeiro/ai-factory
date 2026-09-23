@@ -14,11 +14,13 @@ const levels=["low","medium","high"] as const, depths=["minimal","standard","tho
 export function requiredVerificationDepth(assessment:Pick<TaskAssessment,"complexity"|"risk">):VerificationDepth {
  return depths[Math.max(levels.indexOf(assessment.complexity),levels.indexOf(assessment.risk))];
 }
+// The brief replaces reading the spec, so it only works while it stays short enough to be read.
+export const briefMaxLength=4000;
 const decisionSchema=object({ kind: enumeration("tactical", "major"), decision: text(), rationale: text(), conflictsWithHuman: { type: "boolean" }, supersedes:list(text(100)) });
 export const resultSchema = object({
   taskAssessment: { ...object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), verificationDepth: enumeration("minimal", "standard", "thorough"), rationale: text() }), type: ["object", "null"] },
   outcome: enumeration("spec", "questions", "resolved", "pass", "changes", "decision"),
-  summary: text(1500), spec: { type: "string", maxLength: 30000 }, questions: list(text()),
+  summary: text(1500), brief: { type: "string", maxLength: briefMaxLength }, spec: { type: "string", maxLength: 30000 }, questions: list(text()),
   findings: list(object({ classification: enumeration("auto-fix", "decision-required", "defer", "environment-blocked"), severity: enumeration("critical", "major", "minor"), evidence: text() })),
   acceptanceCriteria: list(object({ id: text(100), description: text() })),
   coverage: list(object({ criterionId: text(100), status: enumeration("passed", "failed", "not-run"), evidence: text() })),
@@ -44,7 +46,7 @@ export function resultSchemaFor(role: AgentRole, allowedNextRoles?: TacticalNext
  } };
  return { ...resultSchema, properties: { ...resultSchema.properties,
   outcome: enumeration("pass", "changes", "decision"),
-  spec: { type: "string", enum: [""] }, acceptanceCriteria: { ...resultSchema.properties!.acceptanceCriteria, maxItems: 0 },
+  brief: { type: "string", enum: [""] }, spec: { type: "string", enum: [""] }, acceptanceCriteria: { ...resultSchema.properties!.acceptanceCriteria, maxItems: 0 },
   taskAssessment: { type: "null" }, nextRole: { type: "null" },
  } };
 }
@@ -77,7 +79,7 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
   // constraints consistently. Delivery roles never own these fields, so force
   // their inert values rather than letting a report attempt rewrite approved scope.
   const candidate = role !== "product-architect" && raw !== null && typeof raw === "object" && !Array.isArray(raw)
-    ? { ...(raw as Record<string, unknown>), spec:"", acceptanceCriteria:[], taskAssessment:null, nextRole:null }
+    ? { ...(raw as Record<string, unknown>), brief:"", spec:"", acceptanceCriteria:[], taskAssessment:null, nextRole:null }
     : raw;
   validate(candidate, resultSchema);
   const r = candidate as AgentResult;
@@ -86,9 +88,10 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
   unique(r.reviewChecks.map(c => c.dimension), "review dimension");
   const allowed = role === "product-architect" ? ["spec", "questions", "resolved"] : ["pass", "changes", "decision"];
   if (!allowed.includes(r.outcome)) throw new Error(`Invalid ${role} outcome: ${r.outcome}`);
-  if (r.outcome === "spec" && r.questions.length) throw new Error('A proposed specification must return questions: []. Put non-blocking open questions and explicit assumptions in the SPEC markdown; if human input is required before proposing it, return outcome "questions" without a SPEC');
+  if (r.outcome === "spec" && r.questions.length) throw new Error('A proposed specification must return questions: []. Put decisions that need the human in the brief with your recommendation, and your own assumptions under its assumptions; if a decision has no defensible recommendation is required before proposing it, return outcome "questions" without a SPEC');
   if (r.outcome === "spec" && (!r.spec.trim() || !r.acceptanceCriteria.length || r.acceptanceCriteria.some(c => !r.spec.includes(c.id)))) throw new Error("Specification needs named acceptance criteria in markdown and structured form");
-  if (r.outcome !== "spec" && (r.spec !== "" || r.acceptanceCriteria.length)) throw new Error("Only a new specification may contain spec/acceptanceCriteria");
+  if (r.outcome === "spec" && !r.brief.trim()) throw new Error("A proposed specification needs a brief: the decisions that need the human, the solution in at most five lines and the acceptance criteria. The human approves the brief instead of reading the SPEC");
+  if (r.outcome !== "spec" && (r.brief !== "" || r.spec !== "" || r.acceptanceCriteria.length)) throw new Error("Only a new specification may contain brief/spec/acceptanceCriteria");
   if (r.outcome === "spec" && !r.taskAssessment) throw new Error("Specification requires a taskAssessment");
   if (r.taskAssessment) {
     const floor=requiredVerificationDepth(r.taskAssessment);

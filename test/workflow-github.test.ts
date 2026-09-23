@@ -267,3 +267,12 @@ test("a milestone that cannot be published keeps its attempts, never blocks othe
   assert.deepEqual(publicationOf(s.store,statusPublicationKey("work-1")),{status:"published",commentId:70,url:"https://github.com/owner/demo/issues/7#issuecomment-70",publishedAt:(publicationOf(s.store,statusPublicationKey("work-1")) as any).publishedAt});
  } finally {s.store.db.close();}
 });
+
+test("a proposed specification leads with its brief and folds the full SPEC away",()=>{
+ const body=resultMarkdown("product-architect",result("spec",{brief:"## Decisions for you\n**D1. Keep v1 clients?** Recommended: yes.",spec:"# Specification\n## Technical Design\nAC1: returns 42"}),3);
+ const brief=body.indexOf("### Decisions for you"),criteria=body.indexOf("## Acceptance criteria"),action=body.indexOf("## Next action"),folded=body.indexOf("<details>\n<summary>Full technical specification v3");
+ assert.ok(brief>0&&brief<criteria&&criteria<action&&action<folded,"brief, criteria and the approval command come before the folded SPEC");
+ assert.match(body.slice(folded),/### Technical Design/);
+ assert.match(body,/Approving accepts every recommendation above/);
+ assert.match(body,/`\/factory approve v3 \[guidance\]`/);
+});

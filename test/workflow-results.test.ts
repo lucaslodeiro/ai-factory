@@ -30,7 +30,7 @@ test("Architect specification creates a versioned approval request",()=>{
   running(s,"product-architect","run-a");
   const applied=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-a",role:"product-architect",result:result("spec")});
   assert.equal(applied.discarded,false);assert.deepEqual({stage:applied.projection.stage,status:applied.projection.status},{stage:"DESIGN",status:"WAITING"});
-  assert.equal((s.store.db.prepare("SELECT body FROM specs WHERE work_item_id='work-1' AND version=1").get() as {body:string}).body,"# Specification\nAC1: returns 42");
+  assert.equal((s.store.db.prepare("SELECT body FROM specs WHERE work_item_id='work-1' AND version=1").get() as {body:string}).body,"## Decisions for you\nNone.\n\n## Solution\nReturn 42.\n\n---\n\n# Specification\nAC1: returns 42");
   const request=s.records.activeRequest("work-1");assert.equal(request?.payload.kind==="request"&&request.payload.type,"spec-approval");
  } finally {s.store.db.close();}
 });

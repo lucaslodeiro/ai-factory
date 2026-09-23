@@ -8,6 +8,6 @@ export function workflowNextStep(store:Store,id:string,status:string,pr?:string)
  // Links are read-only navigation. A merge always happens explicitly on GitHub.
  const prUrl=pr&&/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/.test(pr)?pr:null;
  if(type==='merge')return {title:request.payload.prClosed?'Pull request closed without merge':'Pull request ready for your review',url:prUrl,respondLabel:'Request changes',command:'/factory answer <changes>',needsAttention:!prUrl};
- if(type==='spec-approval')return {title:'Specification waiting for your approval',url:null,respondLabel:'Approve or request changes',command:`/factory approve v${request.specVersion}`};
+ if(type==='spec-approval')return {title:'Specification brief waiting for your approval',url:null,respondLabel:'Approve or request changes',command:`/factory approve v${request.specVersion}`};
  return {title:type==='correction-limit'?'Your guidance is needed to continue':'Waiting for your answer',url:null,respondLabel:type==='correction-limit'?'Give guidance':'Answer',command:'/factory answer <guidance>'};
 }
