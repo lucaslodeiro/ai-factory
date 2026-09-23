@@ -120,7 +120,7 @@ test("a proposed specification needs a brief the human can read in place of the 
  assert.equal(resultSchemaFor("product-architect").properties?.brief?.maxLength,undefined);
  assert.equal(parseResult(result("spec",{spec:`# Spec\nAC1\n${"x".repeat(25001)}`}),"product-architect").spec.length>25000,true);
  assert.equal(resultSchemaFor("product-architect").properties?.spec?.maxLength,undefined);
- assert.equal(resultSchemaFor("product-architect").properties?.questions?.maxItems,10);
+ assert.equal(resultSchemaFor("product-architect").properties?.questions?.maxItems,5);
  assert.throws(()=>parseResult(result("questions",{questions:["Which plan?"],brief:"Decisions"}),"product-architect"),/Only a new specification may contain brief/);
  assert.equal(parseResult(result("spec"),"product-architect").brief.startsWith("## Decisions for you"),true);
  assert.equal(parseResult(result("pass",{brief:"injected"}),"developer").brief,"");

@@ -49,6 +49,8 @@ test("Architect proposes a brief the human approves instead of reading the SPEC"
  const output=promptContract("product-architect","claude");
  assert.match(output,/# BRIEF — <Work Item>/);
  assert.match(output,/## Decisions for you/);
+ assert.match(output,/Ask no more than 5 questions and put no more than 5 human decisions in the brief/);
+ assert.match(output,/At most five, most irreversible first/);
  assert.match(output,/the human approves the brief and does not read the spec/);
  assert.match(output,/Never ask what the repository, the issue or an earlier decision already answers/);
  assert.match(output,/Never put a human-level decision only in the SPEC/);

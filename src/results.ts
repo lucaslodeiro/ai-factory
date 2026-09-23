@@ -26,7 +26,7 @@ const decisionSchema=object({ kind: enumeration("tactical", "major"), decision: 
 export const resultSchema = object({
   taskAssessment: { ...object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), verificationDepth: enumeration("minimal", "standard", "thorough"), uxImpact: enumeration("none", "minor", "significant"), rationale: text() }), type: ["object", "null"] },
   outcome: enumeration("spec", "questions", "resolved", "pass", "changes", "decision"),
-  summary: text(1500), brief: { type: "string" }, spec: { type: "string" }, questions: { ...list(text()), maxItems: 10 },
+  summary: text(1500), brief: { type: "string" }, spec: { type: "string" }, questions: { ...list(text()), maxItems: 5 },
   findings: list(object({ classification: enumeration("auto-fix", "decision-required", "defer", "environment-blocked"), severity: enumeration("critical", "major", "minor"), evidence: text() })),
   acceptanceCriteria: list(object({ id: text(100), description: text() })),
   stories: list(object({ key: text(40), title: text(200), scope: text(2000), criteria: list(text(100)), dependsOn: list(text(40)), assessment: object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), verificationDepth: enumeration("minimal", "standard", "thorough") }) })),
