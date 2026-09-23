@@ -16,7 +16,7 @@ A GitHub Issue becomes a work item. The local orchestrator coordinates four inde
 
 The role identifiers are `product-architect`, `designer`, `developer`, `qa` and `reviewer`. Workflow projections store stage (`DESIGN`, `BUILD`, `TEST`, `REVIEW`, `DELIVERY`) independently from status (`QUEUED`, `RUNNING`, `WAITING`, `FAILED`, `PAUSED`, `CANCELLED`, `COMPLETED`). Human-facing surfaces use the names in the table.
 
-Each role can use Codex, Claude or Cursor independently. In **Configuration → Agent roles**, the operator chooses the provider and either a concrete model or **Auto**, which lets that provider use its recommended model. Cursor runs through the Cursor Agent CLI and a Cursor subscription: it brokers models from several vendors rather than adding one, has no JSON Schema flag (the orchestrator sends the schema in the prompt and validates the final message), uses its documented read-only mode for Architect and Reviewer, and reports no token usage.
+Each role can use Codex, Claude or Cursor independently. In **Configuration → Agent roles**, the operator chooses the provider and either a concrete model or **Auto**, which lets that provider use its recommended model. Cursor runs through the Cursor Agent CLI and a Cursor subscription: it brokers models from several vendors rather than adding one, has no JSON Schema flag (the orchestrator sends the schema in the prompt and validates the final message), uses its documented read-only mode for Architect and Reviewer, and reports token usage on current CLI versions; runs without a complete usage breakdown remain unmeasured.
 
 The human remains the authority for major product/architecture decisions and any change that contradicts a previously approved human decision.
 

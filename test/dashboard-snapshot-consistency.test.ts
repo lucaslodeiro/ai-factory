@@ -3,6 +3,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../dashboard/app.js',import.meta.url),'utf8');
+test('running issue badge names the active role within its workflow stage',()=>{
+ const context=vm.createContext({roleName:(role:string)=>({'product-architect':'Architect',designer:'Designer'} as Record<string,string>)[role]||role});
+ vm.runInContext(source.slice(source.indexOf('  function issueActivityLabel('),source.indexOf('  const running=',source.indexOf('function renderIssueList('))),context);
+ const label=(role:string)=>{context.item={status:'RUNNING',activity:{label:'Agent running',role}};return vm.runInContext('issueActivityLabel(item)',context)};
+ assert.equal(label('product-architect'),'Architect running');
+ assert.equal(label('designer'),'Designer running');
+ context.item={status:'RUNNING',activity:{label:'Check agent progress',role:'product-architect'}};
+ assert.equal(vm.runInContext('issueActivityLabel(item)',context),'Check agent progress');
+});
 test('KPIs reflect live transitions; delayed snapshots and remote responses cannot roll them back',()=>{
  const nodes=new Map<string,any>();const get=(id:string)=>{if(!nodes.has(id))nodes.set(id,{});return nodes.get(id)};
  const context=vm.createContext({$:get,document:{querySelectorAll:()=>[],title:''},escapeHtml:(v:any)=>String(v??''),relative:()=>'',brandIcon:()=>'',githubLink:()=>'',statusName:(v:any)=>v,stateClass:()=>'',applySettingsLock:()=>{},usageInitialized:false,expandedUsageItems:new Set(),settingsBusy:false,setupMode:false});

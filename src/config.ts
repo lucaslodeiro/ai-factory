@@ -14,7 +14,7 @@ function nonnegative(name:string,fallback:number){const n=Number(process.env[nam
 function atLeast(name:string,fallback:number,minimum:number){const n=positive(name,fallback);if(n<minimum)throw new Error(`${name} must be at least ${minimum}`);return n;}
 function percentage(name:string,fallback:number){const n=nonnegative(name,fallback);if(n>100)throw new Error(`${name} must be at most 100`);return n;}
 // Roles whose runs may finish without reported usage without pausing the issue for acknowledgement.
-// Cursor reports no usage at all, so a role routed to it would otherwise stop after every run.
+// Older Cursor versions or interrupted runs may omit usage and pause after a run.
 function unmeteredRoles(){
   const names:Record<string,AgentRole>={"product-architect":"product-architect",architect:"product-architect",designer:"designer",developer:"developer",builder:"developer",qa:"qa",tester:"qa",reviewer:"reviewer"};
   return [...new Set((process.env.FACTORY_BUDGET_UNMETERED_ROLES ?? "").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean).map(value=>{const role=names[value];if(!role)throw new Error(`FACTORY_BUDGET_UNMETERED_ROLES: unknown role ${value}; use architect, designer, builder, tester or reviewer`);return role;}))];

@@ -8,15 +8,17 @@ import type { AgentProvider } from "./types.js";
 // it; a run with no usage at all stays unknown.
 export interface TokenUsage { inputTokens:number|null; outputTokens:number|null; cachedTokens:number|null; cacheReadTokens:number|null; cacheWriteTokens:number|null; totalTokens:number|null; partial?:boolean; }
 /** Input-token equivalents approximate provider charges; cached reads are discounted, not free. */
-export function billableTokenUnits(usage:Partial<TokenUsage>|null|undefined,provider?:AgentProvider|null):number|null {
+export function billableTokenUnits(usage:Partial<TokenUsage>|null|undefined,provider?:AgentProvider|null,model?:string|null):number|null {
  if(!usage||usage.totalTokens===null||usage.totalTokens===undefined)return null;
  if(!provider)return Math.round(usage.totalTokens); // older runs did not preserve the provider
- if(provider==="cursor")return null; // Cursor CLI does not publish a reliable billable usage split
+ if(provider==="cursor"&&(usage.cacheReadTokens===null||usage.cacheReadTokens===undefined||usage.cacheWriteTokens===null||usage.cacheWriteTokens===undefined))return null;
  if(usage.inputTokens===null||usage.inputTokens===undefined||usage.outputTokens===null||usage.outputTokens===undefined)return Math.round(usage.totalTokens);
  if(usage.cacheReadTokens===null||usage.cacheReadTokens===undefined||usage.cacheWriteTokens===null||usage.cacheWriteTokens===undefined)return Math.ceil(usage.inputTokens+5*usage.outputTokens);
- // Claude CLI currently writes a one-hour cache (2x). OpenAI cache writes are ordinary input;
- // both providers discount cached reads. These are cost proxies, not model-specific invoices.
- return Math.ceil(usage.inputTokens+5*usage.outputTokens+0.1*usage.cacheReadTokens+(provider==="claude"?2:1)*usage.cacheWriteTokens);
+ // Claude CLI currently writes a one-hour cache (2x). OpenAI cache writes are ordinary input.
+ // Cursor Composer 2.5 lists cache reads at 0.4x input. Unknown Cursor models use full input
+ // weight until their rate is known, rather than pretending their reported cache is free.
+ const readWeight=provider==="cursor"?(model?.startsWith("composer-2.5")?0.4:1):0.1;
+ return Math.ceil(usage.inputTokens+5*usage.outputTokens+readWeight*usage.cacheReadTokens+(provider==="codex"?1:2)*usage.cacheWriteTokens);
 }
 const number = (value:unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
 const first = (...values:unknown[]) => values.map(number).find(value=>value !== null) ?? null;
@@ -26,8 +28,8 @@ function usageFromObject(value:unknown): TokenUsage | null {
  const item=value as Record<string,unknown>;
  const input=first(item.input_tokens,item.inputTokens);
  const output=first(item.output_tokens,item.outputTokens);
- const cacheRead=first(item.cache_read_input_tokens,item.cacheReadInputTokens) ?? 0;
- const cacheCreate=first(item.cache_creation_input_tokens,item.cacheCreationInputTokens) ?? 0;
+ const cacheRead=first(item.cache_read_input_tokens,item.cacheReadInputTokens,item.cacheReadTokens) ?? 0;
+ const cacheCreate=first(item.cache_creation_input_tokens,item.cacheCreationInputTokens,item.cacheWriteTokens) ?? 0;
  const cached=cacheRead+cacheCreate || null;
  const explicit=first(item.total_tokens,item.totalTokens);
  if (input === null && output === null && cached === null && explicit === null) return null;

@@ -23,7 +23,7 @@ export interface ExecutionProgress {
 const maxLine=10_000_000;
 const label=(value:unknown)=>typeof value==="string"&&value.length?value.slice(0,80):"Tool";
 
-export function progressMonitor(logDir:string,provider:AgentProvider|null){
+export function progressMonitor(logDir:string,provider:AgentProvider|null,model?:string|null){
  const file=path.join(logDir,"stdout.log");
  let offset=0,pending=Buffer.alloc(0),oversized=false;
  let lastSignature="";
@@ -37,7 +37,7 @@ export function progressMonitor(logDir:string,provider:AgentProvider|null){
  const end=(id:string)=>{const tool=active.get(id);if(tool)progress.lastTool=tool.name;active.delete(id);};
  const event=(value:Record<string,unknown>,at:string)=>{
   progress.events++;progress.lastEventAt=at;
-  usage.add(value);progress.usageTokens=billableTokenUnits(usage.result(),provider);
+  usage.add(value);progress.usageTokens=billableTokenUnits(usage.result(),provider,model);
   const type=value.type;
   if(type!=="system"&&type!=="rate_limit_event"&&type!=="autocompact_state"&&type!=="active_goal")progress.lastProgressAt=at;
   if(provider==="codex"){

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { tokenUsageReducer } from "../src/token-usage.js";
+import { billableTokenUnits,tokenUsageReducer } from "../src/token-usage.js";
 import { eachJsonLine, jsonLines } from "../src/provider-stream.js";
 import type { AgentProvider } from "../src/types.js";
 
@@ -39,9 +39,12 @@ test("extracts reported Claude token usage without estimating missing fields", (
  assert.equal(usageOf("codex","no usage"),null);
 });
 
-test("Cursor reports no token usage today and is read generically if its envelope ever carries one", () => {
+test("Cursor reports detailed usage in current result envelopes; older envelopes remain unmeasured", () => {
  assert.equal(usageOf("cursor",JSON.stringify({type:"result",subtype:"success",is_error:false,duration_ms:12,result:"{}"})),null);
  assert.deepEqual(usageOf("cursor",JSON.stringify({type:"result",result:"{}",usage:{input_tokens:7,output_tokens:3}})),{inputTokens:7,outputTokens:3,cachedTokens:null,cacheReadTokens:null,cacheWriteTokens:null,totalTokens:10});
+ const usage=usageOf("cursor",JSON.stringify({type:"result",usage:{inputTokens:54057,outputTokens:5486,cacheReadTokens:605442,cacheWriteTokens:0}}));
+ assert.deepEqual(usage,{inputTokens:54057,outputTokens:5486,cachedTokens:605442,cacheReadTokens:605442,cacheWriteTokens:0,totalTokens:664985});
+ assert.equal(billableTokenUnits(usage,"cursor","composer-2.5"),323664);
 });
 
 test("a cache hit and a cache write are recorded apart so an improvement is distinguishable", () => {

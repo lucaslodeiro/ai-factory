@@ -31,11 +31,21 @@ test("the issue limit weights provider-reported cache reads instead of charging 
   assert.equal(budgetState(store,id,settings(500000)).block,null);
  }finally{store.db.close();}
 });
-test("budget weights cache writes per provider and leaves Cursor runs unmeasured",()=>{
+test("budget weights provider cache usage and leaves incomplete Cursor reports unmeasured",()=>{
  const usage={inputTokens:10,outputTokens:2,cacheReadTokens:100,cacheWriteTokens:20,totalTokens:132};
  assert.equal(billableTokenUnits(usage,"claude"),70);
  assert.equal(billableTokenUnits(usage,"codex"),50);
- assert.equal(billableTokenUnits(usage,"cursor"),null);
+ assert.equal(billableTokenUnits(usage,"cursor","composer-2.5"),100);
+ assert.equal(billableTokenUnits({inputTokens:10,outputTokens:2,totalTokens:12},"cursor"),null);
+});
+test("Cursor execution budget uses the reported model and cache breakdown",()=>{
+ const {store,id}=setup();try{
+  const usage={inputTokens:54057,outputTokens:5486,cacheReadTokens:605442,cacheWriteTokens:0,totalTokens:664985};
+  const execution=run(store,id,"designer",usage.totalTokens);
+  store.event("execution.started",{selection:{provider:"cursor",model:"composer-2.5"}},id,execution);
+  store.event("execution.finished",{status:"succeeded",usage},id,execution);
+  assert.equal(budgetState(store,id,settings(2_000_000)).consumed,323664);
+ }finally{store.db.close();}
 });
 import { adoptIssueState, issueStateIndex } from "../src/workflow-state.js";
 import { parseFactoryCommand } from "../src/factory-command.js";

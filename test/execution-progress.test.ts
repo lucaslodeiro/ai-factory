@@ -59,7 +59,7 @@ test("running work shows a warning and preserves manual intervention after five 
   store.db.prepare("INSERT INTO executions(id,work_item_id,role,status,started_at) VALUES('run','w','qa','running',?)").run(start);
   store.setMetadata(progressKey("run"),{provider:"cursor",events:2,lastEventAt:start,lastProgressAt:start,tool:"readToolCall",toolStartedAt:start,lastTool:"readToolCall",repeatedToolCalls:1});
   const activity=workflowActivity(store,"w","RUNNING",Date.parse(start)+300_001);
-  assert.equal(activity.label,"Check agent progress");assert.match(activity.detail,/No observable progress for 5 minutes/);assert.equal(activity.stalled,false);
+  assert.equal(activity.label,"Check agent progress");assert.equal(activity.role,'qa');assert.match(activity.detail,/No observable progress for 5 minutes/);assert.equal(activity.stalled,false);
  }finally{store.db.close();}
 });
 

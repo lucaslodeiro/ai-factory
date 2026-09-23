@@ -48,9 +48,9 @@ export function budgetLedger(store:Store,workItemId:string):BudgetEntry[] {
  for (const run of store.db.prepare("SELECT id,role,total_tokens FROM executions WHERE work_item_id=? AND status<>'running' ORDER BY started_at").all(workItemId) as Array<{id:string;role:string;total_tokens:number|null}>){
   const event=store.db.prepare("SELECT payload FROM events WHERE run_id=? AND type='execution.finished' ORDER BY id DESC LIMIT 1").get(run.id) as {payload:string}|undefined;
   const start=store.db.prepare("SELECT payload FROM events WHERE run_id=? AND type='execution.started' ORDER BY id LIMIT 1").get(run.id) as {payload:string}|undefined;
-  const provider=start?(JSON.parse(start.payload) as {selection?:{provider?:string}}).selection?.provider:undefined;
+  const selection=start?(JSON.parse(start.payload) as {selection?:{provider?:string;model?:string}}).selection:undefined,provider=selection?.provider;
   const usage=event?(JSON.parse(event.payload) as {usage?:Partial<TokenUsage>}).usage:undefined;
-  ledger.set(run.id,{executionId:run.id,role:run.role,tokens:provider==="cursor"?null:billableTokenUnits(usage,provider as "claude"|"codex"|undefined)??tokens(run.total_tokens),partial:partial.has(run.id)});
+  ledger.set(run.id,{executionId:run.id,role:run.role,tokens:provider==="cursor"?billableTokenUnits(usage,"cursor",selection?.model):billableTokenUnits(usage,provider as "claude"|"codex"|undefined,selection?.model)??tokens(run.total_tokens),partial:partial.has(run.id)});
  }
  return [...ledger.values()];
 }

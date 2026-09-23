@@ -60,8 +60,8 @@ export function doctor(existingStore?:Store,github:Pick<GitHubPort,"repository">
  }
  console.log(`Slack: ${config.slackWebhook ? "configured" : "optional, disabled"}`);
  console.log(`Token budget per issue: ${config.issueBudgetTokens.toLocaleString("en-US")} tokens`);
- // Cursor reports no usage, so such a role would pause its issue for acknowledgement after every run.
+ // Older Cursor versions and interrupted runs may omit usage and require acknowledgement.
  const unmeasured=(Object.entries(config.roles) as Array<[AgentRole,{provider:string}]>).filter(([role,routing])=>routing.provider==="cursor"&&!config.budgetUnmeteredRoles.includes(role)).map(([role])=>roleShortName(role));
- if(unmeasured.length)console.log(`  - ${unmeasured.join(", ")} run${unmeasured.length===1?"s":""} on Cursor, which reports no token usage: each run will wait for /factory budget +0 unless listed in FACTORY_BUDGET_UNMETERED_ROLES`);
+ if(unmeasured.length)console.log(`  - ${unmeasured.join(", ")} run${unmeasured.length===1?"s":""} on Cursor: runs without detailed token usage will wait for /factory budget +0 unless listed in FACTORY_BUDGET_UNMETERED_ROLES`);
  return ok;
 }

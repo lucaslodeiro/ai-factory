@@ -72,7 +72,7 @@ export class ExecutionManager {
     } else this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,prompt_bytes,prompt_sha256) VALUES(?,?,?,?,?,?,?,?)")
       .run(id, workItemId, role, workflowStage[role], "running", new Date().toISOString(),promptBytes,promptSha256);
     this.store.event("execution.started", { role, command, cwd, logDir, selection }, workItemId, id);
-    const monitor=progressMonitor(logDir,selection?.provider??null);
+    const monitor=progressMonitor(logDir,selection?.provider??null,selection?.model);
     this.store.setMetadata(progressKey(id),monitor.poll());
     return new Promise((resolve, reject) => {
       let cancelled = false, interrupted = false, interruptionReason:string|undefined, timedOut = false;
