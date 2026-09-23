@@ -36,6 +36,10 @@ export interface AgentResult {
   stories: Story[];
   coverage: { criterionId: string; status: "passed" | "failed" | "not-run"; evidence: string }[];
   tests: { command: string; exitCode: number | null; evidence: string }[];
+  // The Tester's minimum sufficient test set: every candidate it considered, which criteria each
+  // one covers, its value and whether it was kept. Essential candidates are always kept, redundant
+  // ones never; what was discarded and why is what lets the factory measure its own testing.
+  testCandidates: { name: string; covers: string[]; value: "essential" | "valuable" | "redundant"; kept: boolean; reason: string }[];
   dependencies: { name: string; change: "added" | "updated" | "removed"; rationale: string }[];
   changedFiles: string[]; decisions: Decision[];
   nextRole: "developer" | "qa" | "reviewer" | null;

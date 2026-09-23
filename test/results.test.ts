@@ -158,3 +158,20 @@ test("a split into stories is a small acyclic graph over the specification's own
  assert.deepEqual(resultSchemaFor("developer").properties?.stories?.maxItems,0);
  assert.deepEqual(parseResult(result("pass",{stories:[story("A",["AC1"]),story("B",["AC1"])]}),"developer").stories,[]);
 });
+
+test("a Tester PASS is a minimum sufficient test set: essentials kept, redundant discarded, every passed criterion covered",()=>{
+ const candidate=(name:string,value:"essential"|"valuable"|"redundant",kept:boolean,covers=["AC1"])=>({name,covers,value,kept,reason:`${value} because`});
+ const pass=parseResult(result("pass",{testCandidates:[candidate("happy path","essential",true),candidate("boundary","valuable",false),candidate("duplicate","redundant",false)]}),"qa");
+ assert.equal(pass.testCandidates.length,3);
+ assert.throws(()=>parseResult(result("pass",{testCandidates:[]}),"qa"),/lists the test candidates it considered/);
+ assert.throws(()=>parseResult(result("pass",{testCandidates:[candidate("happy path","essential",false)]}),"qa"),/Essential test candidate "happy path" must be kept/);
+ assert.throws(()=>parseResult(result("pass",{testCandidates:[candidate("happy path","essential",true),candidate("twice","redundant",true)]}),"qa"),/Redundant test candidate "twice" must not be kept/);
+ assert.throws(()=>parseResult(result("pass",{testCandidates:[candidate("happy path","essential",true,[])]}),"qa"),/covers no acceptance criterion/);
+ assert.throws(()=>parseResult(result("pass",{testCandidates:[candidate("other","essential",true,["AC2"])]}),"qa"),/No kept test candidate covers AC1/);
+ assert.throws(()=>parseResult(result("pass",{testCandidates:[candidate("same","essential",true),candidate("same","valuable",true)]}),"qa"),/Duplicate test candidate/);
+ // A Tester reporting changes may still list what it considered; other roles never carry candidates.
+ assert.equal(parseResult(result("changes",{findings:[{classification:"auto-fix",severity:"major",evidence:"AC1 fails"}],testCandidates:[candidate("happy path","essential",true)]}),"qa").testCandidates.length,1);
+ assert.deepEqual(parseResult(result("pass"),"developer").testCandidates,[]);
+ assert.deepEqual(parseResult(result("spec",{testCandidates:[candidate("x","essential",true)]}),"product-architect").testCandidates,[]);
+ assert.equal(resultSchemaFor("reviewer").properties?.testCandidates?.maxItems,0);assert.equal(resultSchemaFor("qa").properties?.testCandidates?.maxItems,100);
+});

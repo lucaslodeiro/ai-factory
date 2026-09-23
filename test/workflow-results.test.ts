@@ -132,3 +132,13 @@ test('environment blocker fails Build directly without sending another Architect
 test('initial Architect environment blocker becomes an environment failure with its result preserved',()=>{
  const s=setup();try{running(s,'product-architect','blocked-architect');const applied=s.results.apply({head:"head",workItemId:'work-1',executionId:'blocked-architect',role:'product-architect',result:result('questions',{summary:'Visual inspection is required before the specification can be completed',questions:['Can browser access be restored?'],findings:[{classification:'environment-blocked',severity:'major',evidence:'No browser is available to inspect the required rendered interface'}]})});assert.equal(applied.projection.status,'FAILED');assert.equal(applied.projection.stage,'DESIGN');assert.equal(s.records.activeRequest('work-1'),undefined);assert.equal((s.store.db.prepare("SELECT class FROM failures WHERE work_item_id='work-1'").get() as any).class,'environment');const event=s.store.db.prepare("SELECT payload FROM events WHERE work_item_id='work-1' AND type='agent.result'").get() as {payload:string};assert.match(event.payload,/Visual inspection is required/);}finally{s.store.db.close();}
 });
+
+test("every Tester result records what it considered, kept and discarded against the approved depth",()=>{
+ const s=setup("TEST",true);
+ try {
+  running(s,"qa","run-q");
+  s.results.apply({head:"h",workItemId:"work-1",executionId:"run-q",role:"qa",result:result("pass",{testCandidates:[{name:"happy",covers:["AC1"],value:"essential",kept:true,reason:"only criterion"},{name:"edge",covers:["AC1"],value:"valuable",kept:false,reason:"thorough does not need it"},{name:"dup",covers:["AC1"],value:"redundant",kept:false,reason:"same as happy"}]})});
+  const event=JSON.parse((s.store.db.prepare("SELECT payload FROM events WHERE work_item_id='work-1' AND type='verification.selection' AND run_id='run-q'").get() as {payload:string}).payload);
+  assert.deepEqual(event,{outcome:"pass",verificationDepth:"thorough",candidates:3,kept:1,essential:1,valuable:1,redundant:1,valuableDiscarded:1,commands:1});
+ } finally {s.store.db.close();}
+});

@@ -9,6 +9,13 @@ import {roleShortName} from "./names.js";
 
 // The stored body leads with the brief the human approved, so every delivery role and a
 // recovered issue see the decisions the human made before the technical detail.
+// What the factory records about every Tester run so its testing can be tuned later: how many
+// tests it considered, how many it kept, and how many it discarded as redundant, against the depth
+// the human approved.
+export function testSelectionMetrics(result:Pick<AgentResult,"testCandidates"|"tests"|"outcome">,verificationDepth:string|null){
+ const count=(value:string)=>result.testCandidates.filter(candidate=>candidate.value===value).length;
+ return {outcome:result.outcome,verificationDepth,candidates:result.testCandidates.length,kept:result.testCandidates.filter(candidate=>candidate.kept).length,essential:count("essential"),valuable:count("valuable"),redundant:count("redundant"),valuableDiscarded:result.testCandidates.filter(candidate=>candidate.value==="valuable"&&!candidate.kept).length,commands:result.tests.length};
+}
 export function specificationBody(result:Pick<AgentResult,"brief"|"spec">){return `${result.brief.trim()}\n\n---\n\n${result.spec.trim()}`;}
 
 const roleStage:Record<AgentRole,V3Stage>={"product-architect":"DESIGN",designer:"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"};
@@ -86,6 +93,7 @@ export class WorkflowResults {
  }
  private delivery(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult;head:string;changedPaths?:string[]},revision:number,specVersion:number,ids:string[]) {
   const result=input.result,stage=roleStage[input.role];
+  if(input.role==="qa")this.store.event("verification.selection",testSelectionMetrics(result,this.assessmentDepth(input.workItemId,specVersion)),input.workItemId,input.executionId);
   const createFindings=()=>{for(const finding of result.findings)ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"finding",classification:finding.classification,originRole:input.role,criterionId:result.coverage.find(coverage=>coverage.status==="failed")?.criterionId,evidence:finding.evidence},sourceType:"agent-result",sourceId:input.executionId,actor:input.role}).id);};
   if(result.outcome==="decision") {
    const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:"DESIGN",status:"QUEUED",actor:{type:"agent",id:input.role},source:{executionId:input.executionId},reason:{code:"decision-required",summary:`${roleShortName(input.role)} requested an architectural decision`},recordIds:ids},()=>{this.resultEvent(input);createFindings();const findingIds=ids.slice();ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"tactical-decision",owner:"architect",originatingStage:stage,allowedReturnStages:this.returnStages(stage),openedAfterCommentId:this.cursor(input.workItemId),findingIds},sourceType:"agent-result",sourceId:input.executionId,actor:input.role}).id);});
@@ -118,6 +126,7 @@ export class WorkflowResults {
   if(deferred.length)this.records.settleFindings(deferred,"accepted-defer",executionId);
   if(role==="qa"){const fixes=active.filter(record=>record.payload.kind==="finding"&&record.payload.classification==="auto-fix"&&record.payload.originRole==="developer").map(record=>record.id);if(fixes.length)this.records.settleFindings(fixes,"resolved",executionId);}
  }
+ private assessmentDepth(workItemId:string,specVersion:number){const row=this.store.db.prepare("SELECT assessment FROM specs WHERE work_item_id=? AND version=?").get(workItemId,specVersion) as {assessment:string|null}|undefined;return row?.assessment?(JSON.parse(row.assessment) as {verificationDepth?:string}).verificationDepth??null:null;}
  private specVersion(workItemId:string){return (this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;}
  private validateSupersedes(workItemId:string,specVersion:number,result:AgentResult){
   const active=new Set(this.records.active(workItemId,specVersion,"product-architect").filter(record=>record.payload.kind==="decision").map(record=>record.id));

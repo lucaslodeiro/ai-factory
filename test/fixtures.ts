@@ -5,6 +5,7 @@ export function result(outcome: AgentResult["outcome"], more: Partial<AgentResul
   acceptanceCriteria: outcome === "spec" ? [{ id: "AC1", description: "Returns 42" }] : [], stories: [],
   coverage: outcome === "pass" ? [{ criterionId: "AC1", status: "passed", evidence: "Verified output" }] : [],
   tests: outcome === "pass" ? [{ command: "node --test", exitCode: 0, evidence: "1 test passed" }] : [],
+  testCandidates: outcome === "pass" ? [{ name: "returns 42", covers: ["AC1"], value: "essential", kept: true, reason: "The only criterion" }] : [],
   dependencies: [], changedFiles: [], decisions: [], nextRole: null,
   reviewChecks: outcome === "pass" ? reviewDimensions.map(dimension => ({ dimension, status: "passed", evidence: "Inspected implementation and tests" })) : [],
   questions: [], findings: outcome === "decision" ? [{ classification: "decision-required", severity: "major", evidence: "Ambiguous implementation choice" }] : [], ...more };

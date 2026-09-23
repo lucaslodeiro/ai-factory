@@ -12,6 +12,7 @@ The machine-readable source of truth is `resultSchema` in `src/results.ts`, used
 | `stories` | Only for a new specification, and empty unless the issue is an epic: 2 to 4 stories with a unique `key` and `title`, a `scope`, the `criteria` ids the story owns (each id in at most one story), `dependsOn` keys forming no cycle and an `assessment` (complexity, risk, verificationDepth floored by the worse of the two) that governs that story's Tester. Builder and Tester deliver each story on its own branch from the epic branch; criteria no story owns are verified on the whole once every story is integrated. |
 | `coverage` | Each criterion's ID, passed/failed/not-run status and evidence. PASS covers every approved ID. |
 | `tests` | Final verification commands used as acceptance evidence, with numeric exit code and evidence. Builder/Tester PASS requires every listed command to succeed. Setup, diagnostics and process lifecycle commands belong in the summary or findings. |
+| `testCandidates` | Tester only: every test it considered, with `name`, the criterion ids it `covers`, its `value` (essential/valuable/redundant), whether it was `kept` and the `reason`. Essential is always kept, redundant never; a PASS needs at least one candidate and a kept candidate for every passed criterion. Other roles leave it empty. |
 | `dependencies` | Name, added/updated/removed and rationale; empty means none reported. |
 | `changedFiles` | Explicit list of changed paths. |
 | `findings` | auto-fix/decision-required/defer/environment-blocked classification and concrete evidence. |

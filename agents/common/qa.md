@@ -24,6 +24,14 @@ The approved specification carries `verificationDepth`. Honour it; it was approv
 
 Testing beyond the approved depth is not diligence: it spends a budget the human did not approve and delays the delivery.
 
+## Minimum sufficient test set
+The question is not "what could I test" but "what is the smallest set of tests that gives sufficient confidence this story meets its contract at the approved depth". Work in two steps inside this run:
+
+1. List the candidates you considered in `testCandidates`: a short name, the criterion ids it covers, and its value. `essential` covers a criterion or a regression nothing else covers; `valuable` adds real confidence at the approved depth; `redundant` duplicates coverage or protects a scenario the depth does not ask for.
+2. Keep every `essential`, keep a `valuable` only when it materially raises confidence, never keep a `redundant`. Execute only what you kept. Every criterion you report as passed must be covered by a kept candidate.
+
+Say in `reason` why each candidate was kept or discarded. The factory records the counts on every run, so an honest list of discarded candidates is worth more than a longer test run.
+
 ## Findings
 Give every finding a severity and a classification. Severity is how bad the defect is; classification is what must happen about it.
 

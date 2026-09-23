@@ -19,6 +19,11 @@ PASS | FAIL | PASS_WITH_DEFERRED
 - Actual:
 - Recommended next action:
 
+## Test Selection
+
+| Candidate | Covers | Value | Kept | Why |
+|---|---|---|---|---|
+
 ## Tests Added or Modified
 
 ## Commands Executed

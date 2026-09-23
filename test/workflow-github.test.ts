@@ -308,3 +308,10 @@ test("a split specification shows every story, its criteria and what it waits fo
  assert.match(body,/Verified on the whole, after every story: AC3\./);
  assert.doesNotMatch(resultMarkdown("product-architect",result("spec"),1),/## Stories/);
 });
+
+test("a Tester report shows the kept tests and folds the discarded candidates with their reasons",()=>{
+ const body=resultMarkdown("qa",result("pass",{testCandidates:[{name:"happy",covers:["AC1"],value:"essential",kept:true,reason:"only criterion"},{name:"dup | alias",covers:["AC1"],value:"redundant",kept:false,reason:"same as happy"}]}),1);
+ assert.match(body,/## Test selection\n\n1 of 2 candidates kept\./);assert.match(body,/\| happy \| AC1 \| essential \| only criterion \|/);
+ assert.match(body,/<summary>Discarded \(1\)<\/summary>/);assert.match(body,/\*\*dup \\\| alias\*\* \(redundant, covers AC1\) — same as happy/);
+ assert.doesNotMatch(resultMarkdown("developer",result("pass",{testCandidates:[]}),1),/## Test selection/);
+});
