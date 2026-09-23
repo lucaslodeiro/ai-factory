@@ -52,7 +52,7 @@ export class WorkflowResults {
    const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:"DESIGN",status:prototype?"QUEUED":"WAITING",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"spec-proposed",summary:prototype?`SPEC v${next} proposed; Designer prepares a prototype`:`SPEC v${next} proposed`},recordIds:ids,correctionCycles:0},()=>{
     this.resultEvent(input,next);
     if(specVersion)this.records.supersedeSpec(input.workItemId,specVersion);
-    this.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment) VALUES(?,?,?,?,?)").run(input.workItemId,next,specificationBody(result),JSON.stringify(result.acceptanceCriteria),JSON.stringify(result.taskAssessment));
+    this.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,stories,assessment) VALUES(?,?,?,?,?,?)").run(input.workItemId,next,specificationBody(result),JSON.stringify(result.acceptanceCriteria),JSON.stringify(result.stories),JSON.stringify(result.taskAssessment));
     ids.push(this.records.create({workItemId:input.workItemId,specVersion:next,scope:"spec",payload:prototype?{kind:"request",type:"prototype",owner:"designer",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:this.cursor(input.workItemId)}:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
    });return {discarded:false,projection,recordIds:ids};
   }

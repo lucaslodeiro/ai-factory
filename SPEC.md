@@ -50,7 +50,7 @@ Only configured GitHub human logins can issue `/factory answer <text>` and `/fac
 
 ### F04 — Versioned specification gate
 
-A proposal contains nonempty markdown and unique structured criterion IDs also appearing in the markdown. Unresolved questions use the questions outcome, not a ready-to-approve proposal. A human approves the exact current version before delivery starts. Revisions append a new immutable snapshot and invalidate previous approval and delivery evidence.
+A proposal contains nonempty markdown and unique structured criterion IDs also appearing in the markdown. It may carry a split into two to four stories, each owning a disjoint subset of the criteria and depending on other stories without a cycle; the split is approved with the brief. Unresolved questions use the questions outcome, not a ready-to-approve proposal. A human approves the exact current version before delivery starts. Revisions append a new immutable snapshot and invalidate previous approval and delivery evidence.
 
 ### F05 — Tactical consultation
 

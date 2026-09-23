@@ -1,4 +1,4 @@
-import type { AgentResult, AgentRole, Criterion, DeliveryStage, TaskAssessment, VerificationDepth } from "./types.js";
+import type { AgentResult, AgentRole, Criterion, DeliveryStage, Story, TaskAssessment, VerificationDepth } from "./types.js";
 import { tacticalRouteError, type TacticalNextRole } from "./tactical-routing.js";
 export const reviewDimensions = ["specification", "code-quality", "security", "performance", "product-ui-copy", "test-quality", "dependencies"];
 type Schema = { type?: string | string[]; enum?: unknown[]; properties?: Record<string, Schema>; required?: string[]; additionalProperties?: boolean; items?: Schema; minLength?: number; maxLength?: number; maxItems?: number; };
@@ -19,6 +19,9 @@ export function requiredVerificationDepth(assessment:Pick<TaskAssessment,"comple
 export const prototypeDirectory=".factory/prototype";
 // The brief replaces reading the spec, so it only works while it stays short enough to be read.
 export const briefMaxLength=4000;
+// A split costs a Builder and a Tester run per story, so it stays small enough to read in the
+// brief and to reason about as a graph.
+export const maxStories=4;
 const decisionSchema=object({ kind: enumeration("tactical", "major"), decision: text(), rationale: text(), conflictsWithHuman: { type: "boolean" }, supersedes:list(text(100)) });
 export const resultSchema = object({
   taskAssessment: { ...object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), verificationDepth: enumeration("minimal", "standard", "thorough"), uxImpact: enumeration("none", "minor", "significant"), rationale: text() }), type: ["object", "null"] },
@@ -26,6 +29,7 @@ export const resultSchema = object({
   summary: text(1500), brief: { type: "string", maxLength: briefMaxLength }, spec: { type: "string", maxLength: 30000 }, questions: list(text()),
   findings: list(object({ classification: enumeration("auto-fix", "decision-required", "defer", "environment-blocked"), severity: enumeration("critical", "major", "minor"), evidence: text() })),
   acceptanceCriteria: list(object({ id: text(100), description: text() })),
+  stories: list(object({ key: text(40), title: text(200), scope: text(2000), criteria: list(text(100)), dependsOn: list(text(40)) })),
   coverage: list(object({ criterionId: text(100), status: enumeration("passed", "failed", "not-run"), evidence: text() })),
   tests: list(object({ command: text(), exitCode: { type: ["integer", "null"] }, evidence: text() })),
   dependencies: list(object({ name: text(200), change: enumeration("added", "updated", "removed"), rationale: text() })),
@@ -49,7 +53,7 @@ export function resultSchemaFor(role: AgentRole, allowedNextRoles?: TacticalNext
  } };
  return { ...resultSchema, properties: { ...resultSchema.properties,
   outcome: role === "designer" ? enumeration("pass", "decision") : enumeration("pass", "changes", "decision"),
-  brief: { type: "string", enum: [""] }, spec: { type: "string", enum: [""] }, acceptanceCriteria: { ...resultSchema.properties!.acceptanceCriteria, maxItems: 0 },
+  brief: { type: "string", enum: [""] }, spec: { type: "string", enum: [""] }, acceptanceCriteria: { ...resultSchema.properties!.acceptanceCriteria, maxItems: 0 }, stories: { ...resultSchema.properties!.stories, maxItems: 0 },
   taskAssessment: { type: "null" }, nextRole: { type: "null" },
  } };
 }
@@ -72,6 +76,34 @@ function validate(value: unknown, schema: Schema, location = "result"): void {
     }
   }
 }
+// A split is only worth its cost when it is a real graph: at least two stories, every dependency
+// a story of the same epic, no cycle, and each criterion owned by at most one story. Criteria no
+// story owns stay with the epic, whose own Tester verifies them once the stories are integrated.
+export function validateStories(stories: Story[], criteria: Criterion[]) {
+  if (stories.length < 2) throw new Error("A split needs at least two stories; deliver the issue whole otherwise");
+  if (stories.length > maxStories) throw new Error(`At most ${maxStories} stories per specification`);
+  unique(stories.map(s => s.key), "story key"); unique(stories.map(s => s.title.trim()), "story title");
+  const keys = new Set(stories.map(s => s.key)), known = new Set(criteria.map(c => c.id)), owner = new Map<string, string>();
+  for (const story of stories) {
+    if (!story.criteria.length) throw new Error(`Story ${story.key} owns no acceptance criterion`);
+    for (const id of story.criteria) {
+      if (!known.has(id)) throw new Error(`Story ${story.key} names unknown acceptance criterion ${id}`);
+      if (owner.has(id)) throw new Error(`Acceptance criterion ${id} belongs to both ${owner.get(id)} and ${story.key}`);
+      owner.set(id, story.key);
+    }
+    for (const dependency of story.dependsOn) {
+      if (dependency === story.key) throw new Error(`Story ${story.key} depends on itself`);
+      if (!keys.has(dependency)) throw new Error(`Story ${story.key} depends on unknown story ${dependency}`);
+    }
+  }
+  const state = new Map<string, "visiting" | "done">(), byKey = new Map(stories.map(s => [s.key, s]));
+  const visit = (key: string, path: string[]) => {
+    if (state.get(key) === "done") return;
+    if (state.get(key) === "visiting") throw new Error(`Stories depend on each other in a cycle: ${[...path, key].join(" -> ")}`);
+    state.set(key, "visiting"); for (const next of byKey.get(key)!.dependsOn) visit(next, [...path, key]); state.set(key, "done");
+  };
+  for (const story of stories) visit(story.key, []);
+}
 function unique(ids: string[], label: string) {
   if (new Set(ids).size !== ids.length) throw new Error(`Duplicate ${label}`);
 }
@@ -82,7 +114,7 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
   // constraints consistently. Delivery roles never own these fields, so force
   // their inert values rather than letting a report attempt rewrite approved scope.
   const candidate = role !== "product-architect" && raw !== null && typeof raw === "object" && !Array.isArray(raw)
-    ? { ...(raw as Record<string, unknown>), brief:"", spec:"", acceptanceCriteria:[], taskAssessment:null, nextRole:null }
+    ? { ...(raw as Record<string, unknown>), brief:"", spec:"", acceptanceCriteria:[], stories:[], taskAssessment:null, nextRole:null }
     : raw;
   validate(candidate, resultSchema);
   const r = candidate as AgentResult;
@@ -94,7 +126,8 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
   if (r.outcome === "spec" && r.questions.length) throw new Error('A proposed specification must return questions: []. Put decisions that need the human in the brief with your recommendation, and your own assumptions under its assumptions; if a decision has no defensible recommendation is required before proposing it, return outcome "questions" without a SPEC');
   if (r.outcome === "spec" && (!r.spec.trim() || !r.acceptanceCriteria.length || r.acceptanceCriteria.some(c => !r.spec.includes(c.id)))) throw new Error("Specification needs named acceptance criteria in markdown and structured form");
   if (r.outcome === "spec" && !r.brief.trim()) throw new Error("A proposed specification needs a brief: the decisions that need the human, the solution in at most five lines and the acceptance criteria. The human approves the brief instead of reading the SPEC");
-  if (r.outcome !== "spec" && (r.brief !== "" || r.spec !== "" || r.acceptanceCriteria.length)) throw new Error("Only a new specification may contain brief/spec/acceptanceCriteria");
+  if (r.outcome !== "spec" && (r.brief !== "" || r.spec !== "" || r.acceptanceCriteria.length || r.stories.length)) throw new Error("Only a new specification may contain brief/spec/acceptanceCriteria/stories");
+  if (r.stories.length) validateStories(r.stories, r.acceptanceCriteria);
   if (r.outcome === "spec" && !r.taskAssessment) throw new Error("Specification requires a taskAssessment");
   if (r.taskAssessment) {
     const floor=requiredVerificationDepth(r.taskAssessment);

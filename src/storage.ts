@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { config } from "./config.js";
-export const schemaVersion=8;
+export const schemaVersion=9;
 export class Store {
   db: Database.Database;
   constructor(filename = path.join(config.dataDir, "factory.db")) {
@@ -37,7 +37,7 @@ export class Store {
         prompt_bytes INTEGER,prompt_sha256 TEXT,interruption_reason TEXT,maintenance_id TEXT
       );
       CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT,ts TEXT NOT NULL,work_item_id TEXT,run_id TEXT,type TEXT NOT NULL,payload TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS specs(work_item_id TEXT NOT NULL,version INTEGER NOT NULL,body TEXT NOT NULL,criteria TEXT NOT NULL DEFAULT '[]',assessment TEXT,approved_by TEXT,approval_comment_id INTEGER,approved_at TEXT,PRIMARY KEY(work_item_id,version));
+      CREATE TABLE IF NOT EXISTS specs(work_item_id TEXT NOT NULL,version INTEGER NOT NULL,body TEXT NOT NULL,criteria TEXT NOT NULL DEFAULT '[]',stories TEXT NOT NULL DEFAULT '[]',assessment TEXT,approved_by TEXT,approval_comment_id INTEGER,approved_at TEXT,PRIMARY KEY(work_item_id,version));
       CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,body TEXT NOT NULL,work_item_id TEXT,sent INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,next_at INTEGER NOT NULL DEFAULT 0,last_error TEXT);
       CREATE TABLE IF NOT EXISTS controls(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,target TEXT,handled INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);

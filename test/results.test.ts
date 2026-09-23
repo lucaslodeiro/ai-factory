@@ -135,3 +135,25 @@ test("a Designer result is the prototype and its screenshots, or an environment 
  assert.deepEqual(resultSchemaFor("designer").properties?.brief,{type:"string",enum:[""]});
  assert.throws(()=>parseResult({...result("spec"),taskAssessment:{...result("spec").taskAssessment!,uxImpact:"large"}},"product-architect"),/uxImpact: invalid value/);
 });
+
+test("a split into stories is a small acyclic graph over the specification's own criteria",()=>{
+ const criteria=[{id:"AC1",description:"Tokens"},{id:"AC2",description:"Hero"},{id:"AC3",description:"Whole page a11y"}];
+ const spec=(stories:unknown)=>result("spec",{acceptanceCriteria:criteria,spec:"# Spec\nAC1 AC2 AC3",stories:stories as never});
+ const story=(key:string,criteria:string[],dependsOn:string[]=[])=>({key,title:`Story ${key}`,scope:`Deliver ${key}`,criteria,dependsOn});
+ const parsed=parseResult(spec([story("A",["AC1"]),story("B",["AC2"],["A"])]),"product-architect");
+ assert.deepEqual(parsed.stories.map(s=>s.key),["A","B"]);
+ assert.equal(parseResult(result("spec"),"product-architect").stories.length,0,"no split by default");
+ assert.throws(()=>parseResult(spec([story("A",["AC1"])]),"product-architect"),/at least two stories/);
+ assert.throws(()=>parseResult(spec([story("A",["AC1"]),story("B",["AC2"]),story("C",["AC3"]),story("D",["AC1"]),story("E",["AC2"])]),"product-architect"),/At most 4 stories|belongs to both/);
+ assert.throws(()=>parseResult(spec([story("A",["AC1"]),story("A",["AC2"])]),"product-architect"),/Duplicate story key/);
+ assert.throws(()=>parseResult(spec([story("A",["AC1"]),story("B",["AC1"])]),"product-architect"),/AC1 belongs to both A and B/);
+ assert.throws(()=>parseResult(spec([story("A",["AC1"]),story("B",["AC9"])]),"product-architect"),/unknown acceptance criterion AC9/);
+ assert.throws(()=>parseResult(spec([story("A",[]),story("B",["AC2"])]),"product-architect"),/owns no acceptance criterion/);
+ assert.throws(()=>parseResult(spec([story("A",["AC1"],["Z"]),story("B",["AC2"])]),"product-architect"),/unknown story Z/);
+ assert.throws(()=>parseResult(spec([story("A",["AC1"],["A"]),story("B",["AC2"])]),"product-architect"),/depends on itself/);
+ assert.throws(()=>parseResult(spec([story("A",["AC1"],["C"]),story("B",["AC2"],["A"]),story("C",["AC3"],["B"])]),"product-architect"),/cycle: A -> C -> B -> A/);
+ assert.throws(()=>parseResult(result("questions",{questions:["Split?"],stories:[story("A",["AC1"]),story("B",["AC1"])]}),"product-architect"),/Only a new specification may contain/);
+ // Delivery roles cannot introduce a split: the schema pins the field and the parser drops it.
+ assert.deepEqual(resultSchemaFor("developer").properties?.stories?.maxItems,0);
+ assert.deepEqual(parseResult(result("pass",{stories:[story("A",["AC1"]),story("B",["AC1"])]}),"developer").stories,[]);
+});

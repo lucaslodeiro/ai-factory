@@ -151,7 +151,7 @@ export class WorkflowRunner {
   const verification=context.verification,verified=verification&&verification.head===context.verifiedHeads?.TEST&&verification.command===config.verifyCommand;
   const sections=[`Closes #${issueNumber}`,`Approved SPEC v${spec.version} by ${spec.approved_by}. Specification v${spec.version} is in the issue.`,`## Summary\n\n${publishedText(result.summary)}`,`## Factory verification\n\n${verified?`Factory verification: \`${publishedText(verification.command)}\` exited ${verification.exitCode}.`:config.verifyCommand?`Factory verification: \`${publishedText(config.verifyCommand)}\` has no recorded result for the tested head.`:"Factory verification: not configured"}`];
   const qa=this.latestResult(workItemId,"qa");
-  if(qa)sections.push(resultMarkdown("qa",{brief:"",spec:"",acceptanceCriteria:[],questions:[],taskAssessment:null,dependencies:[],nextRole:null,reviewChecks:[],...qa},spec.version,undefined,{reportOnly:true}));
+  if(qa)sections.push(resultMarkdown("qa",{brief:"",spec:"",acceptanceCriteria:[],stories:[],questions:[],taskAssessment:null,dependencies:[],nextRole:null,reviewChecks:[],...qa},spec.version,undefined,{reportOnly:true}));
   const findings=this.store.db.prepare("SELECT payload FROM records WHERE work_item_id=? AND spec_version=? AND kind='finding' AND json_extract(payload,'$.classification')='defer' ORDER BY sequence").all(workItemId,spec.version) as Array<{payload:string}>;
   if(findings.length)sections.push(`## Deferred findings\n\n${[...new Set(findings.map(row=>publishedText(JSON.parse(row.payload).evidence)))].map(evidence=>`- ${evidence}`).join("\n")}`);
   return sections.join("\n\n");

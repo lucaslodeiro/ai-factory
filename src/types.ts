@@ -18,6 +18,9 @@ export type VerificationDepth = "minimal" | "standard" | "thorough";
 export type UxImpact = "none" | "minor" | "significant";
 export interface TaskAssessment { complexity: "low" | "medium" | "high"; risk: "low" | "medium" | "high"; verificationDepth: VerificationDepth; uxImpact: UxImpact; rationale: string; }
 export interface ModelSelection { policy: string; provider: AgentProvider; model: string; reason: string; }
+// A story is a slice of an epic that Builder and Tester deliver on its own branch from the epic's
+// branch. The Architect proposes the split with the spec and the human approves it with the brief.
+export interface Story { key: string; title: string; scope: string; criteria: string[]; dependsOn: string[]; }
 export interface AgentResult {
   taskAssessment: TaskAssessment | null;
   outcome: "spec" | "questions" | "resolved" | "pass" | "changes" | "decision";
@@ -26,6 +29,8 @@ export interface AgentResult {
   // spec is the full technical contract for Builder, Tester and Reviewer.
   summary: string; brief: string; spec: string; questions: string[]; findings: Finding[];
   acceptanceCriteria: Criterion[];
+  // Empty unless a new specification splits the issue into stories.
+  stories: Story[];
   coverage: { criterionId: string; status: "passed" | "failed" | "not-run"; evidence: string }[];
   tests: { command: string; exitCode: number | null; evidence: string }[];
   dependencies: { name: string; change: "added" | "updated" | "removed"; rationale: string }[];

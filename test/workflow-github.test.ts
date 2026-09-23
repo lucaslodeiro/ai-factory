@@ -141,7 +141,7 @@ test("publisher keeps intermediate delivery results in status and publishes only
   assert.equal(await publisher.publishResults(),1);
   assert.deepEqual(comments.map(comment=>comment.key),["result-run-architect"]);
   assert.equal(await publisher.publishResults(),0);
-  assert.deepEqual(payloadOf(comments[0].body),{kind:"spec",version:3,body:"Stored specification",criteria:[{id:"AC-1",description:"Works"}],assessment:{complexity:"medium",risk:"low",verificationDepth:"thorough",rationale:"Bounded"}});
+  assert.deepEqual(payloadOf(comments[0].body),{kind:"spec",version:3,body:"Stored specification",criteria:[{id:"AC-1",description:"Works"}],stories:[],assessment:{complexity:"medium",risk:"low",verificationDepth:"thorough",rationale:"Bounded"}});
   assert.equal(JSON.parse((s.store.db.prepare("SELECT context FROM work_items WHERE id='work-1'").get() as {context:string}).context).specMarkers["3"],"result-run-architect");
   assert.match(workflowStatusMarkdown(s.store,"work-1"),/Latest delivery summary[\s\S]*Builder completed implementation/);
  } finally {s.store.db.close();}
@@ -297,4 +297,14 @@ test("a Designer-owned prototype request tells the human to wait without a comma
   const action=workflowStatusMarkdown(s.store,"work-1").split("<details><summary>All commands</summary>")[0];
   assert.match(action,/Designer is preparing a prototype/);assert.doesNotMatch(action,/\/factory (answer|approve|retry)/);
  } finally {s.store.db.close();}
+});
+
+test("a split specification shows every story, its criteria and what it waits for next to the approval",()=>{
+ const body=resultMarkdown("product-architect",result("spec",{acceptanceCriteria:[{id:"AC1",description:"Tokens"},{id:"AC2",description:"Hero | banner"},{id:"AC3",description:"Whole page"}],spec:"# Spec\nAC1 AC2 AC3",stories:[{key:"S1",title:"Design tokens",scope:"Palette and spacing",criteria:["AC1"],dependsOn:[]},{key:"S2",title:"Hero",scope:"First screen",criteria:["AC2"],dependsOn:["S1"]}]}),2);
+ const stories=body.indexOf("## Stories"),criteria=body.indexOf("## Acceptance criteria"),action=body.indexOf("## Next action");
+ assert.ok(criteria<stories&&stories<action,"stories sit between the criteria and the approval command");
+ assert.match(body,/\| \*\*S2\*\* Hero \| First screen \| AC2 \| S1 \|/);
+ assert.match(body,/\| \*\*S1\*\* Design tokens \| Palette and spacing \| AC1 \| — \|/);
+ assert.match(body,/Verified on the whole, after every story: AC3\./);
+ assert.doesNotMatch(resultMarkdown("product-architect",result("spec"),1),/## Stories/);
 });
