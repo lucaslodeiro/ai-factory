@@ -277,8 +277,14 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.ok(settings.readiness.missing.some((item: any) => item.id === "checkout"));
     assert.ok(settings.readiness.missing.some((item: any) => item.id === "repository"));
     assert.ok(settings.readiness.missing.some((item: any) => item.id === "approvers"));
-    assert.deepEqual(settings.groups.map((group: any) => group.id),["connections","project","workflow","agents","tools","service","advanced"]);
+    assert.deepEqual(settings.groups.map((group: any) => group.id),["connections","project","workflow","limits","agents","tools","service","advanced"]);
     assert.ok(settings.fields.every((field: any) => settings.groups.some((group: any) => group.id===field.group)));
+    for(const [key,value] of Object.entries({FACTORY_BRIEF_TARGET_CHARS:"4000",FACTORY_SPEC_TARGET_CHARS:"20000",FACTORY_SUMMARY_TARGET_CHARS:"600",FACTORY_MAX_QUESTIONS:"5",FACTORY_MAX_HUMAN_DECISIONS:"5",FACTORY_MAX_STORIES:"5",FACTORY_RESULT_MAX_ITEMS:"100",FACTORY_STRUCTURED_OUTPUT_RETRIES:"2",FACTORY_RECOVERABLE_ERROR_RETRIES:"1",FACTORY_TOKEN_BUDGET_GRACE_PERCENT:"25"})){
+      const field=settings.fields.find((candidate:any)=>candidate.key===key);
+      assert.equal(field?.group,"limits",key);assert.equal(field.value,value,key);
+    }
+    for(const key of ["FACTORY_MAX_FIX_CYCLES","FACTORY_ISSUE_BUDGET_TOKENS","FACTORY_BUDGET_UNMETERED_ROLES","FACTORY_EXECUTION_TIMEOUT_MS","FACTORY_VERIFY_TIMEOUT_MS","FACTORY_CONTEXT_BUDGET_BYTES","FACTORY_CONTEXT_BUDGET_OVERRIDES","FACTORY_ARTIFACT_RETENTION_DAYS"])
+      assert.equal(settings.fields.find((field:any)=>field.key===key)?.group,"limits",key);
     assert.deepEqual(settings.fields.filter((field:any)=>field.setup).map((field:any)=>field.key).sort(),["AGENT_PROVIDER","FACTORY_APPROVERS","FACTORY_INSTANCE_NAME","FACTORY_REPO_DIR","GITHUB_REPOSITORY"]);
     const dashboardHost = settings.fields.find((field: any) => field.key === "FACTORY_DASHBOARD_HOST");
     assert.equal(dashboardHost.type,"select"); assert.deepEqual(dashboardHost.options.map((option: any) => option.value),["127.0.0.1","localhost","::1"]);
@@ -350,12 +356,13 @@ echo "$*" >> "$PWD/update-actions.log"
     const cursorSave=await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{DEVELOPER_PROVIDER:"cursor",CURSOR_COMMAND:fakeCursor}})});
     assert.equal(cursorSave.status,400);assert.match((await cursorSave.json() as any).error,/Cursor is not connected/);
     assert.equal(fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8"),serviceActionsBeforeProviderCheck,"a disconnected provider must not stop the daemon");
-    const saved = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_POLL_INTERVAL_MS:"5000",SLACK_WEBHOOK_URL:"",AGENT_PROVIDER:"claude",DEVELOPER_MODEL:"auto"}})});
+    const saved = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_POLL_INTERVAL_MS:"5000",FACTORY_MAX_QUESTIONS:"4",SLACK_WEBHOOK_URL:"",AGENT_PROVIDER:"claude",DEVELOPER_MODEL:"auto"}})});
     assert.equal(saved.status,200);
     const savedResult = await saved.json() as any;
     assert.deepEqual(savedResult.restartedServices,["daemon"]);
     assert.match(savedResult.message,/Daemon restarted and verified/);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^FACTORY_POLL_INTERVAL_MS='5000'$/m);
+    assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^FACTORY_MAX_QUESTIONS='4'$/m);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^SLACK_WEBHOOK_URL='https:\/\/hooks\.example\.com\/private'$/m);
     assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),/^DEVELOPER_PROVIDER='claude'$/m);
     for(const key of["PRODUCT_ARCHITECT_PROVIDER","QA_PROVIDER","REVIEWER_PROVIDER"])assert.match(fs.readFileSync(path.join(settingsRoot,".env"),"utf8"),new RegExp(`^${key}='claude'$`,`m`));

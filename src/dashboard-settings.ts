@@ -10,11 +10,12 @@ type Field = { key: string; label: string; description: string; group: string; s
 const groups = [
   {id:"connections",label:"Connections",description:"GitHub, agent providers and Slack."},
   {id:"project",label:"Project",description:"Repository, checkout, approvers and this installation's identity."},
-  {id:"workflow",label:"Workflow",description:"Verification, correction loop and execution limits."},
+  {id:"workflow",label:"Workflow",description:"Verification behavior and workflow commands."},
+  {id:"limits",label:"Limits & quotas",description:"Writing targets, workflow caps, token budgets and timeouts."},
   {id:"agents",label:"Agents",description:"Provider and model selection for each workflow role."},
   {id:"tools",label:"Tools",description:"Commands used to run Codex, Claude, Cursor and Git."},
   {id:"service",label:"Service",description:"Storage, polling and the local dashboard server."},
-  {id:"advanced",label:"Advanced",description:"Prompt budgets and worker environment. Only for debugging."},
+  {id:"advanced",label:"Advanced",description:"Worker environment and troubleshooting."},
 ];
 const automaticModel = {value:"auto",label:"Auto (provider recommended)"};
 const codexModels = [automaticModel,...["gpt-6-astra","gpt-6-sol","gpt-6-luna","gpt-5.6-sol","gpt-5.6-terra","gpt-5.6-luna","gpt-5.5"].map(value=>({value,label:value}))];
@@ -30,15 +31,25 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   FACTORY_REPO_DIR:{label:"Target checkout",description:"Path to the application checkout. Startup clones it if missing and initializes an empty remote.",group:"project",required:true,restart:"all",setup:true},
   FACTORY_INSTANCE_NAME:{label:"Instance name",description:"Name used to identify this Factory in GitHub issue labels. Empty uses the machine hostname.",group:"project",restart:"daemon",setup:true},
   FACTORY_POLL_INTERVAL_MS:{label:"GitHub polling interval",description:"How often the daemon checks issues and comments.",group:"service",type:"number",unit:"milliseconds",restart:"daemon"},
-  FACTORY_EXECUTION_TIMEOUT_MS:{label:"Agent execution timeout",description:"Maximum duration of one agent process.",group:"workflow",type:"number",unit:"milliseconds",restart:"daemon"},
+  FACTORY_EXECUTION_TIMEOUT_MS:{label:"Agent execution timeout",description:"Maximum duration of one agent process.",group:"limits",type:"number",unit:"milliseconds",restart:"daemon"},
   FACTORY_VERIFY_COMMAND:{label:"Verification command",description:"Shell command the factory runs after the Tester stage. Empty disables factory verification.",group:"workflow",restart:"daemon"},
-  FACTORY_MAX_FIX_CYCLES:{label:"Automatic corrections",description:"Builder corrections the factory makes on its own before asking for human guidance. 0 asks at the first change request.",group:"workflow",type:"number",unit:"corrections",restart:"daemon"},
-  FACTORY_VERIFY_TIMEOUT_MS:{label:"Verification timeout",description:"Maximum duration of the verification command.",group:"workflow",type:"number",unit:"milliseconds",restart:"daemon"},
-  FACTORY_ISSUE_BUDGET_TOKENS:{label:"Token budget per issue",description:"Tokens one issue may consume across every run, cache included, before an approver must extend it.",group:"workflow",type:"number",unit:"tokens",restart:"daemon"},
-  FACTORY_BUDGET_UNMETERED_ROLES:{label:"Roles without usage reporting",description:"Comma-separated roles (architect, designer, builder, tester, reviewer) allowed to run without reported token usage.",group:"workflow",restart:"daemon"},
-  FACTORY_CONTEXT_BUDGET_BYTES:{label:"Default context budget",description:"Maximum prompt bytes before optional context is omitted.",group:"advanced",type:"number",unit:"bytes",restart:"daemon"},
-  FACTORY_ARTIFACT_RETENTION_DAYS:{label:"Artifact retention",description:"Days to retain exact prompt and execution output after completion or cancellation. Use 0 to disable pruning.",group:"service",type:"number",unit:"days",restart:"daemon"},
-  FACTORY_CONTEXT_BUDGET_OVERRIDES:{label:"Context budget overrides",description:'Optional JSON object keyed by role or "provider/model". Provider/model wins over role.',group:"advanced",restart:"daemon"},
+  FACTORY_MAX_FIX_CYCLES:{label:"Automatic corrections",description:"Builder corrections the factory makes on its own before asking for human guidance. 0 asks at the first change request.",group:"limits",type:"number",unit:"corrections",restart:"daemon"},
+  FACTORY_BRIEF_TARGET_CHARS:{label:"Brief target",description:"Suggested brief length; a longer complete brief remains valid.",group:"limits",type:"number",unit:"characters",restart:"daemon"},
+  FACTORY_SPEC_TARGET_CHARS:{label:"Spec target",description:"Suggested spec length; a longer complete spec remains valid.",group:"limits",type:"number",unit:"characters",restart:"daemon"},
+  FACTORY_SUMMARY_TARGET_CHARS:{label:"Summary target",description:"Suggested summary length; a longer complete result remains valid.",group:"limits",type:"number",unit:"characters",restart:"daemon"},
+  FACTORY_MAX_QUESTIONS:{label:"Architect questions",description:"Maximum clarification questions in one result.",group:"limits",type:"number",unit:"questions",restart:"daemon"},
+  FACTORY_MAX_HUMAN_DECISIONS:{label:"Human decisions",description:"Maximum decisions requested in a brief; writing guidance, not a rejection rule.",group:"limits",type:"number",unit:"decisions",restart:"daemon"},
+  FACTORY_MAX_STORIES:{label:"Stories per issue",description:"Maximum stories in an approved split.",group:"limits",type:"number",unit:"stories",restart:"daemon"},
+  FACTORY_RESULT_MAX_ITEMS:{label:"Items per result list",description:"Safety cap for findings, tests, coverage and other result lists.",group:"limits",type:"number",unit:"items",restart:"daemon"},
+  FACTORY_STRUCTURED_OUTPUT_RETRIES:{label:"Structured output attempts",description:"Maximum Claude attempts to satisfy the result schema within one execution.",group:"limits",type:"number",unit:"attempts",restart:"daemon"},
+  FACTORY_RECOVERABLE_ERROR_RETRIES:{label:"Recoverable error retries",description:"Extra executions after an invalid result or transient provider error. 0 asks for human retry immediately.",group:"limits",type:"number",unit:"retries",restart:"daemon"},
+  FACTORY_TOKEN_BUDGET_GRACE_PERCENT:{label:"Token budget grace",description:"Extra percentage allowed for a running agent after the issue token budget is reached.",group:"limits",type:"number",unit:"percent",restart:"daemon"},
+  FACTORY_VERIFY_TIMEOUT_MS:{label:"Verification timeout",description:"Maximum duration of the verification command.",group:"limits",type:"number",unit:"milliseconds",restart:"daemon"},
+  FACTORY_ISSUE_BUDGET_TOKENS:{label:"Token budget per issue",description:"Tokens one issue may consume across every run, cache included, before an approver must extend it.",group:"limits",type:"number",unit:"tokens",restart:"daemon"},
+  FACTORY_BUDGET_UNMETERED_ROLES:{label:"Roles without usage reporting",description:"Comma-separated roles (architect, designer, builder, tester, reviewer) allowed to run without reported token usage.",group:"limits",restart:"daemon"},
+  FACTORY_CONTEXT_BUDGET_BYTES:{label:"Default context budget",description:"Maximum prompt bytes before optional context is omitted.",group:"limits",type:"number",unit:"bytes",restart:"daemon"},
+  FACTORY_ARTIFACT_RETENTION_DAYS:{label:"Artifact retention",description:"Days to retain exact prompt and execution output after completion or cancellation. Use 0 to disable pruning.",group:"limits",type:"number",unit:"days",restart:"daemon"},
+  FACTORY_CONTEXT_BUDGET_OVERRIDES:{label:"Context budget overrides",description:'Optional JSON object keyed by role or "provider/model". Provider/model wins over role.',group:"limits",restart:"daemon"},
   FACTORY_DASHBOARD_HOST:{label:"Listen address",description:"Loopback address used by the administration UI.",group:"service",type:"select",options:["127.0.0.1","localhost","::1"].map(value => ({value,label:value})),required:true,restart:"dashboard"},
   FACTORY_DASHBOARD_PORT:{label:"HTTP port",description:"Local port for the administration UI.",group:"service",type:"number",unit:"port",required:true,restart:"dashboard"},
   GITHUB_REPOSITORY:{label:"Repository",description:"GitHub owner/name used for issues and pull requests.",group:"project",required:true,restart:"all",setup:true},
@@ -61,7 +72,7 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   REVIEWER_PROVIDER:roleField(roleFullName("reviewer"),"reviewer",roleFullName("reviewer")),
   REVIEWER_MODEL:modelField(roleFullName("reviewer"),"reviewer"),
 };
-const fieldOrder=["SLACK_WEBHOOK_URL","GITHUB_REPOSITORY","FACTORY_REPO_DIR","GITHUB_DEFAULT_BRANCH","FACTORY_APPROVERS","FACTORY_INSTANCE_NAME","FACTORY_VERIFY_COMMAND","FACTORY_MAX_FIX_CYCLES","FACTORY_ISSUE_BUDGET_TOKENS","FACTORY_BUDGET_UNMETERED_ROLES","FACTORY_EXECUTION_TIMEOUT_MS","FACTORY_VERIFY_TIMEOUT_MS","PRODUCT_ARCHITECT_PROVIDER","PRODUCT_ARCHITECT_MODEL","DESIGNER_PROVIDER","DESIGNER_MODEL","DEVELOPER_PROVIDER","DEVELOPER_MODEL","QA_PROVIDER","QA_MODEL","REVIEWER_PROVIDER","REVIEWER_MODEL","CODEX_COMMAND","CLAUDE_COMMAND","CURSOR_COMMAND","GIT_COMMAND","FACTORY_DATA_DIR","FACTORY_POLL_INTERVAL_MS","FACTORY_ARTIFACT_RETENTION_DAYS","FACTORY_DASHBOARD_HOST","FACTORY_DASHBOARD_PORT","FACTORY_CONTEXT_BUDGET_BYTES","FACTORY_CONTEXT_BUDGET_OVERRIDES","AGENT_SECRET_ALLOWLIST"];
+const fieldOrder=["SLACK_WEBHOOK_URL","GITHUB_REPOSITORY","FACTORY_REPO_DIR","GITHUB_DEFAULT_BRANCH","FACTORY_APPROVERS","FACTORY_INSTANCE_NAME","FACTORY_VERIFY_COMMAND","FACTORY_BRIEF_TARGET_CHARS","FACTORY_SPEC_TARGET_CHARS","FACTORY_SUMMARY_TARGET_CHARS","FACTORY_MAX_QUESTIONS","FACTORY_MAX_HUMAN_DECISIONS","FACTORY_MAX_STORIES","FACTORY_RESULT_MAX_ITEMS","FACTORY_MAX_FIX_CYCLES","FACTORY_ISSUE_BUDGET_TOKENS","FACTORY_TOKEN_BUDGET_GRACE_PERCENT","FACTORY_BUDGET_UNMETERED_ROLES","FACTORY_EXECUTION_TIMEOUT_MS","FACTORY_VERIFY_TIMEOUT_MS","FACTORY_STRUCTURED_OUTPUT_RETRIES","FACTORY_RECOVERABLE_ERROR_RETRIES","FACTORY_CONTEXT_BUDGET_BYTES","FACTORY_CONTEXT_BUDGET_OVERRIDES","FACTORY_ARTIFACT_RETENTION_DAYS","PRODUCT_ARCHITECT_PROVIDER","PRODUCT_ARCHITECT_MODEL","DESIGNER_PROVIDER","DESIGNER_MODEL","DEVELOPER_PROVIDER","DEVELOPER_MODEL","QA_PROVIDER","QA_MODEL","REVIEWER_PROVIDER","REVIEWER_MODEL","CODEX_COMMAND","CLAUDE_COMMAND","CURSOR_COMMAND","GIT_COMMAND","FACTORY_DATA_DIR","FACTORY_POLL_INTERVAL_MS","FACTORY_DASHBOARD_HOST","FACTORY_DASHBOARD_PORT","AGENT_SECRET_ALLOWLIST"];
 const fieldRank=new Map(fieldOrder.map((key,index)=>[key,index]));
 
 function encode(value: string) {
@@ -72,10 +83,13 @@ function encode(value: string) {
 export function validateSetting(key: string, value: string) {
   encode(value);
   if (key === "FACTORY_MAX_FIX_CYCLES" && !/^\d+$/.test(value)) throw new Error(`${key}: enter 0 or a positive integer`);
-  if (/_MS$/.test(key) || ["FACTORY_CONTEXT_BUDGET_BYTES","FACTORY_ISSUE_BUDGET_TOKENS"].includes(key)) {
+  if (key === "FACTORY_RECOVERABLE_ERROR_RETRIES" && !/^\d+$/.test(value)) throw new Error(`${key}: enter 0 or a positive integer`);
+  if (/_MS$/.test(key) || ["FACTORY_CONTEXT_BUDGET_BYTES","FACTORY_ISSUE_BUDGET_TOKENS","FACTORY_BRIEF_TARGET_CHARS","FACTORY_SPEC_TARGET_CHARS","FACTORY_SUMMARY_TARGET_CHARS","FACTORY_MAX_QUESTIONS","FACTORY_MAX_HUMAN_DECISIONS","FACTORY_MAX_STORIES","FACTORY_RESULT_MAX_ITEMS","FACTORY_STRUCTURED_OUTPUT_RETRIES"].includes(key)) {
     if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1) throw new Error(`${key}: enter a positive integer`);
   }
   if(key==="FACTORY_ARTIFACT_RETENTION_DAYS"&&!/^\d+$/.test(value))throw new Error(`${key} must be a nonnegative integer`);
+  if(key==="FACTORY_RESULT_MAX_ITEMS"&&Number(value)<7)throw new Error(`${key}: enter at least 7 to allow all review dimensions`);
+  if(key==="FACTORY_TOKEN_BUDGET_GRACE_PERCENT"&&(!/^\d+$/.test(value)||!Number.isSafeInteger(Number(value))||Number(value)>100))throw new Error(`${key}: enter a whole percentage from 0 to 100`);
   if (key === "FACTORY_CONTEXT_BUDGET_OVERRIDES") {
     let parsed:unknown;try{parsed=JSON.parse(value);}catch{throw new Error(`${key}: enter a JSON object`);}
     if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error(`${key}: enter a JSON object`);

@@ -78,7 +78,7 @@ export class ExecutionManager {
       let cancelled = false, interrupted = false, interruptionReason:string|undefined, timedOut = false;
       const env=agentEnvironment();
       // Claude's default five schema attempts can turn a small formatting error into a long run.
-      if(selection?.provider==="claude")env.MAX_STRUCTURED_OUTPUT_RETRIES="2";
+      if(selection?.provider==="claude")env.MAX_STRUCTURED_OUTPUT_RETRIES=String(config.structuredOutputRetries);
       const child = spawn(process.execPath, [fileURLToPath(new URL("./worker-supervisor.mjs", import.meta.url)), id, logDir], { cwd, env, detached: true, stdio: ["pipe", out, err, "ipc"] });
       fs.closeSync(out); fs.closeSync(err);
       this.store.db.prepare("UPDATE executions SET pid=? WHERE id=?").run(child.pid ?? null, id);

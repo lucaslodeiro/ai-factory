@@ -1,11 +1,12 @@
 import type { AgentResult, AgentRole, Criterion, DeliveryStage, Story, TaskAssessment, VerificationDepth } from "./types.js";
 import { tacticalRouteError, type TacticalNextRole } from "./tactical-routing.js";
+import { config } from "./config.js";
 export const reviewDimensions = ["specification", "code-quality", "security", "performance", "product-ui-copy", "test-quality", "dependencies"];
 type Schema = { type?: string | string[]; enum?: unknown[]; properties?: Record<string, Schema>; required?: string[]; additionalProperties?: boolean; items?: Schema; minLength?: number; maxLength?: number; maxItems?: number; };
 export class InvalidResultError extends Error { readonly failureClass="invalid-result" as const; }
-const text = (maxLength = 5000): Schema => ({ type: "string", minLength: 1, maxLength });
+const text = (maxLength?: number): Schema => ({ type: "string", minLength: 1, ...(maxLength === undefined ? {} : {maxLength}) });
 const enumeration = (...values: string[]): Schema => ({ type: "string", enum: values });
-const list = (items: Schema): Schema => ({ type: "array", items, maxItems: 100 });
+const list = (items: Schema): Schema => ({ type: "array", items, maxItems: config.resultMaxItems });
 const object = (properties: Record<string, Schema>): Schema => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
 // Depth cannot be chosen freely: an Architect that declared everything minimal would make every
 // run cheap and the product worse. It is floored by the worse of complexity and risk, and the
@@ -18,21 +19,21 @@ export function requiredVerificationDepth(assessment:Pick<TaskAssessment,"comple
 // GitHub, and moved out of the branch before the Builder starts so it never reaches the PR.
 export const prototypeDirectory=".factory/prototype";
 // The brief replaces reading the spec, so it only works while it stays short enough to be read.
-export const briefTargetLength=5000;
+export const briefTargetLength=config.briefTargetChars;
 // A split costs a Builder and a Tester run per story, so it stays small enough to read in the
 // brief and to reason about as a graph.
-export const maxStories=5;
+export const maxStories=config.maxStories;
 const decisionSchema=object({ kind: enumeration("tactical", "major"), decision: text(), rationale: text(), conflictsWithHuman: { type: "boolean" }, supersedes:list(text(100)) });
 export const resultSchema = object({
   taskAssessment: { ...object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), verificationDepth: enumeration("minimal", "standard", "thorough"), uxImpact: enumeration("none", "minor", "significant"), rationale: text() }), type: ["object", "null"] },
   outcome: enumeration("spec", "questions", "resolved", "pass", "changes", "decision"),
-  summary: text(1500), brief: { type: "string" }, spec: { type: "string" }, questions: { ...list(text()), maxItems: 5 },
+  summary: text(), brief: { type: "string" }, spec: { type: "string" }, questions: { ...list(text()), maxItems: config.maxQuestions },
   findings: list(object({ classification: enumeration("auto-fix", "decision-required", "defer", "environment-blocked"), severity: enumeration("critical", "major", "minor"), evidence: text() })),
   acceptanceCriteria: list(object({ id: text(100), description: text() })),
-  stories: list(object({ key: text(40), title: text(200), scope: text(2000), criteria: list(text(100)), dependsOn: list(text(40)), assessment: object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), verificationDepth: enumeration("minimal", "standard", "thorough") }) })),
+  stories: list(object({ key: text(40), title: text(200), scope: text(), criteria: list(text(100)), dependsOn: list(text(40)), assessment: object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), verificationDepth: enumeration("minimal", "standard", "thorough") }) })),
   coverage: list(object({ criterionId: text(100), status: enumeration("passed", "failed", "not-run"), evidence: text() })),
   tests: list(object({ command: text(), exitCode: { type: ["integer", "null"] }, evidence: text() })),
-  testCandidates: list(object({ name: text(200), covers: list(text(100)), value: enumeration("essential", "valuable", "redundant"), kept: { type: "boolean" }, reason: text(1000) })),
+  testCandidates: list(object({ name: text(200), covers: list(text(100)), value: enumeration("essential", "valuable", "redundant"), kept: { type: "boolean" }, reason: text() })),
   dependencies: list(object({ name: text(200), change: enumeration("added", "updated", "removed"), rationale: text() })),
   changedFiles: list(text(1000)),
   decisions: list(decisionSchema),
@@ -129,8 +130,6 @@ function unique(ids: string[], label: string) {
   if (new Set(ids).size !== ids.length) throw new Error(`Duplicate ${label}`);
 }
 function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: TacticalNextRole[], consultationFrom?: DeliveryStage): AgentResult {
-  const serialized = JSON.stringify(raw);
-  if (serialized && serialized.length > 80000) throw new Error("Agent result exceeds publication limits");
   // Provider structured-output implementations do not all enforce enum/maxItems
   // constraints consistently. Delivery roles never own these fields, so force
   // their inert values rather than letting a report attempt rewrite approved scope.

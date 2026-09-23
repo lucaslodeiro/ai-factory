@@ -11,6 +11,8 @@ function positive(name: string, fallback: number) {
   return n;
 }
 function nonnegative(name:string,fallback:number){const n=Number(process.env[name]??fallback);if(!Number.isSafeInteger(n)||n<0)throw new Error(`${name} must be a nonnegative integer`);return n;}
+function atLeast(name:string,fallback:number,minimum:number){const n=positive(name,fallback);if(n<minimum)throw new Error(`${name} must be at least ${minimum}`);return n;}
+function percentage(name:string,fallback:number){const n=nonnegative(name,fallback);if(n>100)throw new Error(`${name} must be at most 100`);return n;}
 // Roles whose runs may finish without reported usage without pausing the issue for acknowledgement.
 // Cursor reports no usage at all, so a role routed to it would otherwise stop after every run.
 function unmeteredRoles(){
@@ -73,6 +75,16 @@ export const config = {
   verifyCommand: process.env.FACTORY_VERIFY_COMMAND?.trim() || undefined,
   // Automatic Builder corrections allowed before the issue waits for human guidance.
   maxCycles: nonnegative("FACTORY_MAX_FIX_CYCLES", 1),
+  briefTargetChars: positive("FACTORY_BRIEF_TARGET_CHARS",4000),
+  specTargetChars: positive("FACTORY_SPEC_TARGET_CHARS",20000),
+  summaryTargetChars: positive("FACTORY_SUMMARY_TARGET_CHARS",600),
+  maxQuestions: positive("FACTORY_MAX_QUESTIONS",5),
+  maxHumanDecisions: positive("FACTORY_MAX_HUMAN_DECISIONS",5),
+  maxStories: positive("FACTORY_MAX_STORIES",5),
+  resultMaxItems: atLeast("FACTORY_RESULT_MAX_ITEMS",100,7),
+  structuredOutputRetries: positive("FACTORY_STRUCTURED_OUTPUT_RETRIES",2),
+  recoverableErrorRetries: nonnegative("FACTORY_RECOVERABLE_ERROR_RETRIES",1),
+  tokenBudgetGracePercent: percentage("FACTORY_TOKEN_BUDGET_GRACE_PERCENT",25),
   issueBudgetTokens: positive("FACTORY_ISSUE_BUDGET_TOKENS", 500000),
   budgetUnmeteredRoles: unmeteredRoles(),
   contextBudget:{defaultBytes:positive("FACTORY_CONTEXT_BUDGET_BYTES",200000),overrides:contextBudgetOverrides()},

@@ -357,7 +357,9 @@ Providers do not report the same things. Codex (`exec --json`) and Claude (`stre
 
 Every issue may consume `FACTORY_ISSUE_BUDGET_TOKENS` tokens (500,000 by default) across all its runs: every stage, retry, invalid-result retry and correction spends from the same budget. A token is anything the provider processed, cache reads and writes included, so a Claude run and a Codex run doing the same work spend comparable amounts.
 
-The budget is checked before each run starts. A run in progress is never cut: it finishes, its result is applied, and the next run does not start. The issue then waits with reason `budget-exhausted`, the status comment shows how much was consumed, and an authorized approver extends it:
+The installer seeds every limit and quota in `.env.example`. They are editable under **Settings → Limits & quotas** in the dashboard; saving restarts the daemon. The brief (4,000 characters), spec (20,000) and summary (600) values are writing targets, never rejection thresholds. The section also contains the Architect's question, decision and story counts, list safety cap, correction and retry limits, context size, token budget and grace, execution and verification timeouts, and artifact retention.
+
+The budget is checked before each run starts. At the limit, the dashboard warns and allows the operator to pause. A running agent with reported token usage has a 25% grace by default; Factory stops it at 125% if it has not finished. A completed result is kept even if it crosses the limit. The next run waits with reason `budget-exhausted`, the status comment shows how much was consumed, and an authorized approver extends it:
 
 ```text
 /factory budget +250000 Larger refactor than expected

@@ -73,8 +73,11 @@ test("result contract failures use a typed error",()=>{
  assert.throws(()=>validateCoverage(result("pass"),[]),error=>error instanceof InvalidResultError);
 });
 
-test("summaries are limited to 1500 characters",()=>{
- assert.throws(()=>parseResult(result("pass",{summary:"x".repeat(1600)}),"developer"),/summary: invalid text length/);
+test("a complete result is not rejected for narrative length",()=>{
+ const long="x".repeat(81000);
+ assert.equal(parseResult(result("pass",{summary:long}),"developer").summary.length,long.length);
+ assert.equal(parseResult(result("changes",{findings:[{classification:"auto-fix",severity:"major",evidence:long}]}),"qa").findings[0].evidence.length,long.length);
+ assert.equal(resultSchemaFor("product-architect").properties?.summary?.maxLength,undefined);
 });
 
 test("every provider result schema requires all object properties recursively",()=>{

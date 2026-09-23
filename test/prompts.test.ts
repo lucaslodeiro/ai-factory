@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {spawnSync} from "node:child_process";
 import { promptContract, promptContractParts } from "../src/prompts.js";
 
 test("delivery outcome instructions distinguish fixes, decisions and deferred observations", () => {
@@ -50,11 +51,20 @@ test("Architect proposes a brief the human approves instead of reading the SPEC"
  assert.match(output,/# BRIEF — <Work Item>/);
  assert.match(output,/## Decisions for you/);
  assert.match(output,/Ask no more than 5 questions and put no more than 5 human decisions in the brief/);
- assert.match(output,/At most five, most irreversible first/);
+ assert.match(output,/At most 5, most irreversible first/);
+ assert.match(output,/brief targeting 4000 characters and a spec targeting 20000 characters/);
+ assert.match(output,/A complete proposal remains valid if either target is exceeded/);
  assert.match(output,/the human approves the brief and does not read the spec/);
  assert.match(output,/Never ask what the repository, the issue or an earlier decision already answers/);
  assert.match(output,/Never put a human-level decision only in the SPEC/);
  assert.doesNotMatch(promptContract("developer","claude"),/# BRIEF — <Work Item>/);
+});
+
+test("installed limit overrides reach the Architect prompt and result schema",()=>{
+ const script=`import {promptContract} from './src/prompts.ts'; import {resultSchemaFor} from './src/results.ts'; const prompt=promptContract('product-architect','claude'); const schema=resultSchemaFor('product-architect'); console.log(JSON.stringify({brief:prompt.includes('brief targeting 3200 characters'),spec:prompt.includes('spec targeting 18000 characters'),decisions:prompt.includes('At most 3, most irreversible first'),stories:prompt.includes('list 1 to 4 stories'),questions:schema.properties.questions.maxItems,items:schema.properties.findings.maxItems}));`;
+ const run=spawnSync(process.execPath,["--import","tsx","--input-type=module","-e",script],{cwd:process.cwd(),env:{...process.env,FACTORY_BRIEF_TARGET_CHARS:"3200",FACTORY_SPEC_TARGET_CHARS:"18000",FACTORY_MAX_HUMAN_DECISIONS:"3",FACTORY_MAX_STORIES:"4",FACTORY_MAX_QUESTIONS:"2",FACTORY_RESULT_MAX_ITEMS:"8"},encoding:"utf8"});
+ assert.equal(run.status,0,run.stderr);
+ assert.deepEqual(JSON.parse(run.stdout.trim()),{brief:true,spec:true,decisions:true,stories:true,questions:2,items:8});
 });
 
 test("Reviewer rejects product decisions the approved brief does not contain",()=>{
