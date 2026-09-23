@@ -117,3 +117,5 @@ From a full-page review of the dashboard with issue #10 at 1280 px, 390 px and i
 ### Finding: a dashboard test depends on the Codex CLI being installed
 
 On `main` at `f4a3604`, before this change, `npm test` fails **dashboard serves readable state and queues daemon controls** with "Codex CLI is unavailable. Install it or correct CODEX_COMMAND before saving." The provider validation added in `a2d87a5` reads `CODEX_COMMAND` from the settings root, which the test never writes, so it falls back to `codex` on `PATH`. The test passes on a machine with Codex installed and fails on one without. With a stub `codex` on `PATH` the whole suite passes (**418 pass, 0 fail, 0 skipped**, the same with and without this change). Without it, the only failure is this test, before and after this change. Not fixed here; the likely fix is for the test to write its fake `CODEX_COMMAND` into the settings root `.env`.
+
+**Resolved upstream** by `ccd7fbd` and `e4297e5`, which point the test's `.env` at its fake Codex and Claude. On `main` at `3f80f6c`, with no `codex` on `PATH`, `npm test` — **431 pass, 0 fail, 0 skipped**.
