@@ -85,7 +85,7 @@ export const config = {
   structuredOutputRetries: positive("FACTORY_STRUCTURED_OUTPUT_RETRIES",2),
   recoverableErrorRetries: nonnegative("FACTORY_RECOVERABLE_ERROR_RETRIES",1),
   tokenBudgetGracePercent: percentage("FACTORY_TOKEN_BUDGET_GRACE_PERCENT",25),
-  issueBudgetTokens: positive("FACTORY_ISSUE_BUDGET_TOKENS", 500000),
+  issueBudgetTokens: positive("FACTORY_ISSUE_BUDGET_TOKENS", 2000000),
   budgetUnmeteredRoles: unmeteredRoles(),
   contextBudget:{defaultBytes:positive("FACTORY_CONTEXT_BUDGET_BYTES",200000),overrides:contextBudgetOverrides()},
   artifactRetentionDays:nonnegative("FACTORY_ARTIFACT_RETENTION_DAYS",30),

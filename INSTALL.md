@@ -351,11 +351,11 @@ Both `activity` and `benchmark` accept a work item id, an issue number, or an id
 
 To compare one run against another, use the fixed issue in [docs/BENCHMARK.md](docs/BENCHMARK.md): two different issues measure the issues, not the factory. `ai-factory benchmark <work-item-id> --verify <checkout> --save <file>` records a baseline and `--baseline <file>` prints the deltas. `--verify` runs an independent oracle against the code the run produced; without it the cost figures are the system grading its own homework, and a comparison where either side was unverified or unresolved is refused.
 
-Providers do not report the same things. Codex (`exec --json`) and Claude (`stream-json`) both stream one JSON object per line, so both have a real event histogram and report tokens with cached input apart; only Claude reports turns and a cost estimate. Token totals mean the same thing for both, so the issue budget can compare them, but event counts and turns are shaped by each provider. Compare a role against itself across runs, never across providers.
+Providers do not report the same things. Codex (`exec --json`) and Claude (`stream-json`) both stream one JSON object per line, so both have a real event histogram and report tokens with cached input apart; only Claude reports turns and a cost estimate. The issue budget weights reported input, output and cache usage by provider rather than comparing raw totals. Event counts and turns are also shaped by each provider. Compare a role against itself across runs, never across providers.
 
 ## Token budget per issue
 
-Every issue may consume `FACTORY_ISSUE_BUDGET_TOKENS` tokens (500,000 by default) across all its runs: every stage, retry, invalid-result retry and correction spends from the same budget. A token is anything the provider processed, cache reads and writes included, so a Claude run and a Codex run doing the same work spend comparable amounts.
+Every issue may consume `FACTORY_ISSUE_BUDGET_TOKENS` cost-weighted token units (2,000,000 by default) across all its runs: every stage, retry, invalid-result retry and correction spends from the same budget. Cached reads count at a discount; the budget is an approximation of provider cost, not a bill in dollars.
 
 The installer seeds every limit and quota in `.env.example`. They are editable under **Settings → Limits & quotas** in the dashboard; saving restarts the daemon. The brief (4,000 characters), spec (20,000) and summary (600) values are writing targets, never rejection thresholds. The section also contains the Architect's question, decision and story counts, list safety cap, correction and retry limits, context size, token budget and grace, execution and verification timeouts, and artifact retention.
 
