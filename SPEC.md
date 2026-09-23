@@ -80,6 +80,10 @@ Correction cycles are bounded by configuration: `FACTORY_MAX_FIX_CYCLES` is the 
 
 Each issue has a token budget (`FACTORY_ISSUE_BUDGET_TOKENS`, default 500,000): every token the providers processed for the issue, cache included, across every stage, retry and correction. It is checked before a run starts. A run in progress always finishes and its result is kept, so the budget can be exceeded by at most one run; the next run does not start and the issue waits for an authorized approver to post `/factory budget +<tokens> [reason]`. A run that finished without reported usage is never counted as zero: the issue waits until an approver acknowledges it (`+0` acknowledges without extending), unless its role is listed in `FACTORY_BUDGET_UNMETERED_ROLES`. Consumption and extensions travel with the published issue state, so continuing an issue on another installation does not reset them.
 
+### F09b — Epics and stories
+
+An approved specification with stories opens no Builder on the epic. Each story becomes a sub-issue of the epic, blocked by the stories it depends on, created idempotently from the local ledger through the GitHub relationship APIs. A story starts once every issue it is blocked by is closed as completed; it runs Builder and Tester on its own `factory/*` branch from the epic branch, with a specification that is its approved slice of the epic contract, and integrates into the epic branch through a merge commit rather than a pull request; a conflict stops the story as an integration failure for a person. When every story is integrated, the epic resumes at Review through Test and delivers the single pull request per F10.
+
 ### F10 — Pull request delivery
 
 After Builder, Tester and Reviewer pass for the current approved work, push only the work item's `factory/*` branch and create or reuse its open PR against the configured base. Do not merge automatically or push to the default branch. The item remains `DELIVERY/WAITING` until merge. Merge records `DELIVERY/COMPLETED` with timestamp/commit; an unmerged closed PR remains waiting with a closed merge request and can resume tracking on reopen. API errors never alter the projection.
@@ -133,6 +137,7 @@ The objective is cost and time subject to the issue being resolved. Stated witho
 | F03–F05 | `src/workflow-commands.ts`, `src/workflow-results.ts`, `specs` and `records` | `test/workflow-commands.test.ts`, `test/workflow-results.test.ts` |
 | F06–F08 | `src/results.ts`, `src/worktrees.ts` | `test/results.test.ts`, `test/workspaces.test.ts` |
 | F09–F10 | `src/workflow-results.ts`, `src/workflow-github.ts` | Result routing, GitHub projection and full daemon tests |
+| F09b | `src/workflow-stories.ts`, `src/workflow-orchestrator.ts`, `src/workflow-runner.ts`, `src/worktrees.ts` | `test/results.test.ts` split validation, `test/workflow-orchestrator.test.ts` epic flow and idempotent story issues, `test/workspaces.test.ts` story base and integration |
 | F11 | `src/execution-manager.ts`, `src/worker-supervisor.mjs`, `src/daemon.ts` | `test/execution.test.ts`, `test/recovery.test.ts`, `test/storage.test.ts`, cross-process cancel/retry/stop in `test/daemon.test.ts` |
 | F12 | `src/notifications.ts`, `src/adapters/slack.ts`, SQLite queues | `test/notifications.test.ts`, GitHub-outage notification case |
 | F13 | `src/workflow-projection.ts`, `src/workflow-status.ts`, `src/cli.ts`, `src/dashboard.ts` | Projection, publisher, dashboard and daemon tests |
