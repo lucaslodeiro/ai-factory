@@ -93,7 +93,7 @@ Commands must be the first or last non-empty line of a comment from an authorize
 An observed prose comment or near-miss such as `/fatcory note` may be edited into a valid command until a later command is applied. Once a comment is processed as a command, later edits never change its outcome. If an issue or repository is deleted and recreated, the old issue work is archived; use an empty data directory for a recreated repository and explicitly assign a recreated issue again.
 
 - `/factory help` publishes the complete command reference once.
-- `/factory approve vN [guidance]` approves the posted SPEC version.
+- `/factory approve vN [guidance]` approves the posted brief and SPEC version, including its split into stories when there is one.
 - `/factory answer <text>` answers a question, requests PR changes or requests a revised SPEC after an invalid result.
 - `/factory retry [--issue] [--for <roles>] [guidance]` resumes failed, paused or cancelled work.
 - `/factory note [--issue] [--for <roles>] <text>` adds guidance without changing state.
@@ -120,7 +120,7 @@ The global update area checks `origin` before enabling update and runs through a
 
 Factory commands include `doctor`, `start`, `start-issue`, `issue show`, `status`, `events`, `activity` (per-role provider activity, plus each role's runs in order when a correction cycle re-ran it), `benchmark`, `cancel`, `retry`, `refresh-list`, `stop --pause-active`, `notifications`, `slack-test`, `models`, `sync`, and `repo <check|sync|publish|clear|restore>`.
 
-Each installation executes agent stages sequentially and is identified by `FACTORY_INSTANCE_NAME`, which defaults to its hostname. Multiple installations may share a repository and GitHub account: assignment to that account offers work, while the single `factory-instance:<name>` label selects the installation. Unassign to pause for a human, reassign to resume, or change the instance label to move work. The issue itself carries the current state index, specifications and milestone facts needed by another installation; stable work continues automatically, while remotely active work waits for the explicit **Continue anyway** action. The local daemon lock still prevents duplicate processes using the same data directory.
+Each installation executes agent stages sequentially and is identified by `FACTORY_INSTANCE_NAME`, which defaults to its hostname. Multiple installations may share a repository and GitHub account: assignment to that account offers work, while the single `factory-instance:<name>` label selects the installation. Unassign to pause for a human, reassign to resume, or change the instance label to move work. The stories of an epic start on the epic's installation and must finish there: a story continued elsewhere keeps its base branch but not its epic link. The issue itself carries the current state index, specifications and milestone facts needed by another installation; stable work continues automatically, while remotely active work waits for the explicit **Continue anyway** action. The local daemon lock still prevents duplicate processes using the same data directory.
 
 This repository has one long-lived branch, `main`; the installer installs it by default and `--branch NAME` exists only for testing an unmerged branch.
 

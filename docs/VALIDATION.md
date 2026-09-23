@@ -329,6 +329,20 @@ Verified here:
 
 Not verified against a live provider: the budget itself has not run on a real issue. The benchmark issue with Builder or Tester on Codex is the first check; compare `ai-factory activity` with the provider's usage page.
 
+## Epics and stories — 2026-09-23
+
+An issue can now be delivered as an epic: the Architect proposes 2 to 4 stories with the SPEC, the human approves them with the brief, each story becomes a GitHub sub-issue blocked by the stories it waits for, runs Builder and Tester on its own branch from the epic branch and merges into it, and the epic then goes through Test and Review once and opens the single pull request. Every work item records its base branch, and the epic and its stories share one token budget. Schema version 10; a fresh data directory is required.
+
+Verified here:
+
+- `npm test`: 438 tests, 438 passed.
+- `test/results.test.ts`: a split of one, more than four, duplicate keys or titles, a criterion owned by two stories or unknown to the spec, a story without criteria, an unknown or self dependency and a cycle are rejected; delivery roles cannot introduce stories.
+- `test/workflow-orchestrator.test.ts`: the full epic flow with two dependent stories against the GitHub fake (sub-issues with `parent_issue_id`, `blocked_by`, start only when the blocker is closed as completed, integration instead of Review, the epic resuming at Review and returning through Test, one pull request to `main`), an already existing sub-issue adopted instead of duplicated after a simulated crash, and a blocker closed as *not planned* that does not unblock.
+- `test/workspaces.test.ts`: a story worktree created from a remote epic branch, its diff measured against the epic, sync that merges the epic and not `main`, and integration through one merge commit that is not repeated and that stops on a conflict with the worktree clean.
+- `test/budget.test.ts`: consumption summed over the family and an extension granted on a story issue that lifts the hold for all.
+
+Not verified: no live run against GitHub. The sub-issue and dependency calls follow the official OpenAPI description (`POST /repos/{o}/{r}/issues` with `parent_issue_id`, `GET …/sub_issues`, `GET|POST …/dependencies/blocked_by`), but they have not been exercised on a real repository, nor has an epic run end to end with real providers. Known limits: a story continued on another installation loses its epic link and would go to Review instead of integrating, so stories must finish on the epic's installation; cancelling the epic leaves its unstarted story issues open; the Designer prototype leaves each story branch when that story's Builder starts and is not copied to the epic worktree for the Reviewer.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

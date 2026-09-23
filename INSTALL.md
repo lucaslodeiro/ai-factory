@@ -363,7 +363,7 @@ The budget is checked before each run starts. A run in progress is never cut: it
 /factory budget +250000 Larger refactor than expected
 ```
 
-The extension is recorded with the approver and the comment it came from. The dashboard offers **Extend token budget** in the issue conversation while the issue waits for it and after a budget warning; the command is always available in GitHub. Warnings are announced once at 60% and 80% of the granted budget, on the issue, the dashboard and Slack.
+An epic and its stories share one budget: consumption is summed over all of them and an extension posted on any of their issues counts for the whole family. The extension is recorded with the approver and the comment it came from. The dashboard offers **Extend token budget** in the issue conversation while the issue waits for it and after a budget warning; the command is always available in GitHub. Warnings are announced once at 60% and 80% of the granted budget, on the issue, the dashboard and Slack.
 
 A run that finished without reported usage is never counted as zero. That happens when a Codex run is cut before it finishes, when the daemon stops unexpectedly, and on every Cursor run. The issue waits with reason `budget-unknown` until an approver acknowledges it; `/factory budget +0` acknowledges without extending. A Claude run that is cut keeps the usage it streamed before the cut, recorded as partial. List roles routed to a provider that never reports usage in `FACTORY_BUDGET_UNMETERED_ROLES` (for example `builder,tester` when they run on Cursor) so they do not wait after every run.
 

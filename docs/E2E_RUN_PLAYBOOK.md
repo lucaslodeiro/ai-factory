@@ -109,7 +109,22 @@ What matters here is how much it cost you to understand what happened and what t
 - **Budget hold**: before assigning a new issue, set `FACTORY_ISSUE_BUDGET_TOKENS` to a value below one run (for example `1000`) and restart the daemon. Expected: Architect runs and finishes, its SPEC is published, and after approval the item goes to **Build · Waiting** with reason `budget-exhausted`, a "Token budget" row in the status comment and no Builder execution. From the dashboard thread click **Extend token budget** with `+2000000 test`: the command is published on the issue with your login, and Builder starts on the next tick.
 - **Unassign and reassign**: during Build, unassign the issue. Expected: item Paused `unassigned`, instance label removed, no active execution. Reassign: the Factory restores its label and resumes where it was.
 
-## 6. What to record
+## 6. Run D — an epic with two stories (optional)
+
+Use an issue with two deliverables that touch different files and can be verified apart, for example a new data file plus a page that renders it, with one criterion that only holds for the whole. Assign it as in Run A.
+
+| Step | Do | Look at | Expected |
+| --- | --- | --- | --- |
+| D1 Split | Wait for Architect | Specification comment | A "Stories" table between the criteria and the approval command, and the split named as a decision in the brief; criteria owned by no story listed as verified on the whole |
+| D2 Approval | `/factory approve v1` | Epic status; the repository issues | Epic Build · Waiting "stories are being delivered"; on the next poll two sub-issues under the epic, the second showing "blocked by" the first; the first assigned to the Factory account with the epic's instance label |
+| D3 Story 1 | Wait for Builder and Tester | `git log --oneline origin/factory/issue-<s1>`; story comments | Commits on the story branch, no Reviewer comment, no pull request; then `origin/factory/issue-<epic>` gains one merge commit "integrate factory/issue-<s1>" and the story issue closes as completed |
+| D4 Story 2 | Wait one poll | Second story issue | Assigned and started only after the first closed; same path as D3 |
+| D5 Epic | Wait for Tester and Reviewer on the epic | Epic comments; PR | Tester covers every criterion on the epic branch; Reviewer sees the whole diff; one PR against the base branch that closes the epic issue |
+| D6 Budget | Dashboard Usage panel on the epic and a story | | The same family total on both; `/factory budget +N` on a story issue also raises the epic's |
+
+Record: tokens per story and for the epic's own runs, the number of polls between a story closing and the next one starting, and whether the split was worth it against a single-issue run of the same change.
+
+## 7. What to record
 
 One row per run:
 
@@ -118,7 +133,7 @@ One row per run:
 
 And a critical reading of run A's pull request, the artifact a human teammate would see: would you merge it from the body alone? What is missing?
 
-## 7. What I expect to show up
+## 8. What I expect to show up
 
 Written down so they are not surprises, and so they can be confirmed or dismissed:
 

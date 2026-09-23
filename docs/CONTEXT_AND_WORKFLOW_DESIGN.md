@@ -69,6 +69,21 @@ V3.3 applies the final implementation-readiness review without changing the arch
 | 7 | Imported requests use `context.cursor` as `openedAfterCommentId`, and nested tactical clarification preserves its parent (§10). | Using zero can replay an old command; using the latest remote id can lose a maintenance-window answer. |
 | 8 | Record sequence assignment, presentation-only transactions, configuration revalidation order and retained execution artifacts are explicit (§5.1, §8.1, §7.6, §11). | These details remove remaining implementation ambiguity. |
 
+### 0.4 What changed after v3.3 (2026-09-22 to 2026-09-23)
+
+These changes shipped on `main` without a new design version; this section records them where the rest of the design is read.
+
+| # | Change | Where |
+| --- | --- | --- |
+| 1 | The human approves a short brief (decisions with recommendations, solution, criteria, assumptions, assessment) instead of the full SPEC; the SPEC is folded under it and the stored body is brief plus SPEC. | §7.2, `templates/BRIEF.md` |
+| 2 | A `designer` role prototypes a change whose `uxImpact` is significant, under `.factory/prototype/`, before the single human gate; the prototype leaves the branch when the Builder first starts. | §7.2, `agents/common/designer.md` |
+| 3 | Live agent progress from provider events, with **Interrupt and retry with this** and **Add note** from the dashboard. | §7.8 |
+| 4 | Provider connection validation before a configuration restart; provider failures and partial work preserved. | `INSTALL.md` |
+| 5 | The global feed is **System activity**: GitHub, lifecycle, maintenance, notification, control and runtime events; workflow progress lives in each issue's conversation. | §8 |
+| 6 | Per-issue token budget with `budget` records and requests, holds before a run, warnings at 60% and 80%, and usage measured the same way for Codex and Claude. | §5.2, §7.2 |
+| 7 | Every work item records its base branch (`base_branch`); worktree, sync, diff and pull request use it. | §7.1 |
+| 8 | Epics and stories: the Architect may split a specification into 2 to 4 stories, approved with the brief; stories are GitHub sub-issues blocked by each other, run Builder and Tester from the epic branch, integrate into it, and share the epic's budget; the epic resumes at Review. | §5.2, §7.1, §7.2, §8.6 |
+
 ## 1. System purpose
 
 AI Factory is a locally executed delivery orchestrator. It turns a GitHub issue into an approved, versioned specification, an implementation in an isolated worktree, independent verification, an independent delivery review, and a pull request for human merge. Five roles (Architect, Designer, Builder, Tester, Reviewer) run on Claude, Codex or Cursor; the Designer runs only for a significant UX impact; the deterministic orchestrator owns routing, approvals, transitions, retries, commits, publication and PR creation.
@@ -219,12 +234,15 @@ type RecordPayload =
   | { kind: "instruction"; text: string; supersedes?: string[] }                                   // human, unstructured
   | { kind: "decision"; category: "human" | "tactical"; decision: string;
       rationale: string; supersedes: string[] }                             // structured
-  | { kind: "finding"; classification: "auto-fix" | "decision-required" | "defer";
+  | { kind: "finding"; classification: "auto-fix" | "decision-required" | "defer" | "environment-blocked";
       originRole: AgentRole; criterionId?: string; evidence: string }
-  | { kind: "request"; type: "clarification" | "spec-approval" | "tactical-decision"
-        | "correction-limit" | "merge"; owner: "human" | "architect"; originatingStage: Stage;
+  | { kind: "request"; type: "clarification" | "prototype" | "spec-approval" | "tactical-decision"
+        | "correction-limit" | "merge" | "budget" | "stories";
+      owner: "human" | "architect" | "designer" | "stories"; originatingStage: Stage;
       allowedReturnStages: Stage[]; openedAfterCommentId: number;
-      questions?: string[]; findingIds?: string[]; prClosed?: boolean };
+      questions?: string[]; findingIds?: string[]; prClosed?: boolean; budget?: "exhausted" | "unknown" }
+  // An approver's budget extension; it also acknowledges the listed runs that reported no usage.
+  | { kind: "budget"; tokens: number; reason: string; acknowledges: string[] };
 ```
 
 ### 5.3 Status and who changes it
@@ -357,11 +375,14 @@ interface Projection { stage: Stage; status: Status; attempt: number; revision: 
                        activeRunId?: string; activeRequestId?: string; activeFailureId?: string; }
 ```
 
+- `base_branch TEXT` is the branch the work item grew from: the repository default branch for an issue, the epic branch for a story. The worktree is created from it, every stage merges it in, the Tester and Reviewer diffs are measured against it and the pull request targets it. A row without a base is an error, never a fallback to the default branch. It is published in the issue state index as `base`.
+- `epic_work_item_id TEXT` is set on a story and names its epic. A story has no Review: after Test it goes to `DELIVERY/QUEUED` and integrates into the epic branch. The `stories` table (epic, spec version, key, title, scope, criteria, dependencies, issue number and id, dependencies declared, work item) is the ledger planned inside the approval transaction; it makes issue creation, dependency declaration and story start idempotent.
+
 - Open request records are authoritative. `activeRequestId` is their denormalized projection: the transition function derives it as the deepest open request in the parent chain and never accepts a caller-provided value. `factory doctor` reports stored drift. `WAITING` requires that active request to have `owner: human`; an Architect-owned active request is `QUEUED` or `RUNNING` and produces no human CTA.
 - `activeFailureId` points to the one unresolved failure that explains `FAILED`. Failure creation, projection update and transition event are transactional. Retry resolves that failure and clears the pointer. No “latest row” inference is allowed.
 - `revision` increments for a workflow transition. `presentationRevision` increments whenever the GitHub status projection changes, including a workflow transition, new evidence or an observed ordinary approver comment. `publishedPresentationRevision` records the last successfully published value (§8.1).
 - `NEW` and `DONE` do not exist. Ingestion starts at `DESIGN/QUEUED`; merge is `DELIVERY/COMPLETED`; PR closed without merge is `DELIVERY/WAITING` with an open `merge` request flagged `prClosed`.
-- `resumeStatus` is derived transactionally from the request chain: `WAITING` when the active request is human-owned, otherwise `QUEUED`. Retry, individual resume and batch resume preserve the stage and use `resumeStatus`; `attempt` increments only when the result is `QUEUED`. A paused human gate therefore returns to the same CTA without starting an agent. `resume`, `waiting`, `consultation`, `pendingStage`, `retryGuidance`, `feedback`, `reports`, `cycles`, `lastFailure` are removed from `Context`.
+- `resumeStatus` is derived transactionally from the request chain: `WAITING` when the active request is human-owned or stories-owned, otherwise `QUEUED`. Retry, individual resume and batch resume preserve the stage and use `resumeStatus`; `attempt` increments only when the result is `QUEUED`. A paused human gate therefore returns to the same CTA without starting an agent. `resume`, `waiting`, `consultation`, `pendingStage`, `retryGuidance`, `feedback`, `reports`, `cycles`, `lastFailure` are removed from `Context`.
 - `correction_cycles INTEGER` counts only accepted `changes` outcomes. For a configured maximum `N`, the `changes` outcome increments the counter first; when the new value is `N`, the factory opens `correction-limit` instead of scheduling another automatic correction. Decisions do not consume the counter. `/factory answer` resets it, as today.
 
 ### 7.2 Transition table (complete)
@@ -378,6 +399,15 @@ interface Projection { stage: Stage; status: Status; attempt: number; revision: 
 | DESIGN/RUNNING | Architect `spec` (brief + SPEC) | DESIGN/WAITING | new `specs` row v+1 whose body is the brief followed by the SPEC; `scope: spec` records of v → superseded; human-owned request `spec-approval` opened | SPEC milestone leading with the brief and approve/change CTAs, full SPEC folded |
 | DESIGN/WAITING | `/factory answer` (comment id > request.openedAfterCommentId) | DESIGN/QUEUED | decision `human` created; clarification resolved; correction_cycles = 0 | Answer acknowledged in status |
 | DESIGN/WAITING | `/factory approve v<N> [guidance]` | BUILD/QUEUED | request resolved; approval recorded; optional spec instruction | Status update |
+| DESIGN/WAITING | `/factory approve v<N>` of a SPEC with stories | BUILD/WAITING | approval recorded; `stories` rows planned; stories-owned request `stories` opened with `allowedReturnStages: [REVIEW]` | Status says the stories are being delivered; no human CTA |
+| epic BUILD/WAITING (`stories`) | poll | unchanged | each story without an issue is created as a sub-issue of the epic (`parent_issue_id`), or adopted when a sub-issue with the same title by the Factory account exists; `blocked_by` declared once every story has an issue | Sub-issues and dependencies on GitHub |
+| — | story with an issue, dependencies declared, every blocker closed as `completed` | story BUILD/QUEUED | story issue assigned and labelled with the epic instance; work item with `base_branch` = epic branch and `epic_work_item_id`; `specs` v1 = the story's slice of the epic contract, approved by the epic approval | Story status |
+| story TEST/RUNNING | `pass` | DELIVERY/QUEUED | commit; verified head recorded | Status update |
+| story DELIVERY/QUEUED | orchestrator integrates | DELIVERY/COMPLETED | epic worktree synced with its base; story merged into the epic branch with one merge commit; epic branch pushed; story issue closed as `completed`; `context.merge` records the commit | Story completed |
+| story DELIVERY/QUEUED | merge conflict or push error | DELIVERY/FAILED | integration failure opened | Failure milestone with retry CTA |
+| epic BUILD/WAITING (`stories`) | every story of the current plan `COMPLETED` | REVIEW/QUEUED | `stories` request resolved | Status update; the runner then returns the epic to TEST because its head moved |
+| any/QUEUED | budget exhausted, or a finished run without reported usage not yet acknowledged | same stage/WAITING | human-owned request `budget` opened (child of the active request when one exists) | Budget milestone with `/factory budget +N` |
+| any/WAITING (`budget`) | `/factory budget +<tokens> [reason]` covering the shortfall, or `+0` for unmeasured runs | same stage/QUEUED | `budget` record with acknowledged runs; request resolved | Status update |
 | DESIGN/RUNNING | Architect `resolved` for open tactical request | allowed return stage/QUEUED | tactical decisions created (with `supersedes`); request resolved; `decision-required` findings resolved | Decision milestone |
 | BUILD/RUNNING | `pass` | TEST/QUEUED | commit; Builder findings `defer` → accepted-defer | Status update |
 | TEST/RUNNING | `pass` | REVIEW/QUEUED | commit; open Builder `auto-fix` → resolved | Status update |
@@ -582,6 +612,10 @@ Ownership adds exactly one `factory-instance:<name>` label for the selected inst
 
 Visible markers use `Work item: <id>` and add `workflow-rev:<revision>`, `presentation-rev:<presentationRevision>` and `event:<eventId>`. A hidden payload is serialized with `JSON.stringify`, validates against schema version 1 and escapes every `--` so it cannot close its HTML comment. To continue work, the reader validates the status index, resolves every referenced specification marker and refuses the whole read if any referenced fact is missing. Stable states are adopted transactionally under the same workflow id, including when a reinstalled Factory has the same instance name but no local item; remotely `RUNNING` or `QUEUED` states require explicit **Continue anyway** and start locally as `PAUSED`.
 
+### 8.6 Story relationships
+
+A story's place in its epic and the stories it waits for are GitHub relationships, never text or labels: the story is created with `parent_issue_id` and each dependency is a `blocked_by` entry, both through the REST relationship APIs that take issue ids. The orchestrator reads `blocked_by` when deciding whether a story may start and requires every blocker to be closed as `completed`; an edit a person makes to those relationships on GitHub is respected on the next poll. Because a merge into a non-default branch never closes an issue, the orchestrator closes the story issue itself when it integrates the story. The epic and its stories share one token budget, and an extension on any of their issues counts for all.
+
 ## 9. Invariants
 
 1. A delivery role never runs without an approved current SPEC.
@@ -605,6 +639,8 @@ Visible markers use `Work item: <id>` and add `workflow-rev:<revision>`, `presen
 19. A maintenance timeout aborts the service operation instead of silently escalating to forced termination.
 20. Only open GitHub issues are operational: a manually closed issue is hidden, receives no agent execution, comment, label or notification, and reopening leaves it paused until an explicit retry.
 21. Repository recovery never force-pushes or runs browser-supplied shell text. Clearing local content is the only destructive path: it shows dirty files and unique commits, requires path-bound double confirmation, pauses every affected item and never runs as an implicit part of Restore.
+22. A story never opens a pull request and never runs the Reviewer; it enters the epic branch through one merge commit, and the epic is reviewed once with every story in.
+23. Splitting never multiplies spend: the epic and its stories share one budget.
 
 ## 10. Cutover
 
