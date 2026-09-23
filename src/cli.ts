@@ -20,6 +20,7 @@ import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {readIssueState} from "./workflow-github.js";
 import {activityRow,summarizeActivity,progression} from "./execution-activity.js";
+import {epicMetrics} from "./epic-metrics.js";
 import {resolveWorkItem} from "./work-item-reference.js";
 import {buildBenchmarkReport,compareBenchmarks,comparable,verifierInvocation,benchmarkCheckout,promptCost,bytesPerToken,type BenchmarkReport,type ExecutionSample,type Verification} from "./benchmark.js";
 import {spawnSync as spawnVerifier} from "node:child_process";
@@ -59,6 +60,10 @@ issueCommand.command("show").argument("<number>").description("Show the state in
 p.command("stop").option("--pause-active","Pause active tasks before stopping").action(options => { const s = new Store();const count=(s.db.prepare("SELECT COUNT(*) count FROM work_items WHERE status IN ('QUEUED','RUNNING')").get() as {count:number}).count;if(count&&!options.pauseActive){s.db.close();throw new Error(`${count} active task${count===1?"":"s"}; rerun with --pause-active to preserve and pause them`);}s.request("stop");s.db.close();console.log("Stop queued."); });
 p.command("events").argument("[id]").action(id => {
  const s = new Store(); console.table(id ? s.db.prepare("SELECT * FROM events WHERE work_item_id=? ORDER BY id DESC LIMIT 50").all(id) : s.db.prepare("SELECT * FROM events ORDER BY id DESC LIMIT 50").all()); s.db.close();
+});
+p.command("metrics").argument("<work-item-id-or-issue-number>").description("Cost, testing selection, verification scope, findings and human interventions for an issue, or for an epic and its stories").action(reference => {
+ const s = new Store();
+ try { const found=resolveWorkItem(s,reference); if ("error" in found) { console.log(found.error); process.exitCode=1; return; } console.log(JSON.stringify(epicMetrics(s,found.id),null,2)); } finally { s.db.close(); }
 });
 p.command("activity").argument("[id]").description("Per-role provider activity and cache split for one work item or issue number, or the most recent runs").action(reference => {
  const s = new Store();
