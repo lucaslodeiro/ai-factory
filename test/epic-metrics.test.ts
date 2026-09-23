@@ -11,6 +11,16 @@ test("epic metrics aggregate cost, test selection, verification scope, findings 
   store.db.prepare("INSERT INTO stories(epic_work_item_id,spec_version,key,title,scope,criteria,depends_on,assessment,issue_number,issue_id,dependencies_declared,work_item_id,created_at) VALUES('epic',1,'S1','A','a','[\"AC1\"]','[]','{}',2,20,1,'s1','now'),('epic',1,'S2','B','b','[\"AC2\"]','[\"S1\"]','{}',3,30,1,'s2','now')").run();
   const run=(id:string,item:string,role:string,tokens:number|null)=>store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,finished_at,total_tokens) VALUES(?,?,?,'BUILD','succeeded','now','now',?)").run(id,item,role,tokens);
   run("e1","epic","product-architect",1000);run("a1","s1","developer",4000);run("a2","s1","qa",2000);run("a3","s1","developer",null);run("b1","s2","developer",3000);run("b2","s2","qa",1500);run("e2","epic","qa",800);run("e3","epic","reviewer",700);
+  // Turns, not tokens: the multiplier a contract change (fewer screenshots, one script instead of
+  // one call per state) is meant to move, and the number that lets two runs be compared directly.
+  store.event("execution.finished",{status:"succeeded",activity:{turns:12}},"s1","a1");
+  store.event("execution.finished",{status:"succeeded",activity:{turns:8}},"s1","a2");
+  store.event("execution.finished",{status:"succeeded",activity:{}},"s1","a3");
+  store.event("execution.finished",{status:"succeeded",activity:{turns:20}},"s2","b1");
+  store.event("execution.finished",{status:"succeeded",activity:{turns:6}},"s2","b2");
+  store.event("execution.finished",{status:"succeeded",activity:{turns:3}},"epic","e1");
+  store.event("execution.finished",{status:"succeeded",activity:{turns:5}},"epic","e2");
+  store.event("execution.finished",{status:"succeeded",activity:{turns:4}},"epic","e3");
   store.event("workflow.transition",{to:{stage:"BUILD",status:"QUEUED"},reason:{code:"story-started"}},"s1");
   store.db.prepare("UPDATE events SET ts='2026-09-23T10:05:00Z' WHERE work_item_id='s1'").run();
   store.event("workflow.transition",{to:{stage:"DELIVERY",status:"COMPLETED"},reason:{code:"integrated"}},"s1");
@@ -27,6 +37,12 @@ test("epic metrics aggregate cost, test selection, verification scope, findings 
   assert.deepEqual(report.members[1].executions,{developer:2,qa:1});assert.equal(report.members[1].durationSeconds,3600);
   assert.deepEqual(report.totals,{tokens:13000,executions:8,correctionCycles:1,humanCommands:2,stories:2,storiesCompleted:2,wallSeconds:null,unsuccessfulExecutions:0,unsuccessfulSeconds:null,invalidResults:0,longestTimeoutStreak:{stage:null,runs:0}});
   assert.deepEqual(report.testing,{runs:2,candidates:10,kept:6,essential:5,valuable:3,redundant:2,valuableDiscarded:2,keptRatio:0.6,byDepth:{minimal:{runs:1,candidates:4,kept:2},standard:{runs:1,candidates:6,kept:4}}});
+  assert.deepEqual(report.turnsByRole,{
+   developer:{runs:3,measuredRuns:2,totalTurns:32,avgTurns:16},
+   qa:{runs:3,measuredRuns:3,totalTurns:19,avgTurns:6.3},
+   "product-architect":{runs:1,measuredRuns:1,totalTurns:3,avgTurns:3},
+   reviewer:{runs:1,measuredRuns:1,totalTurns:4,avgTurns:4},
+  },"a run with no reported turns still counts toward runs, never toward avgTurns");
   assert.deepEqual(report.epicVerification,[{role:"qa",criteria:3,verifiedByStories:2,required:1,covered:1}]);
   assert.deepEqual(report.findings,{byRole:{reviewer:{major:1},qa:{minor:1}},reviewerOnStoryCriteria:1,noChangePasses:1});
   assert.deepEqual(report.interventions,{commands:2,byKind:{approve:1,budget:1}});
@@ -40,6 +56,7 @@ test("a plain issue reports itself as the only member",()=>{
   store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status) VALUES('w',5,'owner/demo','now','now','{}','BUILD','QUEUED')").run();
   const report=epicMetrics(store,"w");
   assert.deepEqual([report.workItem.kind,report.members.length,report.members[0].kind,report.testing.keptRatio,report.totals.stories],["issue",1,"issue",null,0]);
+  assert.deepEqual(report.turnsByRole,{},"no execution.finished event yet, so no role has turns to report");
  } finally {store.db.close();}
 });
 

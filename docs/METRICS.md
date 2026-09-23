@@ -42,6 +42,10 @@ known, the criterion. Tokens live on `executions` and travel in the published is
   required and covered.
 - **findings**: by role and severity; Reviewer findings on a criterion a story owned (a defect the
   story's Tester should have caught); `no-change-pass` count (false blockers).
+- **turnsByRole**: for every role, runs, how many of them reported a turn count, the total and the
+  average. Turns are the multiplier a leaner contract is meant to move: every tool call inside a run
+  re-reads the whole prompt and everything written or read so far, so fewer turns compounds with a
+  smaller prompt while a smaller prompt alone does not.
 - **interventions**: human commands by kind.
 - **outcomes** (per member) and their sums in **totals**: runs per role by how they ended, with an
   interruption keyed by its reason (`interrupted:user-pause`); how many finished runs produced no
@@ -70,6 +74,12 @@ known, the criterion. Tokens live on `executions` and travel in the published is
   `/factory budget +0` in `interventions.byKind`.
 - **How much human time?** `interventions.byKind`: approvals are the floor; answers, retries and
   budget extensions are the cost of an unclear brief, a fragile environment or an under-sized cap.
+- **Did a contract change that targets turns actually cut them?** `turnsByRole.<role>.avgTurns`
+  before and after the change, on comparable issues. This is the number to compare when the Designer
+  or Tester contract is rewritten to batch mechanical work (one script for every screenshot, one
+  command for every kept test) instead of a tool call per state or per command; tokens alone can look
+  similar between two runs of very different turn counts, because the prompt itself is a small share
+  of what a many-turn run spends.
 
 ## Not yet measured
 

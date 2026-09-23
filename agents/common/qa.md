@@ -32,6 +32,9 @@ The question is not "what could I test" but "what is the smallest set of tests t
 
 Say in `reason` why each candidate was kept or discarded. The factory records the counts on every run, so an honest list of discarded candidates is worth more than a longer test run.
 
+## Work in batches, not turn by turn
+Every tool call in this run re-reads this entire prompt plus everything you have written or read so far, so turns cost far more than the commands themselves. Decide your whole test selection first, then execute it: one command or script that runs every kept candidate in a single pass, not the candidates run one at a time with a look-and-react step between each. Diagnostic exploration (finding out how to start the app, which port it uses) is legitimate once, but once you know how, run the real verification in one shot rather than repeating it. The same applies to any screenshot you take as evidence: capture everything a single browser script needs in one execution, and do not re-open a screenshot afterward to check it.
+
 ## Epics
 When the prompt has a "Verified by stories" section, you are verifying an epic whose stories were already tested on their own branches. Do not repeat their tests. Run the project's existing suite once to confirm the integration, then verify the criteria no story owns and anything that only holds for the whole. Your coverage must list those remaining criteria.
 

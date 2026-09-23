@@ -26,12 +26,18 @@ export interface ExecutionOutcomes {
  longestTimeoutStreak:{stage:string|null;runs:number};
 }
 export interface TestingMetrics { runs:number; candidates:number; kept:number; essential:number; valuable:number; redundant:number; valuableDiscarded:number; keptRatio:number|null; byDepth:Record<string,{runs:number;candidates:number;kept:number}> }
+// Turns are the multiplier on every optimization that trims what a role writes or reads: each turn
+// re-reads the whole prompt and everything written or read so far, so fewer turns compounds with a
+// smaller prompt while a smaller prompt alone does not. Per role, so a contract change aimed at one
+// role (for example, batching a Designer's screenshots into one script) shows up here directly.
+export interface TurnsByRole { runs:number; measuredRuns:number; totalTurns:number; avgTurns:number|null }
 export interface EpicMetricsReport {
  workItem:{id:string;issue:number;kind:"epic"|"issue"};
  members:MemberMetrics[];
  totals:{tokens:number;executions:number;correctionCycles:number;humanCommands:number;stories:number;storiesCompleted:number;wallSeconds:number|null;
   unsuccessfulExecutions:number;unsuccessfulSeconds:number|null;invalidResults:number;longestTimeoutStreak:{stage:string|null;runs:number}};
  testing:TestingMetrics;
+ turnsByRole:Record<string,TurnsByRole>;
  epicVerification:Array<{role:string;criteria:number;verifiedByStories:number;required:number;covered:number}>;
  findings:{byRole:Record<string,Record<string,number>>;reviewerOnStoryCriteria:number;noChangePasses:number};
  interventions:{commands:number;byKind:Record<string,number>};
@@ -59,6 +65,16 @@ function executionOutcomes(store:Store,id:string):ExecutionOutcomes {
  return {byRole,unsuccessful,unsuccessfulSeconds:seconds===null?null:Math.round(seconds),invalidResults,longestTimeoutStreak:streak};
 }
 
+function addTurns(target:Record<string,TurnsByRole>,role:string,turns:unknown){
+ const bucket=target[role]??(target[role]={runs:0,measuredRuns:0,totalTurns:0,avgTurns:null});
+ bucket.runs++;
+ if(typeof turns==="number"&&Number.isFinite(turns)){bucket.measuredRuns++;bucket.totalTurns+=turns;}
+}
+function turnsByRole(store:Store,id:string):Array<{role:string;turns:unknown}>{
+ return (store.db.prepare("SELECT x.role role, e.payload payload FROM events e JOIN executions x ON x.id=e.run_id WHERE e.work_item_id=? AND e.type='execution.finished'").all(id) as Array<{role:string;payload:string}>)
+  .map(row=>({role:row.role,turns:(JSON.parse(row.payload) as {activity?:{turns?:unknown}}).activity?.turns}));
+}
+
 export function epicMetrics(store:Store,workItemId:string):EpicMetricsReport {
  const family=budgetFamily(store,workItemId),owner=family[0];
  const rows=store.db.prepare(`SELECT id,issue_number,stage,status,correction_cycles,attempt,epic_work_item_id,created_at FROM work_items WHERE id IN (${family.map(()=>"?").join(",")})`).all(...family) as Array<{id:string;issue_number:number;stage:string|null;status:string|null;correction_cycles:number;attempt:number;epic_work_item_id:string|null;created_at:string}>;
@@ -79,8 +95,10 @@ export function epicMetrics(store:Store,workItemId:string):EpicMetricsReport {
  });
  const testing:TestingMetrics={runs:0,candidates:0,kept:0,essential:0,valuable:0,redundant:0,valuableDiscarded:0,keptRatio:null,byDepth:{}};
  const epicVerification:EpicMetricsReport["epicVerification"]=[],findingsByRole:Record<string,Record<string,number>>={},commandsByKind:Record<string,number>={};
+ const turns:Record<string,TurnsByRole>={};
  let reviewerOnStoryCriteria=0,noChangePasses=0,humanCommands=0;
  for(const id of family){
+  for(const {role,turns:turnCount} of turnsByRole(store,id))addTurns(turns,role,turnCount);
   for(const {payload} of events("verification.selection",id)){
    testing.runs++;for(const key of ["candidates","kept","essential","valuable","redundant","valuableDiscarded"] as const)testing[key]+=Number(payload[key]??0);
    const depth=String(payload.verificationDepth??"unknown"),bucket=testing.byDepth[depth]??(testing.byDepth[depth]={runs:0,candidates:0,kept:0});bucket.runs++;bucket.candidates+=Number(payload.candidates??0);bucket.kept+=Number(payload.kept??0);
@@ -95,6 +113,7 @@ export function epicMetrics(store:Store,workItemId:string):EpicMetricsReport {
   }
  }
  testing.keptRatio=testing.candidates?Math.round(testing.kept*100/testing.candidates)/100:null;
+ for(const bucket of Object.values(turns))bucket.avgTurns=bucket.measuredRuns?Math.round(bucket.totalTurns/bucket.measuredRuns*10)/10:null;
  const starts=members.map(member=>Date.parse(member.startedAt??"")).filter(Number.isFinite),ends=members.map(member=>Date.parse(member.completedAt??"")).filter(Number.isFinite);
  const ownerMember=members[0];
  return {
@@ -106,7 +125,7 @@ export function epicMetrics(store:Store,workItemId:string):EpicMetricsReport {
    unsuccessfulSeconds:members.some(member=>member.outcomes.unsuccessfulSeconds!==null)?members.reduce((total,member)=>total+(member.outcomes.unsuccessfulSeconds??0),0):null,
    invalidResults:members.reduce((total,member)=>total+member.outcomes.invalidResults,0),
    longestTimeoutStreak:members.map(member=>member.outcomes.longestTimeoutStreak).reduce((best,streak)=>streak.runs>best.runs?streak:best,{stage:null,runs:0})},
-  testing,epicVerification,
+  testing,turnsByRole:turns,epicVerification,
   findings:{byRole:findingsByRole,reviewerOnStoryCriteria,noChangePasses},
   interventions:{commands:humanCommands,byKind:commandsByKind},
  };
