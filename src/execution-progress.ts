@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import {createHash} from "node:crypto";
 import type {AgentProvider} from "./types.js";
+import {tokenUsageReducer} from "./token-usage.js";
+import {sanitizeFailureEvidence} from "./failure-report.js";
 
 /** Bounded, content-free progress derived from a provider's NDJSON stream. */
 export interface ExecutionProgress {
@@ -13,6 +15,9 @@ export interface ExecutionProgress {
  toolStartedAt:string|null;
  lastTool:string|null;
  repeatedToolCalls:number;
+ usageTokens:number|null;
+ validationAttempts:number;
+ lastValidationError:string|null;
 }
 
 const maxLine=10_000_000;
@@ -23,7 +28,8 @@ export function progressMonitor(logDir:string,provider:AgentProvider|null){
  let offset=0,pending=Buffer.alloc(0),oversized=false;
  let lastSignature="";
  const active=new Map<string,{name:string;at:string}>();
- const progress:ExecutionProgress={provider,events:0,lastEventAt:null,lastProgressAt:null,tool:null,toolStartedAt:null,lastTool:null,repeatedToolCalls:0};
+ let usage=tokenUsageReducer(provider??undefined);
+ const progress:ExecutionProgress={provider,events:0,lastEventAt:null,lastProgressAt:null,tool:null,toolStartedAt:null,lastTool:null,repeatedToolCalls:0,usageTokens:null,validationAttempts:0,lastValidationError:null};
  const start=(id:string,name:unknown,at:string,input?:unknown)=>{const tool=label(name);active.set(id,{name:tool,at});progress.lastTool=tool;
   const signature=input===undefined?"":createHash("sha256").update(`${tool}:${JSON.stringify(input)}`).digest("hex");
   progress.repeatedToolCalls=signature&&signature===lastSignature?progress.repeatedToolCalls+1:1;lastSignature=signature;
@@ -31,6 +37,7 @@ export function progressMonitor(logDir:string,provider:AgentProvider|null){
  const end=(id:string)=>{const tool=active.get(id);if(tool)progress.lastTool=tool.name;active.delete(id);};
  const event=(value:Record<string,unknown>,at:string)=>{
   progress.events++;progress.lastEventAt=at;
+  usage.add(value);progress.usageTokens=usage.result()?.totalTokens??null;
   const type=value.type;
   if(type!=="system"&&type!=="rate_limit_event"&&type!=="autocompact_state"&&type!=="active_goal")progress.lastProgressAt=at;
   if(provider==="codex"){
@@ -49,7 +56,10 @@ export function progressMonitor(logDir:string,provider:AgentProvider|null){
    const content=Array.isArray(message?.content)?message.content:[];
    for(const part of content){if(!part||typeof part!=="object")continue;const block=part as Record<string,unknown>;
     if(block.type==="tool_use")start(String(block.id??progress.events),block.name,at,block.input);
-    if(block.type==="tool_result")end(String(block.tool_use_id??""));
+    if(block.type==="tool_result"){
+     end(String(block.tool_use_id??""));
+     if(block.is_error&&typeof block.content==="string"&&/required schema|structured output/i.test(block.content)){progress.validationAttempts++;progress.lastValidationError=sanitizeFailureEvidence(block.content,300);}
+    }
    }
   }
   const latest=[...active.values()].at(-1);progress.tool=latest?.name??null;progress.toolStartedAt=latest?.at??null;
@@ -60,7 +70,7 @@ export function progressMonitor(logDir:string,provider:AgentProvider|null){
  };
  return {poll():ExecutionProgress{
   let fd:number;try{fd=fs.openSync(file,"r");}catch{return {...progress};}
-  try{const stat=fs.fstatSync(fd);if(stat.size<offset){offset=0;pending=Buffer.alloc(0);oversized=false;active.clear();lastSignature="";Object.assign(progress,{events:0,lastEventAt:null,lastProgressAt:null,tool:null,toolStartedAt:null,lastTool:null,repeatedToolCalls:0});}
+  try{const stat=fs.fstatSync(fd);if(stat.size<offset){offset=0;pending=Buffer.alloc(0);oversized=false;active.clear();lastSignature="";usage=tokenUsageReducer(provider??undefined);Object.assign(progress,{events:0,lastEventAt:null,lastProgressAt:null,tool:null,toolStartedAt:null,lastTool:null,repeatedToolCalls:0,usageTokens:null,validationAttempts:0,lastValidationError:null});}
    const at=stat.mtime.toISOString(),chunk=Buffer.alloc(65536);
    while(offset<stat.size){const count=fs.readSync(fd,chunk,0,Math.min(chunk.length,stat.size-offset),offset);if(!count)break;offset+=count;let from=0;
     for(let i=0;i<count;i++)if(chunk[i]===10){line(chunk.subarray(from,i),at);from=i+1;}

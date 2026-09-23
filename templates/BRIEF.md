@@ -1,9 +1,9 @@
 # BRIEF — <Work Item>
 
-The human approves this brief instead of reading the SPEC. Keep it under 4000 characters.
+The human approves this brief instead of reading the SPEC. Aim for 5000 characters; a longer complete brief is still valid. The SPEC targets 25000 characters; a longer complete SPEC is still valid.
 
 ## Decisions for you
-At most five, most irreversible first. Write "None." when there are none.
+At most ten, most irreversible first. Write "None." when there are none.
 
 **D1. <the question>**
 Recommended: <option>. If this is wrong: <consequence>. Alternative: <option>.

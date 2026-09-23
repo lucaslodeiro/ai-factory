@@ -8,7 +8,15 @@ import { WorkflowRunner } from "../src/workflow-runner.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowCommands } from "../src/workflow-commands.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
-import { announceBudgetWarnings, budgetState, holdForBudget } from "../src/budget.js";
+import { announceBudgetWarnings, budgetState, holdForBudget, liveBudget } from "../src/budget.js";
+
+test("a running agent gets a 25% grace after the issue budget alert",()=>{
+ assert.deepEqual(liveBudget(500000,0,null),{consumed:null,percent:null,alert:false,stop:false});
+ assert.equal(liveBudget(500000,0,499999).alert,false);
+ assert.deepEqual(liveBudget(500000,0,500000),{consumed:500000,percent:100,alert:true,stop:false});
+ assert.equal(liveBudget(500000,100000,524999).stop,false);
+ assert.equal(liveBudget(500000,100000,525000).stop,true);
+});
 import { adoptIssueState, issueStateIndex } from "../src/workflow-state.js";
 import { parseFactoryCommand } from "../src/factory-command.js";
 import { applyMessageControl, messageActions } from "../src/workflow-chat.js";

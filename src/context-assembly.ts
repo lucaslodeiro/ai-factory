@@ -22,7 +22,7 @@ export interface ContextAssemblyInput {
   // On an epic after its stories: what each completed story already verified.
   storyEvidence?:unknown[];
   previousAttempt?:unknown;
-  rejectedResult?:{message:string};
+  rejectedResult?:{message:string;kind?:"invalid-result"|"transient-error"};
 }
 
 export interface ContextManifest {
@@ -98,7 +98,7 @@ export class ContextAssembler {
       {name:"Open findings required by this role",value:openFindings.map(payload),protected:true},
       ...(activeFailure ? [{name:"Active failure",value:activeFailure,protected:true}] : []),
       ...(input.previousAttempt ? [{name:"Previous attempt",value:input.previousAttempt,protected:false}] : []),
-      ...(input.rejectedResult ? [{name:"Rejected previous result",value:{message:`Your previous result for this stage was rejected: ${input.rejectedResult.message}. Return a corrected result. In tests report only the acceptance verification commands; put diagnostic runs in the summary.`},protected:false}] : []),
+      ...(input.rejectedResult ? [input.rejectedResult.kind==="transient-error"?{name:"Previous execution error",value:{message:`The previous execution encountered a temporary provider error: ${input.rejectedResult.message}. Retry this stage using the work already present.`},protected:false}:{name:"Rejected previous result",value:{message:`Your previous result for this stage was rejected: ${input.rejectedResult.message}. Return a corrected result. In tests report only the acceptance verification commands; put diagnostic runs in the summary.`},protected:false}] : []),
       ...(input.role === "developer" && input.repositoryMap ? [{name:"Repository map",value:input.repositoryMap,protected:false}] : []),
       ...(["developer","qa","reviewer"].includes(input.role) && (input.changedFiles || input.diffStat) ? [{name:"Changed files",value:{files:input.changedFiles??[],diffStat:input.diffStat??"",...(input.role==="reviewer"&&input.diffPath?{diffPath:input.diffPath}:{})},protected:false}] : []),
       ...(input.role === "reviewer" && testerEvidence ? [{name:"Tester execution evidence",value:testerEvidence,protected:true}] : []),

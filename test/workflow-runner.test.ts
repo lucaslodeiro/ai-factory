@@ -118,6 +118,16 @@ test("runner classifies failures by typed result errors rather than message text
  assert.equal(await run(new InvalidResultError("invalid structured output")),"invalid-result");
 });
 
+test("a transient provider error is retried once with its cause, while a permanent error is not",async()=>{
+ const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),prompts:string[]=[];let calls=0;
+ try{
+  const runner=new WorkflowRunner(store,{"product-architect":{async run(request){prompts.push(request.instructions);store.db.prepare("UPDATE executions SET status='failed',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);if(calls++===0)throw new Error("Provider temporarily unavailable");store.db.prepare("UPDATE executions SET status='succeeded' WHERE id=?").run(request.executionId);return result("spec");}}},new Workspace(),{ensurePR(){return"unused";}});
+  await runner.run(item.id);assert.equal(new WorkflowProjections(store).get(item.id).status,"QUEUED");
+  await runner.run(item.id);assert.equal(new WorkflowProjections(store).get(item.id).status,"WAITING");assert.match(prompts[1],/Previous execution error/);assert.match(prompts[1],/temporarily unavailable/);
+  assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='execution.retryable_error'").get() as {count:number}).count,1);
+ }finally{store.db.close();}
+});
+
 test("a timed-out agent failure includes bounded last activity without claiming it was blocked",async()=>{
  const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"});
  try{

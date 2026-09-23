@@ -18,6 +18,12 @@ export interface BudgetState {
 }
 export interface BudgetSettings { issueBudgetTokens:number; budgetUnmeteredRoles:AgentRole[] }
 export const budgetWarningThresholds = [60,80] as const;
+export const budgetGracePercent=25;
+export function liveBudget(granted:number,completed:number,running:number|null){
+ if(running===null)return{consumed:null,percent:null,alert:false,stop:false};
+ const consumed=completed+running,percent=granted>0?Math.floor(consumed*100/granted):100;
+ return{consumed,percent,alert:consumed>=granted,stop:consumed>=Math.ceil(granted*(100+budgetGracePercent)/100)};
+}
 
 const tokens = (value:unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 

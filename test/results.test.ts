@@ -116,7 +116,11 @@ test("a minor finding is recorded instead of sending the Builder another cycle",
 
 test("a proposed specification needs a brief the human can read in place of the SPEC",()=>{
  assert.throws(()=>parseResult(result("spec",{brief:""}),"product-architect"),error=>error instanceof InvalidResultError&&/needs a brief/.test(error.message));
- assert.throws(()=>parseResult(result("spec",{brief:"x".repeat(4001)}),"product-architect"),/invalid text length/);
+ assert.equal(parseResult(result("spec",{brief:"x".repeat(6001)}),"product-architect").brief.length,6001);
+ assert.equal(resultSchemaFor("product-architect").properties?.brief?.maxLength,undefined);
+ assert.equal(parseResult(result("spec",{spec:`# Spec\nAC1\n${"x".repeat(25001)}`}),"product-architect").spec.length>25000,true);
+ assert.equal(resultSchemaFor("product-architect").properties?.spec?.maxLength,undefined);
+ assert.equal(resultSchemaFor("product-architect").properties?.questions?.maxItems,10);
  assert.throws(()=>parseResult(result("questions",{questions:["Which plan?"],brief:"Decisions"}),"product-architect"),/Only a new specification may contain brief/);
  assert.equal(parseResult(result("spec"),"product-architect").brief.startsWith("## Decisions for you"),true);
  assert.equal(parseResult(result("pass",{brief:"injected"}),"developer").brief,"");
@@ -143,8 +147,8 @@ test("a split into stories is a small acyclic graph over the specification's own
  const parsed=parseResult(spec([story("A",["AC1"]),story("B",["AC2"],["A"])]),"product-architect");
  assert.deepEqual(parsed.stories.map(s=>s.key),["A","B"]);
  assert.equal(parseResult(result("spec"),"product-architect").stories.length,0,"no split by default");
- assert.throws(()=>parseResult(spec([story("A",["AC1"])]),"product-architect"),/at least two stories/);
- assert.throws(()=>parseResult(spec([story("A",["AC1"]),story("B",["AC2"]),story("C",["AC3"]),story("D",["AC1"]),story("E",["AC2"])]),"product-architect"),/At most 4 stories|belongs to both/);
+ assert.equal(parseResult(spec([story("A",["AC1"])]),"product-architect").stories.length,1);
+ assert.throws(()=>parseResult(spec([story("A",["AC1"]),story("B",["AC2"]),story("C",["AC3"]),story("D",["AC1"]),story("E",["AC2"]),story("F",["AC3"])]),"product-architect"),/At most 5 stories/);
  assert.throws(()=>parseResult(spec([story("A",["AC1"]),story("A",["AC2"])]),"product-architect"),/Duplicate story key/);
  assert.throws(()=>parseResult(spec([story("A",["AC1"]),story("B",["AC1"])]),"product-architect"),/AC1 belongs to both A and B/);
  assert.throws(()=>parseResult(spec([story("A",["AC1"]),story("B",["AC9"])]),"product-architect"),/unknown acceptance criterion AC9/);

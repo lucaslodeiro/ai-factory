@@ -44,6 +44,15 @@ test("cancellation terminates active process and records cancelled", async () =>
  assert.equal(m.cancel(id), true); await assert.rejects(pending, /cancelled/);
  assert.equal((s.db.prepare("SELECT status FROM executions").get() as any).status, "cancelled"); s.db.close();
 });
+test("a running metered agent is stopped after the 25% budget grace",{timeout:10000},async()=>{
+ const prior=config.issueBudgetTokens;config.issueBudgetTokens=100;
+ const s=new Store(":memory:"),m=new ExecutionManager(s);try{
+  const at=new Date().toISOString();s.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status) VALUES('budget-run',1,'owner/repo',?,?,'{}','DESIGN','RUNNING')").run(at,at);
+  const script="console.log(JSON.stringify({type:'assistant',message:{id:'m1',usage:{input_tokens:20,cache_read_input_tokens:110,output_tokens:0},content:[]}}));setInterval(()=>{},100)";
+  await assert.rejects(m.run("budget-run","product-architect",process.execPath,["-e",script],os.tmpdir(),"",8000,{provider:"claude",model:"auto",policy:"test",reason:"test"}),/cancelled/);
+  assert.deepEqual(s.db.prepare("SELECT status,interruption_reason FROM executions WHERE work_item_id='budget-run'").get(),{status:"cancelled",interruption_reason:"token-budget-limit"});
+ }finally{config.issueBudgetTokens=prior;s.db.close();}
+});
 test("planned interruption is distinct from cancellation and preserves its reason", async () => {
  const s = new Store(":memory:"), m = new ExecutionManager(s);
  const pending = m.run("w", "developer", process.execPath, ["-e", "process.on('SIGTERM',()=>process.exit(0));setInterval(()=>{},100)"], os.tmpdir());

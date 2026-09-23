@@ -18,15 +18,15 @@ export function requiredVerificationDepth(assessment:Pick<TaskAssessment,"comple
 // GitHub, and moved out of the branch before the Builder starts so it never reaches the PR.
 export const prototypeDirectory=".factory/prototype";
 // The brief replaces reading the spec, so it only works while it stays short enough to be read.
-export const briefMaxLength=4000;
+export const briefTargetLength=5000;
 // A split costs a Builder and a Tester run per story, so it stays small enough to read in the
 // brief and to reason about as a graph.
-export const maxStories=4;
+export const maxStories=5;
 const decisionSchema=object({ kind: enumeration("tactical", "major"), decision: text(), rationale: text(), conflictsWithHuman: { type: "boolean" }, supersedes:list(text(100)) });
 export const resultSchema = object({
   taskAssessment: { ...object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), verificationDepth: enumeration("minimal", "standard", "thorough"), uxImpact: enumeration("none", "minor", "significant"), rationale: text() }), type: ["object", "null"] },
   outcome: enumeration("spec", "questions", "resolved", "pass", "changes", "decision"),
-  summary: text(1500), brief: { type: "string", maxLength: briefMaxLength }, spec: { type: "string", maxLength: 30000 }, questions: list(text()),
+  summary: text(1500), brief: { type: "string" }, spec: { type: "string" }, questions: { ...list(text()), maxItems: 10 },
   findings: list(object({ classification: enumeration("auto-fix", "decision-required", "defer", "environment-blocked"), severity: enumeration("critical", "major", "minor"), evidence: text() })),
   acceptanceCriteria: list(object({ id: text(100), description: text() })),
   stories: list(object({ key: text(40), title: text(200), scope: text(2000), criteria: list(text(100)), dependsOn: list(text(40)), assessment: object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), verificationDepth: enumeration("minimal", "standard", "thorough") }) })),
@@ -82,7 +82,7 @@ function validate(value: unknown, schema: Schema, location = "result"): void {
 // a story of the same epic, no cycle, and each criterion owned by at most one story. Criteria no
 // story owns stay with the epic, whose own Tester verifies them once the stories are integrated.
 export function validateStories(stories: Story[], criteria: Criterion[]) {
-  if (stories.length < 2) throw new Error("A split needs at least two stories; deliver the issue whole otherwise");
+  if (stories.length < 1) throw new Error("A split needs at least one story");
   if (stories.length > maxStories) throw new Error(`At most ${maxStories} stories per specification`);
   unique(stories.map(s => s.key), "story key"); unique(stories.map(s => s.title.trim()), "story title");
   const keys = new Set(stories.map(s => s.key)), known = new Set(criteria.map(c => c.id)), owner = new Map<string, string>();

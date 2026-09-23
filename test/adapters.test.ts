@@ -57,6 +57,7 @@ if(codex) {
  console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,duration_ms:5,result:'Done.\\n'+fence+'json\\n'+JSON.stringify(result)+'\\n'+fence}));
 } else {
  if(!args.includes('--json-schema')||args[args.indexOf('--output-format')+1]!=='stream-json'||!args.includes('--verbose')||args.includes('--dangerously-skip-permissions'))process.exit(9);
+ if(process.env.MAX_STRUCTURED_OUTPUT_RETRIES!=='2')process.exit(13);
  // The real stream: the result envelope is not the last line, a task summary follows it.
  console.log(JSON.stringify({type:'system',subtype:'init'}));
  console.log(JSON.stringify({type:'assistant',message:{content:[{type:'tool_use',id:'t1',name:'Read',input:{file_path:'a.txt'}}]}}));

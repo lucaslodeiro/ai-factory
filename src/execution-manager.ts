@@ -12,6 +12,8 @@ import { providerActivityReducer } from "./provider-activity.js";
 import { eachJsonLine, type JsonEvent } from "./provider-stream.js";
 import {progressMonitor,progressKey} from "./execution-progress.js";
 import {sanitizeFailureEvidence} from "./failure-report.js";
+import {InvalidResultError} from "./results.js";
+import {budgetState,liveBudget} from "./budget.js";
 const workflowStage: Record<AgentRole,string> = {"product-architect":"DESIGN",designer:"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"};
 export function providerFailureMessage(event:JsonEvent|undefined,provider:ModelSelection["provider"]|undefined){
   if(!event||!provider)return undefined;
@@ -74,7 +76,10 @@ export class ExecutionManager {
     this.store.setMetadata(progressKey(id),monitor.poll());
     return new Promise((resolve, reject) => {
       let cancelled = false, interrupted = false, interruptionReason:string|undefined, timedOut = false;
-      const child = spawn(process.execPath, [fileURLToPath(new URL("./worker-supervisor.mjs", import.meta.url)), id, logDir], { cwd, env: agentEnvironment(), detached: true, stdio: ["pipe", out, err, "ipc"] });
+      const env=agentEnvironment();
+      // Claude's default five schema attempts can turn a small formatting error into a long run.
+      if(selection?.provider==="claude")env.MAX_STRUCTURED_OUTPUT_RETRIES="2";
+      const child = spawn(process.execPath, [fileURLToPath(new URL("./worker-supervisor.mjs", import.meta.url)), id, logDir], { cwd, env, detached: true, stdio: ["pipe", out, err, "ipc"] });
       fs.closeSync(out); fs.closeSync(err);
       this.store.db.prepare("UPDATE executions SET pid=? WHERE id=?").run(child.pid ?? null, id);
       const send = (message:{type:"cancel";reason?:string}|{type:"interrupt";reason:string}) => { if(child.connected) try{child.send(message);}catch{} };
@@ -82,8 +87,8 @@ export class ExecutionManager {
       const interrupt = (reason:string) => { if(cancelled||interrupted)return;interrupted=true;interruptionReason=reason;send({type:"interrupt",reason}); };
       this.running.set(id, { child, cancel, interrupt });
       const timeout = setTimeout(() => { timedOut = true; cancel("execution-timeout"); }, timeoutMs);
-      let observed=0;
-      const recordProgress=()=>{try{const snapshot=monitor.poll();if(snapshot.events!==observed){observed=snapshot.events;this.store.setMetadata(progressKey(id),snapshot);}}catch{}};
+      let observed=0,budgetStopped=false,closing=false;
+      const recordProgress=()=>{try{const snapshot=monitor.poll();if(snapshot.events!==observed){observed=snapshot.events;this.store.setMetadata(progressKey(id),snapshot);if(!closing&&!budgetStopped&&snapshot.usageTokens!==null){const budget=budgetState(this.store,workItemId),live=liveBudget(budget.granted,budget.consumed,snapshot.usageTokens);if(live.stop){budgetStopped=true;this.store.event("budget.execution_limit",{consumed:live.consumed,granted:budget.granted},workItemId,id);cancel("token-budget-limit");}}}}catch{}};
       const progressTimer=setInterval(recordProgress,2000);progressTimer.unref();
       child.stdin?.on("error", () => {});
       child.stdin?.end(JSON.stringify({ command, args, cwd, input, role, browserExecutable: process.env.FACTORY_BROWSER_EXECUTABLE }));
@@ -91,7 +96,7 @@ export class ExecutionManager {
       child.on("error", e => { spawnError = e; });
       child.on("close", code => {
         // Clean any remaining descendants even after a normal provider exit.
-        clearTimeout(timeout);clearInterval(progressTimer);recordProgress();this.running.delete(id);
+        closing=true;clearTimeout(timeout);clearInterval(progressTimer);recordProgress();this.running.delete(id);
         let completion: { runId: string; status: string; code: number | null; reason?:string } | undefined;
         try {
           const saved = JSON.parse(fs.readFileSync(path.join(logDir, "completion.json"), "utf8"));
@@ -115,7 +120,7 @@ export class ExecutionManager {
           .run(status, new Date().toISOString(), providerExitCode, usage?.inputTokens ?? null,usage?.outputTokens ?? null,usage?.cachedTokens ?? null,usage?.totalTokens ?? null,interruptionReason??null,completion?0:1,id);
         const providerError=status==="failed"?providerFailureMessage(finalEvent??failedTurn,selection?.provider):undefined;
         this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage,activity:activityReducer.result(),interruptionReason,providerError }, workItemId, id);
-        if (status !== "succeeded") return reject(new Error(`Execution ${id} ${status}${providerError ? `: ${providerError}` : spawnError ? ': ' + spawnError.message : ''}`));
+        if (status !== "succeeded") {const message=`Execution ${id} ${status}${providerError ? `: ${providerError}` : spawnError ? ': ' + spawnError.message : ''}`;return reject(providerError&&/Failed to provide valid structured output after \d+ attempts/i.test(providerError)?new InvalidResultError(message):new Error(message));}
         resolve({ id, finalEvent, readStdout:()=>{ const stdout=readOutput(stdoutFile,10_000_000); if(stdout.tooLarge)throw new Error("Agent output exceeds 10 MB"); return stdout.text; } });
       });
     });

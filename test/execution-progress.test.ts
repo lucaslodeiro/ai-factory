@@ -7,6 +7,7 @@ import {progressMonitor,progressWarning} from "../src/execution-progress.js";
 import {progressKey} from "../src/execution-progress.js";
 import {Store} from "../src/storage.js";
 import {workflowActivity} from "../src/workflow-activity.js";
+import {config} from "../src/config.js";
 
 function fixture(provider:"codex"|"claude"|"cursor",start:object,end:object){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),"factory-progress-")),file=path.join(dir,"stdout.log"),monitor=progressMonitor(dir,provider);
@@ -41,6 +42,16 @@ test("four identical tool calls are flagged as possible repetition without expos
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
 
+test("Claude progress exposes partial token usage and a bounded schema error",()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),"factory-progress-"));try{
+  const file=path.join(dir,"stdout.log"),monitor=progressMonitor(dir,"claude");
+  fs.writeFileSync(file,JSON.stringify({type:"assistant",message:{id:"m1",usage:{input_tokens:2,cache_read_input_tokens:100,cache_creation_input_tokens:20,output_tokens:3},content:[]}})+"\n");
+  fs.appendFileSync(file,JSON.stringify({type:"user",message:{content:[{type:"tool_result",tool_use_id:"one",is_error:true,content:"Output does not match required schema: /brief is too long"}]}})+"\n");
+  const progress=monitor.poll();assert.equal(progress.usageTokens,125);assert.equal(progress.validationAttempts,1);assert.match(progress.lastValidationError!,/brief is too long/);
+  assert.doesNotMatch(JSON.stringify(progress),/secret prompt/);
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+
 test("running work shows a warning and preserves manual intervention after five minutes without progress",()=>{
  const store=new Store(":memory:"),start="2026-09-22T12:00:00.000Z";
  try{
@@ -49,5 +60,14 @@ test("running work shows a warning and preserves manual intervention after five 
   store.setMetadata(progressKey("run"),{provider:"cursor",events:2,lastEventAt:start,lastProgressAt:start,tool:"readToolCall",toolStartedAt:start,lastTool:"readToolCall",repeatedToolCalls:1});
   const activity=workflowActivity(store,"w","RUNNING",Date.parse(start)+300_001);
   assert.equal(activity.label,"Check agent progress");assert.match(activity.detail,/No observable progress for 5 minutes/);assert.equal(activity.stalled,false);
+ }finally{store.db.close();}
+});
+
+test("running work announces the token-budget grace in the issue list",()=>{
+ const store=new Store(":memory:"),at=new Date().toISOString();try{
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status,active_run_id) VALUES('w',1,'owner/repo',?,?, '{}','DESIGN','RUNNING','run')").run(at,at);
+  store.db.prepare("INSERT INTO executions(id,work_item_id,role,status,started_at) VALUES('run','w','product-architect','running',?)").run(at);
+  store.setMetadata(progressKey("run"),{provider:"claude",events:1,lastEventAt:at,lastProgressAt:at,tool:null,toolStartedAt:null,lastTool:null,repeatedToolCalls:0,usageTokens:config.issueBudgetTokens,validationAttempts:0,lastValidationError:null});
+  const activity=workflowActivity(store,"w","RUNNING");assert.equal(activity.label,"Token budget reached");assert.match(activity.detail,/25% grace/);
  }finally{store.db.close();}
 });
