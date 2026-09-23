@@ -14,11 +14,14 @@ const levels=["low","medium","high"] as const, depths=["minimal","standard","tho
 export function requiredVerificationDepth(assessment:Pick<TaskAssessment,"complexity"|"risk">):VerificationDepth {
  return depths[Math.max(levels.indexOf(assessment.complexity),levels.indexOf(assessment.risk))];
 }
+// The Designer's disposable prototype. It is committed so the human can see its screenshots on
+// GitHub, and moved out of the branch before the Builder starts so it never reaches the PR.
+export const prototypeDirectory=".factory/prototype";
 // The brief replaces reading the spec, so it only works while it stays short enough to be read.
 export const briefMaxLength=4000;
 const decisionSchema=object({ kind: enumeration("tactical", "major"), decision: text(), rationale: text(), conflictsWithHuman: { type: "boolean" }, supersedes:list(text(100)) });
 export const resultSchema = object({
-  taskAssessment: { ...object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), verificationDepth: enumeration("minimal", "standard", "thorough"), rationale: text() }), type: ["object", "null"] },
+  taskAssessment: { ...object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), verificationDepth: enumeration("minimal", "standard", "thorough"), uxImpact: enumeration("none", "minor", "significant"), rationale: text() }), type: ["object", "null"] },
   outcome: enumeration("spec", "questions", "resolved", "pass", "changes", "decision"),
   summary: text(1500), brief: { type: "string", maxLength: briefMaxLength }, spec: { type: "string", maxLength: 30000 }, questions: list(text()),
   findings: list(object({ classification: enumeration("auto-fix", "decision-required", "defer", "environment-blocked"), severity: enumeration("critical", "major", "minor"), evidence: text() })),
@@ -45,7 +48,7 @@ export function resultSchemaFor(role: AgentRole, allowedNextRoles?: TacticalNext
   nextRole: allowedNextRoles ? { type: ["string", "null"], enum: [...allowedNextRoles, null] } : resultSchema.properties!.nextRole,
  } };
  return { ...resultSchema, properties: { ...resultSchema.properties,
-  outcome: enumeration("pass", "changes", "decision"),
+  outcome: role === "designer" ? enumeration("pass", "decision") : enumeration("pass", "changes", "decision"),
   brief: { type: "string", enum: [""] }, spec: { type: "string", enum: [""] }, acceptanceCriteria: { ...resultSchema.properties!.acceptanceCriteria, maxItems: 0 },
   taskAssessment: { type: "null" }, nextRole: { type: "null" },
  } };
@@ -86,7 +89,7 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
   unique(r.acceptanceCriteria.map(c => c.id), "acceptance criterion");
   unique(r.coverage.map(c => c.criterionId), "coverage criterion");
   unique(r.reviewChecks.map(c => c.dimension), "review dimension");
-  const allowed = role === "product-architect" ? ["spec", "questions", "resolved"] : ["pass", "changes", "decision"];
+  const allowed = role === "product-architect" ? ["spec", "questions", "resolved"] : role === "designer" ? ["pass", "decision"] : ["pass", "changes", "decision"];
   if (!allowed.includes(r.outcome)) throw new Error(`Invalid ${role} outcome: ${r.outcome}`);
   if (r.outcome === "spec" && r.questions.length) throw new Error('A proposed specification must return questions: []. Put decisions that need the human in the brief with your recommendation, and your own assumptions under its assumptions; if a decision has no defensible recommendation is required before proposing it, return outcome "questions" without a SPEC');
   if (r.outcome === "spec" && (!r.spec.trim() || !r.acceptanceCriteria.length || r.acceptanceCriteria.some(c => !r.spec.includes(c.id)))) throw new Error("Specification needs named acceptance criteria in markdown and structured form");
@@ -111,6 +114,11 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
   if (r.outcome === "changes" && !r.findings.some(f => f.classification === "auto-fix")) throw new Error("Changes require an auto-fix finding");
   if (r.outcome === "decision" && !r.findings.some(f => ["decision-required","environment-blocked"].includes(f.classification))) throw new Error("Decision requires an explicit finding");
   if(r.findings.some(f=>f.classification==="environment-blocked")&&!["decision","resolved"].includes(r.outcome)&&!(role==="product-architect"&&r.outcome==="questions"))throw new Error("Environment blockers require Architect questions, a delivery decision or a tactical resolution");
+  if (role === "designer") {
+    if (r.outcome === "decision" && r.findings.some(f => f.classification !== "environment-blocked")) throw new Error("Designer returns decision only for an environment blocker; put UX concerns for the human in the summary and the prototype notes");
+    if (r.outcome === "pass" && (!r.changedFiles.length || r.changedFiles.some(file => !file.startsWith(`${prototypeDirectory}/`)))) throw new Error(`Designer PASS lists the prototype files it wrote, all under ${prototypeDirectory}/`);
+    if (r.outcome === "pass" && !r.changedFiles.some(file => /\.(png|jpe?g|webp)$/i.test(file))) throw new Error("Designer PASS needs at least one screenshot (.png, .jpg or .webp) of the prototype for the human to approve");
+  }
   if (r.outcome === "pass") {
     if (r.findings.some(f => f.classification !== "defer") || r.questions.length || r.decisions.some(d => d.kind === "major" || d.conflictsWithHuman)) throw new Error("PASS contradicts a blocking finding or decision");
     if (role === "developer" || role === "qa") {

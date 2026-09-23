@@ -32,7 +32,7 @@ p.command("models").argument("[id]").description("Show model policy or preview r
  const s = new Store();
  try {
   const row=s.db.prepare("SELECT correction_cycles FROM work_items WHERE id=?").get(id) as {correction_cycles:number}|undefined;if(!row)throw new Error("Unknown work item");const spec=s.db.prepare("SELECT assessment FROM specs WHERE work_item_id=? ORDER BY version DESC LIMIT 1").get(id) as {assessment:string|null}|undefined,assessment=spec?.assessment?JSON.parse(spec.assessment) as TaskAssessment:undefined,active=new WorkflowRecords(s).activeRequest(id),consultation=active?.payload.kind==="request"&&active.payload.owner==="architect";
-  console.table((["product-architect", "developer", "qa", "reviewer"] as AgentRole[]).map(role => ({ stage:roleStageName(role),agent:roleShortName(role), ...selectModel(role,assessment,row.correction_cycles,consultation) })));
+  console.table((["product-architect", "designer", "developer", "qa", "reviewer"] as AgentRole[]).map(role => ({ stage:roleStageName(role),agent:roleShortName(role), ...selectModel(role,assessment,row.correction_cycles,consultation) })));
  } finally { s.db.close(); }
 });
 p.command("sync").description("Reconcile PR lifecycle and publish pending status/reports without running agents").action(async () => {

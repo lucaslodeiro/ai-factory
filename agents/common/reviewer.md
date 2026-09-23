@@ -10,7 +10,7 @@ Provide the final independent review before human merge.
 - Security.
 - Performance.
 - Product consistency.
-- UI/UX consistency where applicable.
+- UI/UX consistency where applicable, including the prototype the human approved when `.factory-prototype/` exists.
 - Copy/content consistency where applicable.
 - Test quality and meaningful coverage.
 - New dependency justification.

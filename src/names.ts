@@ -2,6 +2,7 @@ import type { AgentRole } from "./types.js";
 
 export const roleNames: Record<AgentRole,{ full: string; short: string; stage: string }> = {
   "product-architect": { full:"Product Architect", short:"Architect", stage:"Design" },
+  designer: { full:"Product Designer", short:"Designer", stage:"Design" },
   developer: { full:"Implementation Engineer", short:"Builder", stage:"Build" },
   qa: { full:"Verification Engineer", short:"Tester", stage:"Test" },
   reviewer: { full:"Delivery Reviewer", short:"Reviewer", stage:"Review" },

@@ -5,6 +5,7 @@ import { publicNaming, roleFullName, roleShortName, roleStageName, stateName } f
 test("agent names consistently expose full role, short name and workflow stage", () => {
   assert.deepEqual(publicNaming.roles, {
     "product-architect": { full:"Product Architect", short:"Architect", stage:"Design" },
+    designer: { full:"Product Designer", short:"Designer", stage:"Design" },
     developer: { full:"Implementation Engineer", short:"Builder", stage:"Build" },
     qa: { full:"Verification Engineer", short:"Tester", stage:"Test" },
     reviewer: { full:"Delivery Reviewer", short:"Reviewer", stage:"Review" },

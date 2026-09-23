@@ -11,7 +11,7 @@ import {roleShortName} from "./names.js";
 // recovered issue see the decisions the human made before the technical detail.
 export function specificationBody(result:Pick<AgentResult,"brief"|"spec">){return `${result.brief.trim()}\n\n---\n\n${result.spec.trim()}`;}
 
-const roleStage:Record<AgentRole,V3Stage>={"product-architect":"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"};
+const roleStage:Record<AgentRole,V3Stage>={"product-architect":"DESIGN",designer:"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"};
 const nextRoleStage={developer:"BUILD",qa:"TEST",reviewer:"REVIEW"} as const;
 
 export class WorkflowResults {
@@ -33,6 +33,7 @@ export class WorkflowResults {
    });return {discarded:false,projection,recordIds:ids};
   }
   if(input.role==="product-architect")return this.architect(input,current.revision,specVersion,ids);
+  if(input.role==="designer")return this.designer(input,current.revision,specVersion,ids);
   const spec=this.store.db.prepare("SELECT criteria,approved_by FROM specs WHERE work_item_id=? AND version=?").get(input.workItemId,specVersion) as {criteria:string;approved_by:string|null}|undefined;
   if(!spec?.approved_by)throw new InvalidResultError("Delivery result requires an approved current specification");
   validateCoverage(input.result,JSON.parse(spec.criteria));
@@ -47,11 +48,12 @@ export class WorkflowResults {
   }
   if(result.outcome==="spec") {
    const next=specVersion+1;
-   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:"DESIGN",status:"WAITING",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"spec-proposed",summary:`SPEC v${next} proposed`},recordIds:ids,correctionCycles:0},()=>{
+   const prototype=result.taskAssessment?.uxImpact==="significant";
+   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:"DESIGN",status:prototype?"QUEUED":"WAITING",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"spec-proposed",summary:prototype?`SPEC v${next} proposed; Designer prepares a prototype`:`SPEC v${next} proposed`},recordIds:ids,correctionCycles:0},()=>{
     this.resultEvent(input,next);
     if(specVersion)this.records.supersedeSpec(input.workItemId,specVersion);
     this.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment) VALUES(?,?,?,?,?)").run(input.workItemId,next,specificationBody(result),JSON.stringify(result.acceptanceCriteria),JSON.stringify(result.taskAssessment));
-    ids.push(this.records.create({workItemId:input.workItemId,specVersion:next,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
+    ids.push(this.records.create({workItemId:input.workItemId,specVersion:next,scope:"spec",payload:prototype?{kind:"request",type:"prototype",owner:"designer",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:this.cursor(input.workItemId)}:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
    });return {discarded:false,projection,recordIds:ids};
   }
   if(result.outcome!=="resolved"||!active||active.payload.kind!=="request"||active.payload.type!=="tactical-decision"||active.payload.owner!=="architect")throw new InvalidResultError("Architect resolution requires an active tactical request");
@@ -63,6 +65,17 @@ export class WorkflowResults {
    const findingIds=(requestPayload.findingIds??[]).filter(id=>{const record=this.records.get(id);return record?.payload.kind==="finding"&&record.payload.classification!=="defer";});if(findingIds.length)this.records.settleFindings(findingIds,"resolved",input.executionId);
    for(const finding of result.findings)ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"finding",classification:finding.classification,originRole:"product-architect",evidence:finding.evidence},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
    this.records.resolveRequest(active.id,input.executionId);ids.push(active.id);
+  });return {discarded:false,projection,recordIds:ids};
+ }
+ // The prototype opens the single human gate: the brief and the prototype are approved together.
+ private designer(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult;head:string},revision:number,specVersion:number,ids:string[]) {
+  const active=this.records.activeRequest(input.workItemId);
+  if(input.result.outcome!=="pass")throw new InvalidResultError(`Unsupported designer outcome ${input.result.outcome}`);
+  if(active?.payload.kind!=="request"||active.payload.type!=="prototype")throw new InvalidResultError("Designer result requires an open prototype request");
+  const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:"DESIGN",status:"WAITING",actor:{type:"agent",id:"designer"},source:{executionId:input.executionId},reason:{code:"prototype-ready",summary:`Prototype for SPEC v${specVersion} ready`},recordIds:ids},()=>{
+   this.resultEvent(input,specVersion,{prototypeHead:input.head});
+   this.records.resolveRequest(active.id,input.executionId);ids.push(active.id);
+   ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"agent-result",sourceId:input.executionId,actor:"designer"}).id);
   });return {discarded:false,projection,recordIds:ids};
  }
  published(input:{workItemId:string;pullRequestUrl:string}) {
@@ -111,6 +124,6 @@ export class WorkflowResults {
  private cursor(workItemId:string){const row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string};return (JSON.parse(row.context||"{}") as {cursor?:number}).cursor??0;}
  private updateContext(workItemId:string,values:Record<string,unknown>){const row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string};this.store.db.prepare("UPDATE work_items SET context=? WHERE id=?").run(JSON.stringify({...JSON.parse(row.context||"{}"),...values}),workItemId);}
  private setVerifiedHead(workItemId:string,stage:"TEST"|"REVIEW",head:string){const row=this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string};const context=JSON.parse(row.context||"{}") as {verifiedHeads?:Record<string,string>};this.updateContext(workItemId,{verifiedHeads:{...context.verifiedHeads,[stage]:head}});}
- private resultEvent(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult;head:string;changedPaths?:string[]},specVersion=this.specVersion(input.workItemId)){this.store.event("agent.result",{role:input.role,result:input.result,specVersion},input.workItemId,input.executionId);}
+ private resultEvent(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult;head:string;changedPaths?:string[]},specVersion=this.specVersion(input.workItemId),extra:Record<string,unknown>={}){this.store.event("agent.result",{role:input.role,result:input.result,specVersion,...extra},input.workItemId,input.executionId);}
  private returnStages(stage:V3Stage):V3Stage[]{return stage==="BUILD"?["BUILD"]:stage==="TEST"?["BUILD","TEST"]:stage==="REVIEW"?["BUILD","TEST","REVIEW"]:[stage];}
 }

@@ -22,7 +22,7 @@ export class CursorAdapter implements AgentAdapter {
   if (r.selection.provider !== "cursor") throw new Error("Model selection/provider mismatch");
   const schema = resultSchemaFor(r.role, r.allowedNextRoles);
   // Builder and Tester edit files and run commands; Architect and Reviewer use the documented read-only mode.
-  const accessArgs = r.role === "developer" || r.role === "qa" ? ["--force"] : ["--mode", "ask"];
+  const accessArgs = r.role === "developer" || r.role === "qa" || r.role === "designer" ? ["--force"] : ["--mode", "ask"];
   const modelArgs = r.selection.model === "auto" ? [] : ["--model", r.selection.model];
   const { finalEvent } = await this.executions.run(r.workItemId, r.role, config.cursorCommand,
    ["-p", ...modelArgs, "--output-format", "stream-json", "--trust", ...accessArgs], r.cwd, `${r.instructions}\n\n${cursorOutputContract(schema)}`, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);

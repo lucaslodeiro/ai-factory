@@ -4,8 +4,8 @@ The machine-readable source of truth is `resultSchema` in `src/results.ts`, used
 
 | Field | Meaning |
 |---|---|
-| `outcome` | Architect: spec/questions/resolved. Delivery roles: pass/changes/decision. |
-| `taskAssessment` | New spec only: complexity/risk low, medium or high and concrete rationale. Human approves this with the spec; all other outcomes use null. |
+| `outcome` | Architect: spec/questions/resolved. Designer: pass (prototype ready) or decision (environment blocker only). Delivery roles: pass/changes/decision. |
+| `taskAssessment` | New spec only: complexity/risk low, medium or high, verificationDepth, uxImpact none/minor/significant and concrete rationale. Human approves this with the spec; all other outcomes use null. |
 | `summary` | Concise role conclusion and evidence summary. |
 | `brief` | Only for a new specification: the short document the human approves instead of reading the SPEC (decisions with recommendations, solution, criteria, assumptions, assessment). At most 4000 characters. |
 | `spec`, `acceptanceCriteria` | Only for a new specification: markdown plus unique IDs/descriptions. |

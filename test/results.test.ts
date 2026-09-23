@@ -55,7 +55,7 @@ test("architect consultation schema and validation enforce the exact tactical re
 test("delivery reports discard provider attempts to populate architect-owned fields", () => {
  const parsed = parseResult(result("pass", {
   spec:"replacement scope", acceptanceCriteria:[{id:"NEW",description:"Injected criterion"}],
-  taskAssessment:{complexity:"high",risk:"high",verificationDepth:"thorough",rationale:"Override"}, nextRole:"reviewer",
+  taskAssessment:{complexity:"high",risk:"high",verificationDepth:"thorough",uxImpact:"none",rationale:"Override"}, nextRole:"reviewer",
  }),"developer");
  assert.equal(parsed.spec,"");
  assert.deepEqual(parsed.acceptanceCriteria,[]);
@@ -93,7 +93,7 @@ test("decisions must include supersedes in the current result format",()=>{
 });
 
 test("verification depth cannot be declared below what complexity and risk require",()=>{
- const spec=(complexity:string,risk:string,verificationDepth:string)=>({...result("spec"),taskAssessment:{complexity,risk,verificationDepth,rationale:"Assessed against the change"}});
+ const spec=(complexity:string,risk:string,verificationDepth:string)=>({...result("spec"),taskAssessment:{complexity,risk,verificationDepth,uxImpact:"none",rationale:"Assessed against the change"}});
  assert.equal(parseResult(spec("low","low","minimal"),"product-architect").taskAssessment?.verificationDepth,"minimal");
  assert.equal(parseResult(spec("low","low","thorough"),"product-architect").taskAssessment?.verificationDepth,"thorough","declaring more than required is allowed");
  assert.throws(()=>parseResult(spec("low","high","standard"),"product-architect"),/below thorough/);
@@ -121,4 +121,17 @@ test("a proposed specification needs a brief the human can read in place of the 
  assert.equal(parseResult(result("spec"),"product-architect").brief.startsWith("## Decisions for you"),true);
  assert.equal(parseResult(result("pass",{brief:"injected"}),"developer").brief,"");
  assert.deepEqual(resultSchemaFor("developer").properties?.brief,{type:"string",enum:[""]});
+});
+
+test("a Designer result is the prototype and its screenshots, or an environment blocker",()=>{
+ const pass=(changedFiles:string[])=>result("pass",{tests:[],coverage:[],changedFiles});
+ assert.deepEqual(parseResult(pass([".factory/prototype/01-main.png",".factory/prototype/README.md"]),"designer").changedFiles.length,2);
+ assert.throws(()=>parseResult(pass(["src/app.tsx",".factory/prototype/01-main.png"]),"designer"),/all under \.factory\/prototype\//);
+ assert.throws(()=>parseResult(pass([".factory/prototype/README.md"]),"designer"),/at least one screenshot/);
+ assert.throws(()=>parseResult(result("changes",{findings:[{classification:"auto-fix",severity:"major",evidence:"x"}]}),"designer"),/Invalid designer outcome/);
+ assert.throws(()=>parseResult(result("decision"),"designer"),/only for an environment blocker/);
+ assert.equal(parseResult(result("decision",{findings:[{classification:"environment-blocked",severity:"major",evidence:"No browser"}]}),"designer").outcome,"decision");
+ assert.deepEqual(resultSchemaFor("designer").properties?.outcome,{type:"string",enum:["pass","decision"]});
+ assert.deepEqual(resultSchemaFor("designer").properties?.brief,{type:"string",enum:[""]});
+ assert.throws(()=>parseResult({...result("spec"),taskAssessment:{...result("spec").taskAssessment!,uxImpact:"large"}},"product-architect"),/uxImpact: invalid value/);
 });

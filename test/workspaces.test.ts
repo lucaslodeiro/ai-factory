@@ -116,3 +116,33 @@ test("sync refuses to commit links or executable evidence left by an interrupted
   assert.match(git(cwd,["log","--format=%s","-1"]),/factory: work in progress for #12/);assert.equal(git(cwd,["show","--name-only","--format=","HEAD"]),"evidence/report.md");
  }finally{config.repoDir=old.repoDir;config.dataDir=old.dataDir;fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test("Designer writes only the prototype, and the approved prototype leaves the branch before the Builder",()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"factory-git-"));
+ try {
+  const origin=path.join(root,"origin.git"),repo=path.join(root,"repo");fs.mkdirSync(origin);fs.mkdirSync(repo);
+  git(origin,["init","--bare"]);git(repo,["init"]);git(repo,["config","user.name","Factory Test"]);git(repo,["config","user.email","factory@example.test"]);
+  fs.writeFileSync(path.join(repo,"app.txt"),"base");git(repo,["add","."]);git(repo,["commit","-m","base"]);git(repo,["branch","-M","main"]);
+  git(repo,["remote","add","origin",origin]);git(repo,["push","-u","origin","main"]);
+  config.repoDir=repo;config.dataDir=path.join(root,"data");const ws=new Workspaces(),branch="factory/issue-3";
+  const cwd=ws.ensure("three",branch);git(cwd,["config","user.name","Factory Test"]);git(cwd,["config","user.email","factory@example.test"]);
+  let before=ws.head(cwd);
+  fs.writeFileSync(path.join(cwd,"app.txt"),"designer edit");
+  assert.throws(()=>ws.check(cwd,"designer",before,branch),/only write the disposable prototype/);
+  git(cwd,["checkout","--","app.txt"]);
+  fs.mkdirSync(path.join(cwd,".factory","prototype"),{recursive:true});
+  fs.writeFileSync(path.join(cwd,".factory","prototype","01-main.png"),"png");fs.writeFileSync(path.join(cwd,".factory","prototype","README.md"),"01-main: main flow");
+  fs.writeFileSync(path.join(cwd,".factory","prototype","run.sh"),"#!/bin/sh",{mode:0o755});
+  assert.throws(()=>ws.check(cwd,"designer",before,branch),/regular, non-executable/);
+  fs.unlinkSync(path.join(cwd,".factory","prototype","run.sh"));
+  assert.deepEqual(ws.check(cwd,"designer",before,branch)?.sort(),[".factory/prototype/01-main.png",".factory/prototype/README.md"]);
+  ws.commit(cwd,"prototype",branch);const prototypeCommit=ws.head(cwd);
+  assert.equal(ws.archivePrototype(cwd,branch,"move prototype"),true);
+  assert.equal(git(cwd,["ls-files",".factory/prototype"]),"","the prototype no longer reaches the pull request diff");
+  assert.equal(fs.readFileSync(path.join(cwd,".factory-prototype","README.md"),"utf8"),"01-main: main flow");
+  assert.equal(git(cwd,["status","--porcelain"]),"","the archived copy is excluded from Git");
+  assert.equal(git(cwd,["show",`${prototypeCommit}:.factory/prototype/README.md`]),"01-main: main flow","the approved commit keeps the prototype");
+  assert.equal(ws.archivePrototype(cwd,branch,"nothing to move"),false);
+  before=ws.head(cwd);ws.check(cwd,"developer",before,branch);
+ } finally {fs.rmSync(root,{recursive:true,force:true});}
+});

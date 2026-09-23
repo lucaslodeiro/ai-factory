@@ -1,4 +1,4 @@
-export type AgentRole = "product-architect" | "developer" | "qa" | "reviewer";
+export type AgentRole = "product-architect" | "designer" | "developer" | "qa" | "reviewer";
 export const agentProviders = ["codex", "claude", "cursor"] as const;
 export type AgentProvider = typeof agentProviders[number];
 // A provider that accepts a JSON Schema constrains generation itself, so the prompt
@@ -13,7 +13,10 @@ export interface Finding { classification: "auto-fix" | "decision-required" | "d
 export interface Decision { kind: "tactical" | "major"; decision: string; rationale: string; conflictsWithHuman: boolean; supersedes: string[]; }
 // How much verification the issue earns, declared with the spec and approved with it.
 export type VerificationDepth = "minimal" | "standard" | "thorough";
-export interface TaskAssessment { complexity: "low" | "medium" | "high"; risk: "low" | "medium" | "high"; verificationDepth: VerificationDepth; rationale: string; }
+// A significant UX impact sends the SPEC through the Designer, whose prototype the human approves
+// together with the brief.
+export type UxImpact = "none" | "minor" | "significant";
+export interface TaskAssessment { complexity: "low" | "medium" | "high"; risk: "low" | "medium" | "high"; verificationDepth: VerificationDepth; uxImpact: UxImpact; rationale: string; }
 export interface ModelSelection { policy: string; provider: AgentProvider; model: string; reason: string; }
 export interface AgentResult {
   taskAssessment: TaskAssessment | null;

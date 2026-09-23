@@ -12,7 +12,7 @@ import { providerActivityReducer } from "./provider-activity.js";
 import { eachJsonLine, type JsonEvent } from "./provider-stream.js";
 import {progressMonitor,progressKey} from "./execution-progress.js";
 import {sanitizeFailureEvidence} from "./failure-report.js";
-const workflowStage: Record<AgentRole,string> = {"product-architect":"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"};
+const workflowStage: Record<AgentRole,string> = {"product-architect":"DESIGN",designer:"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"};
 export function providerFailureMessage(event:JsonEvent|undefined,provider:ModelSelection["provider"]|undefined){
   if(!event||!provider)return undefined;
   const failed=event.type==="result"&&event.is_error===true||provider==="codex"&&event.type==="turn.failed";

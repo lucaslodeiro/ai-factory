@@ -5,6 +5,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { config,requiredRepoDir } from "./config.js";
 import type {AgentRole} from "./types.js";
+import {prototypeDirectory} from "./results.js";
 import { buildRepositoryMap, type RepositoryMap } from "./repository-map.js";
 function gitOutput(cwd: string, args: string[]) {
  const r = spawnSync(config.gitCommand, args, { cwd, encoding: "utf8", timeout: 60000, maxBuffer: 10_000_000 });
@@ -22,6 +23,14 @@ function gitFile(cwd:string,args:string[],file:string){
  }finally{fs.closeSync(fd);}
 }
 export function git(cwd: string, args: string[]) { return gitOutput(cwd, args).trim(); }
+// Where the approved prototype lives once it leaves the branch: in the worktree for Builder, Tester
+// and Reviewer to consult, excluded from Git so it never reaches the pull request.
+export const approvedPrototypeDirectory=".factory-prototype";
+const insidePrototype=(file:string)=>file.startsWith(`${prototypeDirectory}/`);
+function excludeFromGit(cwd:string,entry:string){
+ const value=git(cwd,["rev-parse","--git-path","info/exclude"]),exclude=path.isAbsolute(value)?value:path.resolve(cwd,value);fs.mkdirSync(path.dirname(exclude),{recursive:true});
+ const current=fs.existsSync(exclude)?fs.readFileSync(exclude,"utf8"):"";if(!current.split(/\r?\n/).includes(entry))fs.appendFileSync(exclude,`${current&&!current.endsWith("\n")?"\n":""}${entry}\n`);
+}
 export interface WorkspaceSnapshot {head:string;files:Map<string,string>;dirty:string[];policy:VerificationPolicy;}
 export interface WorkspaceSync {before:string;after:string;merged:string[];skipped?:string;}
 export class SyncConflictError extends Error {
@@ -42,6 +51,7 @@ export interface WorkspacePort {
  changeSummarySince?(cwd:string,base:string):{files:string[];stat:string};
  repositoryMap?(cwd:string):RepositoryMap|undefined;
  prepareReviewerContext(cwd:string,workItemId:string):{path:string;files:string[];stat:string};
+ archivePrototype?(cwd:string,branch:string,message:string):boolean;
  cleanupReviewerContext(cwd:string,workItemId:string):void;
 }
 export class Workspaces implements WorkspacePort {
@@ -74,6 +84,7 @@ export class Workspaces implements WorkspacePort {
   const reject=(reason:string,files:string[])=>{if(files.length)throw new Error(`${reason}: ${files.map(file=>JSON.stringify(file)).join(", ")}`);};
   reject("Potential credential file in changes; inspect before commit",dirty.filter(secretPath));
   if(role==="product-architect"||role==="reviewer")reject(`${role} cannot continue with uncommitted worktree changes`,dirty);
+  if(role==="designer")reject(`Designer cannot continue with uncommitted changes outside ${prototypeDirectory}/`,dirty.filter(file=>!insidePrototype(file)));
   if(role==="qa"){
    // These files are about to be committed and pushed, usually left by a Tester that timed out
    // before check() ran, so they meet the same rules check() applies to a finished execution.
@@ -125,6 +136,10 @@ export class Workspaces implements WorkspacePort {
   const reject=(reason:string,files:string[])=>{if(files.length)throw new Error(`${reason}: ${files.map(file=>JSON.stringify(file)).join(", ")}`);};
   reject("Potential credential file in changes; inspect before commit",changed.filter(secretPath));
   if(role==="product-architect"||role==="reviewer")reject(`${role} modified the worktree`,changed);
+  if(role==="designer"){
+   reject(`Designer may only write the disposable prototype under ${prototypeDirectory}/`,changed.filter(file=>!insidePrototype(file)));
+   reject("Prototype files must be regular, non-executable files",changed.filter(file=>{if(this.unsafeParent(cwd,file))return true;try{const stat=fs.lstatSync(path.join(cwd,file));return !stat.isFile()||stat.nlink>1||Boolean(stat.mode&0o111);}catch(error){if((error as NodeJS.ErrnoException).code==="ENOENT")return false;throw error;}}));
+  }
   if(role==="qa"){
    const policy=baseline?.policy??verificationPolicy(cwd);
    reject("Verification Engineer modified a protected non-test file (only tests and declared verification artifacts are allowed)",changed.filter(file=>!verificationPathAllowed(file,policy)));
@@ -146,6 +161,22 @@ export class Workspaces implements WorkspacePort {
   }
  }
 
+ // Moves the approved prototype out of the branch before the Builder starts. Git history keeps the
+ // commit the human approved; the pull request diff never contains it.
+ archivePrototype(cwd:string,branch:string,message:string){
+  this.assertBranch(cwd,branch);
+  const tracked=gitOutput(cwd,["ls-files","-z","--",prototypeDirectory]).split("\0").filter(Boolean);
+  if(!tracked.length)return false;
+  const target=path.join(cwd,approvedPrototypeDirectory);
+  if(gitOutput(cwd,["ls-files","--",approvedPrototypeDirectory]).trim())throw new Error(`Refusing to replace tracked ${approvedPrototypeDirectory}`);
+  if(fs.existsSync(target)){if(fs.lstatSync(target).isSymbolicLink())throw new Error(`${approvedPrototypeDirectory} must not be a link`);fs.rmSync(target,{recursive:true});}
+  excludeFromGit(cwd,`/${approvedPrototypeDirectory}/`);
+  for(const file of tracked){if(this.unsafeParent(cwd,file))throw new Error(`Prototype file ${file} is behind a link`);const source=path.join(cwd,file);if(!fs.existsSync(source)||!fs.lstatSync(source).isFile())continue;const destination=path.join(target,path.relative(prototypeDirectory,file));fs.mkdirSync(path.dirname(destination),{recursive:true});fs.copyFileSync(source,destination);}
+  git(cwd,["rm","-r","-q","--",prototypeDirectory]);
+  git(cwd,["commit","-q","-m",message]);
+  return true;
+ }
+
  async publishAsync(cwd:string,branch:string){
   this.assertBranch(cwd,branch);
   await new Promise<void>((resolve,reject)=>execFile(config.gitCommand,["push","--set-upstream","origin",`HEAD:refs/heads/${branch}`],{cwd,timeout:60000,maxBuffer:10000000},(error,_stdout,stderr)=>error?reject(new Error(stderr||error.message)):resolve()));
@@ -162,7 +193,7 @@ export class Workspaces implements WorkspacePort {
  }
  prepareReviewerContext(cwd:string,workItemId:string){const directory=path.join(cwd,".factory-context"),owner=path.join(directory,"OWNER"),diff=path.join(directory,"review.diff"),expected=`ai-factory:${workItemId}\n`;
   this.assertContextSafe(cwd,directory,owner,expected,true);if(fs.existsSync(directory))fs.rmSync(directory,{recursive:true});fs.mkdirSync(directory,{mode:0o700});fs.writeFileSync(owner,expected,{mode:0o600});try{const summary=this.changeSummary(cwd);gitFile(cwd,["diff","--no-ext-diff","--no-textconv","--binary",`origin/${config.defaultBranch}...HEAD`],diff);
-  const excludeValue=git(cwd,["rev-parse","--git-path","info/exclude"]),exclude=path.isAbsolute(excludeValue)?excludeValue:path.resolve(cwd,excludeValue);fs.mkdirSync(path.dirname(exclude),{recursive:true});const current=fs.existsSync(exclude)?fs.readFileSync(exclude,"utf8"):"";if(!current.split(/\r?\n/).includes("/.factory-context/"))fs.appendFileSync(exclude,`${current&&!current.endsWith("\n")?"\n":""}/.factory-context/\n`);
+  excludeFromGit(cwd,"/.factory-context/");
   return{path:diff,files:summary.files,stat:summary.stat};
   }catch(error){try{this.cleanupReviewerContext(cwd,workItemId);}catch{}throw error;}
  }

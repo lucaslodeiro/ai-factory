@@ -276,3 +276,25 @@ test("a proposed specification leads with its brief and folds the full SPEC away
  assert.match(body,/Approving accepts every recommendation above/);
  assert.match(body,/`\/factory approve v3 \[guidance\]`/);
 });
+
+test("a significant UX change defers approval to the prototype, whose screenshots link to the approved commit",()=>{
+ const ux=result("spec");ux.taskAssessment={...ux.taskAssessment!,uxImpact:"significant"};
+ const spec=resultMarkdown("product-architect",ux,2);
+ assert.match(spec,/^# Specification v2 — prototype in progress/m);assert.doesNotMatch(spec,/\/factory approve/);
+ const prototype=resultMarkdown("designer",result("pass",{tests:[],coverage:[],changedFiles:[".factory/prototype/01-main flow.png",".factory/prototype/README.md"],summary:"Look at the empty state first."}),2,undefined,{prototype:{repo:"owner/demo",head:"abc123"}});
+ assert.match(prototype,/^# Prototype for SPEC v2 — awaiting approval/m);
+ assert.match(prototype,/!\[01-main flow\.png\]\(https:\/\/github\.com\/owner\/demo\/blob\/abc123\/\.factory\/prototype\/01-main%20flow\.png\?raw=true\)/);
+ assert.match(prototype,/\[\.factory\/prototype\/README\.md\]\(https:\/\/github\.com\/owner\/demo\/blob\/abc123\/\.factory\/prototype\/README\.md\)/);
+ assert.match(prototype,/`\/factory approve v2 \[guidance\]`/);
+ assert.equal((prototype.match(/## Next action/g)??[]).length,1);
+});
+
+test("a Designer-owned prototype request tells the human to wait without a command",()=>{
+ const s=setup();
+ try {
+  s.records.create({workItemId:"work-1",specVersion:2,scope:"spec",payload:{kind:"request",type:"prototype",owner:"designer",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:20},sourceType:"agent-result",sourceId:"run",actor:"product-architect"});
+  s.projections.initialize("work-1","DESIGN","QUEUED");
+  const action=workflowStatusMarkdown(s.store,"work-1").split("<details><summary>All commands</summary>")[0];
+  assert.match(action,/Designer is preparing a prototype/);assert.doesNotMatch(action,/\/factory (answer|approve|retry)/);
+ } finally {s.store.db.close();}
+});

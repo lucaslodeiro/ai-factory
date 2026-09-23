@@ -36,7 +36,7 @@ function contextBudgetOverrides() {
   let value:unknown;
   try { value=JSON.parse(raw); } catch { throw new Error("FACTORY_CONTEXT_BUDGET_OVERRIDES must be a JSON object"); }
   if (!value || Array.isArray(value) || typeof value !== "object") throw new Error("FACTORY_CONTEXT_BUDGET_OVERRIDES must be a JSON object");
-  const roles=new Set(["product-architect","developer","qa","reviewer"]),result:Record<string,number>={};
+  const roles=new Set(["product-architect","designer","developer","qa","reviewer"]),result:Record<string,number>={};
   for (const [key,budget] of Object.entries(value)) {
     if (!roles.has(key) && !/^(codex|claude|cursor)\/[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(key)) throw new Error(`Invalid context budget override key: ${key}`);
     if (!Number.isSafeInteger(budget) || Number(budget)<1) throw new Error(`Context budget override ${key} must be a positive integer`);
@@ -52,6 +52,7 @@ function role(prefix: string, fallback: AgentProvider, fallbackModel: string) {
 export const config = {
   roles: {
     "product-architect":role("PRODUCT_ARCHITECT","claude","auto"),
+    designer:role("DESIGNER","claude","auto"),
     developer:role("DEVELOPER","codex","auto"),
     qa:role("QA","codex","auto"),
     reviewer:role("REVIEWER","claude","auto"),

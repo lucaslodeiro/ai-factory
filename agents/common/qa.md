@@ -12,6 +12,9 @@ May read the repository, access the Internet, execute the application/build/test
 ## Restrictions
 Must not modify production code, dependencies, credentials or repository policy. Preserve inherited changes; do not stage or revert unrelated work. Report only changes made during this execution.
 
+## Approved prototype
+When `.factory-prototype/` exists it holds the prototype the human approved with the SPEC. Check the delivered UI against its screenshots and README for the states the acceptance criteria cover.
+
 ## Verification depth
 The approved specification carries `verificationDepth`. Honour it; it was approved by the human with the spec and is not yours to widen or narrow.
 

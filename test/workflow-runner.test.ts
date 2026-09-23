@@ -274,3 +274,30 @@ test("first human Builder retry includes changed files with attempt one",async()
   await runner.run(item.id);assert.equal(prompts.length,2);assert.doesNotMatch(prompts[0],/src\/a\.ts/);assert.match(prompts[1],/src\/a\.ts/);assert.match(prompts[1],/1 file changed/);
  }finally{store.db.close();}
 });
+
+test("significant UX impact runs the Designer before the single approval gate and moves the prototype out before the Builder",async()=>{
+ const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"});
+ const requests:AgentRunRequest[]=[],workspace=new class extends Workspace{archived:string[]=[];archivePrototype(_cwd:string,_branch:string,message:string){this.archived.push(message);return true;}}();
+ const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){requests.push(request);store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return value;}});
+ const delivery={ensurePR(){return "https://github.com/owner/demo/pull/2";}},projections=new WorkflowProjections(store);
+ const ux=result("spec");ux.taskAssessment={...ux.taskAssessment!,uxImpact:"significant"};
+ const prototype=result("pass",{tests:[],coverage:[],changedFiles:[".factory/prototype/01-main.png",".factory/prototype/README.md"],summary:"Main flow and empty state."});
+ try {
+  const agents={"product-architect":adapter(ux),designer:adapter(prototype),developer:adapter(result("pass"))};
+  const runner=new WorkflowRunner(store,agents,workspace,delivery);
+  assert.equal(await runner.run(started.id),true);
+  assert.deepEqual({stage:projections.get(started.id).stage,status:projections.get(started.id).status},{stage:"DESIGN",status:"QUEUED"},"the Architect does not open the human gate yet");
+  assert.throws(()=>new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:started.id,login:"owner",commentId:1,specVersion:1}),/No active human request/);
+  workspace.currentHead="prototype-head";
+  assert.equal(await runner.run(started.id),true);
+  assert.equal(requests[1].role,"designer");assert.match(requests[1].instructions,/Product Designer \(Designer\) Contract/);assert.match(requests[1].instructions,/## Proposed specification/);
+  assert.deepEqual({stage:projections.get(started.id).stage,status:projections.get(started.id).status},{stage:"DESIGN",status:"WAITING"});
+  assert.match(workspace.commits[0],/^factory\(Designer\): Main flow and empty state\./);
+  const event=store.db.prepare("SELECT payload FROM events WHERE type='agent.result' ORDER BY id DESC LIMIT 1").get() as {payload:string};
+  assert.equal(JSON.parse(event.payload).prototypeHead,"prototype-head","screenshot links point at the commit the human approves");
+  new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:started.id,login:"owner",commentId:2,specVersion:1});
+  assert.equal(await runner.run(started.id),true);
+  assert.equal(requests[2].role,"developer");assert.equal(workspace.archived.length,1);
+  assert.deepEqual({stage:projections.get(started.id).stage,status:projections.get(started.id).status},{stage:"TEST",status:"QUEUED"});
+ } finally {store.db.close();}
+});

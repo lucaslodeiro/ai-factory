@@ -5,13 +5,16 @@ import { WorkflowFailures,type FailureClass } from "./workflow-failures.js";
 import { WorkflowProjections } from "./workflow-projection.js";
 import type { V3Stage } from "./workflow-records.js";
 import {roleShortName} from "./names.js";
+import { WorkflowRecords } from "./workflow-records.js";
 
 const roles:Record<V3Stage,AgentRole>={DESIGN:"product-architect",BUILD:"developer",TEST:"qa",REVIEW:"reviewer",DELIVERY:"reviewer"};
 
 export class WorkflowScheduler {
  private projections:WorkflowProjections;private failures:WorkflowFailures;
  constructor(private store:Store){this.projections=new WorkflowProjections(store);this.failures=new WorkflowFailures(store);}
- role(workItemId:string){const stage=this.projections.get(workItemId).stage;if(stage==="DELIVERY")throw new Error("Delivery has no agent scheduler role");return roles[stage];}
+ role(workItemId:string):AgentRole{const stage=this.projections.get(workItemId).stage;if(stage==="DELIVERY")throw new Error("Delivery has no agent scheduler role");
+  if(stage==="DESIGN"){const active=new WorkflowRecords(this.store).activeRequest(workItemId);if(active?.payload.kind==="request"&&active.payload.owner==="designer")return "designer";}
+  return roles[stage];}
  begin(workItemId:string) {
   const current=this.projections.get(workItemId);if(current.status!=="QUEUED")throw new Error(`Cannot schedule workflow while it is ${current.status}`);
   const role=this.role(workItemId);

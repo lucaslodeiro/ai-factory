@@ -66,6 +66,7 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
  const adapters = { codex,claude,cursor };
  const agents = {
   "product-architect":adapters[config.roles["product-architect"].provider],
+  designer:adapters[config.roles.designer.provider],
   developer:adapters[config.roles.developer.provider],
   qa:adapters[config.roles.qa.provider],
   reviewer:adapters[config.roles.reviewer.provider],

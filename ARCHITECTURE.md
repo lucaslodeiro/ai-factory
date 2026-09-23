@@ -6,8 +6,9 @@ The workflow stores **stage** and **status** independently. Stage is one of `DES
 
 ```text
 Open GitHub issue + /factory start
-  → DESIGN/QUEUED → Architect → DESIGN/WAITING
-  → exact SPEC approval, read through its brief
+  → DESIGN/QUEUED → Architect
+  → [significant UX impact: DESIGN/QUEUED → Designer prototype]
+  → DESIGN/WAITING → exact SPEC approval, read through its brief (and prototype)
   → BUILD/QUEUED → Builder
   → TEST/QUEUED → Tester
   → REVIEW/QUEUED → Reviewer
@@ -16,6 +17,8 @@ Open GitHub issue + /factory start
 ```
 
 The Architect returns two documents in one run. The brief holds only what needs the human: decisions with a recommendation and the consequence of getting them wrong, the solution in a few lines, the acceptance criteria and the assessment. The SPEC is the full technical contract for Builder, Tester and Reviewer. The human approves the brief; the SPEC is folded under it in the same comment and approved with it as one version. The stored specification body leads with the brief, so delivery roles see what the human decided, and the Reviewer flags product decisions the brief does not contain. Changing a decision is `/factory answer`, which produces a new version.
+
+The Architect assesses `uxImpact` as none, minor or significant. Only significant (a new screen or flow, or a changed interaction) opens a Designer-owned `prototype` request instead of the human approval. The Designer builds a disposable prototype in the project's stack with mock data under `.factory/prototype/`, with a screenshot per relevant state and a README; it may write nothing else. The orchestrator commits and pushes it, publishes the screenshots linked at that exact commit, and only then opens the human approval: one gate for brief and prototype. When the Builder first starts, the orchestrator moves the prototype to the Git-excluded `.factory-prototype/` in the worktree and removes it from the branch, so Builder, Tester and Reviewer can consult it and the pull request diff never contains it.
 
 Findings can return to Builder, request an Architect tactical decision, or be explicitly deferred. A tactical decision retains the approved SPEC and can return only to an allowed unfinished stage. Automatic correction cycles are bounded.
 

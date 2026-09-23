@@ -71,7 +71,7 @@ V3.3 applies the final implementation-readiness review without changing the arch
 
 ## 1. System purpose
 
-AI Factory is a locally executed delivery orchestrator. It turns a GitHub issue into an approved, versioned specification, an implementation in an isolated worktree, independent verification, an independent delivery review, and a pull request for human merge. Four roles (Architect, Builder, Tester, Reviewer) run on Claude or Codex; the deterministic orchestrator owns routing, approvals, transitions, retries, commits, publication and PR creation.
+AI Factory is a locally executed delivery orchestrator. It turns a GitHub issue into an approved, versioned specification, an implementation in an isolated worktree, independent verification, an independent delivery review, and a pull request for human merge. Five roles (Architect, Designer, Builder, Tester, Reviewer) run on Claude, Codex or Cursor; the Designer runs only for a significant UX impact; the deterministic orchestrator owns routing, approvals, transitions, retries, commits, publication and PR creation.
 
 Authority model, unchanged:
 
@@ -373,6 +373,8 @@ interface Projection { stage: Stage; status: Status; attempt: number; revision: 
 | DESIGN/RUNNING | Architect `questions` (no open tactical request) | DESIGN/WAITING | human-owned request `clarification` opened; prior approval invalid | Questions milestone with `/factory answer` |
 | DESIGN/RUNNING | Architect `questions` during open tactical request | DESIGN/WAITING | human-owned child request `clarification` opened with `parent_id` pointing to the Architect-owned tactical request; tactical request stays open but is blocked; approval kept | Questions milestone |
 | DESIGN/RUNNING | Architect `spec`, complexity/risk high, profile ≠ strong | DESIGN/QUEUED | draft stored on execution; next selection forced `strong` | Status comment: architectural review |
+| DESIGN/RUNNING | Architect `spec` (brief + SPEC) with `uxImpact: significant` | DESIGN/QUEUED | new `specs` row v+1 as below; Designer-owned request `prototype` opened | SPEC milestone says a prototype is in progress; no approval command yet |
+| DESIGN/RUNNING | Designer `pass` for open `prototype` request | DESIGN/WAITING | prototype committed and pushed; `prototype` resolved; human-owned request `spec-approval` opened | Prototype milestone with screenshots at that commit and approve/change CTAs |
 | DESIGN/RUNNING | Architect `spec` (brief + SPEC) | DESIGN/WAITING | new `specs` row v+1 whose body is the brief followed by the SPEC; `scope: spec` records of v → superseded; human-owned request `spec-approval` opened | SPEC milestone leading with the brief and approve/change CTAs, full SPEC folded |
 | DESIGN/WAITING | `/factory answer` (comment id > request.openedAfterCommentId) | DESIGN/QUEUED | decision `human` created; clarification resolved; correction_cycles = 0 | Answer acknowledged in status |
 | DESIGN/WAITING | `/factory approve v<N> [guidance]` | BUILD/QUEUED | request resolved; approval recorded; optional spec instruction | Status update |

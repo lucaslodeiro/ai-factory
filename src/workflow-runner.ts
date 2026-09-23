@@ -35,9 +35,10 @@ export class WorkflowRunner {
   for(const row of rows){this.scheduler.fail(row.id,row.execution_id,new Error(`The agent execution ended (${row.status}), but its result was not applied. Review execution evidence before retrying.`),"recovery");}
  }
  async preserve(workItemId:string){
-  const row=this.store.db.prepare("SELECT issue_number,branch,stage,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;stage:DeliveryStage;context:string};
+  const row=this.store.db.prepare("SELECT issue_number,branch,stage,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;stage:string;context:string};
   const context=JSON.parse(row.context||"{}") as {cwd?:string};if(!context.cwd)return;
-  const role=({DESIGN:"product-architect",BUILD:"developer",TEST:"qa",REVIEW:"reviewer",DELIVERY:"reviewer"} as Record<string,AgentRole>)[row.stage];
+  // The scheduler knows whether Design belongs to the Designer, whose unfinished prototype is kept.
+  const role=row.stage==="DELIVERY"?"reviewer":this.scheduler.role(workItemId);
   const synchronization=this.workspaces.sync(context.cwd,row.branch,config.defaultBranch,role);if(synchronization.skipped)this.store.event("workflow.sync_skipped",{branch:row.branch,error:sanitizeFailureEvidence(synchronization.skipped,1600)},workItemId);
   try{if(this.workspaces.publishAsync)await this.workspaces.publishAsync(context.cwd,row.branch);else this.workspaces.publish(context.cwd,row.branch);}catch(error){this.store.event("workflow.push_failed",{branch:row.branch,error:sanitizeFailureEvidence(error instanceof Error?error.message:String(error),1600)},workItemId);}
  }
@@ -53,6 +54,7 @@ export class WorkflowRunner {
   cwd=context.cwd??this.workspaces.ensure(workItemId,row.branch);if(!context.cwd)this.updateContext(workItemId,{cwd});
   this.workspaces.assertBranch(cwd,row.branch);
   const synchronization=this.workspaces.sync(cwd,row.branch,config.defaultBranch,role);if(synchronization.skipped)this.store.event("workflow.sync_skipped",{branch:row.branch,error:sanitizeFailureEvidence(synchronization.skipped,1600)},workItemId);
+  if(role==="developer"&&this.workspaces.archivePrototype?.(cwd,row.branch,`factory: move the approved prototype out of the delivery (#${row.issue_number})`))this.store.event("workflow.prototype_archived",{branch:row.branch},workItemId);
   try {if(this.workspaces.publishAsync)await this.workspaces.publishAsync(cwd,row.branch);else this.workspaces.publish(cwd,row.branch);}
   catch(error){this.store.event("workflow.push_failed",{branch:row.branch,error:sanitizeFailureEvidence(error instanceof Error?error.message:String(error),1600)},workItemId);}
   const head=this.workspaces.head(cwd),verified=(JSON.parse((this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string}).context||"{}") as {verifiedHeads?:Record<string,string>}).verifiedHeads;
@@ -99,7 +101,7 @@ export class WorkflowRunner {
    let result=await adapter.run({workItemId,role,cwd,instructions,selection,executionId:started.executionId,promptMetadata:{...assembled.manifest,budgetBytes:budget.bytes,budgetSource:budget.source,sectionBytes:{Contract:contractBytes,...assembled.manifest.sectionBytes}},allowedNextRoles:route?.allowedNextRoles,consultationFrom:route?.from,localRuntimeUrl});
    const current=new WorkflowProjections(this.store).get(workItemId);if(current.status!=="RUNNING"||current.activeRunId!==started.executionId){this.store.event("execution.discarded",{executionId:started.executionId,reason:"Workflow changed before worktree validation"},workItemId,started.executionId);return true;}
    const changed=this.workspaces.check(cwd,role,before,row.branch,baseline);
-   if(role==="developer"||role==="qa"){
+   if(role==="developer"||role==="qa"||role==="designer"){
     const summaryLine=commitSummary(result.summary);
     this.workspaces.commit(cwd,summaryLine?`factory(${roleShortName(role)}): ${summaryLine} (#${row.issue_number})`:`factory: ${role} for #${row.issue_number}`,row.branch,changed??undefined);
     try {if(this.workspaces.publishAsync)await this.workspaces.publishAsync(cwd,row.branch);else this.workspaces.publish(cwd,row.branch);}

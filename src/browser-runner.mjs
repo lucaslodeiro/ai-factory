@@ -7,7 +7,7 @@ import {spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 export function browserRequired(cwd,role){
- if(!['developer','qa'].includes(role))return false;
+ if(!['designer','developer','qa'].includes(role))return false;
  try{const pkg=JSON.parse(fs.readFileSync(path.join(cwd,'package.json'),'utf8'));return Object.keys({...pkg.dependencies,...pkg.devDependencies}).some(name=>/playwright|puppeteer|lighthouse|chrome-launcher/.test(name));}catch{return false;}
 }
 export function browserExecutable(override){

@@ -58,6 +58,8 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   AGENT_SECRET_ALLOWLIST:{label:"Agent environment allowlist",description:"Extra environment variable names forwarded to worker processes.",group:"advanced",restart:"daemon"},
   PRODUCT_ARCHITECT_PROVIDER:roleField(roleFullName("product-architect"),"product-architect",roleFullName("product-architect")),
   PRODUCT_ARCHITECT_MODEL:modelField(roleFullName("product-architect"),"product-architect"),
+  DESIGNER_PROVIDER:roleField(roleFullName("designer"),"designer",roleFullName("designer")),
+  DESIGNER_MODEL:modelField(roleFullName("designer"),"designer"),
   DEVELOPER_PROVIDER:roleField(roleFullName("developer"),"developer",roleFullName("developer")),
   DEVELOPER_MODEL:modelField(roleFullName("developer"),"developer"),
   QA_PROVIDER:roleField(roleFullName("qa"),"qa",roleFullName("qa")),
@@ -65,7 +67,7 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   REVIEWER_PROVIDER:roleField(roleFullName("reviewer"),"reviewer",roleFullName("reviewer")),
   REVIEWER_MODEL:modelField(roleFullName("reviewer"),"reviewer"),
 };
-const fieldOrder=["SLACK_WEBHOOK_URL","GITHUB_REPOSITORY","FACTORY_REPO_DIR","GITHUB_DEFAULT_BRANCH","FACTORY_APPROVERS","FACTORY_INSTANCE_NAME","FACTORY_VERIFY_COMMAND","FACTORY_MAX_FIX_CYCLES","FACTORY_EXECUTION_TIMEOUT_MS","PRODUCT_ARCHITECT_PROVIDER","PRODUCT_ARCHITECT_MODEL","DEVELOPER_PROVIDER","DEVELOPER_MODEL","QA_PROVIDER","QA_MODEL","REVIEWER_PROVIDER","REVIEWER_MODEL","CODEX_COMMAND","CLAUDE_COMMAND","CURSOR_COMMAND","GIT_COMMAND","FACTORY_DATA_DIR","FACTORY_POLL_INTERVAL_MS","FACTORY_ARTIFACT_RETENTION_DAYS","FACTORY_DASHBOARD_HOST","FACTORY_DASHBOARD_PORT","FACTORY_CONTEXT_BUDGET_BYTES","FACTORY_CONTEXT_BUDGET_OVERRIDES","AGENT_SECRET_ALLOWLIST"];
+const fieldOrder=["SLACK_WEBHOOK_URL","GITHUB_REPOSITORY","FACTORY_REPO_DIR","GITHUB_DEFAULT_BRANCH","FACTORY_APPROVERS","FACTORY_INSTANCE_NAME","FACTORY_VERIFY_COMMAND","FACTORY_MAX_FIX_CYCLES","FACTORY_EXECUTION_TIMEOUT_MS","PRODUCT_ARCHITECT_PROVIDER","PRODUCT_ARCHITECT_MODEL","DESIGNER_PROVIDER","DESIGNER_MODEL","DEVELOPER_PROVIDER","DEVELOPER_MODEL","QA_PROVIDER","QA_MODEL","REVIEWER_PROVIDER","REVIEWER_MODEL","CODEX_COMMAND","CLAUDE_COMMAND","CURSOR_COMMAND","GIT_COMMAND","FACTORY_DATA_DIR","FACTORY_POLL_INTERVAL_MS","FACTORY_ARTIFACT_RETENTION_DAYS","FACTORY_DASHBOARD_HOST","FACTORY_DASHBOARD_PORT","FACTORY_CONTEXT_BUDGET_BYTES","FACTORY_CONTEXT_BUDGET_OVERRIDES","AGENT_SECRET_ALLOWLIST"];
 const fieldRank=new Map(fieldOrder.map((key,index)=>[key,index]));
 
 function encode(value: string) {
@@ -82,7 +84,7 @@ export function validateSetting(key: string, value: string) {
   if (key === "FACTORY_CONTEXT_BUDGET_OVERRIDES") {
     let parsed:unknown;try{parsed=JSON.parse(value);}catch{throw new Error(`${key}: enter a JSON object`);}
     if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error(`${key}: enter a JSON object`);
-    const roles=new Set(["product-architect","developer","qa","reviewer"]);
+    const roles=new Set(["product-architect","designer","developer","qa","reviewer"]);
     for (const [name,budget] of Object.entries(parsed)) {
       if (!roles.has(name) && !/^(codex|claude|cursor)\/[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(name)) throw new Error(`${key}: invalid override key ${name}`);
       if (!Number.isSafeInteger(budget) || Number(budget)<1) throw new Error(`${key}: ${name} must be a positive integer`);

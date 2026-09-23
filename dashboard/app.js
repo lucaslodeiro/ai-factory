@@ -3,7 +3,7 @@ const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;'
 const relative=value=>{const seconds=Math.round((Date.now()-new Date(value).getTime())/1000);if(seconds<60)return `${seconds}s ago`;if(seconds<3600)return `${Math.floor(seconds/60)}m ago`;if(seconds<86400)return `${Math.floor(seconds/3600)}h ago`;return `${Math.floor(seconds/86400)}d ago`};
 const duration=value=>{if(value===null||value===undefined)return 'Duration unavailable';const seconds=Math.max(0,Math.round(value/1000));if(seconds<60)return `${seconds}s`;if(seconds<3600)return `${Math.floor(seconds/60)}m ${seconds%60}s`;return `${Math.floor(seconds/3600)}h ${Math.floor((seconds%3600)/60)}m`};
 const tokens=value=>value===null||value===undefined?'Unavailable':new Intl.NumberFormat().format(value);
-let naming={roles:{'product-architect':{short:'Architect'},developer:{short:'Builder'},qa:{short:'Tester'},reviewer:{short:'Reviewer'}},states:{SPEC:'Design',DEVELOPMENT:'Build',QA:'Test',REVIEW:'Review'}};
+let naming={roles:{'product-architect':{short:'Architect'},designer:{short:'Designer'},developer:{short:'Builder'},qa:{short:'Tester'},reviewer:{short:'Reviewer'}},states:{SPEC:'Design',DEVELOPMENT:'Build',QA:'Test',REVIEW:'Review'}};
 const roleName=value=>naming.roles?.[value]?.short||value;
 const statusName=value=>naming.states?.[value]||String(value||'unknown').replaceAll('_',' ').replace(/^./,character=>character.toUpperCase());
 const brandAsset={github:'github',claude:'claude',codex:'openai',openai:'openai',cursor:'cursor',git:'git',slack:'slack'};

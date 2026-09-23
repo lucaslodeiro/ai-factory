@@ -81,13 +81,14 @@ export class ContextAssembler {
     const activeRequest=requestChain.at(-1);
     const activeFailure=this.failures.active(input.workItemId);
     const openFindings=this.findingsForRole(input.role,findings,requestChain);
-    const issue=["product-architect","developer"].includes(input.role) ? input.issue : shortIssue(input.issue);
+    const issue=["product-architect","designer","developer"].includes(input.role) ? input.issue : shortIssue(input.issue);
     const specification=spec ? {version:input.specVersion,body:spec.body,criteria:this.json<Criterion[]>(spec.criteria,[]),assessment:this.json<TaskAssessment|null>(spec.assessment,null)} : {version:0,body:null,criteria:[],assessment:null};
 
     const testerEvidence=input.role === "reviewer" ? testerExecutionEvidence(input.qaEvidence) : undefined;
     const sections:Section[]=[
       {name:"Issue",value:issue,protected:true},
-      {name:"Approved specification",value:specification,protected:true},
+      // The Designer works before approval: its prototype is what the human approves with the brief.
+      {name:input.role === "designer" ? "Proposed specification" : "Approved specification",value:specification,protected:true},
       {name:"Active human decisions",value:decisions.filter(record=>record.payload.kind === "decision" && record.payload.category === "human").map(payload),protected:true},
       {name:"Active tactical decisions",value:decisions.filter(record=>record.payload.kind === "decision" && record.payload.category === "tactical").map(payload),protected:true},
       {name:"Active instructions",value:instructions.map(payload),protected:true},

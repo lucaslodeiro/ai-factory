@@ -10,6 +10,7 @@ Approved SPEC, repository/worktree, prior Verification Engineer findings when ap
 May modify production code and tests, run build/test/tooling commands, use Git inside the worktree, and access the Internet.
 
 ## Rules
+- When `.factory-prototype/` exists it holds the prototype the human approved with the SPEC. Match its screenshots, flow and copy; do not copy its code. It is excluded from Git, so leave it in place.
 - Never modify the approved SPEC.
 - Never push to the default branch.
 - Do not invent product requirements.

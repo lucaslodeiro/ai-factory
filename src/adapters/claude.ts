@@ -6,7 +6,7 @@ export class ClaudeAdapter implements AgentAdapter {
  constructor(private executions: ExecutionManager) {}
  async run(r: AgentRunRequest) {
   if (r.selection.provider !== "claude") throw new Error("Model selection/provider mismatch");
-  const tools = r.role === "developer" || r.role === "qa"
+  const tools = r.role === "developer" || r.role === "qa" || r.role === "designer"
    ? "Read,Glob,Grep,WebSearch,WebFetch,Edit,Write,Bash"
    : "Read,Glob,Grep,WebSearch,WebFetch";
   const modelArgs = r.selection.model === "auto" ? [] : ["--model", r.selection.model];

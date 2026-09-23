@@ -148,7 +148,7 @@ function buildSnapshot(store: Store) {
     let item=usageMap.get(run.work_item_id);
     if(!item){item={workItemId:run.work_item_id,runs:0,durationMs:0,inputTokens:0,outputTokens:0,cachedTokens:0,totalTokens:0,unreportedTokenRuns:0,stages:new Map()};usageMap.set(run.work_item_id,item);}
     add(item,run,elapsed);
-    const state=run.stage ?? ({"product-architect":"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"} as Record<string,string>)[run.role] ?? "UNKNOWN",key=`${state}:${run.role}`;
+    const state=run.stage ?? ({"product-architect":"DESIGN",designer:"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"} as Record<string,string>)[run.role] ?? "UNKNOWN",key=`${state}:${run.role}`;
     let stage=item.stages.get(key);if(!stage){stage={state,role:run.role,runs:0,durationMs:0,inputTokens:0,outputTokens:0,cachedTokens:0,totalTokens:0,unreportedTokenRuns:0};item.stages.set(key,stage);}add(stage,run,elapsed);
   }
   const normalize=(value:any)=>({...value,totalTokens:value.unreportedTokenRuns===value.runs ? null : value.totalTokens});
@@ -403,7 +403,7 @@ function setupReadiness(root: string, credentials: ReturnType<typeof credentialS
   require(Boolean(github?.installed && github.connected),{
     id:"github-credential",label:github?.installed ? "Connect GitHub." : "Install the GitHub CLI and connect GitHub.",group:"connections",
   });
-  const selectedProviders = new Set(["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"].map(role => readDashboardSetting(root,`${role}_PROVIDER`) as CredentialProvider));
+  const selectedProviders = new Set(["PRODUCT_ARCHITECT","DESIGNER","DEVELOPER","QA","REVIEWER"].map(role => readDashboardSetting(root,`${role}_PROVIDER`) as CredentialProvider));
   const providerLabels = {claude:"Claude",codex:"Codex",cursor:"Cursor"} as const;
   for (const provider of ["claude","codex","cursor"] as const) {
     if (!selectedProviders.has(provider)) continue;
@@ -443,15 +443,15 @@ function dashboardSettings(root: string) {
     FACTORY_REPO_DIR:path.join(factoryHome(root),"repos","ai-factory-demo"),
     FACTORY_APPROVERS:login,
   } : {});
-  const providers=["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"].map(role=>readDashboardSetting(root,`${role}_PROVIDER`));
+  const providers=["PRODUCT_ARCHITECT","DESIGNER","DEVELOPER","QA","REVIEWER"].map(role=>readDashboardSetting(root,`${role}_PROVIDER`));
   const setupProvider=providers.every(value=>value===providers[0])?providers[0]:"codex";
   settings.fields.push({key:"AGENT_PROVIDER",label:"Agent provider",description:"Use one provider for all four roles during first-time setup.",group:"connections",type:"select",options:[{value:"codex",label:"Codex"},{value:"claude",label:"Claude"},{value:"cursor",label:"Cursor"}],value:setupProvider,required:true,restart:"daemon",setup:true,setupOnly:true} as any);
   return {...settings,readiness:setupReadiness(root,credentials)};
 }
-function expandSetupProvider(values:Record<string,unknown>){const result={...values};if("AGENT_PROVIDER" in result){const provider=result.AGENT_PROVIDER;if(provider!=="codex"&&provider!=="claude"&&provider!=="cursor")throw new Error("AGENT_PROVIDER: choose codex, claude or cursor");for(const role of["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"])result[`${role}_PROVIDER`]=provider;delete result.AGENT_PROVIDER;}return result;}
+function expandSetupProvider(values:Record<string,unknown>){const result={...values};if("AGENT_PROVIDER" in result){const provider=result.AGENT_PROVIDER;if(provider!=="codex"&&provider!=="claude"&&provider!=="cursor")throw new Error("AGENT_PROVIDER: choose codex, claude or cursor");for(const role of["PRODUCT_ARCHITECT","DESIGNER","DEVELOPER","QA","REVIEWER"])result[`${role}_PROVIDER`]=provider;delete result.AGENT_PROVIDER;}return result;}
 function validateSelectedProviderConnections(root:string,values:Record<string,unknown>,restartServices:string[]){
   if(!restartServices.includes("daemon"))return;
-  const selected=new Set(["PRODUCT_ARCHITECT","DEVELOPER","QA","REVIEWER"].map(role=>String(values[`${role}_PROVIDER`]??readDashboardSetting(root,`${role}_PROVIDER`))));
+  const selected=new Set(["PRODUCT_ARCHITECT","DESIGNER","DEVELOPER","QA","REVIEWER"].map(role=>String(values[`${role}_PROVIDER`]??readDashboardSetting(root,`${role}_PROVIDER`))));
   for(const provider of ["codex","claude","cursor"] as const){
     if(!selected.has(provider))continue;
     const key=`${provider.toUpperCase()}_COMMAND`,command=String(values[key]??readDashboardSetting(root,key));
