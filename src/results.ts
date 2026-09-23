@@ -112,6 +112,17 @@ export function validateStories(stories: Story[], criteria: Criterion[]) {
 // The Tester's selection is checked, not trusted: an essential candidate that was not executed or
 // a redundant one that was would make the "minimum sufficient" claim meaningless, and the metrics
 // built on it would measure nothing.
+export function normalizePrototypePaths(files: string[]): string[] {
+  const marker = `${prototypeDirectory}/`, out = new Set<string>();
+  for (const raw of files) {
+    let file = raw.trim().replaceAll("\\", "/").replace(/^(\.\/)+/, "");
+    const at = file.indexOf(`/${marker}`);
+    if (at >= 0) file = file.slice(at + 1);
+    if (file === prototypeDirectory || file === marker || file.endsWith("/")) continue;
+    out.add(file);
+  }
+  return [...out];
+}
 export function validateTestSelection(r: Pick<AgentResult, "outcome" | "testCandidates" | "coverage">) {
   unique(r.testCandidates.map(c => c.name.trim()), "test candidate");
   if (r.outcome === "pass" && !r.testCandidates.length) throw new Error("A Tester PASS lists the test candidates it considered, with the ones it kept and why the rest were discarded");
@@ -168,6 +179,10 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
   if (r.outcome === "changes" && !r.findings.some(f => f.classification === "auto-fix")) throw new Error("Changes require an auto-fix finding");
   if (r.outcome === "decision" && !r.findings.some(f => ["decision-required","environment-blocked"].includes(f.classification))) throw new Error("Decision requires an explicit finding");
   if(r.findings.some(f=>f.classification==="environment-blocked")&&!["decision","resolved"].includes(r.outcome)&&!(role==="product-architect"&&r.outcome==="questions"))throw new Error("Environment blockers require Architect questions, a delivery decision or a tactical resolution");
+  // The Designer's file list is a report, not the evidence: the runner replaces it with what is on
+  // disk under the prototype directory. Normalize the report first, so a leading "./", an absolute
+  // path or the directory itself does not reject a complete prototype, as it did on a live run.
+  if (role === "designer") r.changedFiles = normalizePrototypePaths(r.changedFiles);
   if (role === "designer") {
     if (r.outcome === "decision" && r.findings.some(f => f.classification !== "environment-blocked")) throw new Error("Designer returns decision only for an environment blocker; put UX concerns for the human in the summary and the prototype notes");
     if (r.outcome === "pass" && (!r.changedFiles.length || r.changedFiles.some(file => !file.startsWith(`${prototypeDirectory}/`)))) throw new Error(`Designer PASS lists the prototype files it wrote, all under ${prototypeDirectory}/`);

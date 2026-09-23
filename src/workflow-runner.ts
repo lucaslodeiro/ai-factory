@@ -112,6 +112,13 @@ export class WorkflowRunner {
    let result=await adapter.run({workItemId,role,cwd,instructions,selection,executionId:started.executionId,promptMetadata:{...assembled.manifest,budgetBytes:budget.bytes,budgetSource:budget.source,sectionBytes:{Contract:contractBytes,...assembled.manifest.sectionBytes}},allowedNextRoles:route?.allowedNextRoles,consultationFrom:route?.from,localRuntimeUrl});
    const current=new WorkflowProjections(this.store).get(workItemId);if(current.status!=="RUNNING"||current.activeRunId!==started.executionId){this.store.event("execution.discarded",{executionId:started.executionId,reason:"Workflow changed before worktree validation"},workItemId,started.executionId);return true;}
    const changed=this.workspaces.check(cwd,role,before,row.branch,baseline);
+   if(role==="designer"&&result.outcome==="pass"&&this.workspaces.prototypeFiles){
+    const onDisk=this.workspaces.prototypeFiles(cwd);
+    if(!onDisk.some(file=>/\.(png|jpe?g|webp)$/i.test(file)))throw new InvalidResultError("Designer PASS needs at least one screenshot (.png, .jpg or .webp) of the prototype under .factory/prototype/ for the human to approve; none is on disk");
+    const reported=new Set(result.changedFiles),missing=result.changedFiles.filter(file=>!onDisk.includes(file));
+    if(missing.length||onDisk.some(file=>!reported.has(file)))this.store.event("designer.files_reconciled",{reported:result.changedFiles.length,onDisk:onDisk.length,missing},workItemId,started.executionId);
+    result={...result,changedFiles:onDisk};
+   }
    if(role==="developer"||role==="qa"||role==="designer"){
     const summaryLine=commitSummary(result.summary);
     this.workspaces.commit(cwd,summaryLine?`factory(${roleShortName(role)}): ${summaryLine} (#${row.issue_number})`:`factory: ${role} for #${row.issue_number}`,row.branch,changed??undefined);

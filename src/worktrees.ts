@@ -52,6 +52,7 @@ export interface WorkspacePort {
  repositoryMap?(cwd:string):RepositoryMap|undefined;
  prepareReviewerContext(cwd:string,workItemId:string,base:string):{path:string;files:string[];stat:string};
  archivePrototype?(cwd:string,branch:string,message:string):boolean;
+ prototypeFiles?(cwd:string):string[];
  integrate?(cwd:string,branch:string,storyBranch:string):string;
  cleanupReviewerContext(cwd:string,workItemId:string):void;
 }
@@ -118,6 +119,13 @@ export class Workspaces implements WorkspacePort {
   const merge=spawnSync(config.gitCommand,["merge","--no-ff","--no-edit","-m",`factory: integrate ${storyBranch} into ${branch}`,ref],{cwd,encoding:"utf8",timeout:60000,maxBuffer:10_000_000});
   if(merge.status!==0){const files=gitOutput(cwd,["diff","--name-only","--diff-filter=U","-z"]).split("\0").filter(Boolean);if(gitSucceeds(cwd,["rev-parse","--verify","MERGE_HEAD"]))git(cwd,["merge","--abort"]);if(files.length)throw new SyncConflictError(files,ref);throw new Error(merge.stderr||merge.error?.message||`Could not merge ${ref}`);}
   return this.head(cwd);
+ }
+ // The prototype as it is on disk after the Designer's run, which is what the human approves and what
+ // the orchestrator commits, whatever the agent's own file list said.
+ prototypeFiles(cwd:string){
+  const root=path.join(cwd,prototypeDirectory),files:string[]=[];
+  const walk=(directory:string)=>{if(!fs.existsSync(directory))return;for(const entry of fs.readdirSync(directory,{withFileTypes:true})){const full=path.join(directory,entry.name);if(entry.isDirectory())walk(full);else if(entry.isFile())files.push(path.relative(cwd,full).split(path.sep).join("/"));}};
+  walk(root);return files.sort();
  }
  head(cwd: string) { return git(cwd, ["rev-parse", "HEAD"]); }
  diff(cwd: string, base: string) { return git(cwd, ["diff", `origin/${base}...HEAD`]); }

@@ -315,3 +315,16 @@ test("a Tester report shows the kept tests and folds the discarded candidates wi
  assert.match(body,/<summary>Discarded \(1\)<\/summary>/);assert.match(body,/\*\*dup \\\| alias\*\* \(redundant, covers AC1\) — same as happy/);
  assert.doesNotMatch(resultMarkdown("developer",result("pass",{testCandidates:[]}),1),/## Test selection/);
 });
+
+test("the status names the Designer while it prepares the prototype, and a person once the item has failed",()=>{
+ const store=new Store(":memory:");
+ try {
+  store.setMetadata("repository_identity",{id:1,nodeId:"R_1",fullName:"owner/demo"});
+  store.db.prepare("INSERT INTO work_items(id,issue_number,issue_id,repo,branch,base_branch,created_at,updated_at,context) VALUES('w',9,900,'owner/demo','factory/issue-9','main','now','now',?)").run(JSON.stringify({title:"Prototype",issueNodeId:"I_9"}));
+  const projections=new WorkflowProjections(store);projections.initialize("w","DESIGN","QUEUED");
+  new WorkflowRecords(store).create({workItemId:"w",specVersion:1,scope:"spec",payload:{kind:"request",type:"prototype",owner:"designer",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:0},sourceType:"agent-result",sourceId:"x",actor:"product-architect"});
+  assert.match(workflowStatusMarkdown(store,"w"),/Current actor \| Designer/);
+  const current=projections.get("w");projections.transition({workItemId:"w",expectedRevision:current.revision,stage:"DESIGN",status:"FAILED",actor:{type:"orchestrator",id:"runner"},source:{},reason:{code:"invalid-result",summary:"x"}},()=>{new WorkflowFailures(store).open({workItemId:"w",class:"invalid-result",message:"x",stage:"DESIGN",attempt:0});});
+  assert.match(workflowStatusMarkdown(store,"w"),/Current actor \| Human/);
+ } finally {store.db.close();}
+});

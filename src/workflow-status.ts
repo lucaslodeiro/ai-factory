@@ -68,7 +68,8 @@ export function workflowStatusMarkdown(store:Store,workItemId:string) {
  const context=JSON.parse(item.context||"{}") as {title?:string;pr?:string;observedComments?:Array<{id:number;updatedAt:string}>;lastCommand?:LastCommandOutcome;continuedFrom?:{instance:string;revision:number}};
  const projection=new WorkflowProjections(store).get(workItemId),records=new WorkflowRecords(store),request=records.activeRequest(workItemId),failure=new WorkflowFailures(store).active(workItemId);
  const spec=(store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;
- const actor=request?.payload.kind==="request"?(request.payload.owner==="human"?"Human":request.payload.owner==="stories"?"Stories":"Architect"):["FAILED","PAUSED","CANCELLED"].includes(projection.status)?"Human":projection.status==="RUNNING"||projection.status==="QUEUED"?stageActors[projection.stage]:"None";
+ // A failed, paused or cancelled item waits for a person whatever request is still open under it.
+ const actor=["FAILED","PAUSED","CANCELLED"].includes(projection.status)?"Human":request?.payload.kind==="request"?(request.payload.owner==="human"?"Human":request.payload.owner==="stories"?"Stories":request.payload.owner==="designer"?"Designer":"Architect"):projection.status==="RUNNING"||projection.status==="QUEUED"?stageActors[projection.stage]:"None";
  const rows=[["Stage",stages[projection.stage]],["Status",statuses[projection.status]],["Current actor",actor],["Instance",config.instanceName],["SPEC version",spec?`v${spec}`:"Not proposed"],["Attempt",String(projection.attempt)]];
  if(request?.payload.kind==="request")rows.push(["Open request",requestLabel(request)]);
  if(failure)rows.push(["Failure",publishedText(sanitizeFailureEvidence(failure.message,240))]);

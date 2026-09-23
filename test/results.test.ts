@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { InvalidResultError,parseResult, validateCoverage, resultSchemaFor, requiredVerificationDepth } from "../src/results.js";
+import { InvalidResultError,parseResult, validateCoverage, resultSchemaFor, requiredVerificationDepth, normalizePrototypePaths } from "../src/results.js";
 import { result } from "./fixtures.js";
 test("reports require evidence fields, tests, dependency rationale and review dimensions", () => {
  const missing = result("pass") as any; delete missing.dependencies;
@@ -181,4 +181,12 @@ test("a Tester PASS is a minimum sufficient test set: essentials kept, redundant
  assert.deepEqual(parseResult(result("pass"),"developer").testCandidates,[]);
  assert.deepEqual(parseResult(result("spec",{testCandidates:[candidate("x","essential",true)]}),"product-architect").testCandidates,[]);
  assert.equal(resultSchemaFor("reviewer").properties?.testCandidates?.maxItems,0);assert.equal(resultSchemaFor("qa").properties?.testCandidates?.maxItems,100);
+});
+
+test("a Designer file list is normalized before it is judged: ./, absolute paths and the directory itself do not reject a prototype",()=>{
+ const pass=(changedFiles:string[])=>result("pass",{tests:[],coverage:[],testCandidates:[],changedFiles});
+ assert.deepEqual(parseResult(pass([".factory/prototype","./.factory/prototype/README.md","/Users/me/ai-factory/data/worktrees/w/.factory/prototype/screenshots/01.png",".factory/prototype/screenshots/","./.factory/prototype/README.md"]),"designer").changedFiles,[".factory/prototype/README.md",".factory/prototype/screenshots/01.png"]);
+ assert.deepEqual(normalizePrototypePaths([".factory\\prototype\\a.png"]),[".factory/prototype/a.png"]);
+ // A file genuinely outside the prototype is still a contract violation, and the worktree check blocks the write itself.
+ assert.throws(()=>parseResult(pass(["./src/app.tsx",".factory/prototype/01.png"]),"designer"),/all under \.factory\/prototype\//);
 });

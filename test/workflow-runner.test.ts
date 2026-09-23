@@ -311,3 +311,32 @@ test("significant UX impact runs the Designer before the single approval gate an
   assert.deepEqual({stage:projections.get(started.id).stage,status:projections.get(started.id).status},{stage:"TEST",status:"QUEUED"});
  } finally {store.db.close();}
 });
+
+test("a Designer PASS is judged by the prototype on disk: its report is replaced and a missing screenshot is rejected",async()=>{
+ const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"});
+ let onDisk=[".factory/prototype/README.md",".factory/prototype/screenshots/01-main.png",".factory/prototype/home.html"];
+ const workspace=new class extends Workspace{prototypeFiles(){return onDisk;}}();
+ const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return value;}});
+ const ux=result("spec");ux.taskAssessment={...ux.taskAssessment!,uxImpact:"significant"};
+ // The report lists only part of what was written, as a live run did.
+ const prototype=result("pass",{tests:[],coverage:[],testCandidates:[],changedFiles:[".factory/prototype/screenshots/01-main.png"],summary:"Main flow."});
+ try {
+  const runner=new WorkflowRunner(store,{"product-architect":adapter(ux),designer:adapter(prototype)},workspace,{ensurePR(){return "unused";}});
+  await runner.run(started.id);await runner.run(started.id);
+  const projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"DESIGN",status:"WAITING"});
+  const applied=JSON.parse((store.db.prepare("SELECT payload FROM events WHERE type='agent.result' ORDER BY id DESC LIMIT 1").get() as {payload:string}).payload);
+  assert.deepEqual(applied.result.changedFiles,onDisk,"the published list is what is on disk");
+  const reconciled=JSON.parse((store.db.prepare("SELECT payload FROM events WHERE type='designer.files_reconciled'").get() as {payload:string}).payload);
+  assert.deepEqual(reconciled,{reported:1,onDisk:3,missing:[]});
+ } finally {store.db.close();}
+ const second=new Store(":memory:"),item=new WorkflowIntake(second).start(runnerIssue,{actor:"dashboard",source:"control"});
+ onDisk=[".factory/prototype/README.md"];
+ try {
+  const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){second.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return value;}});
+  const ux=result("spec");ux.taskAssessment={...ux.taskAssessment!,uxImpact:"significant"};
+  const runner=new WorkflowRunner(second,{"product-architect":adapter(ux),designer:adapter(prototype)},new class extends Workspace{prototypeFiles(){return onDisk;}}(),{ensurePR(){return "unused";}});
+  await runner.run(item.id);await runner.run(item.id);
+  const rejected=second.db.prepare("SELECT payload FROM events WHERE type='execution.invalid_result' ORDER BY id DESC LIMIT 1").get() as {payload:string}|undefined;
+  assert.match(rejected?.payload??"",/none is on disk/,"a claimed screenshot that is not on disk is rejected");
+ } finally {second.db.close();}
+});
