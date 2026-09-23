@@ -5,13 +5,13 @@ import { roleFullName } from "./names.js";
 import { factoryHome } from "./home.js";
 
 type Option = { value: string; label: string };
-type Field = { key: string; label: string; description: string; group: string; secret?: boolean; required?: boolean; type?: "number" | "text" | "select"; options?: Option[]; unit?: string; restart?: "daemon" | "dashboard" | "all"; hidden?: boolean; section?: string; role?: string; kind?: "provider" | "role-model"; setup?: boolean };
+type Field = { key: string; label: string; description: string; group: string; scope?: string; secret?: boolean; required?: boolean; type?: "number" | "text" | "select"; options?: Option[]; unit?: string; restart?: "daemon" | "dashboard" | "all"; hidden?: boolean; section?: string; role?: string; kind?: "provider" | "role-model"; setup?: boolean };
 
 const groups = [
   {id:"connections",label:"Connections",description:"GitHub, agent providers and Slack."},
   {id:"project",label:"Project",description:"Repository, checkout, approvers and this installation's identity."},
   {id:"workflow",label:"Workflow",description:"Verification behavior and workflow commands."},
-  {id:"limits",label:"Limits & quotas",description:"Writing targets, workflow caps, token budgets and timeouts."},
+  {id:"limits",label:"Limits & quotas",description:"An epic and its stories share one token budget. Each story has its own executions and correction cycles; labels below show the scope of each setting."},
   {id:"agents",label:"Agents",description:"Provider and model selection for each workflow role."},
   {id:"tools",label:"Tools",description:"Commands used to run Codex, Claude, Cursor and Git."},
   {id:"service",label:"Service",description:"Storage, polling and the local dashboard server."},
@@ -45,7 +45,7 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   FACTORY_RECOVERABLE_ERROR_RETRIES:{label:"Recoverable error retries",description:"Extra executions after an invalid result or transient provider error. 0 asks for human retry immediately.",group:"limits",type:"number",unit:"retries",restart:"daemon"},
   FACTORY_TOKEN_BUDGET_GRACE_PERCENT:{label:"Token budget grace",description:"Extra percentage allowed for a running agent after the issue token budget is reached.",group:"limits",type:"number",unit:"percent",restart:"daemon"},
   FACTORY_VERIFY_TIMEOUT_MS:{label:"Verification timeout",description:"Maximum duration of the verification command.",group:"limits",type:"number",unit:"milliseconds",restart:"daemon"},
-  FACTORY_ISSUE_BUDGET_TOKENS:{label:"Token budget per issue",description:"Tokens one issue may consume across every run, cache included, before an approver must extend it.",group:"limits",type:"number",unit:"tokens",restart:"daemon"},
+  FACTORY_ISSUE_BUDGET_TOKENS:{label:"Shared token budget",description:"One budget covers the epic and every story, including all runs and cached tokens. An approver can extend it for the whole family.",group:"limits",type:"number",unit:"tokens",restart:"daemon"},
   FACTORY_BUDGET_UNMETERED_ROLES:{label:"Roles without usage reporting",description:"Comma-separated roles (architect, designer, builder, tester, reviewer) allowed to run without reported token usage.",group:"limits",restart:"daemon"},
   FACTORY_CONTEXT_BUDGET_BYTES:{label:"Default context budget",description:"Maximum prompt bytes before optional context is omitted.",group:"limits",type:"number",unit:"bytes",restart:"daemon"},
   FACTORY_ARTIFACT_RETENTION_DAYS:{label:"Artifact retention",description:"Days to retain exact prompt and execution output after completion or cancellation. Use 0 to disable pruning.",group:"limits",type:"number",unit:"days",restart:"daemon"},
@@ -73,6 +73,11 @@ const descriptions: Record<string,Omit<Field,"key">> = {
   REVIEWER_MODEL:modelField(roleFullName("reviewer"),"reviewer"),
 };
 const fieldOrder=["SLACK_WEBHOOK_URL","GITHUB_REPOSITORY","FACTORY_REPO_DIR","GITHUB_DEFAULT_BRANCH","FACTORY_APPROVERS","FACTORY_INSTANCE_NAME","FACTORY_VERIFY_COMMAND","FACTORY_BRIEF_TARGET_CHARS","FACTORY_SPEC_TARGET_CHARS","FACTORY_SUMMARY_TARGET_CHARS","FACTORY_MAX_QUESTIONS","FACTORY_MAX_HUMAN_DECISIONS","FACTORY_MAX_STORIES","FACTORY_RESULT_MAX_ITEMS","FACTORY_MAX_FIX_CYCLES","FACTORY_ISSUE_BUDGET_TOKENS","FACTORY_TOKEN_BUDGET_GRACE_PERCENT","FACTORY_BUDGET_UNMETERED_ROLES","FACTORY_EXECUTION_TIMEOUT_MS","FACTORY_VERIFY_TIMEOUT_MS","FACTORY_STRUCTURED_OUTPUT_RETRIES","FACTORY_RECOVERABLE_ERROR_RETRIES","FACTORY_CONTEXT_BUDGET_BYTES","FACTORY_CONTEXT_BUDGET_OVERRIDES","FACTORY_ARTIFACT_RETENTION_DAYS","PRODUCT_ARCHITECT_PROVIDER","PRODUCT_ARCHITECT_MODEL","DESIGNER_PROVIDER","DESIGNER_MODEL","DEVELOPER_PROVIDER","DEVELOPER_MODEL","QA_PROVIDER","QA_MODEL","REVIEWER_PROVIDER","REVIEWER_MODEL","CODEX_COMMAND","CLAUDE_COMMAND","CURSOR_COMMAND","GIT_COMMAND","FACTORY_DATA_DIR","FACTORY_POLL_INTERVAL_MS","FACTORY_DASHBOARD_HOST","FACTORY_DASHBOARD_PORT","AGENT_SECRET_ALLOWLIST"];
+const limitScopes:Record<string,string>={
+  FACTORY_BRIEF_TARGET_CHARS:"Issue / epic design",FACTORY_SPEC_TARGET_CHARS:"Issue / epic design",FACTORY_MAX_QUESTIONS:"Issue / epic design",FACTORY_MAX_HUMAN_DECISIONS:"Issue / epic design",FACTORY_MAX_STORIES:"Epic split",
+  FACTORY_SUMMARY_TARGET_CHARS:"Each agent result",FACTORY_RESULT_MAX_ITEMS:"Each agent result",FACTORY_MAX_FIX_CYCLES:"Each work item",FACTORY_ISSUE_BUDGET_TOKENS:"Epic + stories · shared",FACTORY_TOKEN_BUDGET_GRACE_PERCENT:"Each running execution",FACTORY_BUDGET_UNMETERED_ROLES:"All roles",
+  FACTORY_EXECUTION_TIMEOUT_MS:"Each agent execution",FACTORY_VERIFY_TIMEOUT_MS:"Each verification",FACTORY_STRUCTURED_OUTPUT_RETRIES:"Each Claude execution",FACTORY_RECOVERABLE_ERROR_RETRIES:"Each stage attempt",FACTORY_CONTEXT_BUDGET_BYTES:"Each agent prompt",FACTORY_CONTEXT_BUDGET_OVERRIDES:"Each agent prompt",FACTORY_ARTIFACT_RETENTION_DAYS:"All completed work items",
+};
 const fieldRank=new Map(fieldOrder.map((key,index)=>[key,index]));
 
 function encode(value: string) {
@@ -176,7 +181,7 @@ export function readDashboardSettings(root: string, suggestions: Record<string,s
       baseOptions = [...catalog.options];
     }
     const options = baseOptions && value && !baseOptions.some(option => option.value === value) ? [...baseOptions,{value,label:`${value} (current custom value)`}] : baseOptions;
-    return {key,...meta,options,value,suggested:Boolean(value && suggestions[key] === value && !saved[key]),configured:meta.secret ? Boolean(values[key]) : undefined};
+    return {key,...meta,scope:meta.group==="limits"?limitScopes[key]:undefined,options,value,suggested:Boolean(value && suggestions[key] === value && !saved[key]),configured:meta.secret ? Boolean(values[key]) : undefined};
   }).filter(field => !field.hidden).sort((a,b)=>(fieldRank.get(a.key)??fieldOrder.length)-(fieldRank.get(b.key)??fieldOrder.length));
   return { groups,fields,modelCatalog:providerCatalog };
 }

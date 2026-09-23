@@ -228,6 +228,7 @@ html[data-theme="light"] .log-view { color:#d9e4dc; background:#111714 }
 .setting-label b,.setting-label i { padding:.18rem .35rem; border-radius:999px; font:700 .58rem ui-monospace,SFMono-Regular,monospace; text-transform:uppercase; white-space:nowrap }
 .setting-label b { color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,transparent) }
 .setting-label i { color:var(--blue); background:color-mix(in srgb,var(--blue) 10%,transparent); font-style:normal }
+.setting-label .setting-scope { color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,transparent); text-transform:none; font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif }
 .setting-card>small { min-height:2.5em; line-height:1.35 }
 :is(.setting-card,.repository-publish) input:not([type="checkbox"]),.setting-card select { width:100%; min-width:0; min-height:2.75rem; background-color:var(--input); border:1px solid var(--input-line); border-radius:10px; color:var(--text); padding:.72rem .8rem; font:600 .8rem/1.2 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif; box-shadow:0 1px 0 color-mix(in srgb,var(--text) 4%,transparent),inset 0 1px 2px color-mix(in srgb,var(--bg) 35%,transparent); transition:border-color .16s ease,box-shadow .16s ease,background-color .16s ease }
 :is(.setting-card,.repository-publish) input:not([type="checkbox"]):hover,.setting-card select:hover { border-color:var(--input-hover) }

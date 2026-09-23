@@ -5,6 +5,7 @@ import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../dashboard/app.js',import.meta.url),'utf8');
 test('every inline dashboard action is exported by the module',()=>{const actions=[...source.matchAll(/onclick="([A-Za-z_$][\w$]*)\(/g)].map(match=>match[1]);assert.ok(actions.includes('sendWorkflowMessage'));for(const action of new Set(actions))assert.match(source,new RegExp(`window\\.${action}\\s*=`),`${action} must be available to inline onclick handlers`);});
 test('setup mode leaves the URL once readiness has no missing requirements',()=>{assert.match(source,/if\(typeof setupMode!=="undefined"&&setupMode&&!data\.readiness\?\.missing\?\.length\)\{setupMode=false;history\.replaceState\(\{\},'',location\.pathname\)\}/);assert.doesNotMatch(source,/setupMode&&!field\.setup\?'advanced'/);});
+test('limit cards display the scope supplied by settings',()=>{assert.match(source,/field\.scope\?`<i class="setting-scope">\$\{escapeHtml\(field\.scope\)\}<\/i>`/);});
 test('settings progress stays beside the save button and exposes busy and completion states',()=>{
  const elements=new Map<string,any>();const context=vm.createContext({$:(key:string)=>{if(!elements.has(key))elements.set(key,{dataset:{},setAttribute(name:string,value:string){this[name]=value;}});return elements.get(key)}});
  vm.runInContext(source.split('\n').find(line=>line.startsWith('function settingsProgress('))!,context);

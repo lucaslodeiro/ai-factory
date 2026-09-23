@@ -279,6 +279,10 @@ echo "$*" >> "$PWD/update-actions.log"
     assert.ok(settings.readiness.missing.some((item: any) => item.id === "approvers"));
     assert.deepEqual(settings.groups.map((group: any) => group.id),["connections","project","workflow","limits","agents","tools","service","advanced"]);
     assert.ok(settings.fields.every((field: any) => settings.groups.some((group: any) => group.id===field.group)));
+    assert.ok(settings.fields.filter((field:any)=>field.group==="limits").every((field:any)=>field.scope),"Every limit states its scope");
+    assert.equal(settings.fields.find((field:any)=>field.key==="FACTORY_ISSUE_BUDGET_TOKENS")?.scope,"Epic + stories · shared");
+    assert.equal(settings.fields.find((field:any)=>field.key==="FACTORY_MAX_FIX_CYCLES")?.scope,"Each work item");
+    assert.equal(settings.fields.find((field:any)=>field.key==="FACTORY_EXECUTION_TIMEOUT_MS")?.scope,"Each agent execution");
     for(const [key,value] of Object.entries({FACTORY_BRIEF_TARGET_CHARS:"4000",FACTORY_SPEC_TARGET_CHARS:"20000",FACTORY_SUMMARY_TARGET_CHARS:"600",FACTORY_MAX_QUESTIONS:"5",FACTORY_MAX_HUMAN_DECISIONS:"5",FACTORY_MAX_STORIES:"5",FACTORY_RESULT_MAX_ITEMS:"100",FACTORY_STRUCTURED_OUTPUT_RETRIES:"2",FACTORY_RECOVERABLE_ERROR_RETRIES:"1",FACTORY_TOKEN_BUDGET_GRACE_PERCENT:"25"})){
       const field=settings.fields.find((candidate:any)=>candidate.key===key);
       assert.equal(field?.group,"limits",key);assert.equal(field.value,value,key);
