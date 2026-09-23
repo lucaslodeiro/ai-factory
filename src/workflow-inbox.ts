@@ -16,10 +16,13 @@ export interface ObservedComment {id:number;updatedAt:string}
 export interface CommentPort { comments(issue:number):Comment[]; }
 export interface ExecutionControl { cancel(id:string):boolean; interrupt(id:string,reason:string):boolean; }
 export interface StartOrigin { actor:string;commentId?:number;initialCursor?:number;guidance?:string;source:"github-comment"|"github-description"|"assignment"|"control"; }
+// A story starts with a contract already approved: its slice of the epic specification. It skips
+// Design and branches from the epic branch instead of the repository default.
+export interface StoryStart { epicWorkItemId:string;epicBranch:string;specVersion:number;key:string;specification:{body:string;criteria:unknown[];assessment:unknown|null;approvedBy:string|null;approvalCommentId:number|null;approvedAt:string|null}; }
 
 export class WorkflowIntake {
  constructor(private store:Store) {}
- start(issue:Issue,origin:StartOrigin) {
+ start(issue:Issue,origin:StartOrigin,story?:StoryStart) {
   if(issue.pullRequest)throw new Error(`#${issue.number} is a pull request`);
   if(issue.state==="CLOSED")throw new Error(`#${issue.number} is closed`);
   const existing=this.store.db.prepare("SELECT id FROM work_items WHERE repo=? AND issue_number=? AND archived_at IS NULL AND issue_id=?").get(issue.url.match(/github\.com\/([^/]+\/[^/]+)/)?.[1]??"",issue.number,issue.id) as {id:string}|undefined;
@@ -29,10 +32,11 @@ export class WorkflowIntake {
   const eventId=randomUUID(),context={title:issue.title,body:issue.body,url:issue.url,issueNodeId:issue.nodeId,cursor:origin.initialCursor??origin.commentId??0,
     ...(origin.source==="github-comment"&&origin.commentId?{lastCommand:{commentId:origin.commentId,login:origin.actor,kind:"start",outcome:"applied",at:now} satisfies LastCommandOutcome}:{})};
   const run=this.store.db.transaction(()=>{
-   this.store.db.prepare(`INSERT INTO work_items(id,issue_number,issue_id,repo,branch,base_branch,created_at,updated_at,context,stage,status,attempt,revision,presentation_revision,correction_cycles)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,issue.number,issue.id,repo,`factory/issue-${issue.number}`,config.defaultBranch,now,now,JSON.stringify(context),"DESIGN","QUEUED",0,0,0,0);
+   this.store.db.prepare(`INSERT INTO work_items(id,issue_number,issue_id,repo,branch,base_branch,created_at,updated_at,context,stage,status,attempt,revision,presentation_revision,correction_cycles,epic_work_item_id)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,issue.number,issue.id,repo,`factory/issue-${issue.number}`,story?story.epicBranch:config.defaultBranch,now,now,JSON.stringify(context),story?"BUILD":"DESIGN","QUEUED",0,0,0,0,story?.epicWorkItemId??null);
+   if(story){if(!story.specification.approvedBy)throw new Error("A story needs the approved epic specification");this.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,stories,assessment,approved_by,approval_comment_id,approved_at) VALUES(?,1,?,?,'[]',?,?,?,?)").run(id,story.specification.body,JSON.stringify(story.specification.criteria),story.specification.assessment===null?null:JSON.stringify(story.specification.assessment),story.specification.approvedBy,story.specification.approvalCommentId,story.specification.approvedAt);this.store.db.prepare("UPDATE stories SET work_item_id=? WHERE epic_work_item_id=? AND spec_version=? AND key=?").run(id,story.epicWorkItemId,story.specVersion,story.key);}
    const recordIds:string[]=[];if(origin.guidance)recordIds.push(new WorkflowRecords(this.store).create({workItemId:id,specVersion:0,scope:"issue",payload:{kind:"instruction",text:origin.guidance},sourceType:["control","assignment"].includes(origin.source)?"orchestrator":"github-comment",sourceId:String(origin.commentId??"issue-description"),actor:origin.actor}).id);
-   const initial=new WorkflowProjections(this.store).get(id),reason={code:"work-started",summary:"Issue accepted into the factory"};this.store.event("workflow.transition",{schemaVersion:1,eventId,type:"workflow.transition",workItemId:id,occurredAt:now,actor:{type:origin.source.startsWith("github-")?"human":"orchestrator",id:origin.actor},source:{commentId:origin.commentId},from:null,to:initial,reason,recordIds,specVersion:0},id);this.store.db.prepare("INSERT INTO notifications(body,work_item_id) VALUES(?,?)").run(workflowNotificationText(this.store,id,initial,reason),id);
+   const initial=new WorkflowProjections(this.store).get(id),reason=story?{code:"story-started",summary:`Story ${story.key} started from the approved epic specification`}:{code:"work-started",summary:"Issue accepted into the factory"};this.store.event("workflow.transition",{schemaVersion:1,eventId,type:"workflow.transition",workItemId:id,occurredAt:now,actor:{type:origin.source.startsWith("github-")?"human":"orchestrator",id:origin.actor},source:{commentId:origin.commentId},from:null,to:initial,reason,recordIds,specVersion:story?1:0},id);this.store.db.prepare("INSERT INTO notifications(body,work_item_id) VALUES(?,?)").run(workflowNotificationText(this.store,id,initial,reason),id);
    return {id,created:true};
   });
   return run.immediate();

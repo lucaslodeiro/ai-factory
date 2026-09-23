@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { config } from "./config.js";
-export const schemaVersion=9;
+export const schemaVersion=10;
 export class Store {
   db: Database.Database;
   constructor(filename = path.join(config.dataDir, "factory.db")) {
@@ -29,7 +29,7 @@ export class Store {
         id TEXT PRIMARY KEY,issue_number INTEGER NOT NULL,issue_id INTEGER,repo TEXT NOT NULL,branch TEXT,base_branch TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
         context TEXT NOT NULL DEFAULT '{}',stage TEXT,status TEXT,attempt INTEGER NOT NULL DEFAULT 0,revision INTEGER NOT NULL DEFAULT 0,
         presentation_revision INTEGER NOT NULL DEFAULT 0,published_presentation_revision INTEGER,active_run_id TEXT,active_request_id TEXT,
-        active_failure_id TEXT,correction_cycles INTEGER NOT NULL DEFAULT 0,archived_at TEXT
+        active_failure_id TEXT,correction_cycles INTEGER NOT NULL DEFAULT 0,archived_at TEXT,epic_work_item_id TEXT
       );
       CREATE TABLE IF NOT EXISTS executions(
         id TEXT PRIMARY KEY,work_item_id TEXT NOT NULL,role TEXT NOT NULL,status TEXT NOT NULL,pid INTEGER,started_at TEXT NOT NULL,finished_at TEXT,exit_code INTEGER,
@@ -41,7 +41,12 @@ export class Store {
       CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,body TEXT NOT NULL,work_item_id TEXT,sent INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,next_at INTEGER NOT NULL DEFAULT 0,last_error TEXT);
       CREATE TABLE IF NOT EXISTS controls(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,target TEXT,handled INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-      CREATE UNIQUE INDEX IF NOT EXISTS issue_identity ON work_items(repo,issue_number) WHERE archived_at IS NULL;`);
+      CREATE UNIQUE INDEX IF NOT EXISTS issue_identity ON work_items(repo,issue_number) WHERE archived_at IS NULL;
+      CREATE TABLE IF NOT EXISTS stories(
+        epic_work_item_id TEXT NOT NULL REFERENCES work_items(id),spec_version INTEGER NOT NULL,key TEXT NOT NULL,title TEXT NOT NULL,scope TEXT NOT NULL,
+        criteria TEXT NOT NULL,depends_on TEXT NOT NULL,issue_number INTEGER,issue_id INTEGER,dependencies_declared INTEGER NOT NULL DEFAULT 0,work_item_id TEXT,created_at TEXT NOT NULL,
+        PRIMARY KEY(epic_work_item_id,spec_version,key)
+      );`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS records(
         id TEXT PRIMARY KEY,
         work_item_id TEXT NOT NULL REFERENCES work_items(id),

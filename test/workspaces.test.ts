@@ -169,3 +169,25 @@ test("a story worktree grows from its epic branch, not from the repository defau
   const review=ws.prepareReviewerContext(cwd,"work-13",epic);try{assert.deepEqual(review.files,["story.txt"]);assert.match(fs.readFileSync(review.path,"utf8"),/story work/);assert.doesNotMatch(fs.readFileSync(review.path,"utf8"),/epic design/);}finally{ws.cleanupReviewerContext(cwd,"work-13");}
  }finally{config.repoDir=old.repoDir;config.dataDir=old.dataDir;fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test("integrate merges a verified story into the epic branch and stops on a conflict",()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),"factory-integrate-")),old={repoDir:config.repoDir,dataDir:config.dataDir};
+ try{
+  const origin=path.join(root,"origin.git"),seed=path.join(root,"seed"),repo=path.join(root,"repo"),epic="factory/issue-12",story="factory/issue-13",other="factory/issue-14";
+  fs.mkdirSync(origin);fs.mkdirSync(seed);git(origin,["init","--bare"]);git(seed,["init"]);git(seed,["config","user.name","Factory Test"]);git(seed,["config","user.email","factory@example.test"]);
+  fs.writeFileSync(path.join(seed,"shared.txt"),"base\n");git(seed,["add","."]);git(seed,["commit","-m","base"]);git(seed,["branch","-M","main"]);git(seed,["remote","add","origin",origin]);git(seed,["push","-u","origin","main"]);
+  git(seed,["checkout","-b",epic]);git(seed,["push","origin",epic]);
+  git(seed,["checkout","-b",story]);fs.writeFileSync(path.join(seed,"story.txt"),"story\n");git(seed,["add","."]);git(seed,["commit","-m","story"]);git(seed,["push","origin",story]);
+  git(seed,["checkout",epic]);git(seed,["checkout","-b",other]);fs.writeFileSync(path.join(seed,"shared.txt"),"other\n");git(seed,["add","."]);git(seed,["commit","-m","other"]);git(seed,["push","origin",other]);
+  git(root,["clone","--branch","main",origin,repo]);git(repo,["config","user.name","Factory Test"]);git(repo,["config","user.email","factory@example.test"]);config.repoDir=repo;config.dataDir=path.join(root,"data");
+  const ws=new Workspaces(),cwd=ws.ensure("epic",epic,"main");git(cwd,["config","user.name","Factory Test"]);git(cwd,["config","user.email","factory@example.test"]);
+  fs.writeFileSync(path.join(cwd,"shared.txt"),"epic\n");git(cwd,["add","."]);git(cwd,["commit","-m","epic side"]);
+  const commit=ws.integrate(cwd,epic,story);
+  assert.equal(commit,ws.head(cwd));assert.equal(fs.readFileSync(path.join(cwd,"story.txt"),"utf8"),"story\n");assert.match(git(cwd,["log","-1","--format=%s"]),/integrate factory\/issue-13 into factory\/issue-12/);
+  assert.equal(git(cwd,["rev-list","--count","--merges","HEAD"]),"1","a story enters through one merge commit");
+  assert.equal(ws.integrate(cwd,epic,story),commit,"an integrated story is not merged again");
+  assert.throws(()=>ws.integrate(cwd,epic,other),(error:unknown)=>error instanceof SyncConflictError&&error.files.includes("shared.txt"));
+  assert.equal(git(cwd,["status","--porcelain"]),"");assert.throws(()=>git(cwd,["rev-parse","--verify","MERGE_HEAD"]));
+  assert.throws(()=>ws.integrate(cwd,epic,"main"),/unexpected branch/);
+ }finally{config.repoDir=old.repoDir;config.dataDir=old.dataDir;fs.rmSync(root,{recursive:true,force:true});}
+});

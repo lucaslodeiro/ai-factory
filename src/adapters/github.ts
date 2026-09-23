@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { config } from "../config.js";
-export type Issue = { id:number;nodeId:string;number: number; title: string; body: string; url: string; state?: "OPEN" | "CLOSED"; pullRequest?: boolean; labels?: Array<{ name: string }>;assignees?:string[];createdAt:string;updatedAt:string;author:{login:string;type:string} };
+export type Issue = { id:number;nodeId:string;number: number; title: string; body: string; url: string; state?: "OPEN" | "CLOSED"; stateReason?: string | null; pullRequest?: boolean; labels?: Array<{ name: string }>;assignees?:string[];createdAt:string;updatedAt:string;author:{login:string;type:string} };
 export type Comment = { id: number; body: string; user: { login: string; type: string };updatedAt:string };
 export type Repository = {id:number;nodeId:string;fullName:string;defaultBranch:string};
 export interface PullRequestState { state: "OPEN" | "CLOSED" | "MERGED"; mergedAt: string | null; mergeCommit: { oid: string } | null; }
@@ -10,6 +10,11 @@ export interface GitHubPort {
  ensureLabel(name:string,color:string,description:string):void;addLabel(n:number,name:string):void;removeLabel(n:number,name:string):void;replaceInstanceLabel(n:number,name:string):void;
  assignees(n:number):string[];assign(n:number,logins:string[]):void;unassign(n:number,logins:string[]):void;
  ensurePR(branch: string, title: string, body: string, base: string): string;
+ createIssue(input:{title:string;body:string;parentIssueId:number}):Issue;
+ subIssues(n:number):Issue[];
+ blockedBy(n:number):Issue[];
+ addBlockedBy(n:number,issueId:number):void;
+ closeIssue(n:number,reason:"completed"|"not planned"):void;
 }
 export interface WorkflowGitHubPort { syncWorkflow(n:number,labels:Array<{name:string;color:string;description:string}>,body:string):number|void; publishWorkflowComment(n:number,key:string,body:string):number|void; editComment?(id:number,body:string):void; }
 function gh(args: string[], input?: unknown) {
@@ -61,6 +66,13 @@ export class GitHubAdapter implements GitHubPort {
  comments(n: number): Comment[] {
   return (JSON.parse(this.invoke(["api", "--paginate", "--slurp", `repos/${this.repositoryName}/issues/${n}/comments?per_page=100`])) as unknown[][]).flat().map(value=>this.toComment(value));
  }
+ // Stories are GitHub relationships, never text: a story is a sub-issue of its epic and waits on
+ // the issues it is blocked by. Both APIs take the issue id, not its number.
+ createIssue(input:{title:string;body:string;parentIssueId:number}):Issue{return this.toIssue(JSON.parse(this.invoke(["api",`repos/${this.repositoryName}/issues`,"--method","POST","--input","-"],{title:input.title,body:input.body,parent_issue_id:input.parentIssueId})));}
+ subIssues(n:number):Issue[]{return (JSON.parse(this.invoke(["api","--paginate","--slurp",`repos/${this.repositoryName}/issues/${n}/sub_issues?per_page=100`])) as unknown[][]).flat().map(value=>this.toIssue(value));}
+ blockedBy(n:number):Issue[]{return (JSON.parse(this.invoke(["api","--paginate","--slurp",`repos/${this.repositoryName}/issues/${n}/dependencies/blocked_by?per_page=100`])) as unknown[][]).flat().map(value=>this.toIssue(value));}
+ addBlockedBy(n:number,issueId:number){this.invoke(["api",`repos/${this.repositoryName}/issues/${n}/dependencies/blocked_by`,"--method","POST","--input","-"],{issue_id:issueId});}
+ closeIssue(n:number,reason:"completed"|"not planned"){this.invoke(["issue","close",String(n),"--repo",this.repositoryName,"--reason",reason]);}
  repository():Repository {const value=JSON.parse(this.invoke(["api",`repos/${this.repositoryName}`]));return {id:value.id,nodeId:value.node_id,fullName:value.full_name,defaultBranch:value.default_branch};}
  pullRequestState(url: string): PullRequestState {
   const result = JSON.parse(this.invoke(["pr", "view", url, "--repo", this.repositoryName, "--json", "state,mergedAt,mergeCommit"]));
@@ -72,6 +84,6 @@ export class GitHubAdapter implements GitHubPort {
   if (prs.length) return prs[0].url as string;
   return this.invoke(["pr", "create", "--repo", this.repositoryName, "--head", branch, "--base", base, "--title", title, "--body", body]);
  }
- private toIssue(value:unknown):Issue {const raw=value as Record<string,any>,state=String(raw.state).toUpperCase();if(state!=="OPEN"&&state!=="CLOSED")throw new Error(`Invalid issue state: ${raw.state}`);return {id:Number(raw.id),nodeId:String(raw.node_id),number:Number(raw.number),title:String(raw.title),body:String(raw.body??""),url:String(raw.html_url),state,pullRequest:Boolean(raw.pull_request),labels:Array.isArray(raw.labels)?raw.labels.map((label:any)=>({name:String(label.name)})):[],assignees:Array.isArray(raw.assignees)?raw.assignees.map((value:any)=>String(value.login)):[],createdAt:String(raw.created_at),updatedAt:String(raw.updated_at),author:{login:String(raw.user?.login??""),type:String(raw.user?.type??"")}};}
+ private toIssue(value:unknown):Issue {const raw=value as Record<string,any>,state=String(raw.state).toUpperCase();if(state!=="OPEN"&&state!=="CLOSED")throw new Error(`Invalid issue state: ${raw.state}`);return {id:Number(raw.id),nodeId:String(raw.node_id),number:Number(raw.number),title:String(raw.title),body:String(raw.body??""),url:String(raw.html_url),state,stateReason:raw.state_reason==null?null:String(raw.state_reason),pullRequest:Boolean(raw.pull_request),labels:Array.isArray(raw.labels)?raw.labels.map((label:any)=>({name:String(label.name)})):[],assignees:Array.isArray(raw.assignees)?raw.assignees.map((value:any)=>String(value.login)):[],createdAt:String(raw.created_at),updatedAt:String(raw.updated_at),author:{login:String(raw.user?.login??""),type:String(raw.user?.type??"")}};}
  private toComment(value:unknown):Comment {const raw=value as Record<string,any>;return {id:Number(raw.id),body:String(raw.body??""),user:{login:String(raw.user?.login??""),type:String(raw.user?.type??"")},updatedAt:String(raw.updated_at)};}
 }

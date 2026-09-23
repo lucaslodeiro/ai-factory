@@ -52,6 +52,7 @@ export interface WorkspacePort {
  repositoryMap?(cwd:string):RepositoryMap|undefined;
  prepareReviewerContext(cwd:string,workItemId:string,base:string):{path:string;files:string[];stat:string};
  archivePrototype?(cwd:string,branch:string,message:string):boolean;
+ integrate?(cwd:string,branch:string,storyBranch:string):string;
  cleanupReviewerContext(cwd:string,workItemId:string):void;
 }
 export class Workspaces implements WorkspacePort {
@@ -107,6 +108,16 @@ export class Workspaces implements WorkspacePort {
    merged.push(ref);
   }
   return{before,after:this.head(cwd),merged};
+ }
+ // A verified story enters the epic branch through a merge commit, so the epic history shows each
+ // story as one unit and a conflict stops here, on the epic, for a person to resolve.
+ integrate(cwd:string,branch:string,storyBranch:string){
+  this.assertBranch(cwd,branch);if(!storyBranch.startsWith("factory/")||storyBranch===branch)throw new Error("Refusing to integrate an unexpected branch");
+  git(cwd,["fetch","origin",`+${storyBranch}:refs/remotes/origin/${storyBranch}`]);const ref=`origin/${storyBranch}`;
+  if(gitSucceeds(cwd,["merge-base","--is-ancestor",ref,"HEAD"]))return this.head(cwd);
+  const merge=spawnSync(config.gitCommand,["merge","--no-ff","--no-edit","-m",`factory: integrate ${storyBranch} into ${branch}`,ref],{cwd,encoding:"utf8",timeout:60000,maxBuffer:10_000_000});
+  if(merge.status!==0){const files=gitOutput(cwd,["diff","--name-only","--diff-filter=U","-z"]).split("\0").filter(Boolean);if(gitSucceeds(cwd,["rev-parse","--verify","MERGE_HEAD"]))git(cwd,["merge","--abort"]);if(files.length)throw new SyncConflictError(files,ref);throw new Error(merge.stderr||merge.error?.message||`Could not merge ${ref}`);}
+  return this.head(cwd);
  }
  head(cwd: string) { return git(cwd, ["rev-parse", "HEAD"]); }
  diff(cwd: string, base: string) { return git(cwd, ["diff", `origin/${base}...HEAD`]); }

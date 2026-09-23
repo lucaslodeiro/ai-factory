@@ -50,7 +50,7 @@ export class WorkflowProjections {
   });
   return run.immediate();
  }
- resumeStatus(workItemId:string):V3Status { return requestOwner(this.records.activeRequest(workItemId)) === "human" ? "WAITING" : "QUEUED"; }
+ resumeStatus(workItemId:string):V3Status { const owner=requestOwner(this.records.activeRequest(workItemId)); return owner === "human" || owner === "stories" ? "WAITING" : "QUEUED"; }
  validateCurrent(workItemId:string) {const current=this.get(workItemId);this.validate(current.status,this.records.activeRequest(workItemId),this.failures.active(workItemId),current.activeRunId);return current;}
  transition(input:TransitionInput,mutations?:()=>void) {
   const run=this.store.db.transaction(()=>{
@@ -91,8 +91,11 @@ export class WorkflowProjections {
  }
  private validate(status:V3Status,activeRequest:WorkflowRecord|undefined,activeFailure:ReturnType<WorkflowFailures["active"]>,activeRunId:string|undefined) {
   const owner=requestOwner(activeRequest);
-  if (status === "WAITING" && owner !== "human") throw new Error("WAITING requires exactly one human-owned active request");
+  // An epic waits for its stories the way an issue waits for a person: nothing runs on it until
+  // the request resolves, but the wait is on other work items rather than on a comment.
+  if (status === "WAITING" && owner !== "human" && owner !== "stories") throw new Error("WAITING requires exactly one human-owned or stories-owned active request");
   if (owner === "human" && !["WAITING","PAUSED"].includes(status)) throw new Error("A human-owned active request must be waiting or paused");
+  if (owner === "stories" && !["WAITING","PAUSED","CANCELLED"].includes(status)) throw new Error("A stories-owned active request must be waiting, paused or cancelled");
   if (owner === "architect" && !["QUEUED","RUNNING","PAUSED","FAILED"].includes(status)) throw new Error("An Architect-owned active request must be queued, running, paused or failed");
   if (status === "FAILED" && !activeFailure) throw new Error("FAILED requires exactly one active failure");
   if (activeFailure && !["FAILED","PAUSED"].includes(status)) throw new Error("An active failure must be failed or paused");

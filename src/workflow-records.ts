@@ -5,14 +5,14 @@ import type { Store } from "./storage.js";
 export type RecordKind = "instruction" | "decision" | "finding" | "request" | "budget";
 export type RecordScope = "spec" | "issue";
 export type RecordStatus = "active" | "open" | "resolved" | "accepted-defer" | "superseded" | "revoked" | "cancelled";
-export type RequestType = "clarification" | "prototype" | "spec-approval" | "tactical-decision" | "correction-limit" | "merge" | "budget";
+export type RequestType = "clarification" | "prototype" | "spec-approval" | "tactical-decision" | "correction-limit" | "merge" | "budget" | "stories";
 export type V3Stage = "DESIGN" | "BUILD" | "TEST" | "REVIEW" | "DELIVERY";
 
 export type WorkflowRecordPayload =
  | { kind:"instruction"; text:string; supersedes?:string[] }
  | { kind:"decision"; category:"human"|"tactical"; decision:string; rationale:string; supersedes:string[] }
  | { kind:"finding"; classification:"auto-fix"|"decision-required"|"defer"|"environment-blocked"; originRole:AgentRole; criterionId?:string; evidence:string }
- | { kind:"request"; type:RequestType; owner:"human"|"architect"|"designer"; originatingStage:V3Stage; allowedReturnStages:V3Stage[]; openedAfterCommentId:number; questions?:string[]; findingIds?:string[]; prClosed?:boolean; budget?:"exhausted"|"unknown" }
+ | { kind:"request"; type:RequestType; owner:"human"|"architect"|"designer"|"stories"; originatingStage:V3Stage; allowedReturnStages:V3Stage[]; openedAfterCommentId:number; questions?:string[]; findingIds?:string[]; prClosed?:boolean; budget?:"exhausted"|"unknown" }
  // An approver's extension of the issue's token budget. It also acknowledges the listed runs that
  // finished without reported usage, so each unmeasured run is accepted by a person exactly once.
  | { kind:"budget"; tokens:number; reason:string; acknowledges:string[] };

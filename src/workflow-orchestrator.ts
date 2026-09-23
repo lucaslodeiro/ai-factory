@@ -10,19 +10,23 @@ import { WorkflowRecords } from "./workflow-records.js";
 import { deliverNotifications,type NotificationPort } from "./notifications.js";
 import {pruneExecutionArtifacts} from "./artifact-retention.js";
 import {adoptIssueState,type ReadIssueState} from "./workflow-state.js";
+import {WorkflowStories,type EpicRow,type StoryRow} from "./workflow-stories.js";
+import type {Criterion,TaskAssessment} from "./types.js";
 
 type GitHub=RuntimeGitHub;
 type ItemRow={id:string;issue_number:number;issue_id:number|null;repo:string;stage:string;status:string;revision:number;archived_at:string|null;context:string};
 
 export class WorkflowOrchestrator {
- private intake:WorkflowIntake;private inbox:WorkflowInbox;private publisher:WorkflowGitHubPublisher;private projections:WorkflowProjections;private records:WorkflowRecords;private assigned:Issue[]=[];
- constructor(readonly store:Store,private github:GitHub,private runner:WorkflowRunner,private notifications:NotificationPort,private executions?:ExecutionControl){this.intake=new WorkflowIntake(store);this.inbox=new WorkflowInbox(store,{comments:()=>{throw new Error("Remote comments must be fetched asynchronously");}},config.approvers,executions);this.publisher=new WorkflowGitHubPublisher(store,github);this.projections=new WorkflowProjections(store);this.records=new WorkflowRecords(store);}
+ private intake:WorkflowIntake;private inbox:WorkflowInbox;private publisher:WorkflowGitHubPublisher;private projections:WorkflowProjections;private records:WorkflowRecords;private stories:WorkflowStories;private assigned:Issue[]=[];
+ constructor(readonly store:Store,private github:GitHub,private runner:WorkflowRunner,private notifications:NotificationPort,private executions?:ExecutionControl){this.intake=new WorkflowIntake(store);this.inbox=new WorkflowInbox(store,{comments:()=>{throw new Error("Remote comments must be fetched asynchronously");}},config.approvers,executions);this.publisher=new WorkflowGitHubPublisher(store,github);this.projections=new WorkflowProjections(store);this.records=new WorkflowRecords(store);this.stories=new WorkflowStories(store);}
  async tick(){await this.syncRemote();await this.runLocal();await this.flush();}
  async syncRemote(){
   const since=(this.store.db.prepare("SELECT COALESCE(MAX(id),0) id FROM events").get() as {id:number}).id;
   const login=this.store.metadata<string>("runtime:factory-account")??await this.github.authenticatedLogin();this.assigned=await this.github.assignedIssues(login);
   await this.reconcileAssignments(login);await this.reconcileIssueVisibility();await this.reconcilePullRequests();
   for(const item of this.rows())if(!item.archived_at){try{const comments=await this.github.comments(item.issue_number);if(!this.row(item.id).archived_at)this.inbox.poll(item.id,comments);}catch(error){if(this.issueNotFound(error)){await this.archiveDeleted(item);continue;}throw error;}}
+  // After the comments, so an approval that plans stories creates them in the same poll.
+  await this.reconcileStories(login);
   await this.flush();
   if(this.store.db.prepare("SELECT 1 FROM events WHERE id>? AND type IN ('github.pr_poll_failed','github.issue_state_failed') LIMIT 1").get(since))throw new Error("Some GitHub checks failed; inspect daemon logs. Local processing remains independent.");
  }
@@ -56,6 +60,7 @@ export class WorkflowOrchestrator {
    if(instances.includes(own)&&instances.length===1){
     const comments=await this.github.comments(issue.number),foreign=comments.some(comment=>comment.body.includes("<!-- ai-factory:workflow-status"));
     if(foreign){let state:ReadIssueState|null=null;try{state=await readIssueState(this.github,issue.number);}catch{}if(!state){this.eventOnce(`continuation:${issue.id}`,"issue.continuation_pending",{issue:issue.number,instance:config.instanceName});view.push({issue:issue.number,state:"continuation-pending",instances});continue;}if(["RUNNING","QUEUED"].includes(state.index.projection.status)){this.eventOnce(`continuation-waiting:${issue.id}:${state.index.instance}:${state.index.projection.revision}`,"issue.continuation_waiting",{issue:issue.number,instance:state.index.instance,revision:state.index.projection.revision});view.push({issue:issue.number,state:"continuation-waiting",instances,sourceInstance:state.index.instance});continue;}const continued=adoptIssueState(this.store,state,{issue});this.store.event("issue.continued",{issue:issue.number,instance:state.index.instance,revision:state.index.projection.revision},state.index.workflowId);view.push({issue:issue.number,state:"continued",instances,sourceInstance:state.index.instance,status:continued.status});continue;}
+    if(this.stories.byIssueId(issue.id)){view.push({issue:issue.number,state:"story-pending",instances});continue;}
     const cursor=Math.max(0,...comments.map(comment=>comment.id));this.intake.start(issue,{actor:login,initialCursor:cursor,source:"assignment"});view.push({issue:issue.number,state:"worked-here",instances});continue;
    }
    if(instances.includes(own)){const key=`conflict:${issue.id}:${[...instances].sort().join(",")}`;this.eventOnce(key,"issue.claim_conflict",{issue:issue.number,instances:[...instances].sort()});view.push({issue:issue.number,state:"claim-conflict",instances});}
@@ -66,6 +71,46 @@ export class WorkflowOrchestrator {
    let remote:Issue;try{remote=await this.github.issue(local.issue_number);}catch(error){if(this.issueNotFound(error)){await this.archiveDeleted(local);continue;}throw error;}if(remote.state!=="OPEN")continue;await this.pauseOwned(local,"unassigned");await this.github.removeLabel(local.issue_number,own);view.push({issue:local.issue_number,state:"unassigned",instances:[]});
   }
   this.store.setMetadata("runtime:assigned-issues",view);
+ }
+ // Stories live on GitHub as relationships: each one is a sub-issue of its epic and is blocked by
+ // the stories it waits for. The rows planned at approval make every step idempotent: an issue that
+ // exists is adopted by title, a dependency that exists is not added again, and a story starts once
+ // when nothing it is blocked by remains open.
+ private async reconcileStories(login:string){
+  const own=`factory-instance:${config.instanceName}`;
+  for(const epic of this.stories.epics()){
+   const rows=this.stories.forEpic(epic.id,epic.spec_version);
+   try{
+    for(const story of rows.filter(row=>!row.issue_number)){
+     const existing=(await this.github.subIssues(epic.issue_number)).find(issue=>issue.title===story.title&&issue.author.login===login);
+     const issue=existing??await this.github.createIssue({title:story.title,body:this.stories.issueBody(epic.issue_number,story,this.epicSpec(epic).criteria),parentIssueId:epic.issue_id!});
+     this.stories.attachIssue(story,issue);story.issue_number=issue.number;story.issue_id=issue.id;
+     this.store.event(existing?"story.issue_adopted":"story.issue_created",{epic:epic.issue_number,key:story.key,issue:issue.number},epic.id);
+    }
+    const byKey=new Map(rows.map(row=>[row.key,row]));
+    for(const story of rows.filter(row=>row.issue_number&&!row.dependencies_declared)){
+     const blocking=story.depends_on.map(key=>byKey.get(key)!);if(blocking.some(row=>!row.issue_id))continue;
+     const declared=new Set((await this.github.blockedBy(story.issue_number!)).map(issue=>issue.id));
+     for(const row of blocking)if(!declared.has(row.issue_id!))await this.github.addBlockedBy(story.issue_number!,row.issue_id!);
+     this.stories.markDependenciesDeclared(story);story.dependencies_declared=true;
+    }
+    if(epic.status!=="WAITING")continue;
+    for(const story of rows.filter(row=>row.issue_number&&row.dependencies_declared&&!row.work_item_id)){
+     const blockers=await this.github.blockedBy(story.issue_number!);
+     if(!blockers.every(issue=>issue.state==="CLOSED"&&issue.stateReason==="completed"))continue;
+     await this.github.assign(story.issue_number!,[login]);await this.github.replaceInstanceLabel(story.issue_number!,own);
+     const issue=await this.github.issue(story.issue_number!),comments=await this.github.comments(story.issue_number!),spec=this.epicSpec(epic);
+     const started=this.intake.start(issue,{actor:login,initialCursor:Math.max(0,...comments.map(comment=>comment.id)),source:"assignment"},{epicWorkItemId:epic.id,epicBranch:epic.branch,specVersion:epic.spec_version,key:story.key,specification:this.stories.specification({issue_number:epic.issue_number,title:spec.title,body:spec.body,criteria:spec.criteria,assessment:spec.assessment,approved_by:spec.approved_by,approval_comment_id:spec.approval_comment_id,approved_at:spec.approved_at},story)});
+     this.store.event("story.started",{epic:epic.issue_number,key:story.key,issue:story.issue_number,workItemId:started.id},epic.id);
+    }
+   }catch(error){this.store.event("story.reconcile_failed",{epic:epic.issue_number,error:error instanceof Error?error.message:String(error)},epic.id);}
+   if(this.stories.integrated(epic)&&this.stories.resume(epic))this.store.event("stories.integrated",{epic:epic.issue_number},epic.id);
+  }
+ }
+ private epicSpec(epic:EpicRow){
+  const spec=this.store.db.prepare("SELECT body,criteria,assessment,approved_by,approval_comment_id,approved_at FROM specs WHERE work_item_id=? AND version=?").get(epic.id,epic.spec_version) as {body:string;criteria:string;assessment:string|null;approved_by:string|null;approval_comment_id:number|null;approved_at:string|null};
+  const context=JSON.parse(epic.context||"{}") as {title?:string};
+  return {title:context.title??`Issue #${epic.issue_number}`,body:spec.body,criteria:JSON.parse(spec.criteria) as Criterion[],assessment:spec.assessment?JSON.parse(spec.assessment) as TaskAssessment:null,approved_by:spec.approved_by,approval_comment_id:spec.approval_comment_id,approved_at:spec.approved_at};
  }
  private async pauseOwned(item:ItemRow,reason:"unassigned"|"moved"|"claim-conflict"|"issue-deleted"){
   const current=this.projections.get(item.id);if(current.status==="PAUSED"&&this.lastReason(item.id)===reason)return;

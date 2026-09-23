@@ -24,7 +24,7 @@ import {browserRequired} from "./browser-runner.mjs";
 import {progressKey,type ExecutionProgress} from "./execution-progress.js";
 import {announceBudgetWarnings,budgetState,holdForBudget} from "./budget.js";
 
-export interface DeliveryPort {ensurePR(branch:string,title:string,body:string,base:string):string|Promise<string>;}
+export interface DeliveryPort {ensurePR(branch:string,title:string,body:string,base:string):string|Promise<string>;closeIssue?(n:number,reason:"completed"|"not planned"):void|Promise<void>;}
 
 // Every work item records the branch it grew from. A missing base is a broken row, not a case
 // to paper over with the repository default.
@@ -135,9 +135,30 @@ export class WorkflowRunner {
  }
  recordPreviousAttempt(workItemId:string,executionId:string,interruptedAt:string,reason:string,guidanceRecordId?:string){const row=this.store.db.prepare("SELECT context,stage,attempt,base_branch FROM work_items WHERE id=?").get(workItemId) as {context:string;stage:DeliveryStage;attempt:number;base_branch:string|null},context=JSON.parse(row.context||"{}") as {cwd?:string;attemptStart?:{executionId?:string;head?:string;startedAt?:string;stage?:string}};if(!context.cwd)return;const baseline=context.attemptStart?.executionId===executionId?context.attemptStart.head:undefined,summary=baseline&&this.workspaces.changeSummarySince?this.workspaces.changeSummarySince(context.cwd,baseline):this.workspaces.changeSummary(context.cwd,workItemBase(row)),role=({DESIGN:"product-architect",BUILD:"developer",TEST:"qa",REVIEW:"reviewer",DELIVERY:"reviewer"} as Record<string,AgentRole>)[context.attemptStart?.stage??row.stage],lastResult=this.latestResult(workItemId,role);this.updateContext(workItemId,{previousAttempt:{stage:row.stage,attempt:row.attempt,interruptedAt,reason,startingCommit:baseline??null,files:summary.files,diffStat:summary.stat,lastResult:lastResult??null,guidanceRecordId:guidanceRecordId??null}});}
  private async publish(workItemId:string) {
-  const row=this.store.db.prepare("SELECT issue_number,branch,base_branch,context,revision FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;base_branch:string|null;context:string;revision:number},base=workItemBase(row);const context=JSON.parse(row.context||"{}") as {title?:string;cwd?:string};
+  const row=this.store.db.prepare("SELECT issue_number,branch,base_branch,context,revision,epic_work_item_id FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;branch:string;base_branch:string|null;context:string;revision:number;epic_work_item_id:string|null},base=workItemBase(row);const context=JSON.parse(row.context||"{}") as {title?:string;cwd?:string};
+  if(row.epic_work_item_id)return this.integrate(workItemId,row as typeof row&{epic_work_item_id:string},context);
   try {const cwd=context.cwd??this.workspaces.ensure(workItemId,row.branch,base);if(!context.cwd)this.updateContext(workItemId,{cwd});this.workspaces.assertBranch(cwd,row.branch);const synchronization=this.workspaces.sync(cwd,row.branch,base,"reviewer");if(synchronization.skipped)this.store.event("workflow.sync_skipped",{branch:row.branch,error:sanitizeFailureEvidence(synchronization.skipped,1600)},workItemId);const head=this.workspaces.head(cwd),verified=(JSON.parse((this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string}).context||"{}") as {verifiedHeads?:Record<string,string>}).verifiedHeads;if(verified?.TEST!==head){new WorkflowProjections(this.store).transition({workItemId,expectedRevision:row.revision,stage:"TEST",status:"QUEUED",actor:{type:"orchestrator",id:"sync"},source:{},reason:{code:"code-changed",summary:"Code changed since the last verified test run"}});return true;}const review=this.latestResult(workItemId,"reviewer");if(!review||review.outcome!=="pass")throw new InvalidResultError("Delivery requires a successful Reviewer result");if(this.workspaces.publishAsync)await this.workspaces.publishAsync(cwd,row.branch);else this.workspaces.publish(cwd,row.branch);if(this.deliveryInterrupted(workItemId,row.revision))return false;const pullRequestUrl=await this.delivery.ensurePR(row.branch,`#${row.issue_number}: ${context.title??"Factory delivery"}`,this.prBody(workItemId,row.issue_number,review),base);if(this.deliveryInterrupted(workItemId,row.revision))return false;this.results.published({workItemId,pullRequestUrl});return true;}
   catch(error){if(this.deliveryInterrupted(workItemId,row.revision))return false;this.scheduler.rejectQueued(workItemId,error,"integration");return true;}
+ }
+ // A story delivers by entering the epic branch, not by a pull request: the epic opens the one
+ // pull request once every story is in. The story issue closes as completed here because GitHub
+ // closes an issue from a merge only on the default branch.
+ private async integrate(workItemId:string,row:{issue_number:number;branch:string;revision:number;epic_work_item_id:string},context:{cwd?:string}){
+  const epic=this.store.db.prepare("SELECT branch,base_branch,context FROM work_items WHERE id=?").get(row.epic_work_item_id) as {branch:string;base_branch:string|null;context:string}|undefined;
+  try {
+   if(!epic)throw new Error("The story's epic is unknown to this installation");if(!this.workspaces.integrate)throw new Error("This workspace cannot integrate stories");
+   const epicContext=JSON.parse(epic.context||"{}") as {cwd?:string},epicBase=workItemBase(epic),epicCwd=epicContext.cwd??this.workspaces.ensure(row.epic_work_item_id,epic.branch,epicBase);if(!epicContext.cwd)this.updateContext(row.epic_work_item_id,{cwd:epicCwd});
+   this.workspaces.assertBranch(epicCwd,epic.branch);
+   const synchronization=this.workspaces.sync(epicCwd,epic.branch,epicBase,"reviewer");if(synchronization.skipped)this.store.event("workflow.sync_skipped",{branch:epic.branch,error:sanitizeFailureEvidence(synchronization.skipped,1600)},row.epic_work_item_id);
+   if(context.cwd){const story=this.workspaces.sync(context.cwd,row.branch,epic.branch,"reviewer");if(story.skipped)this.store.event("workflow.sync_skipped",{branch:row.branch,error:sanitizeFailureEvidence(story.skipped,1600)},workItemId);if(this.workspaces.publishAsync)await this.workspaces.publishAsync(context.cwd,row.branch);else this.workspaces.publish(context.cwd,row.branch);}
+   if(this.deliveryInterrupted(workItemId,row.revision))return false;
+   const commit=this.workspaces.integrate(epicCwd,epic.branch,row.branch);
+   if(this.workspaces.publishAsync)await this.workspaces.publishAsync(epicCwd,epic.branch);else this.workspaces.publish(epicCwd,epic.branch);
+   if(this.deliveryInterrupted(workItemId,row.revision))return false;
+   new WorkflowProjections(this.store).transition({workItemId,expectedRevision:row.revision,stage:"DELIVERY",status:"COMPLETED",actor:{type:"orchestrator",id:"stories"},source:{},reason:{code:"integrated",summary:`Story integrated into ${epic.branch}`}},()=>{this.updateContext(workItemId,{merge:{at:new Date().toISOString(),commit,into:epic.branch}});});
+   try{await this.delivery.closeIssue?.(row.issue_number,"completed");}catch(error){this.store.event("story.close_failed",{issue:row.issue_number,error:sanitizeFailureEvidence(error instanceof Error?error.message:String(error),1600)},workItemId);}
+   return true;
+  } catch(error){if(this.deliveryInterrupted(workItemId,row.revision))return false;this.scheduler.rejectQueued(workItemId,error,"integration");return true;}
  }
  private deliveryInterrupted(id:string,revision:number){const row=this.store.db.prepare("SELECT stage,status,archived_at,revision FROM work_items WHERE id=?").get(id) as {stage:string;status:string;archived_at:string|null;revision:number};return row.revision!==revision||row.stage!=="DELIVERY"||row.status!=="QUEUED"||Boolean(row.archived_at);}
  private specVersion(workItemId:string){return (this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;}

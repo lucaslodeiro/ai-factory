@@ -1,4 +1,6 @@
 import type { Store } from "./storage.js";
+import type { Story } from "./types.js";
+import { WorkflowStories } from "./workflow-stories.js";
 import type { FactoryCommand } from "./factory-command.js";
 import { WorkflowFailures } from "./workflow-failures.js";
 import { WorkflowProjections } from "./workflow-projection.js";
@@ -37,13 +39,16 @@ export class WorkflowCommands {
   if(command.kind==="approve") {
    const request=this.requireHumanRequest(context,"spec-approval");
    if(command.version!==context.specVersion)throw new Error(`Approval is for v${command.version}; active specification is v${context.specVersion}`);
-   const spec=this.store.db.prepare("SELECT 1 FROM specs WHERE work_item_id=? AND version=?").get(context.workItemId,context.specVersion);
+   const spec=this.store.db.prepare("SELECT stories FROM specs WHERE work_item_id=? AND version=?").get(context.workItemId,context.specVersion) as {stories:string}|undefined;
    if(!spec)throw new Error(`SPEC v${context.specVersion} is unavailable`);
-   const ids=[request.id];
-   const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:"BUILD",status:"QUEUED",actor,source,reason:{code:"spec-approved",summary:`SPEC v${command.version} approved`},recordIds:ids},()=>{
+   const stories=JSON.parse(spec.stories) as Story[],ids=[request.id];
+   // Approving a split plans its stories in the same transaction: the epic then waits for them on
+   // its own branch instead of queueing a Builder.
+   const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:"BUILD",status:stories.length?"WAITING":"QUEUED",actor,source,reason:{code:"spec-approved",summary:stories.length?`SPEC v${command.version} approved with ${stories.length} stories`:`SPEC v${command.version} approved`},recordIds:ids},()=>{
     this.records.resolveRequest(request.id);
     this.store.db.prepare("UPDATE specs SET approved_by=?,approval_comment_id=?,approved_at=? WHERE work_item_id=? AND version=?").run(context.login,context.commentId,new Date().toISOString(),context.workItemId,context.specVersion);
     if(command.guidance)ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:"spec",payload:{kind:"instruction",text:command.guidance},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
+    if(stories.length){new WorkflowStories(this.store).plan(context.workItemId,context.specVersion,stories);ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:"spec",payload:{kind:"request",type:"stories",owner:"stories",originatingStage:"BUILD",allowedReturnStages:["REVIEW"],openedAfterCommentId:context.commentId},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);}
    });
    return {projection:result,recordIds:ids};
   }

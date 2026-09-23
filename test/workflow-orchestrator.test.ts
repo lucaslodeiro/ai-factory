@@ -10,15 +10,23 @@ import type { AgentAdapter } from "../src/adapters/agent.js";
 import type { WorkspacePort } from "../src/worktrees.js";
 import type { Comment,Issue,PullRequestState } from "../src/adapters/github.js";
 
-class Workspace implements WorkspacePort {ensure(){return "/tmp/v3-work";}assertBranch(){}sync(){return{before:"head",after:"head",merged:[]};}head(){return "head";}diff(){return "";}check(){}commit(){}publish(){}changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/v3-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){}}
+class Workspace implements WorkspacePort {integrations:string[]=[];integrate(_cwd:string,branch:string,storyBranch:string){this.integrations.push(`${storyBranch}->${branch}`);return `merge-${this.integrations.length}`;}ensure(){return "/tmp/v3-work";}assertBranch(){}sync(){return{before:"head",after:"head",merged:[]};}head(){return "head";}diff(){return "";}check(){}commit(){}publish(){}changeSummary(){return{files:[],stat:""};}prepareReviewerContext(){return{path:"/tmp/v3-work/.factory-context/review.diff",files:[],stat:""};}cleanupReviewerContext(){}}
 class GitHub {
+ // Story relationships: sub-issues of an epic and the issues a story is blocked by, kept as ids.
+ issues=new Map<number,Issue>();subIssuesByParent=new Map<number,number[]>();blockedByIssue=new Map<number,number[]>();closed:Array<{number:number;reason:string}>=[];nextIssueNumber=10;nextIssueId=1000;
+ createIssue(input:{title:string;body:string;parentIssueId:number}):Issue{const number=this.nextIssueNumber++,id=this.nextIssueId++,issue:Issue={id,nodeId:`I_${id}`,number,title:input.title,body:input.body,url:`https://github.com/owner/demo/issues/${number}`,state:"OPEN",stateReason:null,labels:[],createdAt:"2026-09-23T00:00:00Z",updatedAt:"2026-09-23T00:00:00Z",author:{login:"factory",type:"User"}};this.issues.set(number,issue);const parent=[...this.issues.values()].find(candidate=>candidate.id===input.parentIssueId)?.number??1;this.subIssuesByParent.set(parent,[...(this.subIssuesByParent.get(parent)??[]),number]);return issue;}
+ subIssues(n:number):Issue[]{return (this.subIssuesByParent.get(n)??[]).map(number=>this.issues.get(number)!);}
+ blockedBy(n:number):Issue[]{return (this.blockedByIssue.get(n)??[]).map(id=>[...this.issues.values()].find(issue=>issue.id===id)!);}
+ addBlockedBy(n:number,issueId:number){this.blockedByIssue.set(n,[...(this.blockedByIssue.get(n)??[]),issueId]);}
+ closeIssue(n:number,reason:"completed"|"not planned"){this.closed.push({number:n,reason});const issue=this.issues.get(n);if(issue){issue.state="CLOSED";issue.stateReason=reason==="completed"?"completed":"not_planned";}}
  commentsByIssue=new Map<number,Comment[]>();statusBodies:string[]=[];resultBodies:string[]=[];labels:string[][]=[];issueLabels:Array<{name:string}>=[{name:`factory-instance:${config.instanceName}`}];assigned=true;deleted=false;labelEdits:string[]=[];removedLabels:string[]=[];unassigned:string[]=[];lastPrBody="";state:"OPEN"|"CLOSED"="OPEN";issueId=100;issueCalls=0;title="Ship V3";body="Complete the workflow";updatedAt="2026-09-20T00:00:00Z";author={login:"owner",type:"User"};discoverIssues=false;pr:PullRequestState={state:"OPEN",mergedAt:null,mergeCommit:null};
- issue(n:number):Issue{this.issueCalls++;if(this.deleted)throw new Error("HTTP 410: Gone");return {id:this.issueId,nodeId:`I_${this.issueId}`,number:n,title:this.title,body:this.body,url:`https://github.com/owner/demo/issues/${n}`,state:this.state,labels:this.issueLabels,createdAt:"2026-09-20T00:00:00Z",updatedAt:this.updatedAt,author:this.author};}
+ issue(n:number):Issue{this.issueCalls++;if(this.deleted)throw new Error("HTTP 410: Gone");const story=this.issues.get(n);if(story)return story;return {id:this.issueId,nodeId:`I_${this.issueId}`,number:n,title:this.title,body:this.body,url:`https://github.com/owner/demo/issues/${n}`,state:this.state,labels:this.issueLabels,createdAt:"2026-09-20T00:00:00Z",updatedAt:this.updatedAt,author:this.author};}
  comments(n:number){if(this.deleted)throw new Error("HTTP 410: Gone");return this.commentsByIssue.get(n)??[];}authenticatedLogin(){return "factory";}assignedIssues(){return this.assigned&&this.state==="OPEN"&&!this.deleted?[this.issue(1)]:[];}ensureLabel(){}addLabel(_n:number,name:string){this.labelEdits.push(name);this.issueLabels.push({name});}removeLabel(_n:number,name:string){this.removedLabels.push(name);this.issueLabels=this.issueLabels.filter(label=>label.name!==name);}replaceInstanceLabel(_n:number,name:string){this.issueLabels=this.issueLabels.filter(label=>!label.name.startsWith("factory-instance:"));this.issueLabels.push({name});}
  commentOnce(){}syncState(){}ensurePR(_branch:string,_title:string,body:string){this.lastPrBody=body;return "https://github.com/owner/demo/pull/1";}pullRequestState(){return this.pr;}
  repository(){return{id:1,nodeId:"R_1",fullName:"owner/demo",defaultBranch:"main"};}
  assignees(){return [];}assign(){}unassign(_n:number,logins:string[]){if(this.deleted)throw new Error("GraphQL: Could not resolve to an issue or pull request with the number of 1. (repository.issue)");this.unassigned.push(...logins);}
- syncWorkflow(_issue:number,labels:Array<{name:string}>,body:string){this.labels.push(labels.map(label=>label.name));this.statusBodies.push(body);this.advanceIssueUpdatedAt();}
+ statusByIssue=new Map<number,string>();
+ syncWorkflow(issue:number,labels:Array<{name:string}>,body:string){this.labels.push(labels.map(label=>label.name));this.statusBodies.push(body);this.statusByIssue.set(issue,body);this.advanceIssueUpdatedAt();}
  publishWorkflowComment(_issue:number,_key:string,body:string){this.resultBodies.push(body);this.advanceIssueUpdatedAt();}
  reply(id:number,body:string){const rows=this.commentsByIssue.get(1)??[];rows.push({id,body,user:{login:"owner",type:"User"},updatedAt:`2026-09-20T00:00:${String(id).padStart(2,"0")}Z`});this.commentsByIssue.set(1,rows);}
  private advanceIssueUpdatedAt(){this.updatedAt=new Date(Date.parse(this.updatedAt)+1000).toISOString();}
@@ -152,4 +160,72 @@ test("flush still updates the issue status when a milestone comment cannot be pu
   assert.equal(github.resultBodies.length,1);assert.match(github.resultBodies[0],/^# Specification v1/m);
   await orchestrator.flush();assert.equal(github.resultBodies.length,1,"a recovered milestone is published exactly once");
  } finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
+});
+
+// An epic: the Architect splits the issue, the human approves brief and split together, stories
+// become sub-issues blocked by each other, each runs Builder and Tester on its own branch from the
+// epic branch and integrates into it, and the epic resumes with Test, Review and one pull request.
+function epicFixture(){
+ const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
+ const store=new Store(":memory:"),github=new GitHub(),workspace=new Workspace();
+ const criteria=[{id:"AC1",description:"Tokens"},{id:"AC2",description:"Hero"},{id:"AC3",description:"Whole page"}];
+ const stories=[{key:"S1",title:"Design tokens",scope:"Palette and spacing",criteria:["AC1"],dependsOn:[]},{key:"S2",title:"Hero",scope:"First screen",criteria:["AC2"],dependsOn:["S1"]}];
+ const succeed=(executionId:string)=>store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(executionId);
+ const architect:AgentAdapter={async run(request){succeed(request.executionId);return result("spec",{acceptanceCriteria:criteria,spec:"# Spec\nAC1 AC2 AC3",stories});}};
+ // Delivery roles cover exactly the criteria of the work item they run on: a story's slice, or the epic's whole.
+ const delivery:AgentAdapter={async run(request){succeed(request.executionId);const spec=store.db.prepare("SELECT criteria FROM specs WHERE work_item_id=? ORDER BY version DESC LIMIT 1").get(request.workItemId) as {criteria:string};return result("pass",{coverage:(JSON.parse(spec.criteria) as Array<{id:string}>).map(criterion=>({criterionId:criterion.id,status:"passed" as const,evidence:"Verified"}))});}};
+ const runner=new WorkflowRunner(store,{"product-architect":architect,developer:delivery,qa:delivery,reviewer:delivery},workspace,github);
+ const orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
+ const item=(id:string)=>store.db.prepare("SELECT stage,status,base_branch,epic_work_item_id FROM work_items WHERE id=?").get(id) as {stage:string;status:string;base_branch:string;epic_work_item_id:string|null};
+ const storyRows=()=>store.db.prepare("SELECT key,issue_number,issue_id,dependencies_declared,work_item_id FROM stories ORDER BY key").all() as Array<{key:string;issue_number:number|null;issue_id:number|null;dependencies_declared:number;work_item_id:string|null}>;
+ const restore=()=>{store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);};
+ return {store,github,workspace,orchestrator,item,storyRows,restore};
+}
+
+test("an approved split creates sub-issues with dependencies, runs each story from the epic branch and resumes the epic once every story is integrated",async()=>{
+ const f=epicFixture();
+ try {
+  const epic=await startAssigned(f.orchestrator,f.store);await f.orchestrator.tick();
+  assert.match(f.github.resultBodies.at(-1)!,/## Stories/);
+  // Approval plans the stories in the same poll; the tick then already ran S1's Builder.
+  f.github.reply(1,"/factory approve v1");await f.orchestrator.tick();
+  assert.deepEqual(f.item(epic.id),{stage:"BUILD",status:"WAITING",base_branch:"main",epic_work_item_id:null});
+  assert.match(f.github.statusByIssue.get(1)!,/stories of this epic are being delivered/);
+  // Both stories exist as sub-issues of the epic; S2 is blocked by S1; only S1 started.
+  const rows=f.storyRows();assert.deepEqual(rows.map(row=>[row.key,row.dependencies_declared,Boolean(row.work_item_id)]),[["S1",1,true],["S2",1,false]]);
+  assert.equal(f.github.subIssuesByParent.get(1)?.length,2);
+  const s1=rows[0],s2=rows[1];assert.deepEqual(f.github.blockedByIssue.get(s2.issue_number!),[s1.issue_id]);assert.equal(f.github.blockedByIssue.get(s1.issue_number!),undefined);
+  assert.deepEqual(f.item(s1.work_item_id!),{stage:"TEST",status:"QUEUED",base_branch:"factory/issue-1",epic_work_item_id:epic.id});
+  const s1Spec=f.store.db.prepare("SELECT criteria,approved_by,stories FROM specs WHERE work_item_id=?").get(s1.work_item_id) as {criteria:string;approved_by:string;stories:string};
+  assert.deepEqual({criteria:JSON.parse(s1Spec.criteria).map((c:{id:string})=>c.id),approved_by:s1Spec.approved_by,stories:s1Spec.stories},{criteria:["AC1"],approved_by:"owner",stories:"[]"});
+  // S1: Tester, then integration into the epic branch instead of Review.
+  await f.orchestrator.runLocal();assert.deepEqual(f.item(s1.work_item_id!),{stage:"DELIVERY",status:"QUEUED",base_branch:"factory/issue-1",epic_work_item_id:epic.id});
+  await f.orchestrator.runLocal();assert.equal(f.item(s1.work_item_id!).status,"COMPLETED");assert.deepEqual(f.workspace.integrations,[`factory/issue-${s1.issue_number}->factory/issue-1`]);assert.deepEqual(f.github.closed,[{number:s1.issue_number,reason:"completed"}]);
+  assert.equal(f.item(epic.id).status,"WAITING","the epic waits until every story is in");
+  // Another poll creates nothing twice, and S2 starts only now that its blocker is closed as completed.
+  await f.orchestrator.tick();assert.equal(f.github.issues.size,2);assert.deepEqual(f.github.blockedByIssue.get(s2.issue_number!),[s1.issue_id]);
+  const s2Item=f.storyRows()[1].work_item_id!;assert.equal(f.item(s2Item).stage,"TEST");
+  await f.orchestrator.runLocal();await f.orchestrator.runLocal();assert.equal(f.item(s2Item).status,"COMPLETED");assert.equal(f.workspace.integrations.length,2);
+  // Every story integrated: the epic resumes at Review, which the runner sends through Test first.
+  await f.orchestrator.syncRemote();assert.deepEqual(f.item(epic.id),{stage:"REVIEW",status:"QUEUED",base_branch:"main",epic_work_item_id:null});
+  await f.orchestrator.runLocal();assert.equal(f.item(epic.id).stage,"TEST");
+  await f.orchestrator.runLocal();assert.equal(f.item(epic.id).stage,"REVIEW");
+  await f.orchestrator.runLocal();await f.orchestrator.runLocal();await f.orchestrator.flush();
+  assert.deepEqual(f.item(epic.id),{stage:"DELIVERY",status:"WAITING",base_branch:"main",epic_work_item_id:null});assert.match(f.github.lastPrBody,/^Closes #1$/m);
+ } finally {f.restore();}
+});
+
+test("a story issue that already exists is adopted, and a blocker closed as not planned does not unblock",async()=>{
+ const f=epicFixture();
+ try {
+  const epic=await startAssigned(f.orchestrator,f.store);await f.orchestrator.tick();
+  // A crash after GitHub created S1 but before the local ledger recorded it.
+  f.github.createIssue({title:"Design tokens",body:"created before the crash",parentIssueId:100});
+  f.github.reply(1,"/factory approve v1");await f.orchestrator.tick();
+  assert.equal(f.github.issues.size,2,"S1 was adopted, S2 created");assert.deepEqual(f.storyRows().map(row=>row.issue_number),[10,11]);
+  assert.equal((f.store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='story.issue_adopted'").get() as {count:number}).count,1);
+  // Someone closes S1 as not planned: S2 stays blocked and the epic keeps waiting.
+  f.github.closeIssue(10,"not planned");await f.orchestrator.tick();
+  assert.equal(f.storyRows()[1].work_item_id,null);assert.equal(f.item(epic.id).status,"WAITING");
+ } finally {f.restore();}
 });

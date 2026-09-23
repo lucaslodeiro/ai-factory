@@ -105,7 +105,9 @@ export class WorkflowResults {
     ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"correction-limit",owner:"human",originatingStage:"BUILD",allowedReturnStages:this.returnStages("BUILD"),openedAfterCommentId:this.cursor(input.workItemId),findingIds},sourceType:"agent-result",sourceId:input.executionId,actor:input.role}).id);
    });return {discarded:false,projection,recordIds:ids};
   }
-  const target=input.role==="developer"?"TEST":input.role==="qa"?"REVIEW":"DELIVERY";
+  // A story has no Review of its own: the Reviewer sees the epic once every story is integrated.
+  const story=Boolean((this.store.db.prepare("SELECT epic_work_item_id FROM work_items WHERE id=?").get(input.workItemId) as {epic_work_item_id:string|null}).epic_work_item_id);
+  const target=input.role==="developer"?"TEST":input.role==="qa"&&!story?"REVIEW":"DELIVERY";
   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:target,status:"QUEUED",actor:{type:"agent",id:input.role},source:{executionId:input.executionId},reason:{code:"pass",summary:`${roleShortName(input.role)} passed`},recordIds:ids},()=>{
    this.resultEvent(input);
    createFindings();this.settlePass(input.workItemId,input.role,input.executionId);if(input.role==="qa"||input.role==="reviewer")this.setVerifiedHead(input.workItemId,input.role==="qa"?"TEST":"REVIEW",input.head);

@@ -44,6 +44,7 @@ function nextAction(store:Store,workItemId:string) {
   return box(humanRequestAction(store,request));
  }
  if(request?.payload.kind==="request"&&request.payload.owner==="designer")return box(`Designer is preparing a prototype of the proposed specification. Its approval command arrives with the screenshots; no human action is required yet. You can still pause or cancel the workflow.${command("/factory pause [reason]")}${command("/factory cancel [reason]")}`);
+ if(request?.payload.kind==="request"&&request.payload.owner==="stories")return box(`The stories of this epic are being delivered on their own issues. Review starts here once every story is integrated; no human action is required. You can still pause or cancel the epic.${command("/factory pause [reason]")}${command("/factory cancel [reason]")}`);
  if(request?.payload.kind==="request"&&request.payload.owner==="architect")return box(`Architect is next. No human action is required. You can still pause or cancel the workflow.${command("/factory pause [reason]")}${command("/factory cancel [reason]")}`);
  if(projection.status==="COMPLETED")return box("Delivery is complete. No further factory action is required.");
  return box(`${projection.status==="RUNNING"?"The current agent is running":"The next agent is queued"}. No human action is required. You can pause or cancel the workflow.${command("/factory pause [reason]")}${command("/factory cancel [reason]")}`);
@@ -57,6 +58,7 @@ function requestLabel(request:ReturnType<WorkflowRecords["activeRequest"]>) {
  if(request.payload.type==="prototype")return "Designer is preparing a prototype";
  if(request.payload.type==="correction-limit")return "Waiting for your correction guidance";
  if(request.payload.type==="budget")return request.payload.budget==="unknown"?"Waiting for acknowledgement of unmeasured runs":"Waiting for a token budget extension";
+ if(request.payload.type==="stories")return "Waiting for the stories to be integrated";
  return "Waiting for merge";
 }
 
@@ -66,7 +68,7 @@ export function workflowStatusMarkdown(store:Store,workItemId:string) {
  const context=JSON.parse(item.context||"{}") as {title?:string;pr?:string;observedComments?:Array<{id:number;updatedAt:string}>;lastCommand?:LastCommandOutcome;continuedFrom?:{instance:string;revision:number}};
  const projection=new WorkflowProjections(store).get(workItemId),records=new WorkflowRecords(store),request=records.activeRequest(workItemId),failure=new WorkflowFailures(store).active(workItemId);
  const spec=(store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;
- const actor=request?.payload.kind==="request"?(request.payload.owner==="human"?"Human":"Architect"):["FAILED","PAUSED","CANCELLED"].includes(projection.status)?"Human":projection.status==="RUNNING"||projection.status==="QUEUED"?stageActors[projection.stage]:"None";
+ const actor=request?.payload.kind==="request"?(request.payload.owner==="human"?"Human":request.payload.owner==="stories"?"Stories":"Architect"):["FAILED","PAUSED","CANCELLED"].includes(projection.status)?"Human":projection.status==="RUNNING"||projection.status==="QUEUED"?stageActors[projection.stage]:"None";
  const rows=[["Stage",stages[projection.stage]],["Status",statuses[projection.status]],["Current actor",actor],["Instance",config.instanceName],["SPEC version",spec?`v${spec}`:"Not proposed"],["Attempt",String(projection.attempt)]];
  if(request?.payload.kind==="request")rows.push(["Open request",requestLabel(request)]);
  if(failure)rows.push(["Failure",publishedText(sanitizeFailureEvidence(failure.message,240))]);
