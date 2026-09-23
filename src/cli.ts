@@ -61,7 +61,7 @@ p.command("stop").option("--pause-active","Pause active tasks before stopping").
 p.command("events").argument("[id]").action(id => {
  const s = new Store(); console.table(id ? s.db.prepare("SELECT * FROM events WHERE work_item_id=? ORDER BY id DESC LIMIT 50").all(id) : s.db.prepare("SELECT * FROM events ORDER BY id DESC LIMIT 50").all()); s.db.close();
 });
-p.command("metrics").argument("<work-item-id-or-issue-number>").description("Cost, testing selection, verification scope, findings and human interventions for an issue, or for an epic and its stories").action(reference => {
+p.command("metrics").argument("<work-item-id-or-issue-number>").description("Cost, execution outcomes, testing selection, verification scope, findings and human interventions for an issue, or for an epic and its stories").action(reference => {
  const s = new Store();
  try { const found=resolveWorkItem(s,reference); if ("error" in found) { console.log(found.error); process.exitCode=1; return; } console.log(JSON.stringify(epicMetrics(s,found.id),null,2)); } finally { s.db.close(); }
 });

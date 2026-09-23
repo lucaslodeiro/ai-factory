@@ -17,6 +17,8 @@ ai-factory benchmark <id> --verify                   # the fixed benchmark issue
 | Event | Written by | Fields | Question it answers |
 | --- | --- | --- | --- |
 | `execution.finished` | execution manager | provider usage (uncached input, cache reads, cache writes, output, total), turns, event histogram, duration, cost estimate | What did each run cost and do |
+| `executions` rows | execution manager | `status` (`succeeded`, `failed`, `timed_out`, `interrupted`, `cancelled`, `running`), `interruption_reason`, start and end | How each run ended and how long it took |
+| `execution.invalid_result` | runner | validator message | A run that finished but whose result was rejected |
 | `model.selected` | runner | role, provider, model, policy reason, context budget | Which model ran and why |
 | `verification.selection` | results, on every Tester result | `verificationDepth`, `candidates`, `kept`, `essential`, `valuable`, `redundant`, `valuableDiscarded`, `commands` | Is the Tester choosing the minimum sufficient set at the approved depth |
 | `epic.verification_scope` | results, on an epic after its stories | `role`, `criteria`, `verifiedByStories`, `required`, `covered` | How much of the epic's verification was already done by its stories |
@@ -41,6 +43,10 @@ known, the criterion. Tokens live on `executions` and travel in the published is
 - **findings**: by role and severity; Reviewer findings on a criterion a story owned (a defect the
   story's Tester should have caught); `no-change-pass` count (false blockers).
 - **interventions**: human commands by kind.
+- **outcomes** (per member) and their sums in **totals**: runs per role by how they ended, with an
+  interruption keyed by its reason (`interrupted:user-pause`); how many finished runs produced no
+  result and their wall time; results the validator rejected; and the longest run of consecutive
+  timeouts in one stage.
 
 ## Reading it
 
@@ -56,6 +62,12 @@ known, the criterion. Tokens live on `executions` and travel in the published is
   is a story Tester that passed something it should not have; look at that story's depth.
 - **Is anything sending work back for nothing?** `findings.noChangePasses` counts correction cycles
   where the Builder found nothing to change. Each one cost a Builder run.
+- **Is interrupted work worth recovering?** `totals.unsuccessfulSeconds` is agent time spent on runs
+  that produced nothing; the next attempt starts over. `longestTimeoutStreak.runs` of 2 or more means
+  a slice does not fit the agent time limit, and a retry will time out again: shrink the story or
+  raise the limit before building anything that resumes interrupted work. A Codex run cut before its
+  turn ended has no measured usage, so it also shows in `unmeasuredRuns` and costs a
+  `/factory budget +0` in `interventions.byKind`.
 - **How much human time?** `interventions.byKind`: approvals are the floor; answers, retries and
   budget extensions are the cost of an unclear brief, a fragile environment or an under-sized cap.
 

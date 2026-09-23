@@ -310,9 +310,9 @@ What changed with the format:
 - Claude's result envelope is not the last line: a `task_summary` event follows it. The adapter takes the last `type: "result"` event instead of parsing stdout as one object.
 - Codex no longer prints `tokens used` on stderr. Usage now comes from its `turn.completed` events, which count cached input inside `input_tokens`; the Factory records uncached input apart from cache reads and counts the total as input plus output. Codex totals recorded before this change came from the CLI's own `tokens used` figure and are not guaranteed to be the same measure.
 - Codex's human-readable progress also left stderr, so the stderr tail in a failure diagnosis now holds only the CLI's own warnings and errors.
-- The transcript carries tool output and can be much larger than the result. It is read once, in chunks, with no size limit on the file; a single line over 10 MB, or one cut off by a killed process, is skipped and counted. The 10 MB limit on the whole of stdout now applies only to Cursor, which still answers with one envelope.
+- The transcript carries tool output and can be much larger than the result. It is read once, in chunks, with no size limit on the file; a single line over 10 MB, or one cut off by a killed process, is skipped and counted.
 
-Cursor is unchanged. Its CLI could not be installed from this environment (cursor.com is not reachable), and switching its format without a captured stream would be a guess.
+Cursor was left on its single envelope in this change because its CLI could not be installed from this environment (cursor.com is not reachable). It moved to `--output-format stream-json` later, with the live progress monitor (`f09abf7`). **That Cursor format is still unverified:** no real Cursor stream has been captured. The adapter takes the last `type: "result"` event, and `execution-progress.ts` reads `tool_call` events by `call_id` and `subtype` (`started`/`completed`) with the tool named by the first key of `tool_call`; both follow the fakes in `test/adapters.test.ts`, not a recorded run. Until a stream from a real `cursor-agent -p --output-format stream-json` run is captured into `test/fixtures/providers/`, a Cursor role may run with progress that stays at zero tools, or fail on a result it cannot find.
 
 ## Token budget per issue — 2026-09-23
 

@@ -9,12 +9,28 @@ export interface MemberMetrics {
  id:string; issue:number; kind:"epic"|"story"|"issue"; key:string|null; stage:string|null; status:string|null;
  tokens:number; unmeasuredRuns:number; executions:Record<string,number>; correctionCycles:number; attempts:number;
  startedAt:string|null; completedAt:string|null; durationSeconds:number|null;
+ outcomes:ExecutionOutcomes;
+}
+// How the runs ended, which is what says whether recovering interrupted work would be worth building:
+// a run that ends without a result is spent again by the next attempt.
+export interface ExecutionOutcomes {
+ /** Per role, how many runs ended in each status; an interruption is keyed by its reason (`interrupted:user-pause`). */
+ byRole:Record<string,Record<string,number>>;
+ /** Finished runs that produced no result: every status except `succeeded` and `running`. */
+ unsuccessful:number;
+ /** Wall time of those runs; null when none of them has both a start and an end. */
+ unsuccessfulSeconds:number|null;
+ /** Runs that succeeded but whose result the validator rejected. */
+ invalidResults:number;
+ /** The longest run of consecutive timeouts in one stage: at 2 or more, the slice does not fit the time limit. */
+ longestTimeoutStreak:{stage:string|null;runs:number};
 }
 export interface TestingMetrics { runs:number; candidates:number; kept:number; essential:number; valuable:number; redundant:number; valuableDiscarded:number; keptRatio:number|null; byDepth:Record<string,{runs:number;candidates:number;kept:number}> }
 export interface EpicMetricsReport {
  workItem:{id:string;issue:number;kind:"epic"|"issue"};
  members:MemberMetrics[];
- totals:{tokens:number;executions:number;correctionCycles:number;humanCommands:number;stories:number;storiesCompleted:number;wallSeconds:number|null};
+ totals:{tokens:number;executions:number;correctionCycles:number;humanCommands:number;stories:number;storiesCompleted:number;wallSeconds:number|null;
+  unsuccessfulExecutions:number;unsuccessfulSeconds:number|null;invalidResults:number;longestTimeoutStreak:{stage:string|null;runs:number}};
  testing:TestingMetrics;
  epicVerification:Array<{role:string;criteria:number;verifiedByStories:number;required:number;covered:number}>;
  findings:{byRole:Record<string,Record<string,number>>;reviewerOnStoryCriteria:number;noChangePasses:number};
@@ -22,6 +38,26 @@ export interface EpicMetricsReport {
 }
 
 const count=(record:Record<string,number>,key:string)=>{record[key]=(record[key]??0)+1;};
+
+function executionOutcomes(store:Store,id:string):ExecutionOutcomes {
+ const runs=store.db.prepare("SELECT role,stage,status,interruption_reason,started_at,finished_at FROM executions WHERE work_item_id=? ORDER BY started_at,rowid").all(id) as Array<{role:string;stage:string|null;status:string;interruption_reason:string|null;started_at:string;finished_at:string|null}>;
+ const byRole:Record<string,Record<string,number>>={},streak={stage:null as string|null,runs:0},current={stage:null as string|null,runs:0};
+ let unsuccessful=0,seconds:number|null=null;
+ for(const run of runs){
+  count(byRole[run.role]??(byRole[run.role]={}),run.status==="interrupted"&&run.interruption_reason?`interrupted:${run.interruption_reason}`:run.status);
+  if(run.status!=="succeeded"&&run.status!=="running"){
+   unsuccessful++;
+   const elapsed=run.finished_at?(Date.parse(run.finished_at)-Date.parse(run.started_at))/1000:NaN;
+   if(Number.isFinite(elapsed)&&elapsed>=0)seconds=(seconds??0)+elapsed;
+  }
+  // A work item runs one execution at a time, so any run that did not time out ends the streak.
+  if(run.status==="timed_out"){if(current.runs&&current.stage===run.stage)current.runs++;else{current.stage=run.stage;current.runs=1;}}
+  else if(run.status!=="running"){current.stage=null;current.runs=0;}
+  if(current.runs>streak.runs){streak.stage=current.stage;streak.runs=current.runs;}
+ }
+ const invalidResults=(store.db.prepare("SELECT COUNT(*) count FROM events WHERE work_item_id=? AND type='execution.invalid_result'").get(id) as {count:number}).count;
+ return {byRole,unsuccessful,unsuccessfulSeconds:seconds===null?null:Math.round(seconds),invalidResults,longestTimeoutStreak:streak};
+}
 
 export function epicMetrics(store:Store,workItemId:string):EpicMetricsReport {
  const family=budgetFamily(store,workItemId),owner=family[0];
@@ -39,7 +75,7 @@ export function epicMetrics(store:Store,workItemId:string):EpicMetricsReport {
   const startedAt=transitions[0]?.ts??row.created_at,completedAt=completed?.ts??null;
   return {id,issue:row.issue_number,kind:id===owner?(stories.length?"epic":"issue"):"story",key:storyKey.get(id)??null,stage:row.stage,status:row.status,
    tokens:ledger.reduce((total,entry)=>total+(entry.tokens??0),0),unmeasuredRuns:ledger.filter(entry=>entry.tokens===null).length,executions,correctionCycles:row.correction_cycles,attempts:row.attempt,
-   startedAt,completedAt,durationSeconds:completedAt?Math.round((Date.parse(completedAt)-Date.parse(startedAt))/1000):null};
+   startedAt,completedAt,durationSeconds:completedAt?Math.round((Date.parse(completedAt)-Date.parse(startedAt))/1000):null,outcomes:executionOutcomes(store,id)};
  });
  const testing:TestingMetrics={runs:0,candidates:0,kept:0,essential:0,valuable:0,redundant:0,valuableDiscarded:0,keptRatio:null,byDepth:{}};
  const epicVerification:EpicMetricsReport["epicVerification"]=[],findingsByRole:Record<string,Record<string,number>>={},commandsByKind:Record<string,number>={};
@@ -65,7 +101,11 @@ export function epicMetrics(store:Store,workItemId:string):EpicMetricsReport {
   workItem:{id:owner,issue:ownerMember.issue,kind:stories.length?"epic":"issue"},
   members,
   totals:{tokens:members.reduce((total,member)=>total+member.tokens,0),executions:members.reduce((total,member)=>total+Object.values(member.executions).reduce((a,b)=>a+b,0),0),correctionCycles:members.reduce((total,member)=>total+member.correctionCycles,0),humanCommands,stories:stories.length,storiesCompleted:members.filter(member=>member.kind==="story"&&member.status==="COMPLETED").length,
-   wallSeconds:starts.length&&ends.length&&ends.length===members.length?Math.round((Math.max(...ends)-Math.min(...starts))/1000):null},
+   wallSeconds:starts.length&&ends.length&&ends.length===members.length?Math.round((Math.max(...ends)-Math.min(...starts))/1000):null,
+   unsuccessfulExecutions:members.reduce((total,member)=>total+member.outcomes.unsuccessful,0),
+   unsuccessfulSeconds:members.some(member=>member.outcomes.unsuccessfulSeconds!==null)?members.reduce((total,member)=>total+(member.outcomes.unsuccessfulSeconds??0),0):null,
+   invalidResults:members.reduce((total,member)=>total+member.outcomes.invalidResults,0),
+   longestTimeoutStreak:members.map(member=>member.outcomes.longestTimeoutStreak).reduce((best,streak)=>streak.runs>best.runs?streak:best,{stage:null,runs:0})},
   testing,epicVerification,
   findings:{byRole:findingsByRole,reviewerOnStoryCriteria,noChangePasses},
   interventions:{commands:humanCommands,byKind:commandsByKind},

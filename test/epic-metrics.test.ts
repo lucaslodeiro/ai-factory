@@ -25,7 +25,7 @@ test("epic metrics aggregate cost, test selection, verification scope, findings 
   assert.deepEqual(report.workItem,{id:"epic",issue:1,kind:"epic"},"a story resolves to its epic");
   assert.deepEqual(report.members.map(member=>[member.kind,member.key,member.tokens,member.unmeasuredRuns,member.correctionCycles]),[["epic",null,2500,0,0],["story","S1",6000,1,1],["story","S2",4500,0,0]]);
   assert.deepEqual(report.members[1].executions,{developer:2,qa:1});assert.equal(report.members[1].durationSeconds,3600);
-  assert.deepEqual(report.totals,{tokens:13000,executions:8,correctionCycles:1,humanCommands:2,stories:2,storiesCompleted:2,wallSeconds:null});
+  assert.deepEqual(report.totals,{tokens:13000,executions:8,correctionCycles:1,humanCommands:2,stories:2,storiesCompleted:2,wallSeconds:null,unsuccessfulExecutions:0,unsuccessfulSeconds:null,invalidResults:0,longestTimeoutStreak:{stage:null,runs:0}});
   assert.deepEqual(report.testing,{runs:2,candidates:10,kept:6,essential:5,valuable:3,redundant:2,valuableDiscarded:2,keptRatio:0.6,byDepth:{minimal:{runs:1,candidates:4,kept:2},standard:{runs:1,candidates:6,kept:4}}});
   assert.deepEqual(report.epicVerification,[{role:"qa",criteria:3,verifiedByStories:2,required:1,covered:1}]);
   assert.deepEqual(report.findings,{byRole:{reviewer:{major:1},qa:{minor:1}},reviewerOnStoryCriteria:1,noChangePasses:1});
@@ -40,5 +40,29 @@ test("a plain issue reports itself as the only member",()=>{
   store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status) VALUES('w',5,'owner/demo','now','now','{}','BUILD','QUEUED')").run();
   const report=epicMetrics(store,"w");
   assert.deepEqual([report.workItem.kind,report.members.length,report.members[0].kind,report.testing.keptRatio,report.totals.stories],["issue",1,"issue",null,0]);
+ } finally {store.db.close();}
+});
+
+test("execution outcomes say how many runs ended without a result, what they cost in time and whether a stage keeps timing out",()=>{
+ const store=new Store(":memory:");
+ try {
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status) VALUES('w',7,'owner/demo','now','now','{}','TEST','FAILED')").run();
+  const run=(id:string,role:string,stage:string,status:string,start:string,end:string|null,reason:string|null=null)=>store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,finished_at,interruption_reason) VALUES(?,'w',?,?,?,?,?,?)").run(id,role,stage,status,`2026-09-23T10:${start}Z`,end?`2026-09-23T10:${end}Z`:null,reason);
+  run("b1","developer","BUILD","succeeded","00:00","08:00");
+  run("t1","qa","TEST","timed_out","10:00","20:00","execution-timeout");
+  run("t2","qa","TEST","timed_out","21:00","31:00","execution-timeout");
+  run("b2","developer","BUILD","interrupted","32:00","33:30","user-pause");
+  run("t3","qa","TEST","timed_out","40:00","50:00","execution-timeout");
+  run("t4","qa","TEST","failed","51:00",null);
+  run("t5","qa","TEST","running","52:00",null);
+  store.event("execution.invalid_result",{message:"rejected"},"w","b1");
+  const outcomes=epicMetrics(store,"w").members[0].outcomes;
+  assert.deepEqual(outcomes.byRole,{developer:{succeeded:1,"interrupted:user-pause":1},qa:{timed_out:3,failed:1,running:1}});
+  assert.equal(outcomes.unsuccessful,5,"a running execution has not ended yet");
+  assert.equal(outcomes.unsuccessfulSeconds,1890,"three 10-minute timeouts and a 90-second pause; a run without an end adds no time");
+  assert.equal(outcomes.invalidResults,1);
+  assert.deepEqual(outcomes.longestTimeoutStreak,{stage:"TEST",runs:2},"the Builder run between the second and third timeout ends the streak");
+  const totals=epicMetrics(store,"w").totals;
+  assert.deepEqual([totals.unsuccessfulExecutions,totals.unsuccessfulSeconds,totals.invalidResults,totals.longestTimeoutStreak],[5,1890,1,{stage:"TEST",runs:2}]);
  } finally {store.db.close();}
 });
