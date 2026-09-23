@@ -19,14 +19,13 @@ import { readDashboardSetting, readDashboardSettings, saveDashboardSettings, val
 import { factoryHome } from "./home.js";
 import { availableCursorModels, connectCredential, credentialStatuses, providerConnectionStatus, type CredentialProvider } from "./dashboard-credentials.js";
 import { SlackAdapter } from "./adapters/slack.js";
-import { publicNaming, roleShortName, stateName } from "./names.js";
+import { publicNaming } from "./names.js";
 import {WorkflowMaintenance,type MaintenanceOperation} from "./workflow-maintenance.js";
 import type {ExecutionManager} from "./execution-manager.js";
 import {RepositoryMaintenance} from "./repository-maintenance.js";
 import {GitHubAdapter} from "./adapters/github.js";
 import {verifyRepositoryIdentity} from "./repository-identity.js";
 import {availableMessageActions,promptArtifact,workflowThread,workflowContinuations,type MessageAction,statusPublication} from "./workflow-chat.js";
-import {executionOutcomeText,workflowExecutionSummary} from "./execution-presentation.js";
 
 const assets = fileURLToPath(new URL("../dashboard/", import.meta.url));
 const types: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
@@ -68,27 +67,10 @@ function details(payload: string) {
     return text.length > 420 ? `${text.slice(0,417)}…` : text;
   } catch { return payload; }
 }
-const roleLabel = (role?: string) => role ? roleShortName(role) : "Agent";
-const stateLabel = (state?: string) => state ? stateName(state) : "unknown state";
-function eventPresentation(type: string, payload: string, runRole?: string) {
+const conversationEventTypes=["workflow.transition","workflow.presentation","agent.result","model.selected","verification.completed","github.published"];
+function eventPresentation(type: string, payload: string) {
   try {
     const value = JSON.parse(payload) as any;
-    const role=roleLabel(value.role ?? runRole);
-    if(type==="workflow.transition"){const from=value.from,to=value.to,summary=workflowExecutionSummary(value.reason?.summary??"Work started",to?.stage);return{title:`Workflow moved to ${stateLabel(to?.stage)} · ${stateLabel(to?.status)}`,details:from?`Previous: ${stateLabel(from.stage)} · ${stateLabel(from.status)}. ${summary}`:`${summary}.`,severity:to?.status==="FAILED"?"error":["WAITING","PAUSED","CANCELLED"].includes(to?.status)?"warning":["COMPLETED"].includes(to?.status)?"success":"info",category:"Workflow"};}
-    if (type === "execution.started") {
-      const selection=value.selection;
-      return { title:`${role} execution started`,details:selection ? `${selection.model}` : "The agent process is running.",severity:"info",category:"Agent",brand:selection?.provider };
-    }
-    if (type === "execution.finished") { const result=value.code === null || value.code === undefined ? "The process finished without an exit code." : `Process exit code: ${value.code}.`;const usage=value.usage?.totalTokens === null || value.usage?.totalTokens === undefined ? " Token usage was not reported." : ` Tokens reported: ${Number(value.usage.totalTokens).toLocaleString("en-US")}.`;const explanation=executionOutcomeText(value.status,value.interruptionReason,value.role??runRole);const providerError=typeof value.providerError==="string"?` Provider error: ${value.providerError}`:"";return { title:explanation??`${role} execution ${value.status ?? "finished"}`,details:result+providerError+usage,severity:value.status === "succeeded" ? "success" : value.status === "cancelled" ? "warning" : "error",category:"Agent" };}
-    if (type === "execution.interrupted") return { title:`${role} execution interrupted`,details:executionOutcomeText("interrupted",value.reason,value.role??runRole)??"The daemon stopped before this stage was recorded as complete.",severity:"error",category:"Agent" };
-    if (type === "agent.result") {
-      const result=value.result ?? {},coverage=Array.isArray(result.coverage) ? result.coverage : [];
-      const passed=coverage.filter((item:any)=>item.status === "passed").length;
-      const evidence=coverage.length ? ` Acceptance criteria: ${passed}/${coverage.length} passed.` : "";
-      const outcome=({pass:"Passed",spec:"Specification ready",resolved:"Resolved",changes:"Changes requested",questions:"Input required",decision:"Decision required"} as Record<string,string>)[result.outcome] ?? "Completed";
-      return { title:`${role}: ${outcome}`,details:`${result.summary ?? "Agent result recorded."}${evidence}`,severity:["pass","spec","resolved"].includes(result.outcome) ? "success" : ["changes","questions","decision"].includes(result.outcome) ? "warning" : "info",category:"Result" };
-    }
-    if (type === "model.selected") return { title:`Model selected for ${role}`,details:`${value.selection?.model ?? "Automatic model"}${value.selection?.reason ? ` — ${value.selection.reason}` : ""}`,severity:"info",category:"Routing",brand:value.selection?.provider };
     if (type === "start.command_rejected") return { title:"Factory start command rejected",details:`Issue #${value.issueNumber ?? "?"}: ${value.reason ?? "The command was not authorized"}.`,severity:"warning",category:"Issue" };
     if (type === "github.issue_list_refreshed") return { title:"Issue list refreshed",details:`Found ${value.found ?? 0}; added ${value.added ?? 0}; updated ${value.updated ?? 0}.`,severity:"success",category:"GitHub" };
     if (type === "github.publish_failed") return { title:"GitHub publication delayed",details:`${publicationKindLabel(value.kind)} could not be published: ${value.error ?? "unknown error"}. The Factory keeps the local record and retries on the next cycle.`,severity:"warning",category:"GitHub" };
@@ -132,7 +114,6 @@ function buildSnapshot(store: Store) {
   const runMetadata=new Map((store.db.prepare("SELECT e.run_id,e.payload FROM events e JOIN executions x ON x.id=e.run_id WHERE e.type='execution.started' ORDER BY e.id DESC LIMIT 30").all() as Array<{run_id:string;payload:string}>).map(row=>{
     try { return [row.run_id,JSON.parse(row.payload)] as const; } catch { return [row.run_id,{}] as const; }
   }));
-  const runRoles=new Map(executionRows.map(run=>[run.id,run.role]));
   const executions = executionRows.map(run=>{
     const item=itemById.get(run.work_item_id),selection=runMetadata.get(run.id)?.selection;
     const end=run.finished_at ? new Date(run.finished_at).getTime() : Date.now(),start=new Date(run.started_at).getTime();
@@ -153,9 +134,11 @@ function buildSnapshot(store: Store) {
   }
   const normalize=(value:any)=>({...value,totalTokens:value.unreportedTokenRuns===value.runs ? null : value.totalTokens});
   const usage=[...usageMap.values()].map(total=>{const item=itemById.get(total.workItemId);return {...normalize(total),stages:[...total.stages.values()].map(normalize),issue:item?.issue_number ?? null,title:item?.context.title ?? "Unknown issue",url:item?.context.url ?? null};}).sort((a,b)=>(b.issue ?? 0)-(a.issue ?? 0));
-  const events = (store.db.prepare("SELECT id,ts,work_item_id,run_id,type,payload FROM events WHERE type<>'github.published' ORDER BY id DESC LIMIT 60").all() as any[])
+  // System activity: everything an issue conversation does not already show. Workflow transitions, agent results,
+  // executions and commands live in their issue's conversation; a new event type appears here unless it is listed.
+  const events = (store.db.prepare(`SELECT id,ts,work_item_id,run_id,type,payload FROM events WHERE type NOT IN (${conversationEventTypes.map(()=>"?").join(",")}) AND type NOT LIKE 'execution.%' AND type NOT LIKE 'command.%' ORDER BY id DESC LIMIT 60`).all(...conversationEventTypes) as any[])
     .filter(event=>!event.work_item_id||!itemById.get(event.work_item_id)?.archived_at)
-    .map(event => { const item=itemById.get(event.work_item_id),presentation=eventPresentation(event.type,event.payload,runRoles.get(event.run_id)); const description=String(presentation.details ?? ""); return {
+    .map(event => { const item=itemById.get(event.work_item_id),presentation=eventPresentation(event.type,event.payload); const description=String(presentation.details ?? ""); return {
       id:event.id,ts:event.ts,workItemId:event.work_item_id,runId:event.run_id,type:event.type,...presentation,details:description.length>500 ? `${description.slice(0,497)}…` : description,
       issue:item?.issue_number ?? null,issueTitle:item?.context.title ?? null,issueUrl:item?.context.url ?? null,
     }; });
