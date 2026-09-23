@@ -1,8 +1,9 @@
 import {WorkflowFailures} from "./workflow-failures.js";
 import { config } from "./config.js";
 import { InvalidResultError,validateCoverage } from "./results.js";
+import { WorkflowStories } from "./workflow-stories.js";
 import type { Store } from "./storage.js";
-import type { AgentResult,AgentRole } from "./types.js";
+import type { Criterion, AgentResult,AgentRole } from "./types.js";
 import { WorkflowProjections } from "./workflow-projection.js";
 import { WorkflowRecords,type V3Stage,type WorkflowRecord } from "./workflow-records.js";
 import {roleShortName} from "./names.js";
@@ -43,7 +44,9 @@ export class WorkflowResults {
   if(input.role==="designer")return this.designer(input,current.revision,specVersion,ids);
   const spec=this.store.db.prepare("SELECT criteria,approved_by FROM specs WHERE work_item_id=? AND version=?").get(input.workItemId,specVersion) as {criteria:string;approved_by:string|null}|undefined;
   if(!spec?.approved_by)throw new InvalidResultError("Delivery result requires an approved current specification");
-  validateCoverage(input.result,JSON.parse(spec.criteria));
+  const criteria=JSON.parse(spec.criteria) as Criterion[],verified=new Set(new WorkflowStories(this.store).verifiedByStories(input.workItemId,specVersion).flatMap(story=>story.criteria)),required=verified.size?criteria.filter(criterion=>!verified.has(criterion.id)):criteria;
+  if(verified.size)this.store.event("epic.verification_scope",{role:input.role,criteria:criteria.length,verifiedByStories:criteria.length-required.length,required:required.length,covered:input.result.coverage.length},input.workItemId,input.executionId);
+  validateCoverage(input.result,criteria,required);
   return this.delivery(input,current.revision,specVersion,ids);
  }
  private architect(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult;head:string},revision:number,specVersion:number,ids:string[]) {

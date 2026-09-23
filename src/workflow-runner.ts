@@ -20,6 +20,7 @@ import { WorkflowProjections } from "./workflow-projection.js";
 import type {PublishedLatestResult} from "./workflow-state.js";
 import {executionOutcomeText} from "./execution-presentation.js";
 import {LocalRuntimeManager} from "./local-runtime.js";
+import {WorkflowStories} from "./workflow-stories.js";
 import {browserRequired} from "./browser-runner.mjs";
 import {progressKey,type ExecutionProgress} from "./execution-progress.js";
 import {announceBudgetWarnings,budgetState,holdForBudget} from "./budget.js";
@@ -96,7 +97,7 @@ export class WorkflowRunner {
    const currentContext=JSON.parse((this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string}).context||"{}") as {previousAttempt?:{stage?:DeliveryStage;attempt?:number};invalidResultRetry?:{stage?:DeliveryStage;attempt?:number;executionId?:string;message?:string}};
    const previousAttempt=currentContext.previousAttempt?.stage===projection.stage&&currentContext.previousAttempt.attempt===projection.attempt?currentContext.previousAttempt:undefined;
    const invalidResultRetry=currentContext.invalidResultRetry?.stage===projection.stage&&currentContext.invalidResultRetry.attempt===projection.attempt?currentContext.invalidResultRetry:undefined;
-   const assembled=this.assembler.assemble({workItemId,role,specVersion,budgetBytes:budget.bytes-contractBytes-2,budgetSource:budget.source,issue:{title:context.title??`Issue #${row.issue_number}`,body:context.body??""},repositoryMap:role==="developer"?this.workspaces.repositoryMap?.(cwd):undefined,changedFiles:(reviewerContext??summary??retrySummary)?.files,diffStat:(reviewerContext??summary??retrySummary)?.stat,diffPath:reviewerContext?.path,qaEvidence:role==="reviewer"?this.latestResult(workItemId,"qa"):undefined,previousAttempt,rejectedResult:invalidResultRetry?.message?{message:invalidResultRetry.message}:undefined});
+   const assembled=this.assembler.assemble({workItemId,role,specVersion,budgetBytes:budget.bytes-contractBytes-2,budgetSource:budget.source,issue:{title:context.title??`Issue #${row.issue_number}`,body:context.body??""},repositoryMap:role==="developer"?this.workspaces.repositoryMap?.(cwd):undefined,changedFiles:(reviewerContext??summary??retrySummary)?.files,diffStat:(reviewerContext??summary??retrySummary)?.stat,diffPath:reviewerContext?.path,qaEvidence:role==="reviewer"?this.latestResult(workItemId,"qa"):undefined,storyEvidence:["qa","reviewer"].includes(role)?new WorkflowStories(this.store).verifiedByStories(workItemId,specVersion):undefined,previousAttempt,rejectedResult:invalidResultRetry?.message?{message:invalidResultRetry.message}:undefined});
 
   // Saying the Factory already tried and failed saves the agent from spending turns rediscovering
   // the same broken preview server for itself.

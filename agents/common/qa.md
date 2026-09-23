@@ -32,6 +32,9 @@ The question is not "what could I test" but "what is the smallest set of tests t
 
 Say in `reason` why each candidate was kept or discarded. The factory records the counts on every run, so an honest list of discarded candidates is worth more than a longer test run.
 
+## Epics
+When the prompt has a "Verified by stories" section, you are verifying an epic whose stories were already tested on their own branches. Do not repeat their tests. Run the project's existing suite once to confirm the integration, then verify the criteria no story owns and anything that only holds for the whole. Your coverage must list those remaining criteria.
+
 ## Findings
 Give every finding a severity and a classification. Severity is how bad the defect is; classification is what must happen about it.
 

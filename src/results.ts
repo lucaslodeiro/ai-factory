@@ -191,11 +191,13 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
 export function parseResult(raw: unknown,role:AgentRole,allowedNextRoles?:TacticalNextRole[],consultationFrom?:DeliveryStage):AgentResult {
  try{return parseResultUnchecked(raw,role,allowedNextRoles,consultationFrom);}catch(error){if(error instanceof InvalidResultError)throw error;throw new InvalidResultError(error instanceof Error?error.message:String(error));}
 }
-export function validateCoverage(r: AgentResult, criteria: Criterion[]) {
+// `required` is the subset a PASS must cover: every criterion, except on an epic whose stories
+// already verified their own, where only the criteria no completed story owns remain.
+export function validateCoverage(r: AgentResult, criteria: Criterion[], required: Criterion[] = criteria) {
   try {
    if (!criteria.length) throw new Error("Approved specification lacks structured acceptance criteria; regenerate it");
-   const ids = new Set(criteria.map(c => c.id));
+   const ids = new Set(criteria.map(c => c.id)), needed = new Set(required.map(c => c.id)), covered = new Set(r.coverage.map(c => c.criterionId));
    if (r.coverage.some(c => !ids.has(c.criterionId))) throw new Error("Report references an unknown acceptance criterion");
-   if (r.outcome === "pass" && (r.coverage.length !== ids.size || r.coverage.some(c => c.status !== "passed"))) throw new Error("PASS must cover every approved acceptance criterion with evidence");
+   if (r.outcome === "pass" && ([...needed].some(id => !covered.has(id)) || r.coverage.some(c => c.status !== "passed"))) throw new Error("PASS must cover every approved acceptance criterion with evidence");
   } catch(error){if(error instanceof InvalidResultError)throw error;throw new InvalidResultError(error instanceof Error?error.message:String(error));}
 }

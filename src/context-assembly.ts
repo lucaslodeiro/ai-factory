@@ -19,6 +19,8 @@ export interface ContextAssemblyInput {
   diffPath?:string;
   repositoryMap?:unknown;
   qaEvidence?:unknown;
+  // On an epic after its stories: what each completed story already verified.
+  storyEvidence?:unknown[];
   previousAttempt?:unknown;
   rejectedResult?:{message:string};
 }
@@ -100,6 +102,7 @@ export class ContextAssembler {
       ...(input.role === "developer" && input.repositoryMap ? [{name:"Repository map",value:input.repositoryMap,protected:false}] : []),
       ...(["developer","qa","reviewer"].includes(input.role) && (input.changedFiles || input.diffStat) ? [{name:"Changed files",value:{files:input.changedFiles??[],diffStat:input.diffStat??"",...(input.role==="reviewer"&&input.diffPath?{diffPath:input.diffPath}:{})},protected:false}] : []),
       ...(input.role === "reviewer" && testerEvidence ? [{name:"Tester execution evidence",value:testerEvidence,protected:true}] : []),
+      ...(["qa","reviewer"].includes(input.role) && input.storyEvidence?.length ? [{name:"Verified by stories",value:{note:"These stories of this epic were verified on their own branches at their own depth and are integrated here. Do not repeat their tests: run the project's existing suite once to confirm the integration, and verify the criteria no story owns. Report coverage for those remaining criteria; a story's criterion may be cited from the story's evidence.",stories:input.storyEvidence},protected:true}] : []),
     ];
     const protectedSections=sections.filter(section=>section.protected);
     const protectedMarkdown=render(protectedSections);

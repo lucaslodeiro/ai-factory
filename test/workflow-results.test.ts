@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/storage.js";
+import { WorkflowStories } from "../src/workflow-stories.js";
 import { WorkflowCommands } from "../src/workflow-commands.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
@@ -140,5 +141,22 @@ test("every Tester result records what it considered, kept and discarded against
   s.results.apply({head:"h",workItemId:"work-1",executionId:"run-q",role:"qa",result:result("pass",{testCandidates:[{name:"happy",covers:["AC1"],value:"essential",kept:true,reason:"only criterion"},{name:"edge",covers:["AC1"],value:"valuable",kept:false,reason:"thorough does not need it"},{name:"dup",covers:["AC1"],value:"redundant",kept:false,reason:"same as happy"}]})});
   const event=JSON.parse((s.store.db.prepare("SELECT payload FROM events WHERE work_item_id='work-1' AND type='verification.selection' AND run_id='run-q'").get() as {payload:string}).payload);
   assert.deepEqual(event,{outcome:"pass",verificationDepth:"thorough",candidates:3,kept:1,essential:1,valuable:1,redundant:1,valuableDiscarded:1,commands:1});
+ } finally {s.store.db.close();}
+});
+
+test("an epic whose stories are integrated verifies only the criteria no story owns and records the scope",()=>{
+ const s=setup("TEST",true);
+ try {
+  s.store.db.prepare("UPDATE specs SET criteria=? WHERE work_item_id='work-1'").run(JSON.stringify([{id:"AC1",description:"Story slice"},{id:"AC2",description:"Whole"}]));
+  s.store.db.prepare("INSERT INTO work_items(id,issue_number,issue_id,repo,branch,base_branch,created_at,updated_at,context,stage,status,epic_work_item_id) VALUES('story-1',2,200,'owner/demo','factory/issue-2','factory/issue-1','now','now','{}','DELIVERY','COMPLETED','work-1')").run();
+  s.store.db.prepare("INSERT INTO stories(epic_work_item_id,spec_version,key,title,scope,criteria,depends_on,assessment,issue_number,issue_id,dependencies_declared,work_item_id,created_at) VALUES('work-1',1,'S1','Slice','Do it','[\"AC1\"]','[]','{\"complexity\":\"low\",\"risk\":\"low\",\"verificationDepth\":\"minimal\"}',2,200,1,'story-1','now')").run();
+  s.store.event("agent.result",{role:"qa",result:{coverage:[{criterionId:"AC1",status:"passed",evidence:"story test"}]}},"story-1","run-s");
+  running(s,"qa","run-q");
+  const applied=s.results.apply({head:"h",workItemId:"work-1",executionId:"run-q",role:"qa",result:result("pass",{coverage:[{criterionId:"AC2",status:"passed",evidence:"Whole verified"}],testCandidates:[{name:"whole",covers:["AC2"],value:"essential",kept:true,reason:"epic criterion"}]})});
+  assert.equal(applied.projection.stage,"REVIEW","AC1 was verified by its story; AC2 alone satisfies the epic Tester");
+  const scope=JSON.parse((s.store.db.prepare("SELECT payload FROM events WHERE type='epic.verification_scope' AND run_id='run-q'").get() as {payload:string}).payload);
+  assert.deepEqual(scope,{role:"qa",criteria:2,verifiedByStories:1,required:1,covered:1});
+  const evidence=new WorkflowStories(s.store).verifiedByStories("work-1",1);
+  assert.deepEqual(evidence,[{key:"S1",issue:2,criteria:["AC1"],verificationDepth:"minimal",coverage:[{criterionId:"AC1",status:"passed",evidence:"story test"}]}]);
  } finally {s.store.db.close();}
 });

@@ -112,3 +112,14 @@ test("only the Builder receives the repository map, and it never displaces prote
     assert.match(tight.markdown,/Approved specification/);
   } finally { store.db.close(); }
 });
+
+test("an epic Tester and Reviewer receive what the stories verified as a protected section; a plain issue does not",()=>{
+  const {store,assembler}=setup();
+  try {
+    const stories=[{key:"S1",issue:2,criteria:["AC-1"],verificationDepth:"minimal",coverage:[]}];
+    for(const role of ["qa","reviewer"] as const){const context=assembler.assemble({workItemId:"work-1",role,specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"},storyEvidence:stories});assert.match(context.markdown,/## Verified by stories/);assert.match(context.markdown,/Do not repeat their tests/);assert.ok(context.manifest.sectionBytes["Verified by stories"]>0);}
+    const builder=assembler.assemble({workItemId:"work-1",role:"developer",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"},storyEvidence:stories});
+    assert.doesNotMatch(builder.markdown,/Verified by stories/);
+    assert.doesNotMatch(assembler.assemble({workItemId:"work-1",role:"qa",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"},storyEvidence:[]}).markdown,/Verified by stories/);
+  } finally {store.db.close();}
+});

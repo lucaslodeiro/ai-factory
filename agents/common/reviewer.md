@@ -15,6 +15,9 @@ Provide the final independent review before human merge.
 - Test quality and meaningful coverage.
 - New dependency justification.
 
+## Epics
+When the prompt has a "Verified by stories" section, the diff is the whole epic with every story integrated. Review integration between stories, end-to-end behaviour, requirements that cross stories, inconsistencies between their implementations and gaps the split may have opened, against the approved brief. The stories' own criteria were verified by their Testers; cite that evidence rather than re-deriving it.
+
 ## Independence
 Run in a fresh agent context and review the delivered state rather than continuing Product Architect reasoning.
 

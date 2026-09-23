@@ -48,6 +48,17 @@ export class WorkflowStories {
   const assessment:TaskAssessment={...story.assessment,uxImpact:epic.assessment?.uxImpact??"none",rationale:`Story ${story.key} of #${epic.issue_number}: ${epic.assessment?.rationale??"assessed with the epic"}`};
   return {body,criteria:owned,assessment,approvedBy:epic.approved_by,approvalCommentId:epic.approval_comment_id,approvedAt:epic.approved_at};
  }
+ // What the completed stories already verified, for the epic's own Tester and Reviewer: the
+ // criteria each story owns and the coverage its Tester reported. The epic verifies the rest and
+ // runs the project's suite once; it does not repeat the stories' tests.
+ verifiedByStories(epicWorkItemId:string,specVersion:number){
+  const stories=this.forEpic(epicWorkItemId,specVersion).filter(row=>row.work_item_id).filter(row=>(this.store.db.prepare("SELECT status FROM work_items WHERE id=?").get(row.work_item_id) as {status:string}|undefined)?.status==="COMPLETED");
+  return stories.map(story=>{
+   let coverage:unknown[]=[];
+   for(const row of this.store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='agent.result' ORDER BY id DESC").all(story.work_item_id) as Array<{payload:string}>){const payload=JSON.parse(row.payload) as {role?:string;result?:{coverage?:unknown[]}};if(payload.role==="qa"){coverage=payload.result?.coverage??[];break;}}
+   return {key:story.key,issue:story.issue_number,criteria:story.criteria,verificationDepth:story.assessment.verificationDepth,coverage};
+  });
+ }
  // Every story of the epic's current plan has been integrated into the epic branch.
  integrated(epic:EpicRow){
   const rows=this.forEpic(epic.id,epic.spec_version);if(!rows.length||rows.some(row=>!row.work_item_id))return false;
