@@ -280,7 +280,7 @@ test("a proposed specification leads with its brief and folds the full SPEC away
 test("a significant UX change defers approval to the prototype, whose screenshots link to the approved commit",()=>{
  const ux=result("spec");ux.taskAssessment={...ux.taskAssessment!,uxImpact:"significant"};
  const spec=resultMarkdown("product-architect",ux,2);
- assert.match(spec,/^# Specification v2 — prototype in progress/m);assert.doesNotMatch(spec,/\/factory approve/);
+ assert.match(spec,/^# Brief v2 — prototype in progress/m);assert.doesNotMatch(spec,/\/factory approve/);
  const prototype=resultMarkdown("designer",result("pass",{tests:[],coverage:[],changedFiles:[".factory/prototype/01-main flow.png",".factory/prototype/README.md"],summary:"Look at the empty state first."}),2,undefined,{prototype:{repo:"owner/demo",head:"abc123"}});
  assert.match(prototype,/^# Prototype for SPEC v2 — awaiting approval/m);
  assert.match(prototype,/!\[01-main flow\.png\]\(https:\/\/github\.com\/owner\/demo\/blob\/abc123\/\.factory\/prototype\/01-main%20flow\.png\?raw=true\)/);

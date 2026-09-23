@@ -42,7 +42,7 @@ test("V3 orchestrator completes Design, Build, Test, Review and merge with one a
  const orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
  try {
   const started=await startAssigned(orchestrator,store);assert.equal(started.created,true);
-  await orchestrator.tick();let projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"DESIGN",status:"WAITING"});assert.match(github.resultBodies.at(-1)!,/^# Specification v1/m);assert.match(github.resultBodies.at(-1)!,/## Next action/);
+  await orchestrator.tick();let projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"DESIGN",status:"WAITING"});assert.match(github.resultBodies.at(-1)!,/^# Brief v1/m);assert.match(github.resultBodies.at(-1)!,/## Next action/);
   assert.equal(github.statusBodies.at(-1)?.match(/^## Next action$/gm)?.length,1);assert.match(github.statusBodies.at(-1)!,/\/factory approve v1/);
   github.reply(1,"/factory approve v1");await orchestrator.tick();projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"TEST",status:"QUEUED"});
   await orchestrator.tick();assert.equal(new WorkflowProjections(store).get(started.id).stage,"REVIEW");
@@ -157,7 +157,7 @@ test("flush still updates the issue status when a milestone comment cannot be pu
   assert.equal((store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='github.publish_failed' AND work_item_id=?").get(started.id) as {n:number}).n,1);
   github.publishWorkflowComment=publishComment;
   await orchestrator.flush();
-  assert.equal(github.resultBodies.length,1);assert.match(github.resultBodies[0],/^# Specification v1/m);
+  assert.equal(github.resultBodies.length,1);assert.match(github.resultBodies[0],/^# Brief v1/m);
   await orchestrator.flush();assert.equal(github.resultBodies.length,1,"a recovered milestone is published exactly once");
  } finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
 });
