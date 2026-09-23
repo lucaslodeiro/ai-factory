@@ -62,7 +62,9 @@ exit 0
   config.codexCommand=fakeCodex; config.claudeCommand=fakeClaude; config.cursorCommand=fakeCursor; process.env.GH_COMMAND=fakeGh;
   fs.writeFileSync(path.join(settingsRoot,"package.json"),JSON.stringify({version:"0.1.0"}));
   fs.copyFileSync(".env.example",path.join(settingsRoot,".env.example"));
-  fs.writeFileSync(path.join(settingsRoot,".env"),"FACTORY_POLL_INTERVAL_MS=15000\nSLACK_WEBHOOK_URL='https://hooks.example.com/private'\nDEVELOPER_MODEL='custom-codex-model'\n");
+  // Saving a provider change validates every selected provider through the commands in .env, so they
+  // point at the fakes: a machine without a real Codex or Claude CLI, CI included, must pass too.
+  fs.writeFileSync(path.join(settingsRoot,".env"),`FACTORY_POLL_INTERVAL_MS=15000\nSLACK_WEBHOOK_URL='https://hooks.example.com/private'\nDEVELOPER_MODEL='custom-codex-model'\nCODEX_COMMAND='${fakeCodex}'\nCLAUDE_COMMAND='${fakeClaude}'\n`);
   fs.mkdirSync(path.join(settingsRoot,"scripts"));
   fs.writeFileSync(path.join(settingsRoot,"scripts","services.sh"),`#!/usr/bin/env bash
 state="$PWD/daemon-service-state"
@@ -342,11 +344,10 @@ echo "$*" >> "$PWD/update-actions.log"
     // the daemon process while saveConfiguration waits for the old daemon PID to exit.
     store.db.prepare("DELETE FROM daemon_lock").run();
     const serviceActionsBeforeProviderCheck=fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8");
-    // The other roles stay on Codex, and validation checks every selected provider, so it needs the fake Codex too.
-    const cursorValidation=await fetch(`http://127.0.0.1:${port}/api/settings/validate`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({values:{DEVELOPER_PROVIDER:"cursor",CURSOR_COMMAND:fakeCursor,CODEX_COMMAND:fakeCodex}})});
+    const cursorValidation=await fetch(`http://127.0.0.1:${port}/api/settings/validate`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({values:{DEVELOPER_PROVIDER:"cursor",CURSOR_COMMAND:fakeCursor}})});
     const cursorValidationResult=await cursorValidation.json() as any;
     assert.equal(cursorValidation.status,400,JSON.stringify(cursorValidationResult));assert.match(cursorValidationResult.error,/Cursor is not connected.*Connect in Connections/);
-    const cursorSave=await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{DEVELOPER_PROVIDER:"cursor",CURSOR_COMMAND:fakeCursor,CODEX_COMMAND:fakeCodex}})});
+    const cursorSave=await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{DEVELOPER_PROVIDER:"cursor",CURSOR_COMMAND:fakeCursor}})});
     assert.equal(cursorSave.status,400);assert.match((await cursorSave.json() as any).error,/Cursor is not connected/);
     assert.equal(fs.readFileSync(path.join(settingsRoot,"service-actions.log"),"utf8"),serviceActionsBeforeProviderCheck,"a disconnected provider must not stop the daemon");
     const saved = await fetch(`http://127.0.0.1:${port}/api/settings`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({values:{FACTORY_POLL_INTERVAL_MS:"5000",SLACK_WEBHOOK_URL:"",AGENT_PROVIDER:"claude",DEVELOPER_MODEL:"auto"}})});
