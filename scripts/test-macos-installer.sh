@@ -92,7 +92,9 @@ exit 0
 MOCK
 chmod +x "$retry_bin/npm"
 retry_branch=${GITHUB_HEAD_REF:-$(git -C "$root" rev-parse --abbrev-ref HEAD)}
-if [[ $retry_branch == HEAD ]]; then
+# A pull request checkout is a detached merge commit: GITHUB_HEAD_REF names a branch that exists only
+# on GitHub, so the installer's clone of this checkout could not find it.
+if [[ $retry_branch == HEAD ]] || ! git -C "$root" show-ref --verify --quiet "refs/heads/$retry_branch"; then
   retry_branch_created="installer-test-$$"
   git -C "$root" branch "$retry_branch_created" HEAD
   retry_branch=$retry_branch_created
