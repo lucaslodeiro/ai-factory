@@ -48,7 +48,8 @@ known, the criterion. Tokens live on `executions` and travel in the published is
   smaller prompt while a smaller prompt alone does not.
 - **architectPasses**: the Architect's runs split by what each returned (`brief`, `spec`, `questions`,
   `resolved`, or `no-result` when none was applied), each with runs, turns, tokens, runs without
-  measured tokens and, for the spec pass, how many resumed the provider session that wrote the brief.
+  measured tokens and how many resumed the provider session of the previous Architect run (the spec
+  its brief, a revised brief the one sent back, a consultation the spec).
 - **interventions**: human commands by kind.
 - **outcomes** (per member) and their sums in **totals**: runs per role by how they ended, with an
   interruption keyed by its reason (`interrupted:user-pause`); how many finished runs produced no

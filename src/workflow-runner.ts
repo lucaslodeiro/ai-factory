@@ -3,7 +3,7 @@ import {roleShortName} from "./names.js";
 import { ContextAssembler,InvalidContextError } from "./context-assembly.js";
 import { resolveContextBudget } from "./context-budget.js";
 import { selectModel } from "./model-policy.js";
-import { promptContract } from "./prompts.js";
+import { promptContract,tacticalRouteSection } from "./prompts.js";
 import type { Store } from "./storage.js";
 import type { AgentAdapter } from "./adapters/agent.js";
 import type { AgentRole,AgentResult,DeliveryStage,ModelSelection,TaskAssessment } from "./types.js";
@@ -37,6 +37,8 @@ export function workItemBase(row:{base_branch:string|null}):string {if(!row.base
 // Every provider CLI continues a chat by id. Cursor's `--resume` is taken from its documentation, not
 // checked against its binary; a resume it refuses costs nothing and the retry starts fresh.
 const resumableProviders=new Set(["claude","codex","cursor"]);
+function answerContinuation(){return "# Continue: the human answered\n\nThe human responded to what you returned above: an answer, a changed decision or requested changes, under \"Active human decisions\" and \"Active instructions\" below. Your contract, the rules and the repository you read are all above in this session: do not explore again what you already know, and read only what the change needs. Return what the contract asks for now, under the same result contract: usually a new brief that takes the answer in. The sections below are the current state of the work item.";}
+function consultationContinuation(route:Parameters<typeof tacticalRouteSection>[0]){return `# Continue: a tactical consultation\n\nThe specification you wrote above was approved and delivery is under way. A delivery role raised the decision in the request chain and findings below. The repository has changed since you last read it: the Builder has been working, so re-read any file before relying on what you remember of it. Your contract and rules are above in this session; resolve the decision under them.\n\n${tacticalRouteSection(route)}\n\nThe sections below are the current state of the work item.`;}
 function specContinuation(specVersion:number){return `# Continue: write the spec for brief v${specVersion}\n\nThe human approved the brief you wrote above, with every recommendation in it; any guidance given with the approval is under "Active instructions" below. The active request is now specification. Your contract, the rules and the repository you read are all above in this session: do not explore again what you already know, and read only what the spec needs beyond it. Return outcome spec under the same result contract, with brief "" and taskAssessment null. The sections below are the current state of the work item.`;}
 export function commitSummary(summary:string){const line=summary.trim().split(/\r?\n/)[0].trim();if(line.length<=72)return line;const cut=line.lastIndexOf(" ",72);return `${line.slice(0,cut>0?cut:72).trimEnd()}…`;}
 
@@ -106,23 +108,26 @@ export class WorkflowRunner {
    const currentContext=JSON.parse((this.store.db.prepare("SELECT context FROM work_items WHERE id=?").get(workItemId) as {context:string}).context||"{}") as {unresumableSession?:string;previousAttempt?:{stage?:DeliveryStage;attempt?:number};invalidResultRetry?:{stage?:DeliveryStage;attempt?:number;executionId?:string;message?:string;kind?:"invalid-result"|"transient-error"}};
    const previousAttempt=currentContext.previousAttempt?.stage===projection.stage&&currentContext.previousAttempt.attempt===projection.attempt?currentContext.previousAttempt:undefined;
    const invalidResultRetry=currentContext.invalidResultRetry?.stage===projection.stage&&currentContext.invalidResultRetry.attempt===projection.attempt?currentContext.invalidResultRetry:undefined;
-   // The spec pass continues the provider session that wrote the approved brief, so the repository
-   // it already read is not explored again. Only the state that changed since is sent.
-   const sessions=role==="product-architect"&&!consultation&&resumableProviders.has(selection.provider);
+   // Every Architect run continues the provider session of the last Architect run whose result was
+   // applied: the spec continues its brief, a revised brief the one sent back, a consultation the
+   // spec. The repository and the contract it already read are not sent or explored again; only the
+   // state that changed since is.
+   const sessions=role==="product-architect"&&resumableProviders.has(selection.provider);
    const writingSpec=active?.payload.kind==="request"&&active.payload.type==="specification";
-   resumed=sessions&&writingSpec?this.briefSession(workItemId,specVersion,selection,currentContext.unresumableSession):undefined;
+   resumed=sessions?this.architectSession(workItemId,selection,currentContext.unresumableSession):undefined;
+   const continuation=!resumed?"":writingSpec?specContinuation(specVersion):route?consultationContinuation(route):answerContinuation();
    const assembled=this.assembler.assemble({workItemId,role,specVersion,budgetBytes:budget.bytes-contractBytes-2,budgetSource:budget.source,issue:{title:context.title??`Issue #${row.issue_number}`,body:context.body??""},repositoryMap:role==="developer"?this.workspaces.repositoryMap?.(cwd):undefined,changedFiles:(reviewerContext??summary??retrySummary)?.files,diffStat:(reviewerContext??summary??retrySummary)?.stat,diffPath:reviewerContext?.path,qaEvidence:role==="reviewer"?this.latestResult(workItemId,"qa"):undefined,storyEvidence:["qa","reviewer"].includes(role)?new WorkflowStories(this.store).verifiedByStories(workItemId,specVersion):undefined,previousAttempt,rejectedResult:invalidResultRetry?.message?{message:invalidResultRetry.message,kind:invalidResultRetry.kind}:undefined});
 
   // Saying the Factory already tried and failed saves the agent from spending turns rediscovering
   // the same broken preview server for itself.
   const runtimeNote=localRuntimeFailure?`\n\nThe Factory tried to start this project's preview server for you and it did not come up: ${localRuntimeFailure} Starting it yourself will probably fail the same way. If this task does not need a running preview, ignore it and continue. If it does, report an environment-blocked finding naming that cause instead of retrying it repeatedly.`:"";
-  const instructions=`${resumed?specContinuation(specVersion):contract}\n\n${assembled.markdown}${runtimeNote}`,before=baseline?.head??this.workspaces.head(cwd);
+  const instructions=`${resumed?continuation:contract}\n\n${assembled.markdown}${runtimeNote}`,before=baseline?.head??this.workspaces.head(cwd);
    preparing=false;started=this.scheduler.begin(workItemId);
    this.updateContext(workItemId,{attemptStart:{executionId:started.executionId,head:before,startedAt:new Date().toISOString(),stage:projection.stage}},currentContext.previousAttempt?["previousAttempt"]:[]);
-   const session=sessions?(resumed?{resume:resumed}:writingSpec?undefined:{persist:true}):undefined;
-   this.store.event("model.selected",{role,specVersion,selection,budget,...(session?.persist?{sessionPersisted:true}:{})},workItemId,started.executionId);
+   const session=sessions?(resumed?{resume:resumed}:{persist:true}):undefined;
+   this.store.event("model.selected",{role,specVersion,selection,budget,...(session?{sessionPersisted:true}:{})},workItemId,started.executionId);
    if(resumed)this.store.event("architect.session_resumed",{sessionId:resumed,specVersion},workItemId,started.executionId);
-   let result=await adapter.run({workItemId,role,cwd,instructions,selection,executionId:started.executionId,promptMetadata:{...assembled.manifest,budgetBytes:budget.bytes,budgetSource:budget.source,sectionBytes:{...(resumed?{Continuation:Buffer.byteLength(specContinuation(specVersion))}:{Contract:contractBytes}),...assembled.manifest.sectionBytes}},allowedNextRoles:route?.allowedNextRoles,consultationFrom:route?.from,localRuntimeUrl,session});
+   let result=await adapter.run({workItemId,role,cwd,instructions,selection,executionId:started.executionId,promptMetadata:{...assembled.manifest,budgetBytes:budget.bytes,budgetSource:budget.source,sectionBytes:{...(resumed?{Continuation:Buffer.byteLength(continuation)}:{Contract:contractBytes}),...assembled.manifest.sectionBytes}},allowedNextRoles:route?.allowedNextRoles,consultationFrom:route?.from,localRuntimeUrl,session});
    const current=new WorkflowProjections(this.store).get(workItemId);if(current.status!=="RUNNING"||current.activeRunId!==started.executionId){this.store.event("execution.discarded",{executionId:started.executionId,reason:"Workflow changed before worktree validation"},workItemId,started.executionId);return true;}
    const changed=this.workspaces.check(cwd,role,before,row.branch,baseline);
    if(role==="designer"&&result.outcome==="pass"&&this.workspaces.prototypeFiles){
@@ -193,16 +198,14 @@ export class WorkflowRunner {
   if(finished.usage!=null||["assistant","turn.started","turn.completed","item.started","item.completed"].some(type=>types[type]))return false;
   return this.store.db.prepare("UPDATE executions SET total_tokens=0 WHERE id=? AND total_tokens IS NULL").run(executionId).changes===1;
  }
- // The session of the run that wrote this version's brief, when the same provider and model can continue it.
- private briefSession(workItemId:string,specVersion:number,selection:ModelSelection,unresumable?:string){
+ // The session of the last Architect run whose result was applied, when the same provider and model
+ // can continue it. Only that one: an older session misses what the latest run decided.
+ private architectSession(workItemId:string,selection:ModelSelection,unresumable?:string){
   const event=(runId:string,type:string)=>{const row=this.store.db.prepare("SELECT payload FROM events WHERE run_id=? AND type=? ORDER BY id DESC LIMIT 1").get(runId,type) as {payload:string}|undefined;return row?JSON.parse(row.payload) as Record<string,unknown>:undefined;};
-  for(const row of this.store.db.prepare("SELECT run_id,payload FROM events WHERE work_item_id=? AND type='agent.result' ORDER BY id DESC").all(workItemId) as Array<{run_id:string;payload:string}>){
-   const payload=JSON.parse(row.payload) as {role?:AgentRole;specVersion?:number;result?:{outcome?:string}};
-   if(payload.role!=="product-architect"||payload.result?.outcome!=="brief"||payload.specVersion!==specVersion)continue;
-   const sessionId=event(row.run_id,"execution.finished")?.sessionId,selected=event(row.run_id,"model.selected"),chosen=selected?.selection as ModelSelection|undefined;
-   return typeof sessionId==="string"&&sessionId!==unresumable&&selected?.sessionPersisted===true&&chosen?.provider===selection.provider&&chosen.model===selection.model?sessionId:undefined;
-  }
-  return undefined;
+  const latest=this.store.db.prepare("SELECT run_id FROM events WHERE work_item_id=? AND type='agent.result' AND json_extract(payload,'$.role')='product-architect' ORDER BY id DESC LIMIT 1").get(workItemId) as {run_id:string}|undefined;
+  if(!latest)return undefined;
+  const sessionId=event(latest.run_id,"execution.finished")?.sessionId,selected=event(latest.run_id,"model.selected"),chosen=selected?.selection as ModelSelection|undefined;
+  return typeof sessionId==="string"&&sessionId!==unresumable&&selected?.sessionPersisted===true&&chosen?.provider===selection.provider&&chosen.model===selection.model?sessionId:undefined;
  }
  private specVersion(workItemId:string){return (this.store.db.prepare("SELECT MAX(version) version FROM specs WHERE work_item_id=?").get(workItemId) as {version:number|null}).version??0;}
  private assessment(workItemId:string,version:number){const row=this.store.db.prepare("SELECT assessment FROM specs WHERE work_item_id=? AND version=?").get(workItemId,version) as {assessment:string|null}|undefined;if(!row?.assessment)return undefined;return JSON.parse(row.assessment) as TaskAssessment;}

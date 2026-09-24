@@ -376,14 +376,43 @@ test("the spec pass continues the brief's provider session, and starts fresh whe
   assert.equal(resumed.requests[1].promptMetadata?.sectionBytes?.Contract,undefined,"the manifest counts what was sent");assert.ok((resumed.requests[1].promptMetadata?.sectionBytes?.Continuation??0)>0);
   const fallback=await design(true);
   assert.equal(fallback.unavailable,1);assert.equal(fallback.spentNothing,1,"a resume refused before reaching the model costs nothing and does not hold the retry for acknowledgement");assert.equal(fallback.requests.length,3);
-  assert.equal(fallback.requests[2].session,undefined,"the retry does not try the same session again");assert.match(fallback.requests[2].instructions,/AI Factory worker rules/);
+  assert.deepEqual(fallback.requests[2].session,{persist:true},"the retry does not try the same session again, and keeps its own");assert.match(fallback.requests[2].instructions,/AI Factory worker rules/);
   assert.equal(fallback.stage,"BUILD");
   const reached=await design(true,true);
   assert.deepEqual([reached.spentNothing,reached.requests.length,reached.stage,reached.status],[0,2,"DESIGN","WAITING"],"a resume that reached the model may have spent tokens, so it waits for acknowledgement like any unmeasured run");
   const legacy=await design(false,false,true);
-  assert.deepEqual([legacy.requests[1].session,legacy.resumed],[undefined,0],"a brief that did not keep its session is not resumed, whatever id its stream carried");
+  assert.deepEqual([legacy.requests[1].session,legacy.resumed],[{persist:true},0],"a brief that did not keep its session is not resumed, whatever id its stream carried");
   config.roles["product-architect"]={...saved,provider:"cursor",model:"test-model"};
   const cursor=await design(false);
   assert.deepEqual([cursor.requests[0].session,cursor.requests[1].session,cursor.resumed],[{persist:true},{resume:"brief-session"},1]);
  }finally{config.roles["product-architect"]=saved;}
+});
+
+test("a revised brief continues the brief sent back, and a tactical consultation continues the spec with its return route",async()=>{
+ const saved={...config.roles["product-architect"]};config.roles["product-architect"]={...saved,provider:"codex",model:"test-model"};
+ const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),requests:AgentRunRequest[]=[];
+ const finish=(request:AgentRunRequest)=>{store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);store.event("execution.finished",{status:"succeeded",sessionId:request.session?.resume??`s-${requests.length}`},request.workItemId,request.executionId);};
+ const architect:AgentAdapter={async run(request){requests.push(request);finish(request);
+  return request.instructions.includes("TACTICAL RETURN ROUTE")?result("resolved",{nextRole:"developer",decisions:[{kind:"tactical",decision:"Keep postponed matches",rationale:"Within scope",conflictsWithHuman:false,supersedes:[]}]}):architectPass(request.instructions);}};
+ const delivery=(value:AgentResult):AgentAdapter=>({async run(request){requests.push(request);finish(request);return value;}});
+ const runner=new WorkflowRunner(store,{"product-architect":architect,developer:delivery(result("pass")),qa:delivery(result("decision"))},new Workspace(),{ensurePR(){return "unused";}});
+ const commands=new WorkflowCommands(store);
+ try{
+  await runner.run(item.id);
+  commands.apply({kind:"answer",text:"Use SQLite instead"},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});
+  await runner.run(item.id);
+  assert.deepEqual(requests[1].session,{resume:"s-1"},"the revised brief continues the one sent back");
+  assert.match(requests[1].instructions,/^# Continue: the human answered/);assert.match(requests[1].instructions,/Use SQLite instead/);assert.doesNotMatch(requests[1].instructions,/AI Factory worker rules/);
+  commands.apply({kind:"approve",version:2,guidance:""},{workItemId:item.id,login:"owner",commentId:2,specVersion:2});
+  await runner.run(item.id);assert.deepEqual(requests[2].session,{resume:"s-1"});assert.match(requests[2].instructions,/^# Continue: write the spec for brief v2/);
+  await runner.run(item.id);await runner.run(item.id);
+  assert.equal(requests[4].role,"qa");assert.equal(new WorkflowProjections(store).get(item.id).stage,"DESIGN","the Tester's decision goes to the Architect");
+  await runner.run(item.id);
+  const consultation=requests[5];assert.equal(consultation.role,"product-architect");
+  assert.deepEqual(consultation.session,{resume:"s-1"},"the consultation continues the session that wrote the spec");
+  assert.match(consultation.instructions,/^# Continue: a tactical consultation/);assert.match(consultation.instructions,/TACTICAL RETURN ROUTE — REQUIRED/);assert.match(consultation.instructions,/re-read any file before relying on/);
+  assert.deepEqual(consultation.allowedNextRoles,["developer","qa"]);
+  assert.deepEqual({stage:new WorkflowProjections(store).get(item.id).stage,resumed:(store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='architect.session_resumed'").get() as {n:number}).n},{stage:"BUILD",resumed:3});
+  assert.equal(requests.filter(request=>request.role!=="product-architect").every(request=>request.session===undefined),true,"only the Architect keeps sessions");
+ }finally{config.roles["product-architect"]=saved;store.db.close();}
 });
