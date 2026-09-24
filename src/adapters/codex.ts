@@ -16,8 +16,12 @@ export class CodexAdapter implements AgentAdapter {
   const modelArgs = r.selection.model === "auto" ? [] : ["--model", r.selection.model];
   // --json writes every turn, command and file change to stdout as it happens, so an interrupted run
   // leaves them on disk; the result still comes from --output-last-message.
-  await this.executions.run(r.workItemId, r.role, config.codexCommand,
-   ["exec", ...modelArgs, "--json", "--ephemeral", ...sandboxArgs, "--output-schema", schema, "--output-last-message", output, "-"], r.cwd, r.instructions, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
+  // `exec resume` takes no --sandbox flag, so a resumed run sets the same policy as configuration.
+  const resumeSandbox = sandboxArgs[1] === "read-only" ? ["-c", 'sandbox_mode="read-only"'] : ["-c", 'sandbox_mode="workspace-write"', "-c", "sandbox_workspace_write.network_access=true"];
+  const args = r.session?.resume
+   ? ["exec", "resume", ...modelArgs, "--json", ...resumeSandbox, "--output-schema", schema, "--output-last-message", output, r.session.resume, "-"]
+   : ["exec", ...modelArgs, "--json", ...(r.session?.persist ? [] : ["--ephemeral"]), ...sandboxArgs, "--output-schema", schema, "--output-last-message", output, "-"];
+  await this.executions.run(r.workItemId, r.role, config.codexCommand, args, r.cwd, r.instructions, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
   return parseResult(JSON.parse(fs.readFileSync(output, "utf8")), r.role, r.allowedNextRoles, r.consultationFrom);
  }
 }

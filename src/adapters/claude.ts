@@ -13,7 +13,7 @@ export class ClaudeAdapter implements AgentAdapter {
   // stream-json writes every event as it happens, so an interrupted run leaves its commands and
   // tool results on disk; --verbose is required by the CLI for stream-json in print mode.
   const { finalEvent: envelope } = await this.executions.run(r.workItemId, r.role, config.claudeCommand,
-   ["-p", ...modelArgs, "--no-session-persistence", "--output-format", "stream-json", "--verbose", "--json-schema", JSON.stringify(resultSchemaFor(r.role, r.allowedNextRoles)), "--tools", tools, "--allowedTools", tools], r.cwd, r.instructions, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
+   ["-p", ...modelArgs, ...(r.session?.resume ? ["--resume", r.session.resume] : r.session?.persist ? [] : ["--no-session-persistence"]), "--output-format", "stream-json", "--verbose", "--json-schema", JSON.stringify(resultSchemaFor(r.role, r.allowedNextRoles)), "--tools", tools, "--allowedTools", tools], r.cwd, r.instructions, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
   if (!envelope) throw new Error("Claude did not return a result event");
   if (envelope.is_error) throw new Error(`Claude returned an error result${providerFailureMessage(envelope,"claude")?`: ${providerFailureMessage(envelope,"claude")}`:""}`);
   if(envelope.structured_output==null)throw new Error("Claude result is missing structured_output");

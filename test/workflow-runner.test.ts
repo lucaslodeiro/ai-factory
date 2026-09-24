@@ -347,3 +347,43 @@ test("a Designer PASS is judged by the prototype on disk: its report is replaced
   assert.match(rejected?.payload??"",/none is on disk/,"a claimed screenshot that is not on disk is rejected");
  } finally {second.db.close();}
 });
+
+test("the spec pass continues the brief's provider session, and starts fresh when that session cannot be continued",async()=>{
+ const saved={...config.roles["product-architect"]};config.roles["product-architect"]={...saved,provider:"claude",model:"test-model"};
+ const design=async(resumeFails:boolean,reachedModel=false,briefBeforeSessions=false)=>{
+  const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),requests:AgentRunRequest[]=[];
+  const architect:AgentAdapter={async run(request){requests.push(request);
+   if(resumeFails&&request.session?.resume){store.db.prepare("UPDATE executions SET status='failed',finished_at='now' WHERE id=?").run(request.executionId);if(reachedModel)store.event("execution.finished",{status:"failed",usage:null,activity:{events:2,eventTypes:{system:1,assistant:1}}},request.workItemId,request.executionId);throw new Error("No conversation found with session ID: brief-session");}
+   store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);
+   store.event("execution.finished",{status:"succeeded",sessionId:requests.length===1?"brief-session":"other-session"},request.workItemId,request.executionId);
+   return architectPass(request.instructions);}};
+  const runner=new WorkflowRunner(store,{"product-architect":architect},new Workspace(),{ensurePR(){return "unused";}});
+  await runner.run(item.id);if(briefBeforeSessions)store.db.prepare("UPDATE events SET payload=json_remove(payload,'$.sessionPersisted') WHERE type='model.selected'").run();
+  new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:"Keep the public API"},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});
+  await runner.run(item.id);if(resumeFails)await runner.run(item.id);
+  const spentNothing=(store.db.prepare("SELECT json_extract(payload,'$.spentNothing') spent FROM events WHERE type='architect.session_unavailable'").get() as {spent:number}|undefined)?.spent;
+  const state=new WorkflowProjections(store).get(item.id),resumed=(store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='architect.session_resumed'").get() as {n:number}).n,unavailable=(store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='architect.session_unavailable'").get() as {n:number}).n;
+  store.db.close();return {requests,stage:state.stage,status:state.status,resumed,unavailable,spentNothing};
+ };
+ try{
+  const resumed=await design(false);
+  assert.deepEqual(resumed.requests[0].session,{persist:true},"the brief keeps its session for the spec pass");
+  assert.deepEqual(resumed.requests[1].session,{resume:"brief-session"});
+  assert.match(resumed.requests[1].instructions,/^# Continue: write the spec for brief v1/);assert.doesNotMatch(resumed.requests[1].instructions,/AI Factory worker rules/,"the contract is already in the session");
+  assert.match(resumed.requests[1].instructions,/Keep the public API/,"what changed since the brief is sent");
+  assert.ok(resumed.requests[1].instructions.length<resumed.requests[0].instructions.length/2);
+  assert.deepEqual([resumed.stage,resumed.resumed],["BUILD",1]);
+  assert.equal(resumed.requests[1].promptMetadata?.sectionBytes?.Contract,undefined,"the manifest counts what was sent");assert.ok((resumed.requests[1].promptMetadata?.sectionBytes?.Continuation??0)>0);
+  const fallback=await design(true);
+  assert.equal(fallback.unavailable,1);assert.equal(fallback.spentNothing,1,"a resume refused before reaching the model costs nothing and does not hold the retry for acknowledgement");assert.equal(fallback.requests.length,3);
+  assert.equal(fallback.requests[2].session,undefined,"the retry does not try the same session again");assert.match(fallback.requests[2].instructions,/AI Factory worker rules/);
+  assert.equal(fallback.stage,"BUILD");
+  const reached=await design(true,true);
+  assert.deepEqual([reached.spentNothing,reached.requests.length,reached.stage,reached.status],[0,2,"DESIGN","WAITING"],"a resume that reached the model may have spent tokens, so it waits for acknowledgement like any unmeasured run");
+  const legacy=await design(false,false,true);
+  assert.deepEqual([legacy.requests[1].session,legacy.resumed],[undefined,0],"a brief that did not keep its session is not resumed, whatever id its stream carried");
+  config.roles["product-architect"]={...saved,provider:"cursor",model:"test-model"};
+  const cursor=await design(false);
+  assert.deepEqual([cursor.requests[0].session,cursor.requests[1].session,cursor.resumed],[undefined,undefined,0],"a provider whose resume is unverified runs each pass fresh");
+ }finally{config.roles["product-architect"]=saved;}
+});

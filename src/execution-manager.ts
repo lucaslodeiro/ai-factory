@@ -108,10 +108,13 @@ export class ExecutionManager {
         // One pass over the provider's event stream, however long the run was: its usage, its
         // activity and the final result envelope. Plain-text output simply yields no events.
         const stdoutFile=path.join(logDir,"stdout.log"),usageReducer=tokenUsageReducer(selection?.provider),activityReducer=providerActivityReducer();
-        let finalEvent:JsonEvent|undefined,failedTurn:JsonEvent|undefined;
+        let finalEvent:JsonEvent|undefined,failedTurn:JsonEvent|undefined,sessionId:string|undefined;
         // A transcript that cannot be read leaves usage and activity unknown; it must not stop the
         // execution from being recorded.
-        try { eachJsonLine(stdoutFile,event=>{usageReducer.add(event);activityReducer.add(event);if(event.type==="result")finalEvent=event;if(event.type==="turn.failed")failedTurn=event;}); } catch {}
+        // The provider session id, so a later run can continue this one: Codex announces its thread,
+        // Claude and Cursor stamp every event with it.
+        const session=(event:JsonEvent)=>event.type==="thread.started"&&typeof event.thread_id==="string"?event.thread_id:typeof event.session_id==="string"?event.session_id:undefined;
+        try { eachJsonLine(stdoutFile,event=>{usageReducer.add(event);activityReducer.add(event);sessionId??=session(event);if(event.type==="result")finalEvent=event;if(event.type==="turn.failed")failedTurn=event;}); } catch {}
         if(status==="succeeded"&&(finalEvent?.is_error===true||failedTurn))status="failed";
         const usage=usageReducer.result();
         // Without a completion record the supervisor died before the agent was reaped, so the agent may
@@ -119,7 +122,7 @@ export class ExecutionManager {
         this.store.db.prepare("UPDATE executions SET status=?,finished_at=?,exit_code=?,input_tokens=?,output_tokens=?,cached_tokens=?,total_tokens=?,interruption_reason=?,recovery_pending=? WHERE id=?")
           .run(status, new Date().toISOString(), providerExitCode, usage?.inputTokens ?? null,usage?.outputTokens ?? null,usage?.cachedTokens ?? null,usage?.totalTokens ?? null,interruptionReason??null,completion?0:1,id);
         const providerError=status==="failed"?providerFailureMessage(finalEvent??failedTurn,selection?.provider):undefined;
-        this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage,activity:activityReducer.result(),interruptionReason,providerError }, workItemId, id);
+        this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage,activity:activityReducer.result(),interruptionReason,providerError,sessionId }, workItemId, id);
         if (status !== "succeeded") {const message=`Execution ${id} ${status}${providerError ? `: ${providerError}` : spawnError ? ': ' + spawnError.message : ''}`;return reject(providerError&&/Failed to provide valid structured output after \d+ attempts/i.test(providerError)?new InvalidResultError(message):new Error(message));}
         resolve({ id, finalEvent, readStdout:()=>{ const stdout=readOutput(stdoutFile,10_000_000); if(stdout.tooLarge)throw new Error("Agent output exceeds 10 MB"); return stdout.text; } });
       });

@@ -46,6 +46,7 @@ if(codex) {
  const schema=JSON.parse(fs.readFileSync(args[args.indexOf('--output-schema')+1],'utf8'));
  const check=s=>{if(s.properties){if(s.additionalProperties!==false||JSON.stringify([...(s.required??[])].sort())!==JSON.stringify(Object.keys(s.properties).sort()))throw new Error('invalid_json_schema');Object.values(s.properties).forEach(check);}if(s.items)check(s.items);};check(schema);
  fs.writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(result));
+ console.log(JSON.stringify({type:'thread.started',thread_id:'codex-thread'}));
  console.log(JSON.stringify({type:'turn.started'}));
  console.log(JSON.stringify({type:'item.completed',item:{id:'item_1',type:'command_execution',command:'npm test',aggregated_output:'ok',exit_code:0,status:'completed'}}));
  console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:1100,cached_input_tokens:300,cache_write_input_tokens:0,output_tokens:134,reasoning_output_tokens:20}}));
@@ -59,7 +60,7 @@ if(codex) {
  if(!args.includes('--json-schema')||args[args.indexOf('--output-format')+1]!=='stream-json'||!args.includes('--verbose')||args.includes('--dangerously-skip-permissions'))process.exit(9);
  if(process.env.MAX_STRUCTURED_OUTPUT_RETRIES!=='2')process.exit(13);
  // The real stream: the result envelope is not the last line, a task summary follows it.
- console.log(JSON.stringify({type:'system',subtype:'init'}));
+ console.log(JSON.stringify({type:'system',subtype:'init',session_id:'claude-session'}));
  console.log(JSON.stringify({type:'assistant',message:{content:[{type:'tool_use',id:'t1',name:'Read',input:{file_path:'a.txt'}}]}}));
  console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,num_turns:2,structured_output:result,usage:{input_tokens:100,output_tokens:20,cache_read_input_tokens:5}}));
  console.log(JSON.stringify({type:'system',subtype:'task_summary',detail:null}));
@@ -88,7 +89,8 @@ if(codex) {
  const finished=(s.db.prepare("SELECT payload FROM events WHERE type='execution.finished'").all() as Array<{payload:string}>).map(row=>JSON.parse(row.payload));
  assert.equal(finished.length,8);
  assert.ok(finished.every(event=>event.activity && event.activity.events>=1),"every provider run records what it did inside the run");
- assert.deepEqual(finished[1].activity.eventTypes,{"turn.started":1,"item.completed":1,"turn.completed":1},"Codex stream events are counted by their own type");
+ assert.deepEqual(finished[1].activity.eventTypes,{"thread.started":1,"turn.started":1,"item.completed":1,"turn.completed":1},"Codex stream events are counted by their own type");
+ assert.deepEqual([finished[0].sessionId,finished[1].sessionId],["claude-session","codex-thread"],"each run records the provider session a later run could continue");
  assert.deepEqual(finished[0].activity.eventTypes,{system:2,assistant:1,result:1},"Claude stream events are counted by their own type");
  assert.equal(finished[0].activity.turns,2);
  assert.deepEqual(finished[1].usage,{inputTokens:800,outputTokens:134,cachedTokens:300,cacheReadTokens:300,cacheWriteTokens:0,totalTokens:1234},"Codex usage comes from its turn events, cached input counted once");
@@ -133,4 +135,18 @@ test("Cursor access flags follow each role's write contract",async()=>{
   await new CursorAdapter(execution as any).run({workItemId:"w",role,cwd:root,instructions:"test",selection:{...selectModel(role),provider:"cursor"}});
   const writable=["developer","qa"].includes(role);assert.equal(args.includes("--force"),writable);assert.equal(args[args.indexOf("--mode")+1]==="ask",!writable);
  }
+});
+
+test("Claude and Codex keep a brief's session only when asked, and a resumed run continues that session",async()=>{
+ const claudeArgs=async(session?:{persist?:boolean;resume?:string})=>{let args:string[]=[];await new ClaudeAdapter({async run(_id:string,_role:string,_command:string,argv:string[]){args=argv;return {finalEvent:{type:"result",is_error:false,structured_output:result("brief")}};}} as any).run({workItemId:"w",role:"product-architect",cwd:root,instructions:"test",selection:{...selectModel("product-architect"),provider:"claude",model:"auto"},session});return args;};
+ assert.ok((await claudeArgs()).includes("--no-session-persistence"),"a run nobody continues leaves no session behind");
+ const persisted=await claudeArgs({persist:true});assert.ok(!persisted.includes("--no-session-persistence"));assert.ok(!persisted.includes("--resume"));
+ const resumedClaude=await claudeArgs({resume:"session-1"});assert.equal(resumedClaude[resumedClaude.indexOf("--resume")+1],"session-1");assert.ok(resumedClaude.includes("--json-schema"));
+ const codexArgs=async(session?:{persist?:boolean;resume?:string})=>{let args:string[]=[];await new CodexAdapter({async run(_id:string,_role:string,_command:string,argv:string[]){args=argv;fs.writeFileSync(argv[argv.indexOf("--output-last-message")+1],JSON.stringify(result("spec")));}} as any).run({workItemId:"w",role:"product-architect",cwd:root,instructions:"test",selection:{...selectModel("product-architect"),provider:"codex"},session});return args;};
+ assert.ok((await codexArgs()).includes("--ephemeral"));
+ const kept=await codexArgs({persist:true});assert.ok(!kept.includes("--ephemeral"));assert.equal(kept[kept.indexOf("--sandbox")+1],"read-only");
+ const resumedCodex=await codexArgs({resume:"thread-1"});
+ assert.deepEqual(resumedCodex.slice(0,2),["exec","resume"]);assert.deepEqual(resumedCodex.slice(-2),["thread-1","-"]);
+ assert.ok(!resumedCodex.includes("--sandbox"),"exec resume takes no --sandbox flag");assert.ok(resumedCodex.includes('sandbox_mode="read-only"'));
+ assert.ok(resumedCodex.includes("--output-schema")&&resumedCodex.includes("--json"));
 });

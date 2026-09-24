@@ -83,3 +83,22 @@ test("execution outcomes say how many runs ended without a result, what they cos
   assert.deepEqual([totals.unsuccessfulExecutions,totals.unsuccessfulSeconds,totals.invalidResults,totals.longestTimeoutStreak],[5,1890,1,{stage:"TEST",runs:2}]);
  } finally {store.db.close();}
 });
+
+test("the Architect's runs are split by pass, with the turns and tokens each cost and the spec runs that resumed the brief's session",()=>{
+ const store=new Store(":memory:");
+ try {
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status) VALUES('w',9,'owner/demo','now','now','{}','BUILD','QUEUED')").run();
+  const run=(id:string,tokens:number|null,outcome:string|null,turns:number|null,resumed=false)=>{
+   store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,finished_at,total_tokens) VALUES(?,'w','product-architect','DESIGN','succeeded',?,'now',?)").run(id,`2026-09-24T10:0${id.length}:00Z`,tokens);
+   store.event("execution.finished",{status:"succeeded",activity:turns===null?null:{turns}},"w",id);
+   if(outcome)store.event("agent.result",{role:"product-architect",result:{outcome},specVersion:1},"w",id);
+   if(resumed)store.event("architect.session_resumed",{sessionId:"s",specVersion:1},"w",id);
+  };
+  run("b",120000,"brief",8);run("bb",null,null,null);run("sss",40000,"spec",4,true);run("ssss",90000,"spec",11);
+  assert.deepEqual(epicMetrics(store,"w").architectPasses,{
+   brief:{runs:1,measuredRuns:1,totalTurns:8,avgTurns:8,tokens:120000,unmeasuredTokenRuns:0,resumed:0},
+   "no-result":{runs:1,measuredRuns:0,totalTurns:0,avgTurns:null,tokens:0,unmeasuredTokenRuns:1,resumed:0},
+   spec:{runs:2,measuredRuns:2,totalTurns:15,avgTurns:7.5,tokens:130000,unmeasuredTokenRuns:0,resumed:1},
+  });
+ } finally {store.db.close();}
+});

@@ -31,6 +31,11 @@ export interface TestingMetrics { runs:number; candidates:number; kept:number; e
 // smaller prompt while a smaller prompt alone does not. Per role, so a contract change aimed at one
 // role (for example, batching a Designer's screenshots into one script) shows up here directly.
 export interface TurnsByRole { runs:number; measuredRuns:number; totalTurns:number; avgTurns:number|null }
+// The Architect runs a light brief and then the spec written under it, so its runs are split by what
+// each one returned (brief, spec, questions, resolved, or no-result when none was applied). Tokens say
+// what each pass cost; resumed counts spec runs that continued the brief's provider session instead
+// of exploring the repository again.
+export interface ArchitectPass extends TurnsByRole { tokens:number; unmeasuredTokenRuns:number; resumed:number }
 export interface EpicMetricsReport {
  workItem:{id:string;issue:number;kind:"epic"|"issue"};
  members:MemberMetrics[];
@@ -38,6 +43,7 @@ export interface EpicMetricsReport {
   unsuccessfulExecutions:number;unsuccessfulSeconds:number|null;invalidResults:number;longestTimeoutStreak:{stage:string|null;runs:number}};
  testing:TestingMetrics;
  turnsByRole:Record<string,TurnsByRole>;
+ architectPasses:Record<string,ArchitectPass>;
  epicVerification:Array<{role:string;criteria:number;verifiedByStories:number;required:number;covered:number}>;
  findings:{byRole:Record<string,Record<string,number>>;reviewerOnStoryCriteria:number;noChangePasses:number};
  interventions:{commands:number;byKind:Record<string,number>};
@@ -75,6 +81,21 @@ function turnsByRole(store:Store,id:string):Array<{role:string;turns:unknown}>{
   .map(row=>({role:row.role,turns:(JSON.parse(row.payload) as {activity?:{turns?:unknown}}).activity?.turns}));
 }
 
+function addArchitectPasses(store:Store,id:string,target:Record<string,ArchitectPass>){
+ const runs=store.db.prepare(`SELECT x.total_tokens tokens,
+  (SELECT payload FROM events WHERE run_id=x.id AND type='agent.result' ORDER BY id DESC LIMIT 1) result,
+  (SELECT payload FROM events WHERE run_id=x.id AND type='execution.finished' ORDER BY id DESC LIMIT 1) finished,
+  EXISTS(SELECT 1 FROM events WHERE run_id=x.id AND type='architect.session_resumed') resumed
+  FROM executions x WHERE x.work_item_id=? AND x.role='product-architect' ORDER BY x.started_at,x.rowid`).all(id) as Array<{tokens:number|null;result:string|null;finished:string|null;resumed:number}>;
+ for(const run of runs){
+  const outcome=run.result?String((JSON.parse(run.result) as {result?:{outcome?:string}}).result?.outcome??"no-result"):"no-result";
+  const bucket=target[outcome]??(target[outcome]={runs:0,measuredRuns:0,totalTurns:0,avgTurns:null,tokens:0,unmeasuredTokenRuns:0,resumed:0});
+  addTurns(target as Record<string,TurnsByRole>,outcome,run.finished?(JSON.parse(run.finished) as {activity?:{turns?:unknown}}).activity?.turns:undefined);
+  if(run.tokens===null)bucket.unmeasuredTokenRuns++;else bucket.tokens+=run.tokens;
+  if(run.resumed)bucket.resumed++;
+ }
+}
+
 export function epicMetrics(store:Store,workItemId:string):EpicMetricsReport {
  const family=budgetFamily(store,workItemId),owner=family[0];
  const rows=store.db.prepare(`SELECT id,issue_number,stage,status,correction_cycles,attempt,epic_work_item_id,created_at FROM work_items WHERE id IN (${family.map(()=>"?").join(",")})`).all(...family) as Array<{id:string;issue_number:number;stage:string|null;status:string|null;correction_cycles:number;attempt:number;epic_work_item_id:string|null;created_at:string}>;
@@ -95,10 +116,11 @@ export function epicMetrics(store:Store,workItemId:string):EpicMetricsReport {
  });
  const testing:TestingMetrics={runs:0,candidates:0,kept:0,essential:0,valuable:0,redundant:0,valuableDiscarded:0,keptRatio:null,byDepth:{}};
  const epicVerification:EpicMetricsReport["epicVerification"]=[],findingsByRole:Record<string,Record<string,number>>={},commandsByKind:Record<string,number>={};
- const turns:Record<string,TurnsByRole>={};
+ const turns:Record<string,TurnsByRole>={},architectPasses:Record<string,ArchitectPass>={};
  let reviewerOnStoryCriteria=0,noChangePasses=0,humanCommands=0;
  for(const id of family){
   for(const {role,turns:turnCount} of turnsByRole(store,id))addTurns(turns,role,turnCount);
+  addArchitectPasses(store,id,architectPasses);
   for(const {payload} of events("verification.selection",id)){
    testing.runs++;for(const key of ["candidates","kept","essential","valuable","redundant","valuableDiscarded"] as const)testing[key]+=Number(payload[key]??0);
    const depth=String(payload.verificationDepth??"unknown"),bucket=testing.byDepth[depth]??(testing.byDepth[depth]={runs:0,candidates:0,kept:0});bucket.runs++;bucket.candidates+=Number(payload.candidates??0);bucket.kept+=Number(payload.kept??0);
@@ -113,7 +135,7 @@ export function epicMetrics(store:Store,workItemId:string):EpicMetricsReport {
   }
  }
  testing.keptRatio=testing.candidates?Math.round(testing.kept*100/testing.candidates)/100:null;
- for(const bucket of Object.values(turns))bucket.avgTurns=bucket.measuredRuns?Math.round(bucket.totalTurns/bucket.measuredRuns*10)/10:null;
+ for(const bucket of [...Object.values(turns),...Object.values(architectPasses)])bucket.avgTurns=bucket.measuredRuns?Math.round(bucket.totalTurns/bucket.measuredRuns*10)/10:null;
  const starts=members.map(member=>Date.parse(member.startedAt??"")).filter(Number.isFinite),ends=members.map(member=>Date.parse(member.completedAt??"")).filter(Number.isFinite);
  const ownerMember=members[0];
  return {
@@ -125,7 +147,7 @@ export function epicMetrics(store:Store,workItemId:string):EpicMetricsReport {
    unsuccessfulSeconds:members.some(member=>member.outcomes.unsuccessfulSeconds!==null)?members.reduce((total,member)=>total+(member.outcomes.unsuccessfulSeconds??0),0):null,
    invalidResults:members.reduce((total,member)=>total+member.outcomes.invalidResults,0),
    longestTimeoutStreak:members.map(member=>member.outcomes.longestTimeoutStreak).reduce((best,streak)=>streak.runs>best.runs?streak:best,{stage:null,runs:0})},
-  testing,turnsByRole:turns,epicVerification,
+  testing,turnsByRole:turns,architectPasses,epicVerification,
   findings:{byRole:findingsByRole,reviewerOnStoryCriteria,noChangePasses},
   interventions:{commands:humanCommands,byKind:commandsByKind},
  };

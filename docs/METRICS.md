@@ -46,6 +46,9 @@ known, the criterion. Tokens live on `executions` and travel in the published is
   average. Turns are the multiplier a leaner contract is meant to move: every tool call inside a run
   re-reads the whole prompt and everything written or read so far, so fewer turns compounds with a
   smaller prompt while a smaller prompt alone does not.
+- **architectPasses**: the Architect's runs split by what each returned (`brief`, `spec`, `questions`,
+  `resolved`, or `no-result` when none was applied), each with runs, turns, tokens, runs without
+  measured tokens and, for the spec pass, how many resumed the provider session that wrote the brief.
 - **interventions**: human commands by kind.
 - **outcomes** (per member) and their sums in **totals**: runs per role by how they ended, with an
   interruption keyed by its reason (`interrupted:user-pause`); how many finished runs produced no
@@ -80,6 +83,12 @@ known, the criterion. Tokens live on `executions` and travel in the published is
   command for every kept test) instead of a tool call per state or per command; tokens alone can look
   similar between two runs of very different turn counts, because the prompt itself is a small share
   of what a many-turn run spends.
+
+- **Is the brief really a quick pass, and what does the spec pass cost on top?**
+  `architectPasses.brief` should be the small one: a brief whose tokens approach the spec's means the
+  Architect is designing before the human validated anything. `architectPasses.spec.resumed` against
+  `runs` says how often the spec continued the brief's session; compare `avgTurns` and `tokens` of
+  resumed and fresh spec runs across issues to see what not exploring the repository again saves.
 
 ## Not yet measured
 
