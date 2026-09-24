@@ -8,6 +8,7 @@ import { commitSummary,WorkflowRunner } from "../src/workflow-runner.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowCommands } from "../src/workflow-commands.js";
 import { WorkflowFailures } from "../src/workflow-failures.js";
+import { WorkflowRecords } from "../src/workflow-records.js";
 import { config } from "../src/config.js";
 import { architectPass,result } from "./fixtures.js";
 import type { AgentResult } from "../src/types.js";
@@ -473,8 +474,8 @@ test("a correction cycle continues the Builder's and the Tester's own sessions w
   assert.deepEqual(of("developer").map(request=>request.session),[{persist:true},{resume:"developer-session"}]);
   assert.deepEqual(of("qa").map(request=>request.session),[{persist:true},{resume:"qa-session"}]);
   const builder=of("developer")[1].instructions,tester=of("qa")[1].instructions;
-  assert.match(builder,/^# Continue: correction cycle 1/);assert.ok(builder.includes("Slug keeps a trailing dash"),"the findings are sent");
-  assert.match(tester,/^# Continue: verify correction cycle 1/);assert.match(tester,/src\/a\.ts/,"the Tester is told what changed");
+  assert.match(builder,/^# Continue: the work came back/);assert.ok(builder.includes("Slug keeps a trailing dash"),"the findings are sent");
+  assert.match(tester,/^# Continue: verify the changes/);assert.match(tester,/src\/a\.ts/,"the Tester is told what changed");
   for(const instructions of [builder,tester])assert.doesNotMatch(instructions,/AI Factory worker rules|## Issue|## Approved specification|## Repository map/,"what the session already holds is not sent again");
   assert.equal((store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='delivery.session_resumed'").get() as {n:number}).n,2);
  }finally{config.roles.developer=saved.developer;config.roles.qa=saved.qa;config.verifyCommand=previousVerify;config.maxCycles=previousMaxCycles;store.db.close();}
@@ -511,11 +512,52 @@ test("a run stopped before it finished is continued in its own session, whatever
   assert.match((await attempt("codex",{status:"timed_out",reason:"execution-timeout"})).request.instructions,/reached the Factory's time limit/);
   assert.match((await attempt("claude",{status:"cancelled",reason:"token-budget-limit"})).request.instructions,/token budget, and an approver has extended it/);
   assert.match((await attempt("cursor",{reason:"daemon-restart"})).request.instructions,/The Factory restarted while you were working/);
-  // Nothing to continue: the run returned its result, belongs to another role, another spec, or another provider.
-  for(const over of [{result:true},{role:"qa"},{specVersion:2},{status:"failed",reason:null}])assert.deepEqual((await attempt("codex",over)).request.session,{persist:true},JSON.stringify(over));
+  // A run that returned its result was not stopped: the Builder continues it as work that came back.
+  const delivered=await attempt("codex",{result:true});
+  assert.deepEqual(delivered.request.session,{resume:"stopped-session"});assert.match(delivered.request.instructions,/^# Continue: the work came back/);assert.equal(delivered.continued,0);
+  // Nothing to continue: the run belongs to another role, another spec, failed, or another provider.
+  for(const over of [{role:"qa"},{specVersion:2},{status:"failed",reason:null}])assert.deepEqual((await attempt("codex",over)).request.session,{persist:true},JSON.stringify(over));
   config.roles.developer={...saved,provider:"claude",model:"test-model"};
   const store=new Store(":memory:"),requests:AgentRunRequest[]=[];
   try{seed(store,{provider:"codex"});await new WorkflowRunner(store,{developer:{async run(request){requests.push(request);store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return result("pass");}}},Object.assign(new Workspace(),{check:()=>["src/a.ts"]}),{ensurePR(){return "unused";}}).run("build");
    assert.deepEqual(requests[0].session,{persist:true},"a session of another provider cannot be continued");}finally{store.db.close();}
  }finally{config.roles.developer=saved;}
+});
+
+test("the Builder after changes requested on the pull request, and the Designer after prototype feedback, continue their own sessions",async()=>{
+ const saved={developer:{...config.roles.developer},designer:{...config.roles.designer}};
+ const seed=(store:Store,role:"developer"|"designer",stage:string,priorSpec:number)=>{
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,base_branch,created_at,updated_at,context,stage,status) VALUES('item',1,'owner/demo','factory/issue-1','main','now','now',?,?,'QUEUED')").run(JSON.stringify({title:"Item",body:"Issue body text",cwd:"/tmp/factory-work"}),stage);
+  store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment,approved_by,approved_at) VALUES('item',2,'SPEC',?,?,'owner','now')").run(JSON.stringify([{id:"AC1",description:"Works"}]),JSON.stringify({complexity:"medium",risk:"low",verificationDepth:"standard",uxImpact:role==="designer"?"significant":"none",rationale:"standard"}));
+  store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,total_tokens) VALUES('earlier','item',?,?,'succeeded','2026-09-24T10:00:00Z',5000)").run(role,stage);
+  store.event("model.selected",{role,specVersion:priorSpec,selection:{provider:"cursor",model:"test-model"},sessionPersisted:true},"item","earlier");
+  store.event("execution.finished",{status:"succeeded",sessionId:`${role}-session`},"item","earlier");
+  store.event("agent.result",{role,result:result("pass")},"item","earlier");
+  const records=new WorkflowRecords(store);
+  if(role==="developer")records.create({workItemId:"item",specVersion:2,scope:"spec",payload:{kind:"finding",classification:"auto-fix",originRole:"reviewer",evidence:"Rename the button to Sign up"},sourceType:"github-comment",sourceId:"9",actor:"owner"});
+  else {records.create({workItemId:"item",specVersion:2,scope:"spec",payload:{kind:"decision",category:"human",decision:"Put the login link in the header",rationale:"Specification feedback from @owner",supersedes:[]},sourceType:"github-comment",sourceId:"9",actor:"owner"});
+   records.create({workItemId:"item",specVersion:2,scope:"spec",payload:{kind:"request",type:"prototype",owner:"designer",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:9},sourceType:"agent-result",sourceId:"architect",actor:"product-architect"});}
+ };
+ const run=async(role:"developer"|"designer",stage:string,priorSpec:number)=>{
+  config.roles[role]={...saved[role],provider:"cursor",model:"test-model"};
+  const store=new Store(":memory:"),requests:AgentRunRequest[]=[];
+  try{
+   seed(store,role,stage,priorSpec);
+   const workspace=Object.assign(new Workspace(),{check:()=>["src/a.ts"],prototypeFiles:()=>[".factory/prototype/01.png"]});
+   const agent:AgentAdapter={async run(request){requests.push(request);store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return result("pass",role==="designer"?{changedFiles:[".factory/prototype/01.png"],tests:[],coverage:[]}:{});}};
+   await new WorkflowRunner(store,{[role]:agent},workspace,{ensurePR(){return "unused";}}).run("item");
+   return requests[0];
+  }finally{store.db.close();}
+ };
+ try{
+  const builder=await run("developer","BUILD",2);
+  assert.deepEqual(builder.session,{resume:"developer-session"},"no correction cycle is needed: the Builder already delivered under this spec");
+  assert.match(builder.instructions,/^# Continue: the work came back/);assert.ok(builder.instructions.includes("Rename the button to Sign up"));
+  assert.doesNotMatch(builder.instructions,/## Issue|## Approved specification/);
+  assert.deepEqual((await run("developer","BUILD",1)).session,{persist:true},"a Builder run under another spec starts fresh");
+  const designer=await run("designer","DESIGN",1);
+  assert.deepEqual(designer.session,{resume:"designer-session"},"the Designer continues its prototype even when the spec was revised for the feedback");
+  assert.match(designer.instructions,/^# Continue: revise your prototype/);assert.ok(designer.instructions.includes("Put the login link in the header"));
+  assert.match(designer.instructions,/## Approved specification/,"the current spec is sent, since it may have changed");assert.doesNotMatch(designer.instructions,/## Issue/);
+ }finally{config.roles.developer=saved.developer;config.roles.designer=saved.designer;}
 });

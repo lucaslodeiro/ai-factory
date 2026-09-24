@@ -461,6 +461,14 @@ A run stopped before it returned a result, by a person's guidance, a pause, a ca
 
 Verified by `npx tsc --noEmit` and `npm test` (474 passed), including `test/workflow-runner.test.ts`: the same stopped Builder is continued on Claude, Codex and Cursor, each stop reason gets its note, and a run with a result, another role, another spec, a failed run or another provider's session starts fresh.
 
+## The last three restarts from scratch now continue — 2026-09-24
+
+- **A daemon that died.** Recovery marked the abandoned run interrupted without reading its stream, so it left no session and no usage, and the next run started over. It now reads the run's own `stdout.log` the way the execution manager does (shared `streamFacts`): the provider session id and the usage reported so far, marked partial, with a resumed Codex run measured from its thread's previous total (`execution.started` now records `resumedSession`). The next run of the role continues that session like any stopped run.
+- **Changes requested on the pull request.** They return the work to Build without a correction cycle, and the Builder session was only continued in a correction cycle. The Builder and the Tester now continue their last applied run under the same spec whatever sent the work back, and the note no longer names a cycle.
+- **Prototype feedback.** The Architect continued its session, but the Designer prototyped again from scratch. It now continues its last prototype run, under any spec version since the Architect may revise the spec for the feedback, with a note to change what the feedback and spec require and keep the rest; it receives the current spec, not the issue.
+
+Verified by `npx tsc --noEmit` and `npm test` (476 passed), including `test/execution.test.ts` (a recovered run keeps its session and its partial usage) and `test/workflow-runner.test.ts` (a Builder after pull request feedback, with no correction cycle, and a Designer after prototype feedback under a revised spec each continue their own session; a Builder under another spec starts fresh).
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

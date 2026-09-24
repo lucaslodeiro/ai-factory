@@ -48,16 +48,27 @@ export interface ExecutionOutput {
   /** The whole of stdout as text, for a provider that answers with a single envelope. */
   readStdout():string;
 }
+// The provider session id, so a later run can continue this one: Codex announces its thread, Claude
+// and Cursor stamp every event with it.
+export const providerSessionId=(event:JsonEvent)=>event.type==="thread.started"&&typeof event.thread_id==="string"?event.thread_id:typeof event.session_id==="string"?event.session_id:undefined;
+/** What the provider last reported as the whole thread's usage, from that thread's latest measured run. */
+export function sessionTotal(store:Store,sessionId:string):Partial<TokenUsage>|null {
+  // A run cut short before its turn completed reported nothing, so the last one that did is the base.
+  const row=store.db.prepare("SELECT payload FROM events WHERE type='execution.finished' AND json_extract(payload,'$.sessionId')=? AND coalesce(json_extract(payload,'$.sessionUsage.totalTokens'),json_extract(payload,'$.usage.totalTokens')) IS NOT NULL ORDER BY id DESC LIMIT 1").get(sessionId) as {payload:string}|undefined;
+  const payload=row?JSON.parse(row.payload) as {usage?:Partial<TokenUsage>|null;sessionUsage?:Partial<TokenUsage>|null}:undefined;
+  return payload?.sessionUsage??payload?.usage??null;
+}
+/** A run's usage and session from its provider stream: Codex reports a resumed thread's running
+ * total, so a resumed Codex run is measured from where its thread's previous run left it. */
+export function streamFacts(store:Store,file:string,provider:ModelSelection["provider"]|undefined,resumedSession?:string,visit?:(event:JsonEvent)=>void){
+  const reducer=tokenUsageReducer(provider);let sessionId:string|undefined;
+  try { eachJsonLine(file,event=>{reducer.add(event);sessionId??=providerSessionId(event);visit?.(event);}); } catch {}
+  const baseline=provider==="codex"&&resumedSession?sessionTotal(store,resumedSession):null,reported=reducer.result();
+  return {usage:sinceSessionTotal(reported,baseline),sessionUsage:provider==="codex"?reported:undefined,sessionId,baseline};
+}
 export class ExecutionManager {
   private running = new Map<string, { child: ChildProcess; cancel: () => void; interrupt: (reason:string) => void }>();
   constructor(private store: Store) {}
-  /** What the provider last reported as the whole thread's usage, from that thread's latest run. */
-  private sessionTotal(sessionId:string):Partial<TokenUsage>|null {
-    // A run cut short before its turn completed reported nothing, so the last one that did is the base.
-    const row=this.store.db.prepare("SELECT payload FROM events WHERE type='execution.finished' AND json_extract(payload,'$.sessionId')=? AND coalesce(json_extract(payload,'$.sessionUsage.totalTokens'),json_extract(payload,'$.usage.totalTokens')) IS NOT NULL ORDER BY id DESC LIMIT 1").get(sessionId) as {payload:string}|undefined;
-    const payload=row?JSON.parse(row.payload) as {usage?:Partial<TokenUsage>|null;sessionUsage?:Partial<TokenUsage>|null}:undefined;
-    return payload?.sessionUsage??payload?.usage??null;
-  }
   async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs, selection?: ModelSelection, promptMetadata:PromptManifestInput = {}, executionId?:string, localRuntimeUrl?:string, resumedSession?:string): Promise<ExecutionOutput> {
     if(browserRequired(cwd,role))input+=browserInstructions(cwd,localRuntimeUrl);
     const id = executionId??randomUUID();
@@ -78,10 +89,10 @@ export class ExecutionManager {
       this.store.db.prepare("UPDATE executions SET prompt_bytes=?,prompt_sha256=? WHERE id=?").run(promptBytes,promptSha256,id);
     } else this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,prompt_bytes,prompt_sha256) VALUES(?,?,?,?,?,?,?,?)")
       .run(id, workItemId, role, workflowStage[role], "running", new Date().toISOString(),promptBytes,promptSha256);
-    this.store.event("execution.started", { role, command, cwd, logDir, selection }, workItemId, id);
+    this.store.event("execution.started", { role, command, cwd, logDir, selection, ...(resumedSession?{resumedSession}:{}) }, workItemId, id);
     // Codex reports a resumed thread's running total, so a resumed run is measured from where the
     // thread's previous run left it; otherwise the budget would count that run again.
-    const sessionBaseline=selection?.provider==="codex"&&resumedSession?this.sessionTotal(resumedSession):null;
+    const sessionBaseline=selection?.provider==="codex"&&resumedSession?sessionTotal(this.store,resumedSession):null;
     const monitor=progressMonitor(logDir,selection?.provider??null,sessionBaseline);
     this.store.setMetadata(progressKey(id),monitor.poll());
     return new Promise((resolve, reject) => {
@@ -117,16 +128,12 @@ export class ExecutionManager {
         let status = timedOut ? "timed_out" : cancelled||completion?.status==="cancelled" ? "cancelled" : interrupted||completion?.status==="interrupted" ? "interrupted" : code === 0 && !spawnError && completion?.status === "succeeded" ? "succeeded" : "failed";
         // One pass over the provider's event stream, however long the run was: its usage, its
         // activity and the final result envelope. Plain-text output simply yields no events.
-        const stdoutFile=path.join(logDir,"stdout.log"),usageReducer=tokenUsageReducer(selection?.provider),activityReducer=providerActivityReducer();
-        let finalEvent:JsonEvent|undefined,failedTurn:JsonEvent|undefined,sessionId:string|undefined;
+        const stdoutFile=path.join(logDir,"stdout.log"),activityReducer=providerActivityReducer();
+        let finalEvent:JsonEvent|undefined,failedTurn:JsonEvent|undefined;
         // A transcript that cannot be read leaves usage and activity unknown; it must not stop the
         // execution from being recorded.
-        // The provider session id, so a later run can continue this one: Codex announces its thread,
-        // Claude and Cursor stamp every event with it.
-        const session=(event:JsonEvent)=>event.type==="thread.started"&&typeof event.thread_id==="string"?event.thread_id:typeof event.session_id==="string"?event.session_id:undefined;
-        try { eachJsonLine(stdoutFile,event=>{usageReducer.add(event);activityReducer.add(event);sessionId??=session(event);if(event.type==="result")finalEvent=event;if(event.type==="turn.failed")failedTurn=event;}); } catch {}
+        const {usage,sessionUsage,sessionId}=streamFacts(this.store,stdoutFile,selection?.provider,resumedSession,event=>{activityReducer.add(event);if(event.type==="result")finalEvent=event;if(event.type==="turn.failed")failedTurn=event;});
         if(status==="succeeded"&&(finalEvent?.is_error===true||failedTurn))status="failed";
-        const sessionUsage=selection?.provider==="codex"?usageReducer.result():undefined,usage=sinceSessionTotal(usageReducer.result(),sessionBaseline);
         // Without a completion record the supervisor died before the agent was reaped, so the agent may
         // still be running: retry must prove its process group is gone first.
         this.store.db.prepare("UPDATE executions SET status=?,finished_at=?,exit_code=?,input_tokens=?,output_tokens=?,cached_tokens=?,total_tokens=?,interruption_reason=?,recovery_pending=? WHERE id=?")

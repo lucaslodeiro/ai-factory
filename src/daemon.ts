@@ -10,7 +10,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { config } from "./config.js";
 import { Store } from "./storage.js";
-import { ExecutionManager } from "./execution-manager.js";
+import { ExecutionManager,streamFacts } from "./execution-manager.js";
+import type { ModelSelection } from "./types.js";
 import { CodexAdapter } from "./adapters/codex.js";
 import { ClaudeAdapter } from "./adapters/claude.js";
 import { CursorAdapter } from "./adapters/cursor.js";
@@ -50,7 +51,14 @@ export function acquireLock(store: Store) {
   }).immediate();
  };
 }
-export function recoverAbandonedExecutions(store:Store){const scheduler=new WorkflowScheduler(store),abandoned=store.db.prepare("SELECT id,work_item_id FROM executions WHERE status='running'").all() as Array<{id:string;work_item_id:string}>;for(const run of abandoned){store.db.prepare("UPDATE executions SET status='interrupted',recovery_pending=1,finished_at=?,interruption_reason='unexpected-shutdown' WHERE id=?").run(new Date().toISOString(),run.id);scheduler.fail(run.work_item_id,run.id,new Error("Agent execution was interrupted by an unexpected daemon shutdown"),"recovery");store.event("execution.interrupted",{reason:"unexpected-shutdown"},run.work_item_id,run.id);}return abandoned.length;}
+export function recoverAbandonedExecutions(store:Store){const scheduler=new WorkflowScheduler(store),abandoned=store.db.prepare("SELECT id,work_item_id FROM executions WHERE status='running'").all() as Array<{id:string;work_item_id:string}>;for(const run of abandoned){
+  // The run's own stream still says which provider session it was in and what it had reported, so
+  // the next run can continue that session and the budget counts what was spent.
+  const started=store.db.prepare("SELECT payload FROM events WHERE run_id=? AND type='execution.started' ORDER BY id LIMIT 1").get(run.id) as {payload:string}|undefined;
+  const start=started?JSON.parse(started.payload) as {selection?:{provider?:ModelSelection["provider"]};resumedSession?:string}:{};
+  const facts=streamFacts(store,path.join(config.dataDir,"runs",run.id,"stdout.log"),start.selection?.provider,start.resumedSession);
+  store.db.prepare("UPDATE executions SET status='interrupted',recovery_pending=1,finished_at=?,interruption_reason='unexpected-shutdown',total_tokens=coalesce(total_tokens,?) WHERE id=?").run(new Date().toISOString(),facts.usage?.totalTokens??null,run.id);
+  store.event("execution.finished",{status:"interrupted",usage:facts.usage?{...facts.usage,partial:true}:null,sessionUsage:facts.sessionUsage,interruptionReason:"unexpected-shutdown",sessionId:facts.sessionId,recovered:true},run.work_item_id,run.id);scheduler.fail(run.work_item_id,run.id,new Error("Agent execution was interrupted by an unexpected daemon shutdown"),"recovery");store.event("execution.interrupted",{reason:"unexpected-shutdown"},run.work_item_id,run.id);}return abandoned.length;}
 export async function startDaemon(store = new Store(),github=new GitHubAdapter()) {
  try {
   if (!config.repoDir) throw new Error("FACTORY_REPO_DIR is required");

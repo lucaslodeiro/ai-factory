@@ -98,3 +98,19 @@ test("single daemon lock is transactional and can be reacquired after release", 
  assert.throws(() => acquireLock(s), /already running/); release();
  const again = acquireLock(s); again(); s.db.close();
 });
+
+test("a run abandoned by a daemon that died keeps its provider session and its reported usage", () => {
+ const s=new Store(":memory:");
+ try{
+  s.db.prepare("INSERT INTO work_items(id,issue_number,repo,created_at,updated_at,context,stage,status,active_run_id) VALUES('w',1,'a/b','now','now','{}','BUILD','RUNNING','crashed')").run();
+  s.db.prepare("INSERT INTO executions(id,work_item_id,role,status,started_at) VALUES('crashed','w','developer','running','now')").run();
+  s.event("execution.started",{role:"developer",selection:{provider:"claude",model:"auto"}},"w","crashed");
+  const dir=path.join(config.dataDir,"runs","crashed");fs.mkdirSync(dir,{recursive:true});
+  fs.writeFileSync(path.join(dir,"stdout.log"),[{type:"system",subtype:"init",session_id:"claude-crashed"},{type:"assistant",session_id:"claude-crashed",message:{id:"m1",usage:{input_tokens:10,output_tokens:5,cache_read_input_tokens:100,cache_creation_input_tokens:0},content:[]}}].map(event=>JSON.stringify(event)).join("\n")+"\n");
+  assert.equal(recoverAbandonedExecutions(s),1);
+  const finished=JSON.parse((s.db.prepare("SELECT payload FROM events WHERE run_id='crashed' AND type='execution.finished'").get() as {payload:string}).payload);
+  assert.equal(finished.sessionId,"claude-crashed","the next run can continue this session");
+  assert.deepEqual([finished.usage.totalTokens,finished.usage.partial,finished.interruptionReason],[115,true,"unexpected-shutdown"]);
+  assert.deepEqual(s.db.prepare("SELECT status,total_tokens FROM executions WHERE id='crashed'").get(),{status:"interrupted",total_tokens:115});
+ }finally{s.db.close();}
+});
