@@ -475,6 +475,14 @@ On `factory-demo#20` brief v1 closed with a **Decisions** section that repeated,
 
 Verified by `npx tsc --noEmit` and `npm test` (477 passed), including `test/workflow-github.test.ts`.
 
+## A provider that goes silent is stopped and retried — 2026-09-24
+
+On `factory-demo#20` the Designer (Cursor `composer-2.5`) made 33 tool calls, all of which completed, finished thinking its final summary at 15:08:52 UTC and then wrote nothing more while `cursor-agent` stayed alive: no tool was running, the next event would have been its final answer. The Factory only showed a warning and would have waited for the run's time limit. The root cause is inside Cursor and is being investigated separately.
+
+A run whose provider writes nothing for five minutes while none of its tools is open is now stopped as `provider-stalled` (`execution.provider_stalled`), the same five minutes as the dashboard's inactivity warning. A command the agent runs keeps its tool open, so a long test or build is never mistaken for silence; a long answer written without streaming is the case the five minutes leave room for. The run is retried at once without a person, up to the recoverable retry limit, and continues its own session with a note to return the result if the work was done. Its usage, unreported when the provider states it only at the end as Cursor does, does not hold the retry for acknowledgement; it is still listed as unmeasured.
+
+Verified by `npx tsc --noEmit` and `npm test` (481 passed), including `test/adapters.test.ts` (a silent provider process stopped as stalled with its session kept; an open tool never counted as silence) and `test/workflow-runner.test.ts` (the stalled run retried without a person or a budget acknowledgement, continuing its session).
+
 ## A spec no longer carries its criteria and decisions twice — 2026-09-24
 
 SPEC v1 of `factory-demo#20` published 33,077 visible characters (plus 37,378 of hidden state index, which no agent reads). Its 24 acceptance criteria appeared twice: developed with Given/When/Then inside the spec text, as `templates/SPEC.md` asked, and again in `acceptanceCriteria`, which is what the Tester and the Reviewer check against. Every delivery role receives both, the spec body and the criteria list, and re-reads them on every turn. Its **Decisions** section also repeated "Decisions and Rationale": like a brief's, a spec's `decisions` are neither stored nor used.

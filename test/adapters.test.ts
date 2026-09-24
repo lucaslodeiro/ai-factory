@@ -177,3 +177,21 @@ console.log(JSON.stringify({type:'turn.completed',usage:resumed?{input_tokens:16
   assert.deepEqual((store.db.prepare("SELECT total_tokens FROM executions ORDER BY rowid").all() as Array<{total_tokens:number|null}>).map(row=>row.total_tokens),[147359,null,22866]);
  }finally{store.db.close();}
 });
+
+test("a provider that goes silent with no tool running is stopped as stalled, and a long command is left alone",async()=>{
+ const {providerStall,providerStalled}=await import("../src/execution-manager.js");
+ const t0=Date.parse("2026-09-24T15:08:52Z"),minute=60_000;
+ assert.equal(providerStalled({tool:null,lastEventAt:"2026-09-24T15:08:52Z"},t0,t0+4*minute),false,"a long answer written without streaming is not silence yet");
+ assert.equal(providerStalled({tool:null,lastEventAt:"2026-09-24T15:08:52Z"},t0,t0+5*minute),true,"silent after its last thought, as Cursor was on factory-demo#20");
+ assert.equal(providerStalled({tool:"shellToolCall",lastEventAt:"2026-09-24T15:08:52Z"},t0,t0+30*minute),false,"a command still running is not silence");
+ const script=path.join(root,"silent-provider");
+ fs.writeFileSync(script,`#!${process.execPath}\nconsole.log(JSON.stringify({type:'system',subtype:'init',session_id:'silent-session'}));\nsetTimeout(()=>{},60_000);\n`,{mode:0o755});
+ const saved=providerStall.ms;providerStall.ms=1500;
+ const store=new Store(":memory:");
+ try{
+  await assert.rejects(new ExecutionManager(store).run("w","designer",script,[],root,"",30_000,{provider:"cursor",model:"auto"} as any),/interrupted/);
+  assert.deepEqual(store.db.prepare("SELECT status,interruption_reason FROM executions").get(),{status:"interrupted",interruption_reason:"provider-stalled"});
+  assert.equal((store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='execution.provider_stalled'").get() as {n:number}).n,1);
+  assert.equal(JSON.parse((store.db.prepare("SELECT payload FROM events WHERE type='execution.finished'").get() as {payload:string}).payload).sessionId,"silent-session","the session is kept for the retry to continue");
+ }finally{providerStall.ms=saved;store.db.close();}
+});

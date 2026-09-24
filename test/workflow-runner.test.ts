@@ -561,3 +561,28 @@ test("the Builder after changes requested on the pull request, and the Designer 
   assert.match(designer.instructions,/## Approved specification/,"the current spec is sent, since it may have changed");assert.doesNotMatch(designer.instructions,/## Issue/);
  }finally{config.roles.developer=saved.developer;config.roles.designer=saved.designer;}
 });
+
+test("a run stopped because its provider went silent is retried at once, continuing its session, without waiting on the budget",async()=>{
+ const saved={...config.roles.developer};config.roles.developer={...saved,provider:"cursor",model:"test-model"};
+ const store=new Store(":memory:"),requests:AgentRunRequest[]=[];
+ try{
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,base_branch,created_at,updated_at,context,stage,status) VALUES('build',1,'owner/demo','factory/issue-1','main','now','now',?,'BUILD','QUEUED')").run(JSON.stringify({title:"Build",body:"Continue",cwd:"/tmp/factory-work"}));
+  store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment,approved_by,approved_at) VALUES('build',1,'SPEC',?,?,'owner','now')").run(JSON.stringify([{id:"AC1",description:"Works"}]),JSON.stringify({complexity:"medium",risk:"low",verificationDepth:"standard",uxImpact:"none",rationale:"standard"}));
+  const agent:AgentAdapter={async run(request){requests.push(request);
+   if(requests.length===1){
+    // Cursor reports usage only at the end, so the silent run leaves none.
+    store.db.prepare("UPDATE executions SET status='interrupted',interruption_reason='provider-stalled',finished_at='now' WHERE id=?").run(request.executionId);
+    store.event("execution.finished",{status:"interrupted",sessionId:"silent-session",usage:null},request.workItemId,request.executionId);
+    throw new Error(`Execution ${request.executionId} interrupted`);
+   }
+   store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return result("pass");}};
+  const runner=new WorkflowRunner(store,{developer:agent},Object.assign(new Workspace(),{check:()=>["src/a.ts"]}),{ensurePR(){return "unused";}});
+  await runner.run("build");
+  assert.deepEqual({status:new WorkflowProjections(store).get("build").status,retried:(store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='execution.retryable_error'").get() as {n:number}).n},{status:"QUEUED",retried:1},"no person is needed to retry");
+  await runner.run("build");
+  assert.equal(requests.length,2,"the unmeasured silent run does not hold the retry for the budget");
+  assert.deepEqual(requests[1].session,{resume:"silent-session"});
+  assert.match(requests[1].instructions,/stopped responding for five minutes while no tool was running.*If you had already finished the work, return the result now/s);
+  assert.equal(new WorkflowProjections(store).get("build").stage,"TEST");
+ }finally{config.roles.developer=saved;store.db.close();}
+});

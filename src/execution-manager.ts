@@ -67,6 +67,14 @@ export function streamFacts(store:Store,file:string,provider:ModelSelection["pro
   const baseline=provider==="codex"&&resumedSession?sessionTotal(store,resumedSession):null,reported=reducer.result();
   return {usage:sinceSessionTotal(reported,baseline),sessionUsage:provider==="codex"?reported:undefined,sessionId,baseline};
 }
+// A provider that writes nothing for this long while no tool of its own is running has stopped
+// responding: on factory-demo#20 Cursor finished thinking its final summary and then went silent,
+// alive, until the run's time limit. A command the agent runs (tests, a build) keeps a tool open,
+// so a long command is never mistaken for silence.
+export const providerStall={ms:5*60_000};
+export function providerStalled(progress:{tool:string|null;lastEventAt:string|null},startedAt:number,now=Date.now()){
+  return progress.tool===null&&now-(progress.lastEventAt?Date.parse(progress.lastEventAt):startedAt)>=providerStall.ms;
+}
 export class ExecutionManager {
   private running = new Map<string, { child: ChildProcess; cancel: () => void; interrupt: (reason:string) => void }>();
   constructor(private store: Store) {}
@@ -110,7 +118,8 @@ export class ExecutionManager {
       this.running.set(id, { child, cancel, interrupt });
       const timeout = setTimeout(() => { timedOut = true; cancel("execution-timeout"); }, timeoutMs);
       let observed=0,budgetStopped=false,closing=false;
-      const recordProgress=()=>{try{const snapshot=monitor.poll();if(snapshot.events!==observed){observed=snapshot.events;this.store.setMetadata(progressKey(id),snapshot);if(!closing&&!budgetStopped&&snapshot.usageTokens!==null){const budget=budgetState(this.store,workItemId),live=liveBudget(budget.granted,budget.consumed,snapshot.usageTokens);if(live.stop){budgetStopped=true;this.store.event("budget.execution_limit",{consumed:live.consumed,granted:budget.granted},workItemId,id);cancel("token-budget-limit");}}}}catch{}};
+      const startedAt=Date.now();
+      const recordProgress=()=>{try{const snapshot=monitor.poll();if(!closing&&!cancelled&&!interrupted&&providerStalled(snapshot,startedAt)){this.store.event("execution.provider_stalled",{lastEventAt:snapshot.lastEventAt,lastTool:snapshot.lastTool,events:snapshot.events},workItemId,id);interrupt("provider-stalled");}if(snapshot.events!==observed){observed=snapshot.events;this.store.setMetadata(progressKey(id),snapshot);if(!closing&&!budgetStopped&&snapshot.usageTokens!==null){const budget=budgetState(this.store,workItemId),live=liveBudget(budget.granted,budget.consumed,snapshot.usageTokens);if(live.stop){budgetStopped=true;this.store.event("budget.execution_limit",{consumed:live.consumed,granted:budget.granted},workItemId,id);cancel("token-budget-limit");}}}}catch{}};
       const progressTimer=setInterval(recordProgress,2000);progressTimer.unref();
       child.stdin?.on("error", () => {});
       child.stdin?.end(JSON.stringify({ command, args, cwd, input, role, browserExecutable: process.env.FACTORY_BROWSER_EXECUTABLE }));

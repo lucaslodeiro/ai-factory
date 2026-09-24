@@ -66,6 +66,9 @@ export function budgetFamily(store:Store,workItemId:string):string[] {
 }
 
 export const humanStops=["interrupted-for-guidance","user-pause","user-cancel"];
+// A provider that went silent is stopped and retried by the Factory itself; holding the retry for a
+// person to accept the silent run's unknown usage would turn an automatic recovery into a wait.
+export const acknowledgedStops=[...humanStops,"provider-stalled"];
 
 export function budgetState(store:Store,workItemId:string,settings:BudgetSettings=config):BudgetState {
  const family=budgetFamily(store,workItemId),ledger=family.flatMap(member=>budgetLedger(store,member));
@@ -76,7 +79,7 @@ export function budgetState(store:Store,workItemId:string,settings:BudgetSetting
  // A run a person stopped (pause, cancel, or interrupt with guidance) is acknowledged by that
  // decision: asking the same person to confirm afterwards that its cost is unknown adds a stop to
  // the workflow and no information. Its usage, when the stream reported some, still counts.
- for (const row of store.db.prepare(`SELECT id FROM executions WHERE work_item_id IN (${family.map(()=>"?").join(",")}) AND interruption_reason IN (${humanStops.map(()=>"?").join(",")})`).all(...family,...humanStops) as Array<{id:string}>) acknowledged.add(row.id);
+ for (const row of store.db.prepare(`SELECT id FROM executions WHERE work_item_id IN (${family.map(()=>"?").join(",")}) AND interruption_reason IN (${acknowledgedStops.map(()=>"?").join(",")})`).all(...family,...acknowledgedStops) as Array<{id:string}>) acknowledged.add(row.id);
  const consumed=ledger.reduce((total,entry)=>total+(entry.tokens ?? 0),0),granted=settings.issueBudgetTokens+extended;
  const unknownRuns=ledger.filter(entry=>entry.tokens === null).map(entry=>entry.executionId);
  const unacknowledgedRuns=ledger.filter(entry=>entry.tokens === null && !acknowledged.has(entry.executionId) && !settings.budgetUnmeteredRoles.includes(entry.role as AgentRole)).map(entry=>entry.executionId);
