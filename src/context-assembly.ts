@@ -2,6 +2,7 @@ import type { AgentRole, Criterion, TaskAssessment } from "./types.js";
 import type { Store } from "./storage.js";
 import { WorkflowFailures } from "./workflow-failures.js";
 import { WorkflowRecords, type WorkflowRecord } from "./workflow-records.js";
+import { specificationBrief } from "./workflow-results.js";
 
 export class InvalidContextError extends Error {
   readonly failureClass = "invalid-context";
@@ -84,7 +85,11 @@ export class ContextAssembler {
     const activeFailure=this.failures.active(input.workItemId);
     const openFindings=this.findingsForRole(input.role,findings,requestChain);
     const issue=["product-architect","designer","developer"].includes(input.role) ? input.issue : shortIssue(input.issue);
-    const specification=spec ? {version:input.specVersion,body:spec.body,criteria:this.json<Criterion[]>(spec.criteria,[]),assessment:this.json<TaskAssessment|null>(spec.assessment,null)} : {version:0,body:null,criteria:[],assessment:null};
+    // The Designer prototypes from the brief and the criteria, not the full technical SPEC: the
+    // Given/When/Then detail and backend rationale are for the Builder and Tester, and re-reading
+    // them on every turn of an already-batched run buys nothing.
+    const specBody=spec && input.role === "designer" ? specificationBrief(spec.body) : spec?.body;
+    const specification=spec ? {version:input.specVersion,body:specBody,criteria:this.json<Criterion[]>(spec.criteria,[]),assessment:this.json<TaskAssessment|null>(spec.assessment,null)} : {version:0,body:null,criteria:[],assessment:null};
 
     const testerEvidence=input.role === "reviewer" ? testerExecutionEvidence(input.qaEvidence) : undefined;
     const sections:Section[]=[

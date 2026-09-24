@@ -113,6 +113,19 @@ test("only the Builder receives the repository map, and it never displaces prote
   } finally { store.db.close(); }
 });
 
+test("the Designer receives the brief and criteria, not the full technical spec; other roles get both",()=>{
+  const {store,assembler}=setup();
+  try {
+    store.db.prepare("UPDATE specs SET body=? WHERE work_item_id='work-1' AND version=1").run("Decision: use a dropdown.\n\n---\n\n### AC-1\nGiven a user, When they click, Then it opens.");
+    const designer=assembler.assemble({workItemId:"work-1",role:"designer",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"}});
+    assert.match(designer.markdown,/Decision: use a dropdown/);
+    assert.doesNotMatch(designer.markdown,/Given a user, When they click/);
+    const builder=assembler.assemble({workItemId:"work-1",role:"developer",specVersion:1,budgetBytes:100_000,budgetSource:"default",issue:{title:"Issue",body:"Body"}});
+    assert.match(builder.markdown,/Decision: use a dropdown/);
+    assert.match(builder.markdown,/Given a user, When they click/);
+  } finally { store.db.close(); }
+});
+
 test("an epic Tester and Reviewer receive what the stories verified as a protected section; a plain issue does not",()=>{
   const {store,assembler}=setup();
   try {

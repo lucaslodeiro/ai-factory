@@ -18,6 +18,13 @@ export function testSelectionMetrics(result:Pick<AgentResult,"testCandidates"|"t
  return {outcome:result.outcome,verificationDepth,candidates:result.testCandidates.length,kept:result.testCandidates.filter(candidate=>candidate.kept).length,essential:count("essential"),valuable:count("valuable"),redundant:count("redundant"),valuableDiscarded:result.testCandidates.filter(candidate=>candidate.value==="valuable"&&!candidate.kept).length,commands:result.tests.length};
 }
 export function specificationBody(result:Pick<AgentResult,"brief"|"spec">){return `${result.brief.trim()}\n\n---\n\n${result.spec.trim()}`;}
+const specSeparator="\n\n---\n\n";
+// The Designer prototypes UI from the decisions and acceptance criteria, never from the full
+// technical spec (Given/When/Then, backend rationale, tactical decisions for the Builder): that
+// detail is dead weight it re-reads on every turn of a run already paying for every screenshot in
+// one pass. Cut at the same separator specificationBody joins on, so a stored body without one
+// (a test fixture, or a spec predating this split) still returns in full rather than empty.
+export function specificationBrief(body:string){const index=body.indexOf(specSeparator);return index===-1?body:body.slice(0,index);}
 
 const roleStage:Record<AgentRole,V3Stage>={"product-architect":"DESIGN",designer:"DESIGN",developer:"BUILD",qa:"TEST",reviewer:"REVIEW"};
 const nextRoleStage={developer:"BUILD",qa:"TEST",reviewer:"REVIEW"} as const;
