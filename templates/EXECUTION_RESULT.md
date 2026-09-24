@@ -8,7 +8,7 @@ The machine-readable source of truth is `resultSchema` in `src/results.ts`, used
 | `taskAssessment` | Brief only: complexity/risk low, medium or high, verificationDepth, uxImpact none/minor/significant and concrete rationale. The human approves it with the brief and the spec keeps it; all other outcomes, the spec included, use null. |
 | `summary` | Concise role conclusion and evidence summary. |
 | `brief` | Only with outcome brief: the quick validation the human approves before anything detailed is written (decisions with recommendations, solution, scope, assumptions, a proposed split, assessment), with no acceptance criteria. Aim for {{BRIEF_TARGET_CHARS}} characters; length alone never invalidates a completed proposal. |
-| `spec`, `acceptanceCriteria` | Only with outcome spec, under an approved brief: markdown plus unique IDs/descriptions. |
+| `spec`, `acceptanceCriteria` | Only with outcome spec, under an approved brief: markdown plus unique IDs/descriptions. Each description holds the criterion's Given / When / Then; the spec refers to criteria by ID and never restates them. |
 | `stories` | Only with outcome spec, and empty unless its approved brief decided on a split: 1 to {{MAX_STORIES}} stories with a unique `key` and `title`, a `scope`, the `criteria` ids the story owns (each id in at most one story), `dependsOn` keys forming no cycle and an `assessment` (complexity, risk, verificationDepth floored by the worse of the two) that governs that story's Tester. Builder and Tester deliver each story on its own branch from the epic branch; criteria no story owns are verified on the whole once every story is integrated. |
 | `coverage` | Each criterion's ID, passed/failed/not-run status and evidence. PASS covers every approved ID. |
 | `tests` | Final verification commands used as acceptance evidence, with numeric exit code and evidence. Builder/Tester PASS requires every listed command to succeed. Setup, diagnostics and process lifecycle commands belong in the summary or findings. |
@@ -17,7 +17,7 @@ The machine-readable source of truth is `resultSchema` in `src/results.ts`, used
 | `changedFiles` | Explicit list of changed paths. |
 | `findings` | auto-fix/decision-required/defer/environment-blocked classification and concrete evidence. |
 | `questions` | Blocking questions only with Architect outcome `questions`; use `[]` with outcome `brief` or `spec`. Put decisions with a recommendation in the brief and your own assumptions under its "Assumed without asking". |
-| `decisions` | tactical/major, decision, rationale and whether it conflicts with a human decision. Use `[]` with outcome `brief`: your assumptions go only under its "Assumed without asking", and the spec carries the decisions the delivery roles need. |
+| `decisions` | tactical/major, decision, rationale and whether it conflicts with a human decision. Use `[]` with outcome `brief` or `spec`: a brief's assumptions go only under its "Assumed without asking", and a spec's decisions only under its "Decisions and Rationale". Fill it for a tactical resolution. |
 | `nextRole` | Non-null only for an approved-spec tactical resolution; cannot bypass gates. |
 | `reviewChecks` | Evidence per review dimension, including reasons for not-applicable. |
 

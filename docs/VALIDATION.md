@@ -475,6 +475,14 @@ On `factory-demo#20` brief v1 closed with a **Decisions** section that repeated,
 
 Verified by `npx tsc --noEmit` and `npm test` (477 passed), including `test/workflow-github.test.ts`.
 
+## A spec no longer carries its criteria and decisions twice — 2026-09-24
+
+SPEC v1 of `factory-demo#20` published 33,077 visible characters (plus 37,378 of hidden state index, which no agent reads). Its 24 acceptance criteria appeared twice: developed with Given/When/Then inside the spec text, as `templates/SPEC.md` asked, and again in `acceptanceCriteria`, which is what the Tester and the Reviewer check against. Every delivery role receives both, the spec body and the criteria list, and re-reads them on every turn. Its **Decisions** section also repeated "Decisions and Rationale": like a brief's, a spec's `decisions` are neither stored nor used.
+
+The SPEC template no longer has an Acceptance Criteria section: criteria are returned only in `acceptanceCriteria`, each description holding its Given/When/Then, and the spec refers to them by ID. Its Status and Approval sections, which the Factory tracks itself, are gone too. The contract asks for `decisions: []` with outcome `spec`, and the published spec omits that section; a tactical resolution keeps it, since its decisions are its content.
+
+Verified by `npx tsc --noEmit` and `npm test` (479 passed). The effect on a spec's size is not measured yet.
+
 ## Servers left running in worktrees are stopped — 2026-09-24
 
 On the installation, while `factory-demo#20` ran, four processes had been running for one to three days: two `npm run test:server` and one `npm run local:serve` in Factory worktrees, and an `npm test` in the engine. The test servers were started in the background by agents: providers run each command in its own process group, so stopping the run's group missed them. The `local:serve` was a preview server of an earlier daemon, which stopped without stopping it. They hold memory and ports, and a held port can fail the next Tester.

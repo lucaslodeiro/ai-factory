@@ -47,9 +47,10 @@ export function resultMarkdown(role:AgentRole,result:AgentResult,specVersion:num
  if(result.tests.length)sections.push(`## Tests\n\n| Command | Exit | Evidence |\n| --- | ---: | --- |\n${result.tests.map(row=>`| \`${row.command.replaceAll("|","\\|")}\` | ${row.exitCode??"not run"} | ${row.evidence.replaceAll("|","\\|")} |`).join("\n")}`);
  if(result.changedFiles.length)sections.push(`## Changed files\n\n${result.changedFiles.map(file=>`- \`${file}\``).join("\n")}`);
  if(result.findings.length)sections.push(`## Findings\n\n${result.findings.map(finding=>`- **${finding.classification}** — ${finding.evidence}`).join("\n")}`);
- // A brief carries its assumptions under "Assumed without asking"; decisions returned beside it are
- // neither stored nor needed, and published they repeat the brief.
- if(result.decisions.length&&!(architect&&result.outcome==="brief"))sections.push(`## Decisions\n\n${result.decisions.map(decision=>`- **${decision.kind}** — ${decision.decision}: ${decision.rationale}`).join("\n")}`);
+ // A brief carries its assumptions under "Assumed without asking" and a spec its decisions under
+ // "Decisions and Rationale"; decisions returned beside them are neither stored nor needed, and
+ // published they repeat the document. A tactical resolution's decisions are its content.
+ if(result.decisions.length&&!(architect&&["brief","spec"].includes(result.outcome)))sections.push(`## Decisions\n\n${result.decisions.map(decision=>`- **${decision.kind}** — ${decision.decision}: ${decision.rationale}`).join("\n")}`);
  if(!result.questions.length&&!["brief","spec"].includes(result.outcome)&&!designer){const action=result.findings.some(f=>f.classification==="environment-blocked")?"Work failed because a required execution capability is unavailable. Fix the reported environment issue, then Retry this stage. No next agent has been queued.":role==="product-architect"&&result.outcome==="resolved"?`No human action is required; ${roleShortName(result.nextRole!)} continues.`:role==="product-architect"?"Review the specification and use the command shown in the AI Factory status comment.":role==="qa"&&result.outcome==="decision"?"Architect will resolve this decision; no human action is required.":role==="reviewer"?`Review and merge the pull request${pullRequestUrl?` (${pullRequestUrl})`:""} when it is ready.`:`${roleShortName(role)} finished. The next workflow stage is queued automatically.`;sections.push(`## Next action\n\n> ${action}`);}
  return sections.filter(section=>!options.reportOnly||!section.startsWith("# ")&&!section.startsWith("## Next action")).join("\n\n");
 }

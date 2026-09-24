@@ -341,10 +341,10 @@ test("the status names the Designer while it prepares the prototype, and a perso
  } finally {store.db.close();}
 });
 
-test("a brief is published without a Decisions section repeating its assumptions, while a spec keeps it",()=>{
+test("a brief or a spec is published without a Decisions section repeating it, while a tactical resolution keeps it",()=>{
  const decisions=[{kind:"tactical" as const,decision:"Use a native details element for the language menu",rationale:"Works without JS",conflictsWithHuman:false,supersedes:[]}];
  const brief=resultMarkdown("product-architect",{...result("brief"),decisions},1);
  assert.match(brief,/^# Brief v1 — awaiting approval/m);assert.doesNotMatch(brief,/^## Decisions$|native details element/m);
- const spec=resultMarkdown("product-architect",{...result("spec"),decisions},1);
- assert.match(spec,/## Decisions\n\n- \*\*tactical\*\* — Use a native details element/);
+ assert.doesNotMatch(resultMarkdown("product-architect",{...result("spec"),decisions},1),/^## Decisions$/m);
+ assert.match(resultMarkdown("product-architect",{...result("resolved",{nextRole:"developer"}),decisions},1),/## Decisions\n\n- \*\*tactical\*\* — Use a native details element/);
 });
