@@ -16,7 +16,7 @@ ai-factory benchmark <id> --verify                   # the fixed benchmark issue
 
 | Event | Written by | Fields | Question it answers |
 | --- | --- | --- | --- |
-| `execution.finished` | execution manager | provider usage (uncached input, cache reads, cache writes, output, total), turns, event histogram, duration, cost estimate | What did each run cost and do |
+| `execution.finished` | execution manager | provider usage (uncached input, cache reads, cache writes, output, total), turns, event histogram, duration | What did each run consume and do |
 | `executions` rows | execution manager | `status` (`succeeded`, `failed`, `timed_out`, `interrupted`, `cancelled`, `running`), `interruption_reason`, start and end | How each run ended and how long it took |
 | `execution.invalid_result` | runner | validator message | A run that finished but whose result was rejected |
 | `model.selected` | runner | role, provider, model, policy reason, context budget | Which model ran and why |
@@ -98,5 +98,5 @@ known, the criterion. Tokens live on `executions` and travel in the published is
 - **Decision override rate** for a rules-based decision engine: no such engine runs yet. When one
   does, record each of its decisions with the outcome the LLM or the human reached for the same
   question, so a decision type with a high override rate stops being delegated.
-- **Per-turn prompt cost**: the providers now stream per-turn usage; the benchmark does not read it
-  yet (see `docs/BENCHMARK.md`).
+- **Per-turn prompt tokens**: the providers now stream per-turn usage; the benchmark does not read it
+  yet, so the prompt's share of a run is not measured.

@@ -12,8 +12,6 @@ export interface ProviderActivity {
   turns: number | null;
   apiDurationMs: number | null;
   durationMs: number | null;
-  // Reported by the provider, not computed here. It is an estimate and can differ from the bill.
-  costUsd: number | null;
 }
 
 const count = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
@@ -29,8 +27,8 @@ function eventType(value: Record<string, unknown>): string | undefined {
 export function providerActivityReducer() {
   let events = 0;
   const eventTypes: Record<string, number> = {};
-  // A provider that states its own turn count, durations or cost is believed; the last statement wins.
-  let turns: number | null = null, apiDurationMs: number | null = null, durationMs: number | null = null, costUsd: number | null = null;
+  // A provider that states its own turn count or durations is believed; the last statement wins.
+  let turns: number | null = null, apiDurationMs: number | null = null, durationMs: number | null = null;
   return {
     add(value: Record<string, unknown>) {
       events++;
@@ -39,11 +37,9 @@ export function providerActivityReducer() {
       turns = count(value.num_turns ?? (value as {numTurns?: unknown}).numTurns) ?? turns;
       apiDurationMs = count(value.duration_api_ms ?? (value as {durationApiMs?: unknown}).durationApiMs) ?? apiDurationMs;
       durationMs = count(value.duration_ms ?? (value as {durationMs?: unknown}).durationMs) ?? durationMs;
-      const reportedCost = value.total_cost_usd ?? (value as {totalCostUsd?: unknown}).totalCostUsd;
-      if (typeof reportedCost === "number" && Number.isFinite(reportedCost) && reportedCost >= 0) costUsd = reportedCost;
     },
     result(): ProviderActivity | null {
-      return events ? { events, eventTypes, turns, apiDurationMs, durationMs, costUsd } : null;
+      return events ? { events, eventTypes, turns, apiDurationMs, durationMs } : null;
     },
   };
 }

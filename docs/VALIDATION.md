@@ -383,7 +383,7 @@ Only the spec pass resumed a session, but a brief the human sends back and a tac
 
 Continuing a run that was cut short (a timeout, a human interruption, a result the validator rejected) instead of starting it over depends on one fact no test here could establish: a run killed the way the factory kills it leaves a provider session that a new run can resume, remembering what the killed run had already done. `scripts/verify-session-resume.mjs` checks it against the real CLIs. It gives each provider six files to read one per tool call, kills the run as soon as the first secret word appears in its stream (SIGTERM to the process group, SIGKILL a second later, as `worker-supervisor.mjs` does), resumes the session with the same flags the factory uses and asks, without tools, for the words it saw. It runs agents with the factory's own minimal environment, so a variable inherited from the shell cannot change the result: run from inside a Claude Code session, a `CLAUDE_CODE_SESSION_ID` in the environment made a child `claude -p` report that parent session's id.
 
-Claude 2.1.281: **PASS**, verified live in this environment. The killed run's stream ended after the first tool result with no `result` event; the resumed run answered with that file's word without reading any file, for USD 0.011.
+Claude 2.1.281: **PASS**, verified live in this environment. The killed run's stream ended after the first tool result with no `result` event; the resumed run answered with that file's word without reading any file.
 
 Codex 0.155.1 (native `codex-cli`, arm64 Mach-O, not a wrapper): **FAIL**, verified live on the installation, by two independent methods. First, the script itself: killed with `SIGINT` (not `SIGTERM`, and with a 10s grace period before `SIGKILL`, both changed for this check after the first run showed no `SIGTERM` handler in the Codex source) after a tool call had already completed and streamed its result; the resumed session answered `NONE`. Second, by hand: the operator ran `codex exec` directly, watched a tool call complete, pressed Ctrl+C once, and got no further output at all, exactly matching the script; `codex exec resume <id>` on that session then also had no memory of the file it had already read. The Codex source at tag `rust-v0.155.1` and `rust-v0.156.1` (identical on this point) shows a `TurnInterrupt` round-trip meant to close a turn gracefully on `SIGINT`, but it did not visibly run in either the automated or the manual test; the discrepancy between that code and this installation's observed behavior was not chased further; the live result is what stands.
 
@@ -410,6 +410,20 @@ A run a person stopped (interrupt with guidance, pause or cancel) no longer hold
 Every resume the factory does today (the correction of a rejected result, and the Architect's brief, spec, revision and consultation continuations) follows a completed turn, so it is verified for all three providers. Continuing a run that was cut short mid-turn remains Claude-only.
 
 Verified by `npx tsc --noEmit` and `npm test` (472 passed), including `test/workflow-runner.test.ts` (a rejected Builder result and a rejected brief each corrected in their own session with the rejection alone), `test/budget.test.ts` (interrupt, pause and cancel acknowledged; a timeout still held) and the daemon integration test, where a cancelled Builder run no longer stops the retry. The script's verdicts were rechecked with fake providers that remember and forget, for both scenarios.
+
+## Rejected result corrected end to end; consumption measured in reported tokens only — 2026-09-24
+
+`scripts/verify-correction.mjs` checks the correction path against the real CLIs through the factory's own adapters, the Architect's prompt contract and the runner's `rejectionContinuation`. The first run reads six notes, one tool call each, and returns one question; the check then rejects it on purpose for lacking a token it could not have known and continues its session with only the rejection. It passes when the corrected result carries the token and the correction made no tool call. Fewer than six tool calls in the first run is inconclusive, because there was no work to redo.
+
+| Provider | Verdict | Original run | Correction |
+| --- | --- | --- | --- |
+| Claude 2.1.281 | **PASS** | 6 tool calls, 8 turns, 131,152 tokens | 0 tool calls, 2 turns, 20,354 tokens (16%) |
+| Codex | not yet run | | |
+| Cursor | not yet run | | |
+
+The factory no longer records or prints a dollar figure. Claude's `total_cost_usd` is an estimate from a price list, and on a resumed session it is the session's running total, so the correction above read as 118% of the run it saved. `activity`, `benchmark` and this check now compare the tokens each CLI reported for the run, and the benchmark's prompt-share estimate (4 bytes per token, priced as cache write plus re-reads) was removed with it. The issue budget still counts provider-weighted units; see `INSTALL.md`.
+
+Verified by `npx tsc --noEmit` and `npm test` (469 passed).
 
 ## Remaining operational validation
 

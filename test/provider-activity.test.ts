@@ -15,11 +15,10 @@ test("real Codex and Claude streams are counted per event, with what the provide
  const claude=fixtureActivity("claude-stream.jsonl");
  assert.equal(claude.events,17);
  assert.equal(claude.turns,4);
- assert.equal(claude.costUsd,0.05058940000000001);
  assert.equal(claude.eventTypes.assistant,5);
- // An interrupted Claude run never wrote its result envelope, so it states no turns or cost.
+ // An interrupted Claude run never wrote its result envelope, so it states no turns.
  const interrupted=fixtureActivity("claude-interrupted.jsonl");
- assert.deepEqual([interrupted.turns,interrupted.costUsd],[null,null]);
+ assert.equal(interrupted.turns,null);
 });
 
 test("a streaming provider is counted per event and grouped by whatever type it reports",()=>{
@@ -33,23 +32,22 @@ test("a streaming provider is counted per event and grouped by whatever type it 
  assert.equal(activity.turns,null);
 });
 
-test("a single result envelope contributes the turns, durations and cost it states",()=>{
+test("a single result envelope contributes the turns and durations it states, and no dollar estimate",()=>{
  // Field names taken from a real Claude Code result envelope, not from documentation.
  const activity=extractProviderActivity(JSON.stringify({type:"result",subtype:"success",is_error:false,num_turns:37,duration_api_ms:41234,duration_ms:52000,total_cost_usd:0.734,result:"{}"}))!;
  assert.equal(activity.events,1);
  assert.equal(activity.turns,37);
  assert.equal(activity.apiDurationMs,41234);
  assert.equal(activity.durationMs,52000);
- assert.equal(activity.costUsd,0.734);
+ assert.equal("costUsd" in activity,false,"consumption is measured in the tokens the provider reports, not in its dollar estimate");
  assert.deepEqual(activity.eventTypes,{result:1});
 });
 
-test("a provider that reports no cost leaves it unknown instead of zero",()=>{
+test("a provider that reports no duration leaves it unknown instead of zero",()=>{
  const activity=extractProviderActivity(JSON.stringify({type:"progress"}))!;
- assert.equal(activity.costUsd,null);
  assert.equal(activity.durationMs,null);
- // A free run really reported as zero is kept, because zero is a measurement and null is not.
- assert.equal(extractProviderActivity(JSON.stringify({type:"result",total_cost_usd:0}))!.costUsd,0);
+ // A duration really reported as zero is kept, because zero is a measurement and null is not.
+ assert.equal(extractProviderActivity(JSON.stringify({type:"result",duration_ms:0}))!.durationMs,0);
 });
 
 test("output that carries no JSON object records no activity rather than a fabricated zero",()=>{

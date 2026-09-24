@@ -83,10 +83,13 @@ a Tester that runs fewer tests passes sooner, a Reviewer that skips dimensions
 returns PASS on the first attempt, a Builder that does the minimum still turns
 the tests green.
 
-So the objective is **cost and time, subject to the issue actually being
-resolved**. Cost in dollars already integrates token count and model price, and
-iterations already show up inside it, which leaves two numbers to compare and
-iterations as the diagnostic that explains them. Note also that an iteration is
+So the objective is **tokens and time, subject to the issue actually being
+resolved**. Tokens are counted as the provider's CLI reported them, never
+priced or weighted by the factory: a dollar figure depends on a price list and
+on a subscription the factory cannot see, and an estimate compared against an
+estimate measures the estimate. Iterations already show up inside the tokens,
+which leaves two numbers to compare and iterations as the diagnostic that
+explains them. Note also that an iteration is
 not automatically waste: a correction cycle that caught a real defect prevented
 a broken merge and was worth every token. Zero iterations with a wrong result
 is the worst outcome available, not the best.
@@ -111,7 +114,7 @@ the work item id, so there is no path to look up or paste. Pass
 which node resolves from the working directory; the command runs it from the
 engine's own directory and makes the checkout absolute before that move.
 
-Without it, the cost figures are the system grading its own homework, so a run
+Without it, the token figures are the system grading its own homework, so a run
 that got cheaper by getting lazier reads as an improvement. `--baseline`
 therefore refuses to compare when either side was unverified or unresolved: the
 numbers are still printed and still saved, what is refused is calling the
@@ -119,28 +122,10 @@ difference a result.
 
 The report prints, per role and in total: executions, turns, provider events,
 prompt bytes, input and output tokens, cache reads and cache writes apart,
-total tokens, cost in dollars and duration, plus each role's final outcome. It
+total tokens and duration, all as the provider reported them, plus each role's final outcome. It
 then prints the workflow's transition path with the reason for each move, and a
 health line counting failed executions, invalid results, interruptions and
 discarded runs.
-
-The report then prices the prompt the factory assembles, which is the question
-"is it worth shrinking". A prompt token is written to cache once and re-read on
-every turn, so it costs `cacheWrite + turns x cacheRead`, while what the agent
-fetches for itself is read far fewer times. The decisive number is the last
-column: how many prompt tokens cost what one more turn costs. On the first
-resolved run that was 4,314 for the Builder against a prompt of 7,269 tokens,
-so deleting *half* the Builder's prompt did not pay for one extra turn.
-
-Only the bytes-to-tokens conversion is an estimate there, at 4 bytes per token;
-everything else is measured. The runs measured here used Claude's
-`--output-format json`, which reports usage for the whole run and never for its
-first turn, so the prompt cannot be isolated from what the agent pulled in
-afterwards. The conclusion was checked across 3.5 to 4.5 bytes per token, where
-the prompt's share moves between 10% and 13% of the run and the ranking of the
-roles does not change. The Claude adapter now uses `stream-json`, whose
-assistant events carry per-turn usage, so a later run can give the exact number
-once the benchmark reads it; it does not yet.
 
 Compare a later run against a saved baseline:
 
@@ -154,15 +139,15 @@ because a value nobody measured is not an improvement.
 
 ## Reading it honestly
 
-- **Cost, turns and duration are the performance numbers.** Prompt bytes only
+- **Tokens, turns and duration are the performance numbers.** Prompt bytes only
   matter through them: the prompt sits at the head of the conversation and is
-  re-read on every turn, so bytes are multiplied by turns. Even so the whole
-  prompt budget was 11% of the first resolved run, spread evenly across the
-  four roles, so there is no concentrated saving in it. A cut that makes an
+  re-read on every turn, so bytes are multiplied by turns. On the first resolved
+  run the prompt was about 11% of it, spread evenly across the four roles, so
+  there is no concentrated saving in it. A cut that makes an
   agent go and fetch what was removed loses: it pays the same tokens in again
   and adds turns on top.
 - **`Resolved` decides whether the run counts at all.** A run that did not
-  resolve the issue has no comparable cost: it did not do the work. Correction
+  resolve the issue has no comparable consumption: it did not do the work. Correction
   cycles, invalid results and the transition path then say how expensively it
   got there. A change that halves tokens while adding a correction cycle made
   the system worse.
@@ -171,8 +156,8 @@ because a value nobody measured is not an improvement.
   role's runs in order. Read `vsPreviousPercent` before `vsFirstPercent`: a
   first run that aborted early is a tiny baseline that makes every later run
   look like a catastrophe. The second Builder already has the findings and the
-  code it wrote, so it should cost less. On issue 6 of the demo repository it
-  did not, across eight runs, which is the largest open cost problem in the
+  code it wrote, so it should consume less. On issue 6 of the demo repository it
+  did not, across eight runs, which is the largest open consumption problem in the
   system: one cycle re-runs Builder and Tester, about 90% of an issue.
 - **One run is not a measurement.** These are agents: the same issue varies
   between runs. Treat a difference under roughly 10% as noise until you have
@@ -180,6 +165,6 @@ because a value nobody measured is not an improvement.
 - **Providers do not report the same things.** Codex (`exec --json`) and
   Claude (`stream-json`) both stream one JSON object per line, so both have a
   real event histogram and report tokens with cached input apart; only Claude
-  reports turns and a cost estimate. Token totals mean the same thing for
+  reports turns. Token totals mean the same thing for
   both, but event counts and turns are shaped by each provider. Compare a role
   against itself across runs, never across providers.

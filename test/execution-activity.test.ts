@@ -32,37 +32,34 @@ test("a role whose provider reports nothing stays null instead of reading as zer
 });
 
 const run=(role:string,startedAt:string,over:Record<string,unknown>={})=>
- activityRow({activity:{events:100,turns:40,costUsd:1,durationMs:60000,eventTypes:{result:1},...over},
+ activityRow({activity:{events:100,turns:40,durationMs:60000,eventTypes:{result:1},...over},
   usage:{totalTokens:1000000,...(over.usage as object ?? {})}},role,"BUILD",startedAt);
 
 test("each role's runs are ordered in time and compared against its own first run",()=>{
- const rows=[run("developer","t3",{costUsd:0.4,turns:20}),run("developer","t1",{costUsd:2,turns:90}),run("qa","t2")];
+ const rows=[run("developer","t3",{turns:20,usage:{totalTokens:400000}}),run("developer","t1",{turns:90,usage:{totalTokens:2000000}}),run("qa","t2")];
  const sequence=progression(rows);
  // qa ran once, so it contributes nothing: there is no second run to compare.
  assert.deepEqual(sequence.map(entry=>[entry.role,entry.run]),[["developer",1],["developer",2]]);
- assert.equal(sequence[0].costUsd,2,"the earliest run is run 1 regardless of query order");
+ assert.equal(sequence[0].totalTokens,2000000,"the earliest run is run 1 regardless of query order");
  assert.equal(sequence[0].vsFirstPercent,null,"a first run has nothing to compare against");
  assert.equal(sequence[1].vsFirstPercent,-80);
  assert.equal(sequence[1].vsPreviousPercent,-80,"with two runs both comparisons agree");
 });
 
 test("a second run that is more expensive is reported as such, not hidden by the role total",()=>{
- const sequence=progression([run("developer","t1",{costUsd:0.5}),run("developer","t2",{costUsd:4.9})]);
+ const sequence=progression([run("developer","t1",{usage:{totalTokens:500000}}),run("developer","t2",{usage:{totalTokens:4900000}})]);
  assert.equal(sequence[1].vsFirstPercent,880,"the Builder starting over each cycle has to be visible");
 });
 
-test("a provider that reports no cost is compared on tokens, and on neither it stays unknown",()=>{
- const tokens=progression([run("qa","t1",{costUsd:null,usage:{totalTokens:2000000}}),run("qa","t2",{costUsd:null,usage:{totalTokens:1000000}})]);
- assert.equal(tokens[1].vsFirstPercent,-50);
- const nothing=progression([run("qa","t1",{costUsd:null,usage:{totalTokens:null}}),run("qa","t2",{costUsd:null,usage:{totalTokens:null}})]);
+test("a provider that reports no tokens stays unknown instead of comparing as zero",()=>{
+ const nothing=progression([run("qa","t1",{usage:{totalTokens:null}}),run("qa","t2",{usage:{totalTokens:null}})]);
  assert.equal(nothing[1].vsFirstPercent,null);
 });
 
 test("a first run that aborted early does not make every later run look like a regression",()=>{
  // The shape real data showed on issue 6: two stubs, then the runs that did the work.
  const rows=[run("developer","t1",{usage:{totalTokens:23698}}),run("developer","t2",{usage:{totalTokens:57461}}),
-  run("developer","t3",{usage:{totalTokens:1402703}}),run("developer","t4",{usage:{totalTokens:1018648}})]
-  .map(row=>({...row,costUsd:null}));
+  run("developer","t3",{usage:{totalTokens:1402703}}),run("developer","t4",{usage:{totalTokens:1018648}})];
  const sequence=progression(rows);
  assert.equal(sequence[2].vsFirstPercent,5819.1,"against the stub the real run reads as a catastrophe");
  assert.equal(sequence[3].vsPreviousPercent,-27.4,"run over run says what actually happened");
@@ -71,26 +68,25 @@ test("a first run that aborted early does not make every later run look like a r
 
 test("a run with no measurement is skipped as a baseline instead of breaking the chain",()=>{
  const rows=[run("developer","t1",{usage:{totalTokens:1000000}}),run("developer","t2",{usage:{totalTokens:null}}),
-  run("developer","t3",{usage:{totalTokens:500000}})].map(row=>({...row,costUsd:null}));
+  run("developer","t3",{usage:{totalTokens:500000}})];
  const sequence=progression(rows);
  assert.equal(sequence[1].vsPreviousPercent,null,"the unmeasured run compares as unknown");
  assert.equal(sequence[2].vsPreviousPercent,-50,"and the next run compares against the last measured one");
 });
 
-test("the summary carries cost per role and leads with it, because that is the stated objective",()=>{
+test("the summary leads with the role that consumed the most reported tokens, because that is the stated objective",()=>{
  const rows=[
-  activityRow({activity:{events:1,turns:13,costUsd:1.042143},usage:{totalTokens:451498}},"qa","TEST","t2"),
-  activityRow({activity:{events:1,turns:8,costUsd:0.5},usage:{totalTokens:400000}},"qa","TEST","t3"),
-  activityRow({activity:{events:1,turns:15,costUsd:1.174109},usage:{totalTokens:565902}},"developer","BUILD","t1"),
+  activityRow({activity:{events:1,turns:13},usage:{totalTokens:451498}},"qa","TEST","t2"),
+  activityRow({activity:{events:1,turns:8},usage:{totalTokens:400000}},"qa","TEST","t3"),
+  activityRow({activity:{events:9,turns:15},usage:{totalTokens:565902}},"developer","BUILD","t1"),
  ];
  const summary=summarizeActivity(rows);
- assert.deepEqual(summary.map(entry=>entry.role),["qa","developer"],"the most expensive role first, not the one with most events");
- assert.equal(summary[0].costUsd,1.542143);
+ assert.deepEqual(summary.map(entry=>entry.role),["qa","developer"],"the heaviest role first, not the one with most events");
  assert.equal(summary[0].totalTokens,851498);
- assert.equal(summary[1].costUsd,1.174109);
+ assert.equal("costUsd" in summary[0],false,"no priced estimate is carried");
 });
 
-test("a role whose provider reported no cost keeps a null total rather than a free-looking zero",()=>{
+test("a role whose provider reported no tokens keeps a null total rather than a free-looking zero",()=>{
  const summary=summarizeActivity([activityRow({activity:{events:3}},"reviewer","REVIEW","t1")]);
- assert.deepEqual([summary[0].costUsd,summary[0].totalTokens],[null,null]);
+ assert.equal(summary[0].totalTokens,null);
 });
