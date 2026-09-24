@@ -5,7 +5,7 @@ import { WorkflowOrchestrator } from "../src/workflow-orchestrator.js";
 import { WorkflowRunner } from "../src/workflow-runner.js";
 import { WorkflowProjections } from "../src/workflow-projection.js";
 import { config } from "../src/config.js";
-import { result } from "./fixtures.js";
+import { architectPass,result } from "./fixtures.js";
 import type { AgentAdapter } from "../src/adapters/agent.js";
 import type { WorkspacePort } from "../src/worktrees.js";
 import type { Comment,Issue,PullRequestState } from "../src/adapters/github.js";
@@ -37,17 +37,18 @@ async function startAssigned(orchestrator:WorkflowOrchestrator,store:Store){stor
 test("V3 orchestrator completes Design, Build, Test, Review and merge with one authoritative CTA",async()=>{
  const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
  const store=new Store(":memory:"),github=new GitHub(),workspace=new Workspace();
- const adapter=(role:string):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return role==="architect"?result("spec"):result("pass");}});
+ const adapter=(role:string):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return role==="architect"?architectPass(request.instructions):result("pass");}});
  const runner=new WorkflowRunner(store,{"product-architect":adapter("architect"),developer:adapter("builder"),qa:adapter("tester"),reviewer:adapter("reviewer")},workspace,github);
  const orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
  try {
   const started=await startAssigned(orchestrator,store);assert.equal(started.created,true);
   await orchestrator.tick();let projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"DESIGN",status:"WAITING"});assert.match(github.resultBodies.at(-1)!,/^# Brief v1/m);assert.match(github.resultBodies.at(-1)!,/## Next action/);
   assert.equal(github.statusBodies.at(-1)?.match(/^## Next action$/gm)?.length,1);assert.match(github.statusBodies.at(-1)!,/\/factory approve v1/);
-  github.reply(1,"/factory approve v1");await orchestrator.tick();projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"TEST",status:"QUEUED"});
+  github.reply(1,"/factory approve v1");await orchestrator.tick();projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"BUILD",status:"QUEUED"},"the approved brief is followed by its spec, with no second approval");assert.match(github.resultBodies.at(-1)!,/^# Specification v1 — delivery started/m);assert.doesNotMatch(github.statusBodies.at(-1)!.split("| Detail |")[0],/\/factory approve/);
+  await orchestrator.tick();assert.equal(new WorkflowProjections(store).get(started.id).stage,"TEST");
   await orchestrator.tick();assert.equal(new WorkflowProjections(store).get(started.id).stage,"REVIEW");
   await orchestrator.runLocal();await orchestrator.runLocal();await orchestrator.flush();projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"DELIVERY",status:"WAITING"});assert.match(github.statusBodies.at(-1)!,/Review and merge/);assert.deepEqual(github.labels.at(-1),["factory:delivery","factory:waiting"]);assert.match(github.lastPrBody,/^Closes #1$/m);
-  github.pr={state:"MERGED",mergedAt:"2026-09-19T20:00:00Z",mergeCommit:{oid:"abc"}};await orchestrator.tick();projection=new WorkflowProjections(store).get(started.id);assert.equal(projection.status,"COMPLETED");assert.deepEqual(github.labels.at(-1),["factory:done"]);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM executions WHERE status='succeeded'").get() as {count:number}).count,4);
+  github.pr={state:"MERGED",mergedAt:"2026-09-19T20:00:00Z",mergeCommit:{oid:"abc"}};await orchestrator.tick();projection=new WorkflowProjections(store).get(started.id);assert.equal(projection.status,"COMPLETED");assert.deepEqual(github.labels.at(-1),["factory:done"]);assert.equal((store.db.prepare("SELECT COUNT(*) count FROM executions WHERE status='succeeded'").get() as {count:number}).count,5);
  } finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
 });
 
@@ -141,7 +142,7 @@ test("unassignment pauses and preserves local work; reassignment resumes; termin
 test("flush still updates the issue status when a milestone comment cannot be published, and publishes it once GitHub recovers",async()=>{
  const previousRepo=config.repo,previousApprovers=[...config.approvers];config.repo="owner/demo";config.approvers.splice(0,config.approvers.length,"owner");
  const store=new Store(":memory:"),github=new GitHub(),workspace=new Workspace();
- const adapter:AgentAdapter={async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return result("spec");}};
+ const adapter:AgentAdapter={async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return result("brief");}};
  const runner=new WorkflowRunner(store,{"product-architect":adapter,developer:adapter,qa:adapter,reviewer:adapter},workspace,github);
  const orchestrator=new WorkflowOrchestrator(store,github,runner,{enabled:false,async notify(){}});
  const publishComment=github.publishWorkflowComment.bind(github);
@@ -162,7 +163,8 @@ test("flush still updates the issue status when a milestone comment cannot be pu
  } finally {store.db.close();config.repo=previousRepo;config.approvers.splice(0,config.approvers.length,...previousApprovers);}
 });
 
-// An epic: the Architect splits the issue, the human approves brief and split together, stories
+// An epic: the human approves a brief that splits the issue, the Architect gives each story its
+// criteria in the spec, stories
 // become sub-issues blocked by each other, each runs Builder and Tester on its own branch from the
 // epic branch and integrates into it, and the epic resumes with Test, Review and one pull request.
 function epicFixture(){
@@ -171,7 +173,7 @@ function epicFixture(){
  const criteria=[{id:"AC1",description:"Tokens"},{id:"AC2",description:"Hero"},{id:"AC3",description:"Whole page"}];
  const stories=[{key:"S1",title:"Design tokens",scope:"Palette and spacing",criteria:["AC1"],dependsOn:[],assessment:{complexity:"low" as const,risk:"low" as const,verificationDepth:"minimal" as const}},{key:"S2",title:"Hero",scope:"First screen",criteria:["AC2"],dependsOn:["S1"],assessment:{complexity:"medium" as const,risk:"low" as const,verificationDepth:"standard" as const}}];
  const succeed=(executionId:string)=>store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(executionId);
- const architect:AgentAdapter={async run(request){succeed(request.executionId!);return result("spec",{acceptanceCriteria:criteria,spec:"# Spec\nAC1 AC2 AC3",stories});}};
+ const architect:AgentAdapter={async run(request){succeed(request.executionId!);return architectPass(request.instructions,{spec:{acceptanceCriteria:criteria,spec:"# Spec\nAC1 AC2 AC3",stories}});}};
  // Delivery roles cover exactly the criteria of the work item they run on: a story's slice, or the epic's whole.
  const delivery:AgentAdapter={async run(request){succeed(request.executionId!);const spec=store.db.prepare("SELECT criteria FROM specs WHERE work_item_id=? ORDER BY version DESC LIMIT 1").get(request.workItemId) as {criteria:string};return result("pass",{coverage:(JSON.parse(spec.criteria) as Array<{id:string}>).map(criterion=>({criterionId:criterion.id,status:"passed" as const,evidence:"Verified"}))});}};
  const runner=new WorkflowRunner(store,{"product-architect":architect,developer:delivery,qa:delivery,reviewer:delivery},workspace,github);
@@ -186,10 +188,12 @@ test("an approved split creates sub-issues with dependencies, runs each story fr
  const f=epicFixture();
  try {
   const epic=await startAssigned(f.orchestrator,f.store);await f.orchestrator.tick();
-  assert.match(f.github.resultBodies.at(-1)!,/## Stories/);
-  // Approval plans the stories in the same poll; the tick then already ran S1's Builder.
+  // The approved brief is followed by a spec that plans the stories; the epic waits for them.
   f.github.reply(1,"/factory approve v1");await f.orchestrator.tick();
+  assert.match(f.github.resultBodies.at(-1)!,/## Stories/);
   assert.deepEqual(f.item(epic.id),{stage:"BUILD",status:"WAITING",base_branch:"main",epic_work_item_id:null});
+  // The next poll creates the sub-issues and starts S1; the tick then already ran S1's Builder.
+  await f.orchestrator.tick();
   assert.match(f.github.statusByIssue.get(1)!,/stories of this epic are being delivered/);
   // Both stories exist as sub-issues of the epic; S2 is blocked by S1; only S1 started.
   const rows=f.storyRows();assert.deepEqual(rows.map(row=>[row.key,row.dependencies_declared,Boolean(row.work_item_id)]),[["S1",1,true],["S2",1,false]]);
@@ -221,7 +225,7 @@ test("a story issue that already exists is adopted, and a blocker closed as not 
   const epic=await startAssigned(f.orchestrator,f.store);await f.orchestrator.tick();
   // A crash after GitHub created S1 but before the local ledger recorded it.
   f.github.createIssue({title:"Design tokens",body:"created before the crash",parentIssueId:100});
-  f.github.reply(1,"/factory approve v1");await f.orchestrator.tick();
+  f.github.reply(1,"/factory approve v1");await f.orchestrator.tick();await f.orchestrator.tick();
   assert.equal(f.github.issues.size,2,"S1 was adopted, S2 created");assert.deepEqual(f.storyRows().map(row=>row.issue_number),[10,11]);
   assert.equal((f.store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='story.issue_adopted'").get() as {count:number}).count,1);
   // Someone closes S1 as not planned: S2 stays blocked and the epic keeps waiting.

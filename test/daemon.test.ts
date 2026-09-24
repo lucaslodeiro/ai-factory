@@ -46,7 +46,7 @@ if(a[0]==='login'){process.exit(0)}
 if(a[0]==='auth'){console.log(JSON.stringify({loggedIn:true}));process.exit(0)}
 const input=fs.readFileSync(0,'utf8');const codex=a[0]==='exec';
 const architect=input.includes('# Product Architect (Architect) Contract'),developer=input.includes('# Implementation Engineer (Builder) Contract'),qa=input.includes('# Verification Engineer (Tester) Contract');
-let result=architect?${JSON.stringify(result("spec"))}:${JSON.stringify(result("pass"))};
+let result=architect?(input.includes('"type": "specification"')?${JSON.stringify(result("spec"))}:${JSON.stringify(result("brief"))}):${JSON.stringify(result("pass"))};
 if(developer){
   const marker=${JSON.stringify(path.join(root, 'first-developer'))};
   if(!fs.existsSync(marker)){fs.writeFileSync(marker,'running');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,60000);}
@@ -83,7 +83,7 @@ if(codex){
   store = new Store(path.join(data, "factory.db"));
   const command = (name: string, id?: string) => spawnSync(process.execPath, ["--import", "tsx", cli, name, ...(id ? [id] : [])], { env, encoding: "utf8" });
   assert.equal(command("start-issue", "1").status,0);
-  await waitFor(() => (store!.db.prepare("SELECT stage,status FROM work_items LIMIT 1").get() as any)?.status === "WAITING" && JSON.parse(fs.readFileSync(stateFile, "utf8")).comments.some((c: any) => c.body.includes("SPEC v1")));
+  await waitFor(() => (store!.db.prepare("SELECT stage,status FROM work_items LIMIT 1").get() as any)?.status === "WAITING" && JSON.parse(fs.readFileSync(stateFile, "utf8")).comments.some((c: any) => c.body.includes("Waiting for approval of brief v1")));
   const state = JSON.parse(fs.readFileSync(stateFile, "utf8")); state.comments.push({ id: state.comments.length + 1, body: "/factory approve v1", user: { login: "owner", type: "User" } }); fs.writeFileSync(stateFile, JSON.stringify(state));
   await waitFor(() => fs.existsSync(path.join(root, "first-developer")));
   const workId = (store.db.prepare("SELECT id FROM work_items LIMIT 1").get() as {id:string}).id;
@@ -105,7 +105,7 @@ if(codex){
   assert.equal(git(origin,["rev-parse","refs/ai-factory/lease"]),obsoleteLease);
   const workRow=store.db.prepare("SELECT branch,context FROM work_items LIMIT 1").get() as {branch:string;context:string};const w={branch:workRow.branch,context:JSON.parse(workRow.context)}; assert.equal(w.context.pr, "https://example.test/pull/1");
   assert.equal(git(origin, ["show", `${w.branch}:src/greet.mjs`]), 'export const greet = name => "Hello " + name;');
-  assert.equal((store.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='succeeded'").get() as any).n, 4);
+  assert.equal((store.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='succeeded'").get() as any).n, 5, "brief, spec, Builder, Tester and Reviewer");
   assert.equal(JSON.parse(fs.readFileSync(stateFile, "utf8")).prs, 1);
   const stop = spawnSync(process.execPath, ["--import", "tsx", cli, "stop"], { env, encoding: "utf8" }); assert.equal(stop.status, 0, stop.stderr);
   await waitFor(() => child.exitCode !== null); assert.equal(await exited, 0);

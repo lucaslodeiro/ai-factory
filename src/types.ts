@@ -13,26 +13,27 @@ export interface Finding { classification: "auto-fix" | "decision-required" | "d
 export interface Decision { kind: "tactical" | "major"; decision: string; rationale: string; conflictsWithHuman: boolean; supersedes: string[]; }
 // How much verification the issue earns, declared with the spec and approved with it.
 export type VerificationDepth = "minimal" | "standard" | "thorough";
-// A significant UX impact sends the SPEC through the Designer, whose prototype the human approves
-// together with the brief.
+// A significant UX impact sends the written SPEC through the Designer, whose prototype the human
+// approves before the Builder starts.
 export type UxImpact = "none" | "minor" | "significant";
 export interface TaskAssessment { complexity: "low" | "medium" | "high"; risk: "low" | "medium" | "high"; verificationDepth: VerificationDepth; uxImpact: UxImpact; rationale: string; }
 export interface ModelSelection { policy: string; provider: AgentProvider; model: string; reason: string; }
 // A story is a slice of an epic that Builder and Tester deliver on its own branch from the epic's
-// branch. The Architect proposes the split with the spec and the human approves it with the brief.
+// branch. The human approves the split as a decision in the brief; the Architect then gives each
+// story its criteria in the spec.
 // Each story earns its own verification: its risk and complexity set the depth its Tester works
 // to, floored like the epic's, so a low-risk slice is not tested to the epic's worst case.
 export type StoryAssessment = Pick<TaskAssessment, "complexity" | "risk" | "verificationDepth">;
 export interface Story { key: string; title: string; scope: string; criteria: string[]; dependsOn: string[]; assessment: StoryAssessment; }
 export interface AgentResult {
   taskAssessment: TaskAssessment | null;
-  outcome: "spec" | "questions" | "resolved" | "pass" | "changes" | "decision";
-  // A new specification carries two documents: the brief is what the human reads and approves
-  // (the decisions only they can make, the solution in a few lines, the acceptance criteria);
-  // spec is the full technical contract for Builder, Tester and Reviewer.
+  outcome: "brief" | "spec" | "questions" | "resolved" | "pass" | "changes" | "decision";
+  // Design runs twice. A brief is the quick validation the human approves: the decisions only they
+  // can make, the solution and the scope, with no criteria. Once it is approved, a spec is the full
+  // technical contract for Builder, Tester and Reviewer, with its acceptance criteria and stories.
   summary: string; brief: string; spec: string; questions: string[]; findings: Finding[];
   acceptanceCriteria: Criterion[];
-  // Empty unless a new specification splits the issue into stories.
+  // Empty unless the spec splits the issue into the stories its approved brief decided on.
   stories: Story[];
   coverage: { criterionId: string; status: "passed" | "failed" | "not-run"; evidence: string }[];
   tests: { command: string; exitCode: number | null; evidence: string }[];

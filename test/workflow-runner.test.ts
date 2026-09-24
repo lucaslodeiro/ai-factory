@@ -9,7 +9,8 @@ import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowCommands } from "../src/workflow-commands.js";
 import { WorkflowFailures } from "../src/workflow-failures.js";
 import { config } from "../src/config.js";
-import { result } from "./fixtures.js";
+import { architectPass,result } from "./fixtures.js";
+import type { AgentResult } from "../src/types.js";
 import type { AgentAdapter,AgentRunRequest } from "../src/adapters/agent.js";
 import { SyncConflictError,type WorkspacePort } from "../src/worktrees.js";
 import { InvalidResultError } from "../src/results.js";
@@ -32,15 +33,17 @@ const runnerIssue={id:100,nodeId:"I_100",number:1,title:"Runner",body:"Build it"
 test("runner assembles bounded context and drives Architect then Builder through V3",async()=>{
  const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"});
  const requests:AgentRunRequest[]=[],workspace=new Workspace();
- const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){requests.push(request);store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return value;}});
+ const adapter=(value:AgentResult|((instructions:string)=>AgentResult)):AgentAdapter=>({async run(request){requests.push(request);store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return typeof value==="function"?value(request.instructions):value;}});
  const delivery={ensurePR(){return "https://github.com/owner/demo/pull/2";}};
  try {
-  const architect=new WorkflowRunner(store,{"product-architect":adapter(result("spec"))},workspace,delivery);assert.equal(await architect.run(started.id),true);
+  const architect=new WorkflowRunner(store,{"product-architect":adapter(architectPass)},workspace,delivery);assert.equal(await architect.run(started.id),true);
   assert.equal(new WorkflowProjections(store).get(started.id).status,"WAITING");assert.match(requests[0].instructions,/AI Factory worker rules/);assert.match(requests[0].instructions,/## Issue/);assert.equal(requests[0].promptMetadata?.budgetBytes,config.contextBudget.defaultBytes);
   new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:started.id,login:"owner",commentId:1,specVersion:1});
+  assert.equal(await architect.run(started.id),true);assert.deepEqual({stage:new WorkflowProjections(store).get(started.id).stage,status:new WorkflowProjections(store).get(started.id).status},{stage:"BUILD",status:"QUEUED"},"a spec without UX impact needs no second approval");
+  assert.match(requests[1].instructions,/"type": "specification"/);assert.equal(requests[1].promptMetadata?.budgetBytes,config.contextBudget.defaultBytes);
   const builder=new WorkflowRunner(store,{developer:adapter(result("pass"))},workspace,delivery);assert.equal(await builder.run(started.id),true);
-  assert.deepEqual({stage:new WorkflowProjections(store).get(started.id).stage,status:new WorkflowProjections(store).get(started.id).status},{stage:"TEST",status:"QUEUED"});assert.equal(workspace.commits.length,1);assert.equal(workspace.publishCalls,3);
-  assert.equal(requests[1].promptMetadata?.includedRecordIds?.length,0);assert.match(requests[1].instructions,/Approved specification/);
+  assert.deepEqual({stage:new WorkflowProjections(store).get(started.id).stage,status:new WorkflowProjections(store).get(started.id).status},{stage:"TEST",status:"QUEUED"});assert.equal(workspace.commits.length,1);assert.equal(workspace.publishCalls,4);
+  assert.equal(requests[2].promptMetadata?.includedRecordIds?.length,0);assert.match(requests[2].instructions,/Approved specification/);assert.match(requests[2].instructions,/AC1: returns 42/);
  } finally {store.db.close();}
 });
 
@@ -78,10 +81,10 @@ test("previous attempt context is consumed once by only its matching stage and a
 
 test("a rejected post-commit push preserves the applied result and records sanitized evidence",async()=>{
  const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace=new Workspace();
- const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return value;}});
+ const adapter=(value:AgentResult|((instructions:string)=>AgentResult)):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return typeof value==="function"?value(request.instructions):value;}});
  try {
-  const runner=new WorkflowRunner(store,{"product-architect":adapter(result("spec")),developer:adapter(result("pass"))},workspace,{ensurePR(){return "unused";}});
-  await runner.run(started.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:started.id,login:"owner",commentId:1,specVersion:1});
+  const runner=new WorkflowRunner(store,{"product-architect":adapter(architectPass),developer:adapter(result("pass"))},workspace,{ensurePR(){return "unused";}});
+  await runner.run(started.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:started.id,login:"owner",commentId:1,specVersion:1});await runner.run(started.id);
   workspace.pushError=new Error("push rejected https://operator:super-secret@example.test/repo token=hidden-value");
   assert.equal(await runner.run(started.id),true);assert.deepEqual({stage:new WorkflowProjections(store).get(started.id).stage,status:new WorkflowProjections(store).get(started.id).status},{stage:"TEST",status:"QUEUED"});
   const event=store.db.prepare("SELECT payload FROM events WHERE type='workflow.push_failed'").get() as {payload:string};assert.match(event.payload,/\[REDACTED\]/);assert.doesNotMatch(event.payload,/super-secret|hidden-value/);
@@ -91,7 +94,7 @@ test("a rejected post-commit push preserves the applied result and records sanit
 test("a synchronization conflict fails as integration before execution and retry prepares again",async()=>{
  const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace=new Workspace();let calls=0;
  try{
-  workspace.syncError=new SyncConflictError(["src/app.ts"],"origin/factory/issue-1");const runner=new WorkflowRunner(store,{"product-architect":{async run(){calls++;return result("spec");}}},workspace,{ensurePR(){return "unused";}});
+  workspace.syncError=new SyncConflictError(["src/app.ts"],"origin/factory/issue-1");const runner=new WorkflowRunner(store,{"product-architect":{async run(){calls++;return result("brief");}}},workspace,{ensurePR(){return "unused";}});
   assert.equal(await runner.run(started.id),true);assert.equal(calls,0);assert.equal(new WorkflowFailures(store).active(started.id)?.class,"integration");assert.match(new WorkflowFailures(store).active(started.id)?.message??"",/src\/app\.ts/);
   new WorkflowCommands(store).apply({kind:"retry",guidance:"resolved merge",scope:"issue",appliesTo:[]},{workItemId:started.id,login:"owner",commentId:2,specVersion:0});workspace.syncError=undefined;
   assert.equal(await runner.run(started.id),true);assert.equal(calls,1);assert.equal(new WorkflowProjections(store).get(started.id).status,"WAITING");
@@ -100,14 +103,14 @@ test("a synchronization conflict fails as integration before execution and retry
 
 test("a fetch failure skips remote synchronization without failing the execution",async()=>{
  const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace=new Workspace();workspace.syncSkipped="fatal: unable to access https://operator:secret@example.test/repo";let calls=0;
- try{const runner=new WorkflowRunner(store,{"product-architect":{async run(request){calls++;store.db.prepare("UPDATE executions SET status=\'succeeded\',finished_at=\'now\' WHERE id=?").run(request.executionId);return result("spec");}}},workspace,{ensurePR(){return "unused";}});assert.equal(await runner.run(started.id),true);assert.equal(calls,1);assert.equal(new WorkflowProjections(store).get(started.id).status,"WAITING");const event=store.db.prepare("SELECT payload FROM events WHERE type=\'workflow.sync_skipped\'").get() as {payload:string};assert.match(event.payload,/\[REDACTED\]/);assert.doesNotMatch(event.payload,/secret/);}finally{store.db.close();}
+ try{const runner=new WorkflowRunner(store,{"product-architect":{async run(request){calls++;store.db.prepare("UPDATE executions SET status=\'succeeded\',finished_at=\'now\' WHERE id=?").run(request.executionId);return result("brief");}}},workspace,{ensurePR(){return "unused";}});assert.equal(await runner.run(started.id),true);assert.equal(calls,1);assert.equal(new WorkflowProjections(store).get(started.id).status,"WAITING");const event=store.db.prepare("SELECT payload FROM events WHERE type=\'workflow.sync_skipped\'").get() as {payload:string};assert.match(event.payload,/\[REDACTED\]/);assert.doesNotMatch(event.payload,/secret/);}finally{store.db.close();}
 });
 
 test("protected context overflow fails before invoking a provider",async()=>{
  const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace=new Workspace();
  let invoked=false;const previous=config.contextBudget.defaultBytes;config.contextBudget.defaultBytes=10;
  try {
-  const runner=new WorkflowRunner(store,{"product-architect":{async run(){invoked=true;return result("spec");}}},workspace,{ensurePR(){throw new Error("unused");}});
+  const runner=new WorkflowRunner(store,{"product-architect":{async run(){invoked=true;return result("brief");}}},workspace,{ensurePR(){throw new Error("unused");}});
   assert.equal(await runner.run(started.id),true);assert.equal(invoked,false);assert.equal(new WorkflowProjections(store).get(started.id).status,"FAILED");assert.equal(new WorkflowFailures(store).active(started.id)?.class,"invalid-context");
  } finally {config.contextBudget.defaultBytes=previous;store.db.close();}
 });
@@ -121,7 +124,7 @@ test("runner classifies failures by typed result errors rather than message text
 test("a transient provider error is retried once with its cause, while a permanent error is not",async()=>{
  const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),prompts:string[]=[];let calls=0;
  try{
-  const runner=new WorkflowRunner(store,{"product-architect":{async run(request){prompts.push(request.instructions);store.db.prepare("UPDATE executions SET status='failed',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);if(calls++===0)throw new Error("Provider temporarily unavailable");store.db.prepare("UPDATE executions SET status='succeeded' WHERE id=?").run(request.executionId);return result("spec");}}},new Workspace(),{ensurePR(){return"unused";}});
+  const runner=new WorkflowRunner(store,{"product-architect":{async run(request){prompts.push(request.instructions);store.db.prepare("UPDATE executions SET status='failed',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);if(calls++===0)throw new Error("Provider temporarily unavailable");store.db.prepare("UPDATE executions SET status='succeeded' WHERE id=?").run(request.executionId);return result("brief");}}},new Workspace(),{ensurePR(){return"unused";}});
   await runner.run(item.id);assert.equal(new WorkflowProjections(store).get(item.id).status,"QUEUED");
   await runner.run(item.id);assert.equal(new WorkflowProjections(store).get(item.id).status,"WAITING");assert.match(prompts[1],/Previous execution error/);assert.match(prompts[1],/temporarily unavailable/);
   assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='execution.retryable_error'").get() as {count:number}).count,1);
@@ -139,7 +142,7 @@ test("a timed-out agent failure includes bounded last activity without claiming 
 
 test("runner retries one invalid result with the validator message and then fails the second",async()=>{
  const run=async(failures:number)=>{const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),prompts:string[]=[];let calls=0;try{
-  const runner=new WorkflowRunner(store,{"product-architect":{async run(request){prompts.push(request.instructions);store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);if(calls++<failures)throw new InvalidResultError("result.summary: invalid text length");return result("spec");}}},new Workspace(),{ensurePR(){return "unused";}});
+  const runner=new WorkflowRunner(store,{"product-architect":{async run(request){prompts.push(request.instructions);store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);if(calls++<failures)throw new InvalidResultError("result.summary: invalid text length");return result("brief");}}},new Workspace(),{ensurePR(){return "unused";}});
   await runner.run(started.id);if(failures===1){assert.deepEqual({stage:new WorkflowProjections(store).get(started.id).stage,status:new WorkflowProjections(store).get(started.id).status},{stage:"DESIGN",status:"QUEUED"});assert.equal((store.db.prepare("SELECT COUNT(*) count FROM events WHERE type='execution.invalid_result'").get() as {count:number}).count,1);await runner.run(started.id);assert.equal(new WorkflowProjections(store).get(started.id).status,"WAITING");assert.match(prompts[1],/## Rejected previous result/);assert.match(prompts[1],/result.summary: invalid text length/);assert.equal("invalidResultRetry" in JSON.parse((store.db.prepare("SELECT context FROM work_items WHERE id=?").get(started.id) as {context:string}).context),false);const transition=store.db.prepare("SELECT payload FROM events WHERE type='workflow.transition' AND payload LIKE '%invalid-result-retry%'").get() as {payload:string};assert.ok(transition);}else{await runner.run(started.id);assert.equal(new WorkflowFailures(store).active(started.id)?.class,"invalid-result");} 
  }finally{store.db.close();}};
  await run(1);await run(2);
@@ -188,11 +191,11 @@ test("code changed after Tester verification returns Review to Test exactly once
 test('review preparation errors fail the preserved stage once instead of remaining queued forever',async()=>{
  for(const step of ['changeSummary','prepareReviewerContext'] as const){
   const store=new Store(':memory:'),item=new WorkflowIntake(store).start(runnerIssue,{actor:'dashboard',source:'control'}),workspace=new Workspace();
-  const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return value;}});
+  const adapter=(value:AgentResult|((instructions:string)=>AgentResult)):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return typeof value==="function"?value(request.instructions):value;}});
   let reviewerCalls=0;
-  const runner=new WorkflowRunner(store,{'product-architect':adapter(result('spec')),developer:adapter(result('pass')),qa:adapter(result('pass')),reviewer:{async run(){reviewerCalls++;return result('pass')}}},workspace,{ensurePR(){return ''}});
+  const runner=new WorkflowRunner(store,{'product-architect':adapter(architectPass),developer:adapter(result('pass')),qa:adapter(result('pass')),reviewer:{async run(){reviewerCalls++;return result('pass')}}},workspace,{ensurePR(){return ''}});
   try{
-   await runner.run(item.id);new WorkflowCommands(store).apply({kind:'approve',version:1,guidance:''},{workItemId:item.id,login:'owner',commentId:1,specVersion:1});await runner.run(item.id);await runner.run(item.id);
+   await runner.run(item.id);new WorkflowCommands(store).apply({kind:'approve',version:1,guidance:''},{workItemId:item.id,login:'owner',commentId:1,specVersion:1});await runner.run(item.id);await runner.run(item.id);await runner.run(item.id);
    assert.equal(new WorkflowProjections(store).get(item.id).stage,'REVIEW');
    workspace[step]=()=>{throw new Error('spawnSync git ENOBUFS')};
    assert.equal(await runner.run(item.id),true);const state=new WorkflowProjections(store).get(item.id);assert.equal(state.stage,'REVIEW');assert.equal(state.status,'FAILED');assert.equal(reviewerCalls,0);
@@ -224,10 +227,10 @@ test("local agent result takes precedence over adopted evidence for the same rol
 for(const code of [3,0])test(`factory verification exit ${code} controls the Tester pass path`,{skip:spawnSync("sh",["-c","exit 0"]).status!==0},async()=>{
  const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace=new Workspace(),previous=config.verifyCommand;
  workspace.ensure=()=>process.cwd();config.verifyCommand=`exit ${code}`;
- const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000 WHERE id=?").run(request.executionId);return value;}});
+ const adapter=(value:AgentResult|((instructions:string)=>AgentResult)):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000 WHERE id=?").run(request.executionId);return typeof value==="function"?value(request.instructions):value;}});
  try{
-  const runner=new WorkflowRunner(store,{"product-architect":adapter(result("spec")),developer:adapter(result("pass")),qa:adapter(result("pass",{findings:[{classification:"defer",severity:"minor",evidence:"Optional follow-up"}]}))},workspace,{ensurePR(){return "unused";}});
-  await runner.run(item.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});await runner.run(item.id);await runner.run(item.id);
+  const runner=new WorkflowRunner(store,{"product-architect":adapter(architectPass),developer:adapter(result("pass")),qa:adapter(result("pass",{findings:[{classification:"defer",severity:"minor",evidence:"Optional follow-up"}]}))},workspace,{ensurePR(){return "unused";}});
+  await runner.run(item.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});await runner.run(item.id);await runner.run(item.id);await runner.run(item.id);
   const projection=new WorkflowProjections(store).get(item.id);assert.equal(projection.stage,code?"BUILD":"REVIEW");assert.equal(projection.status,"QUEUED");
   const event=store.db.prepare("SELECT payload,run_id FROM events WHERE type='verification.completed'").get() as {payload:string;run_id:string};assert.equal(JSON.parse(event.payload).exitCode,code);assert.ok(event.run_id);
   const applied=JSON.parse((store.db.prepare("SELECT payload FROM events WHERE type='agent.result' ORDER BY id DESC LIMIT 1").get() as {payload:string}).payload).result;
@@ -245,10 +248,10 @@ test("delivery body summarizes tests and verification while commits describe the
  const previous=config.verifyCommand;
  try{for(const command of [undefined,"exit 0"]){
   config.verifyCommand=command;const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace=new Workspace();workspace.ensure=()=>process.cwd();let body="";
-  const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000 WHERE id=?").run(request.executionId);return value;}});
+  const adapter=(value:AgentResult|((instructions:string)=>AgentResult)):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000 WHERE id=?").run(request.executionId);return typeof value==="function"?value(request.instructions):value;}});
   try{
-   const runner=new WorkflowRunner(store,{"product-architect":adapter(result("spec")),developer:adapter(result("pass",{summary:"  Implement the requested behavior\nFurther details"})),qa:adapter(result("pass",{changedFiles:["src/app.ts"]})),reviewer:adapter(result("pass",{summary:"Review confirms the criteria",findings:[{classification:"defer",severity:"minor",evidence:"Optional polish"}]}))},workspace,{ensurePR(_branch,_title,value){body=value;return "https://github.com/owner/demo/pull/2";}});
-   await runner.run(item.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});for(let stage=0;stage<4;stage++)await runner.run(item.id);
+   const runner=new WorkflowRunner(store,{"product-architect":adapter(architectPass),developer:adapter(result("pass",{summary:"  Implement the requested behavior\nFurther details"})),qa:adapter(result("pass",{changedFiles:["src/app.ts"]})),reviewer:adapter(result("pass",{summary:"Review confirms the criteria",findings:[{classification:"defer",severity:"minor",evidence:"Optional polish"}]}))},workspace,{ensurePR(_branch,_title,value){body=value;return "https://github.com/owner/demo/pull/2";}});
+   await runner.run(item.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});await runner.run(item.id);for(let stage=0;stage<4;stage++)await runner.run(item.id);
    assert.equal(new WorkflowProjections(store).get(item.id).stage,"DELIVERY");assert.equal(new WorkflowProjections(store).get(item.id).status,"WAITING");
    assert.equal(workspace.commits[0],"factory(Builder): Implement the requested behavior (#1)");assert.ok(workspace.commits[1].startsWith("factory(Tester):"));
    assert.match(body,/Closes #1/);assert.match(body,/Approved SPEC v1 by owner/);assert.equal(body.match(/^## Summary$/gm)?.length,1);assert.equal(body.match(/^## Tester summary$/gm)?.length,1);assert.match(body,/## Tests[\s\S]*node --test[\s\S]*0/);assert.match(body,/## Acceptance evidence/);assert.match(body,/src\/app.ts/);assert.match(body,/## Deferred findings\n\n- Optional polish/);
@@ -261,10 +264,10 @@ test("Builder receives its changed files only when returning for automatic corre
  const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace:WorkspacePort=new Workspace(),prompts:string[]=[];
  const previousVerify=config.verifyCommand,previousMaxCycles=config.maxCycles;config.verifyCommand=undefined;config.maxCycles=3;
  workspace.changeSummary=()=>({files:["src/a.ts"],stat:"1 file changed"});
- const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){if(request.role==="developer")prompts.push(request.instructions);store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return value;}});
+ const adapter=(value:AgentResult|((instructions:string)=>AgentResult)):AgentAdapter=>({async run(request){if(request.role==="developer")prompts.push(request.instructions);store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return typeof value==="function"?value(request.instructions):value;}});
  try{
-  const runner=new WorkflowRunner(store,{"product-architect":adapter(result("spec")),developer:adapter(result("pass")),qa:adapter(result("changes",{findings:[{classification:"auto-fix",severity:"major",evidence:"Correct the acceptance behavior"}]}))},workspace,{ensurePR(){return "unused";}});
-  await runner.run(item.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});await runner.run(item.id);await runner.run(item.id);
+  const runner=new WorkflowRunner(store,{"product-architect":adapter(architectPass),developer:adapter(result("pass")),qa:adapter(result("changes",{findings:[{classification:"auto-fix",severity:"major",evidence:"Correct the acceptance behavior"}]}))},workspace,{ensurePR(){return "unused";}});
+  await runner.run(item.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});await runner.run(item.id);await runner.run(item.id);await runner.run(item.id);
   const projection=new WorkflowProjections(store).get(item.id);assert.equal(projection.stage,"BUILD");assert.equal(projection.status,"QUEUED");assert.equal(projection.attempt,0);assert.equal(projection.correctionCycles,1);
   await runner.run(item.id);assert.equal(prompts.length,2);assert.doesNotMatch(prompts[0],/src\/a\.ts|1 file changed/);assert.match(prompts[1],/src\/a\.ts/);assert.match(prompts[1],/1 file changed/);
  }finally{config.verifyCommand=previousVerify;config.maxCycles=previousMaxCycles;store.db.close();}
@@ -273,10 +276,10 @@ test("Builder receives its changed files only when returning for automatic corre
 test("first human Builder retry includes changed files with attempt one",async()=>{
  const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace:WorkspacePort=new Workspace(),prompts:string[]=[];
  workspace.changeSummary=()=>({files:["src/a.ts"],stat:"1 file changed"});
- const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){if(request.role==="developer")prompts.push(request.instructions);store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return value;}});
+ const adapter=(value:AgentResult|((instructions:string)=>AgentResult)):AgentAdapter=>({async run(request){if(request.role==="developer")prompts.push(request.instructions);store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return typeof value==="function"?value(request.instructions):value;}});
  try{
-  const runner=new WorkflowRunner(store,{"product-architect":adapter(result("spec")),developer:adapter(result("pass"))},workspace,{ensurePR(){return "unused";}}),commands=new WorkflowCommands(store),projections=new WorkflowProjections(store);
-  await runner.run(item.id);commands.apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});await runner.run(item.id);
+  const runner=new WorkflowRunner(store,{"product-architect":adapter(architectPass),developer:adapter(result("pass"))},workspace,{ensurePR(){return "unused";}}),commands=new WorkflowCommands(store),projections=new WorkflowProjections(store);
+  await runner.run(item.id);commands.apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});await runner.run(item.id);await runner.run(item.id);
   // Exercise retry from a paused Builder with existing changes and no automatic corrections.
   projections.transition({workItemId:item.id,expectedRevision:projections.get(item.id).revision,stage:"BUILD",status:"PAUSED",actor:{type:"human",id:"owner"},source:{},reason:{code:"test-paused-build",summary:"Paused Builder fixture"}});
   commands.apply({kind:"retry",guidance:"",scope:"spec",appliesTo:[]},{workItemId:item.id,login:"owner",commentId:2,specVersion:1});
@@ -285,30 +288,34 @@ test("first human Builder retry includes changed files with attempt one",async()
  }finally{store.db.close();}
 });
 
-test("significant UX impact runs the Designer before the single approval gate and moves the prototype out before the Builder",async()=>{
+test("significant UX impact: the brief is approved first, the Designer prototypes the written spec, and the prototype leaves before the Builder",async()=>{
  const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"});
  const requests:AgentRunRequest[]=[],workspace=new class extends Workspace{archived:string[]=[];archivePrototype(_cwd:string,_branch:string,message:string){this.archived.push(message);return true;}}();
- const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){requests.push(request);store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return value;}});
+ const adapter=(value:AgentResult|((instructions:string)=>AgentResult)):AgentAdapter=>({async run(request){requests.push(request);store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return typeof value==="function"?value(request.instructions):value;}});
  const delivery={ensurePR(){return "https://github.com/owner/demo/pull/2";}},projections=new WorkflowProjections(store);
- const ux=result("spec");ux.taskAssessment={...ux.taskAssessment!,uxImpact:"significant"};
+ const ux=(instructions:string)=>architectPass(instructions,{brief:{taskAssessment:{...result("brief").taskAssessment!,uxImpact:"significant"}}});
  const prototype=result("pass",{tests:[],coverage:[],changedFiles:[".factory/prototype/01-main.png",".factory/prototype/README.md"],summary:"Main flow and empty state."});
+ const state=()=>({stage:projections.get(started.id).stage,status:projections.get(started.id).status});
  try {
   const agents={"product-architect":adapter(ux),designer:adapter(prototype),developer:adapter(result("pass"))};
   const runner=new WorkflowRunner(store,agents,workspace,delivery);
   assert.equal(await runner.run(started.id),true);
-  assert.deepEqual({stage:projections.get(started.id).stage,status:projections.get(started.id).status},{stage:"DESIGN",status:"QUEUED"},"the Architect does not open the human gate yet");
-  assert.throws(()=>new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:started.id,login:"owner",commentId:1,specVersion:1}),/No active human request/);
+  assert.deepEqual(state(),{stage:"DESIGN",status:"WAITING"},"the brief is validated before any prototype or spec");
+  new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:started.id,login:"owner",commentId:1,specVersion:1});
+  assert.equal(await runner.run(started.id),true);
+  assert.equal(requests[1].role,"product-architect");assert.deepEqual(state(),{stage:"DESIGN",status:"QUEUED"},"the written spec goes to the Designer, not to a second brief approval");
+  assert.throws(()=>new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:started.id,login:"owner",commentId:2,specVersion:1}),/No active human request/);
   workspace.currentHead="prototype-head";
   assert.equal(await runner.run(started.id),true);
-  assert.equal(requests[1].role,"designer");assert.match(requests[1].instructions,/Product Designer \(Designer\) Contract/);assert.match(requests[1].instructions,/## Proposed specification/);
-  assert.deepEqual({stage:projections.get(started.id).stage,status:projections.get(started.id).status},{stage:"DESIGN",status:"WAITING"});
+  assert.equal(requests[2].role,"designer");assert.match(requests[2].instructions,/Product Designer \(Designer\) Contract/);assert.match(requests[2].instructions,/## Approved specification/);assert.match(requests[2].instructions,/AC1/);
+  assert.deepEqual(state(),{stage:"DESIGN",status:"WAITING"});
   assert.match(workspace.commits[0],/^factory\(Designer\): Main flow and empty state\./);
   const event=store.db.prepare("SELECT payload FROM events WHERE type='agent.result' ORDER BY id DESC LIMIT 1").get() as {payload:string};
   assert.equal(JSON.parse(event.payload).prototypeHead,"prototype-head","screenshot links point at the commit the human approves");
-  new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:started.id,login:"owner",commentId:2,specVersion:1});
+  new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:started.id,login:"owner",commentId:3,specVersion:1});
   assert.equal(await runner.run(started.id),true);
-  assert.equal(requests[2].role,"developer");assert.equal(workspace.archived.length,1);
-  assert.deepEqual({stage:projections.get(started.id).stage,status:projections.get(started.id).status},{stage:"TEST",status:"QUEUED"});
+  assert.equal(requests[3].role,"developer");assert.equal(workspace.archived.length,1);
+  assert.deepEqual(state(),{stage:"TEST",status:"QUEUED"});
  } finally {store.db.close();}
 });
 
@@ -316,13 +323,13 @@ test("a Designer PASS is judged by the prototype on disk: its report is replaced
  const store=new Store(":memory:"),started=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"});
  let onDisk=[".factory/prototype/README.md",".factory/prototype/screenshots/01-main.png",".factory/prototype/home.html"];
  const workspace=new class extends Workspace{prototypeFiles(){return onDisk;}}();
- const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return value;}});
- const ux=result("spec");ux.taskAssessment={...ux.taskAssessment!,uxImpact:"significant"};
+ const adapter=(value:AgentResult|((instructions:string)=>AgentResult)):AgentAdapter=>({async run(request){store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return typeof value==="function"?value(request.instructions):value;}});
+ const ux=(instructions:string)=>architectPass(instructions,{brief:{taskAssessment:{...result("brief").taskAssessment!,uxImpact:"significant"}}});
  // The report lists only part of what was written, as a live run did.
  const prototype=result("pass",{tests:[],coverage:[],testCandidates:[],changedFiles:[".factory/prototype/screenshots/01-main.png"],summary:"Main flow."});
  try {
   const runner=new WorkflowRunner(store,{"product-architect":adapter(ux),designer:adapter(prototype)},workspace,{ensurePR(){return "unused";}});
-  await runner.run(started.id);await runner.run(started.id);
+  await runner.run(started.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:started.id,login:"owner",commentId:1,specVersion:1});await runner.run(started.id);await runner.run(started.id);
   const projection=new WorkflowProjections(store).get(started.id);assert.deepEqual({stage:projection.stage,status:projection.status},{stage:"DESIGN",status:"WAITING"});
   const applied=JSON.parse((store.db.prepare("SELECT payload FROM events WHERE type='agent.result' ORDER BY id DESC LIMIT 1").get() as {payload:string}).payload);
   assert.deepEqual(applied.result.changedFiles,onDisk,"the published list is what is on disk");
@@ -332,10 +339,10 @@ test("a Designer PASS is judged by the prototype on disk: its report is replaced
  const second=new Store(":memory:"),item=new WorkflowIntake(second).start(runnerIssue,{actor:"dashboard",source:"control"});
  onDisk=[".factory/prototype/README.md"];
  try {
-  const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){second.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return value;}});
-  const ux=result("spec");ux.taskAssessment={...ux.taskAssessment!,uxImpact:"significant"};
+  const adapter=(value:AgentResult|((instructions:string)=>AgentResult)):AgentAdapter=>({async run(request){second.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return typeof value==="function"?value(request.instructions):value;}});
+  const ux=(instructions:string)=>architectPass(instructions,{brief:{taskAssessment:{...result("brief").taskAssessment!,uxImpact:"significant"}}});
   const runner=new WorkflowRunner(second,{"product-architect":adapter(ux),designer:adapter(prototype)},new class extends Workspace{prototypeFiles(){return onDisk;}}(),{ensurePR(){return "unused";}});
-  await runner.run(item.id);await runner.run(item.id);
+  await runner.run(item.id);new WorkflowCommands(second).apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});await runner.run(item.id);await runner.run(item.id);
   const rejected=second.db.prepare("SELECT payload FROM events WHERE type='execution.invalid_result' ORDER BY id DESC LIMIT 1").get() as {payload:string}|undefined;
   assert.match(rejected?.payload??"",/none is on disk/,"a claimed screenshot that is not on disk is rejected");
  } finally {second.db.close();}

@@ -5,7 +5,10 @@ import type { Store } from "./storage.js";
 export type RecordKind = "instruction" | "decision" | "finding" | "request" | "budget";
 export type RecordScope = "spec" | "issue";
 export type RecordStatus = "active" | "open" | "resolved" | "accepted-defer" | "superseded" | "revoked" | "cancelled";
-export type RequestType = "clarification" | "prototype" | "spec-approval" | "tactical-decision" | "correction-limit" | "merge" | "budget" | "stories";
+// Design is two gates at most: the human approves a brief (brief-approval), the Architect then
+// writes the spec under it (specification), and only a significant UX impact adds a prototype the
+// human approves with the written spec (prototype, then spec-approval).
+export type RequestType = "clarification" | "brief-approval" | "specification" | "prototype" | "spec-approval" | "tactical-decision" | "correction-limit" | "merge" | "budget" | "stories";
 export type V3Stage = "DESIGN" | "BUILD" | "TEST" | "REVIEW" | "DELIVERY";
 
 export type WorkflowRecordPayload =

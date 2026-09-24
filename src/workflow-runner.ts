@@ -86,7 +86,9 @@ export class WorkflowRunner {
    }
   }
   const specVersion=this.specVersion(workItemId),assessment=this.assessment(workItemId,specVersion),active=this.records.activeRequest(workItemId);
-  const consultation=active?.payload.kind==="request"&&active.payload.owner==="architect";
+  // Writing the spec under an approved brief is Architect-owned too, but it is not a consultation:
+  // it has no delivery stage to return to.
+  const consultation=active?.payload.kind==="request"&&active.payload.owner==="architect"&&active.payload.type==="tactical-decision";
   const selection=selectModel(role,assessment,projection.correctionCycles,consultation),budget=resolveContextBudget(role,selection);
   const route=consultation&&active?.payload.kind==="request"?this.route(active.payload.originatingStage,active.payload.allowedReturnStages):undefined;
   const baseline=this.workspaces.capture?.(cwd);

@@ -42,18 +42,23 @@ test("Architect distinguishes a required Design blocker from an optional researc
  const output=promptContract("product-architect","codex");
  assert.match(output,/initial Architect pairs a real blocker with outcome questions/);
  assert.match(output,/optional research or validation limitations in the summary/);
- assert.match(output,/If outcome is spec, questions must be \[\]/);
+ assert.match(output,/A brief or a spec returns questions \[\]/);
  assert.match(output,/Return `outcome: "questions"` only when a decision has no defensible recommendation/);
 });
 
-test("Architect proposes a brief the human approves instead of reading the SPEC",()=>{
+test("Architect validates a brief with the human first and writes the SPEC only under it",()=>{
  const output=promptContract("product-architect","claude");
  assert.match(output,/# BRIEF — <Work Item>/);
  assert.match(output,/## Decisions for you/);
  assert.match(output,/Ask no more than 5 questions and put no more than 5 human decisions in the brief/);
  assert.match(output,/At most 5, most irreversible first/);
- assert.match(output,/brief targeting 4000 characters and a spec targeting 20000 characters/);
- assert.match(output,/A complete proposal remains valid if either target is exceeded/);
+ assert.match(output,/return a brief \(outcome brief\) targeting 4000 characters/);
+ assert.match(output,/return the spec \(outcome spec\) targeting 20000 characters/);
+ assert.match(output,/When the active request is specification/);
+ assert.match(output,/Do not reopen a decision the approved brief settled/);
+ assert.match(output,/do not design the implementation or write acceptance criteria yet/);
+ assert.doesNotMatch(output,/## Acceptance criteria\nOne line per criterion/);
+ assert.match(output,/Either document remains valid if its target is exceeded/);
  assert.match(output,/the human approves the brief and does not read the spec/);
  assert.match(output,/Never ask what the repository, the issue or an earlier decision already answers/);
  assert.match(output,/Never put a human-level decision only in the SPEC/);
@@ -61,7 +66,7 @@ test("Architect proposes a brief the human approves instead of reading the SPEC"
 });
 
 test("installed limit overrides reach the Architect prompt and result schema",()=>{
- const script=`import {promptContract} from './src/prompts.ts'; import {resultSchemaFor} from './src/results.ts'; const prompt=promptContract('product-architect','claude'); const schema=resultSchemaFor('product-architect'); console.log(JSON.stringify({brief:prompt.includes('brief targeting 3200 characters'),spec:prompt.includes('spec targeting 18000 characters'),decisions:prompt.includes('At most 3, most irreversible first'),stories:prompt.includes('list 1 to 4 stories'),questions:schema.properties.questions.maxItems,items:schema.properties.findings.maxItems}));`;
+ const script=`import {promptContract} from './src/prompts.ts'; import {resultSchemaFor} from './src/results.ts'; const prompt=promptContract('product-architect','claude'); const schema=resultSchemaFor('product-architect'); console.log(JSON.stringify({brief:prompt.includes('brief (outcome brief) targeting 3200 characters'),spec:prompt.includes('spec (outcome spec) targeting 18000 characters'),decisions:prompt.includes('At most 3, most irreversible first'),stories:prompt.includes('list 1 to 4 stories'),questions:schema.properties.questions.maxItems,items:schema.properties.findings.maxItems}));`;
  const run=spawnSync(process.execPath,["--import","tsx","--input-type=module","-e",script],{cwd:process.cwd(),env:{...process.env,FACTORY_BRIEF_TARGET_CHARS:"3200",FACTORY_SPEC_TARGET_CHARS:"18000",FACTORY_MAX_HUMAN_DECISIONS:"3",FACTORY_MAX_STORIES:"4",FACTORY_MAX_QUESTIONS:"2",FACTORY_RESULT_MAX_ITEMS:"8"},encoding:"utf8"});
  assert.equal(run.status,0,run.stderr);
  assert.deepEqual(JSON.parse(run.stdout.trim()),{brief:true,spec:true,decisions:true,stories:true,questions:2,items:8});

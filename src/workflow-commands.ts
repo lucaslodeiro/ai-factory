@@ -37,8 +37,20 @@ export class WorkflowCommands {
    return {projection:result,recordIds:[id]};
   }
   if(command.kind==="approve") {
-   const request=this.requireHumanRequest(context,"spec-approval");
+   const request=this.requireHumanRequest(context,["brief-approval","spec-approval"]);
    if(command.version!==context.specVersion)throw new Error(`Approval is for v${command.version}; active specification is v${context.specVersion}`);
+   // Approving the brief is the human approval of this version: the spec written under it is not
+   // read again, so it only queues the Architect to write it.
+   if(request.payload.kind==="request"&&request.payload.type==="brief-approval"){
+    const ids=[request.id];
+    const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:"DESIGN",status:"QUEUED",actor,source,reason:{code:"brief-approved",summary:`Brief v${command.version} approved; Architect writes the specification`},recordIds:ids},()=>{
+     this.records.resolveRequest(request.id);
+     this.store.db.prepare("UPDATE specs SET approved_by=?,approval_comment_id=?,approved_at=? WHERE work_item_id=? AND version=?").run(context.login,context.commentId,new Date().toISOString(),context.workItemId,context.specVersion);
+     if(command.guidance)ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:"spec",payload:{kind:"instruction",text:command.guidance},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
+     ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:"spec",payload:{kind:"request",type:"specification",owner:"architect",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:context.commentId},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
+    });
+    return {projection:result,recordIds:ids};
+   }
    const spec=this.store.db.prepare("SELECT stories FROM specs WHERE work_item_id=? AND version=?").get(context.workItemId,context.specVersion) as {stories:string}|undefined;
    if(!spec)throw new Error(`SPEC v${context.specVersion} is unavailable`);
    const stories=JSON.parse(spec.stories) as Story[],ids=[request.id];
@@ -64,9 +76,9 @@ export class WorkflowCommands {
     return {projection:result,recordIds:ids};
    }
    const request=this.requireHumanRequest(context);
-   if(request.payload.kind==="request"&&request.payload.type==="spec-approval"){
-    const ids:string[]=[request.id];
-    const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:"DESIGN",status:"QUEUED",actor,source,reason:{code:"spec-feedback",summary:"Human requested specification changes"},recordIds:ids},()=>{
+   if(request.payload.kind==="request"&&(request.payload.type==="brief-approval"||request.payload.type==="spec-approval")){
+    const ids:string[]=[request.id],brief=request.payload.type==="brief-approval";
+    const result=this.projections.transition({workItemId:context.workItemId,expectedRevision:current.revision,stage:"DESIGN",status:"QUEUED",actor,source,reason:{code:"spec-feedback",summary:brief?"Human requested brief changes":"Human requested specification changes"},recordIds:ids},()=>{
      this.records.resolveRequest(request.id);
      ids.push(this.records.create({workItemId:context.workItemId,specVersion:context.specVersion,scope:"spec",payload:{kind:"decision",category:"human",decision:command.text,rationale:`Specification feedback from @${context.login}`,supersedes:[]},sourceType:"github-comment",sourceId:String(context.commentId),actor:context.login}).id);
     });
@@ -135,10 +147,10 @@ export class WorkflowCommands {
   }
   throw new Error(`Unsupported command ${(command as FactoryCommand).kind}`);
  }
- private requireHumanRequest(context:CommandContext,type?:string) {
+ private requireHumanRequest(context:CommandContext,types?:string[]) {
   const request=this.records.activeRequest(context.workItemId);
   if(!request||request.payload.kind!=="request"||request.payload.owner!=="human")throw new Error("No active human request");
-  if(type&&request.payload.type!==type)throw new Error(`Active request is ${request.payload.type}, not ${type}`);
+  if(types&&!types.includes(request.payload.type))throw new Error(`Active request is ${request.payload.type}, not ${types.join(" or ")}`);
   if(context.commentId<=request.payload.openedAfterCommentId)throw new Error(`Command is stale; request opened after comment ${request.payload.openedAfterCommentId}`);
   return request;
  }

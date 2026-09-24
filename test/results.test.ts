@@ -36,7 +36,7 @@ test("provider schemas prevent delivery roles from respecifying or selecting the
   assert.equal(schema.taskAssessment.type, "null"); assert.equal(schema.nextRole.type, "null");
   assert.deepEqual(schema.outcome.enum, ["pass", "changes", "decision"]);
  }
- assert.deepEqual(resultSchemaFor("product-architect").properties!.outcome.enum, ["spec", "questions", "resolved"]);
+ assert.deepEqual(resultSchemaFor("product-architect").properties!.outcome.enum, ["brief", "spec", "questions", "resolved"]);
 });
 
 test("architect consultation schema and validation enforce the exact tactical return route", () => {
@@ -96,7 +96,7 @@ test("decisions must include supersedes in the current result format",()=>{
 });
 
 test("verification depth cannot be declared below what complexity and risk require",()=>{
- const spec=(complexity:string,risk:string,verificationDepth:string)=>({...result("spec"),taskAssessment:{complexity,risk,verificationDepth,uxImpact:"none",rationale:"Assessed against the change"}});
+ const spec=(complexity:string,risk:string,verificationDepth:string)=>({...result("brief"),taskAssessment:{complexity,risk,verificationDepth,uxImpact:"none",rationale:"Assessed against the change"}});
  assert.equal(parseResult(spec("low","low","minimal"),"product-architect").taskAssessment?.verificationDepth,"minimal");
  assert.equal(parseResult(spec("low","low","thorough"),"product-architect").taskAssessment?.verificationDepth,"thorough","declaring more than required is allowed");
  assert.throws(()=>parseResult(spec("low","high","standard"),"product-architect"),/below thorough/);
@@ -117,15 +117,19 @@ test("a minor finding is recorded instead of sending the Builder another cycle",
  assert.equal(parseResult(withFinding("defer","minor","pass"),"qa").findings[0].severity,"minor");
 });
 
-test("a proposed specification needs a brief the human can read in place of the SPEC",()=>{
- assert.throws(()=>parseResult(result("spec",{brief:""}),"product-architect"),error=>error instanceof InvalidResultError&&/needs a brief/.test(error.message));
- assert.equal(parseResult(result("spec",{brief:"x".repeat(6001)}),"product-architect").brief.length,6001);
+test("a brief is the quick validation the human approves, and the spec is written only under it",()=>{
+ assert.throws(()=>parseResult(result("brief",{brief:""}),"product-architect"),error=>error instanceof InvalidResultError&&/A brief needs the decisions/.test(error.message));
+ assert.equal(parseResult(result("brief",{brief:"x".repeat(6001)}),"product-architect").brief.length,6001);
  assert.equal(resultSchemaFor("product-architect").properties?.brief?.maxLength,undefined);
+ assert.throws(()=>parseResult(result("brief",{acceptanceCriteria:[{id:"AC1",description:"Returns 42"}]}),"product-architect"),/A brief carries no spec, acceptance criteria or stories/);
+ assert.throws(()=>parseResult(result("brief",{spec:"# Spec"}),"product-architect"),/A brief carries no spec/);
+ assert.throws(()=>parseResult(result("brief",{questions:["Which plan?"]}),"product-architect"),/must return questions: \[\]/);
+ assert.throws(()=>parseResult(result("spec",{brief:"Decisions again"}),"product-architect"),/must return brief: ""/);
  assert.equal(parseResult(result("spec",{spec:`# Spec\nAC1\n${"x".repeat(25001)}`}),"product-architect").spec.length>25000,true);
  assert.equal(resultSchemaFor("product-architect").properties?.spec?.maxLength,undefined);
  assert.equal(resultSchemaFor("product-architect").properties?.questions?.maxItems,5);
- assert.throws(()=>parseResult(result("questions",{questions:["Which plan?"],brief:"Decisions"}),"product-architect"),/Only a new specification may contain brief/);
- assert.equal(parseResult(result("spec"),"product-architect").brief.startsWith("## Decisions for you"),true);
+ assert.throws(()=>parseResult(result("questions",{questions:["Which plan?"],brief:"Decisions"}),"product-architect"),/Only a brief may contain brief/);
+ assert.equal(parseResult(result("brief"),"product-architect").brief.startsWith("## Decisions for you"),true);
  assert.equal(parseResult(result("pass",{brief:"injected"}),"developer").brief,"");
  assert.deepEqual(resultSchemaFor("developer").properties?.brief,{type:"string",enum:[""]});
 });
@@ -140,7 +144,7 @@ test("a Designer result is the prototype and its screenshots, or an environment 
  assert.equal(parseResult(result("decision",{findings:[{classification:"environment-blocked",severity:"major",evidence:"No browser"}]}),"designer").outcome,"decision");
  assert.deepEqual(resultSchemaFor("designer").properties?.outcome,{type:"string",enum:["pass","decision"]});
  assert.deepEqual(resultSchemaFor("designer").properties?.brief,{type:"string",enum:[""]});
- assert.throws(()=>parseResult({...result("spec"),taskAssessment:{...result("spec").taskAssessment!,uxImpact:"large"}},"product-architect"),/uxImpact: invalid value/);
+ assert.throws(()=>parseResult({...result("brief"),taskAssessment:{...result("brief").taskAssessment!,uxImpact:"large"}},"product-architect"),/uxImpact: invalid value/);
 });
 
 test("a split into stories is a small acyclic graph over the specification's own criteria",()=>{
@@ -160,7 +164,8 @@ test("a split into stories is a small acyclic graph over the specification's own
  assert.throws(()=>parseResult(spec([story("A",["AC1"],["A"]),story("B",["AC2"])]),"product-architect"),/depends on itself/);
  assert.throws(()=>parseResult(spec([story("A",["AC1"],["C"]),story("B",["AC2"],["A"]),story("C",["AC3"],["B"])]),"product-architect"),/cycle: A -> C -> B -> A/);
  assert.throws(()=>parseResult(spec([story("A",["AC1"],[],{complexity:"low",risk:"high",verificationDepth:"minimal"}),story("B",["AC2"])]),"product-architect"),/Story A verification depth minimal is below thorough/);
- assert.throws(()=>parseResult(result("questions",{questions:["Split?"],stories:[story("A",["AC1"]),story("B",["AC1"])]}),"product-architect"),/Only a new specification may contain/);
+ assert.throws(()=>parseResult(result("questions",{questions:["Split?"],stories:[story("A",["AC1"]),story("B",["AC1"])]}),"product-architect"),/only a spec may contain/);
+ assert.throws(()=>parseResult(result("brief",{stories:[story("A",["AC1"])]}),"product-architect"),/A brief carries no spec, acceptance criteria or stories/,"the brief proposes a split as a decision; the spec gives it criteria");
  // Delivery roles cannot introduce a split: the schema pins the field and the parser drops it.
  assert.deepEqual(resultSchemaFor("developer").properties?.stories?.maxItems,0);
  assert.deepEqual(parseResult(result("pass",{stories:[story("A",["AC1"]),story("B",["AC1"])]}),"developer").stories,[]);

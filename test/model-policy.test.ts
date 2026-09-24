@@ -29,9 +29,10 @@ test("policy uses each role's configured provider and model IDs", () => {
   assert.throws(() => selectModel("developer", assessment("low", "low")), /Missing claude model for Builder/);
  } finally { config.roles.developer = saved; }
 });
-test("only new specs can set an assessment and every assessment needs valid levels and rationale", () => {
- assert.throws(() => parseResult(result("spec", { taskAssessment: null }), "product-architect"), /requires a taskAssessment/);
+test("only a brief can set an assessment and every assessment needs valid levels and rationale", () => {
+ assert.throws(() => parseResult(result("brief", { taskAssessment: null }), "product-architect"), /requires a taskAssessment/);
+ assert.throws(() => parseResult(result("spec", { taskAssessment: assessment("low", "low") }), "product-architect"), /keeps the taskAssessment approved with its brief/);
  assert.equal(parseResult(result("pass", { taskAssessment: assessment("low", "low") }), "developer").taskAssessment, null);
- assert.throws(() => parseResult(result("spec", { taskAssessment: { ...assessment("low", "low"), rationale: "" } }), "product-architect"), /rationale/);
- assert.throws(() => parseResult(result("spec", { taskAssessment: { ...assessment("low", "low"), risk: "unknown" as any } }), "product-architect"), /risk/);
+ assert.throws(() => parseResult(result("brief", { taskAssessment: { ...assessment("low", "low"), rationale: "" } }), "product-architect"), /rationale/);
+ assert.throws(() => parseResult(result("brief", { taskAssessment: { ...assessment("low", "low"), risk: "unknown" as any } }), "product-architect"), /risk/);
 });

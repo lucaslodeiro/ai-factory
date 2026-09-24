@@ -10,7 +10,7 @@ const list = (items: Schema): Schema => ({ type: "array", items, maxItems: confi
 const object = (properties: Record<string, Schema>): Schema => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
 // Depth cannot be chosen freely: an Architect that declared everything minimal would make every
 // run cheap and the product worse. It is floored by the worse of complexity and risk, and the
-// human approves it with the spec.
+// human approves it with the brief.
 const levels=["low","medium","high"] as const, depths=["minimal","standard","thorough"] as const;
 export function requiredVerificationDepth(assessment:Pick<TaskAssessment,"complexity"|"risk">):VerificationDepth {
  return depths[Math.max(levels.indexOf(assessment.complexity),levels.indexOf(assessment.risk))];
@@ -26,7 +26,7 @@ export const maxStories=config.maxStories;
 const decisionSchema=object({ kind: enumeration("tactical", "major"), decision: text(), rationale: text(), conflictsWithHuman: { type: "boolean" }, supersedes:list(text(100)) });
 export const resultSchema = object({
   taskAssessment: { ...object({ complexity: enumeration("low", "medium", "high"), risk: enumeration("low", "medium", "high"), verificationDepth: enumeration("minimal", "standard", "thorough"), uxImpact: enumeration("none", "minor", "significant"), rationale: text() }), type: ["object", "null"] },
-  outcome: enumeration("spec", "questions", "resolved", "pass", "changes", "decision"),
+  outcome: enumeration("brief", "spec", "questions", "resolved", "pass", "changes", "decision"),
   summary: text(), brief: { type: "string" }, spec: { type: "string" }, questions: { ...list(text()), maxItems: config.maxQuestions },
   findings: list(object({ classification: enumeration("auto-fix", "decision-required", "defer", "environment-blocked"), severity: enumeration("critical", "major", "minor"), evidence: text() })),
   acceptanceCriteria: list(object({ id: text(100), description: text() })),
@@ -51,7 +51,7 @@ export function pinnedResultFields(role: AgentRole, allowedNextRoles?: TacticalN
 export function resultSchemaFor(role: AgentRole, allowedNextRoles?: TacticalNextRole[]): Schema {
  const candidates=role === "qa" ? resultSchema.properties!.testCandidates : { ...resultSchema.properties!.testCandidates, maxItems: 0 };
  if (role === "product-architect") return { ...resultSchema, properties: { ...resultSchema.properties, testCandidates: candidates,
-  outcome: enumeration("spec", "questions", "resolved"),
+  outcome: enumeration("brief", "spec", "questions", "resolved"),
   nextRole: allowedNextRoles ? { type: ["string", "null"], enum: [...allowedNextRoles, null] } : resultSchema.properties!.nextRole,
  } };
  return { ...resultSchema, properties: { ...resultSchema.properties,
@@ -153,14 +153,17 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
   unique(r.coverage.map(c => c.criterionId), "coverage criterion");
   unique(r.reviewChecks.map(c => c.dimension), "review dimension");
   if (role === "qa") validateTestSelection(r);
-  const allowed = role === "product-architect" ? ["spec", "questions", "resolved"] : role === "designer" ? ["pass", "decision"] : ["pass", "changes", "decision"];
+  const allowed = role === "product-architect" ? ["brief", "spec", "questions", "resolved"] : role === "designer" ? ["pass", "decision"] : ["pass", "changes", "decision"];
   if (!allowed.includes(r.outcome)) throw new Error(`Invalid ${role} outcome: ${r.outcome}`);
-  if (r.outcome === "spec" && r.questions.length) throw new Error('A proposed specification must return questions: []. Put decisions that need the human in the brief with your recommendation, and your own assumptions under its assumptions; if a decision has no defensible recommendation is required before proposing it, return outcome "questions" without a SPEC');
+  if (["brief", "spec"].includes(r.outcome) && r.questions.length) throw new Error(`A ${r.outcome} must return questions: []. Put decisions that need the human in the brief with your recommendation, and your own assumptions under its assumptions; if a decision has no defensible recommendation, return outcome "questions" instead`);
+  if (r.outcome === "brief" && !r.brief.trim()) throw new Error("A brief needs the decisions that need the human, the solution in at most five lines and the scope. The human validates it before any specification is written");
+  if (r.outcome === "brief" && (r.spec !== "" || r.acceptanceCriteria.length || r.stories.length)) throw new Error("A brief carries no spec, acceptance criteria or stories: those are written after the human approves it. Propose a split into stories as a decision in the brief");
+  if (r.outcome === "brief" && !r.taskAssessment) throw new Error("A brief requires a taskAssessment: the human approves its verification depth and UX impact with it");
   if (r.outcome === "spec" && (!r.spec.trim() || !r.acceptanceCriteria.length || r.acceptanceCriteria.some(c => !r.spec.includes(c.id)))) throw new Error("Specification needs named acceptance criteria in markdown and structured form");
-  if (r.outcome === "spec" && !r.brief.trim()) throw new Error("A proposed specification needs a brief: the decisions that need the human, the solution in at most five lines and the acceptance criteria. The human approves the brief instead of reading the SPEC");
-  if (r.outcome !== "spec" && (r.brief !== "" || r.spec !== "" || r.acceptanceCriteria.length || r.stories.length)) throw new Error("Only a new specification may contain brief/spec/acceptanceCriteria/stories");
+  if (r.outcome === "spec" && r.brief !== "") throw new Error("A spec is written under the approved brief and must return brief: \"\". A decision the human must make again belongs in a new brief (outcome brief), not in the spec");
+  if (r.outcome === "spec" && r.taskAssessment !== null) throw new Error("A spec keeps the taskAssessment approved with its brief and must return taskAssessment: null. A different assessment needs a new brief");
+  if (!["brief", "spec"].includes(r.outcome) && (r.brief !== "" || r.spec !== "" || r.acceptanceCriteria.length || r.stories.length)) throw new Error("Only a brief may contain brief, and only a spec may contain spec/acceptanceCriteria/stories");
   if (r.stories.length) validateStories(r.stories, r.acceptanceCriteria);
-  if (r.outcome === "spec" && !r.taskAssessment) throw new Error("Specification requires a taskAssessment");
   if (r.taskAssessment) {
     const floor=requiredVerificationDepth(r.taskAssessment);
     if (depths.indexOf(r.taskAssessment.verificationDepth) < depths.indexOf(floor))
@@ -170,7 +173,7 @@ function parseResultUnchecked(raw: unknown, role: AgentRole, allowedNextRoles?: 
     if (finding.classification === "defer" && finding.severity !== "minor") throw new Error(`A ${finding.severity} finding cannot be deferred; fix it now or raise it as a decision`);
     if (finding.classification === "auto-fix" && finding.severity === "minor") throw new Error("A minor finding cannot send work back to the Builder; defer it so it is recorded without a correction cycle");
   }
-  if (r.outcome !== "spec" && r.taskAssessment !== null) throw new Error("Only a new specification may change taskAssessment");
+  if (r.outcome !== "brief" && r.taskAssessment !== null) throw new Error("Only a brief may set taskAssessment");
   if (r.outcome === "questions" && !r.questions.length) throw new Error("No clarification questions");
   if (r.outcome === "resolved") {
     if (!r.nextRole || !r.decisions.length || r.decisions.some(d => d.kind !== "tactical" || d.conflictsWithHuman) || r.questions.length || r.findings.some(f => f.classification === "decision-required")) throw new Error("Tactical resolution cannot require a human decision");

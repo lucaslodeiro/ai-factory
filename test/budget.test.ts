@@ -150,15 +150,15 @@ test("neither answer, pause nor retry gets past a budget hold, and retry does no
 test("the run in progress finishes and keeps its result; the next stage does not start",async()=>withBudget(1000,[],async()=>{
  const {store,id}=setup();
  try {
-  const spec:AgentAdapter={async run(request){store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now',total_tokens=1600 WHERE id=?").run(request.executionId);return result("spec");}};
+  const spec:AgentAdapter={async run(request){store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now',total_tokens=1600 WHERE id=?").run(request.executionId);return result("brief");}};
   const runner=new WorkflowRunner(store,{"product-architect":spec},{ensure(){return "/tmp/factory-budget";},assertBranch(){},sync(){return{before:"a",after:"a",merged:[]};},publish(){},head(){return "a";},diff(){return "";},check(){},commit(){},changeSummary(){return{files:[],stat:""};},prepareReviewerContext(){return{path:"",files:[],stat:""};},cleanupReviewerContext(){}} as unknown as WorkspacePort,{ensurePR(){throw new Error("unused");}});
   assert.equal(await runner.run(id),true);
   assert.equal(new WorkflowProjections(store).get(id).status,"WAITING");
-  const request=new WorkflowRecords(store).activeRequest(id);assert.equal(request?.payload.kind==="request"&&request.payload.type,"spec-approval","the overrunning result was applied");
+  const request=new WorkflowRecords(store).activeRequest(id);assert.equal(request?.payload.kind==="request"&&request.payload.type,"brief-approval","the overrunning result was applied");
   new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:id,login:"owner",commentId:20,specVersion:1});
-  const builder=new WorkflowRunner(store,{developer:neverCalled},unused,{ensurePR(){throw new Error("unused");}});
-  assert.equal(await builder.run(id),true);
-  const held=new WorkflowProjections(store).get(id);assert.deepEqual({stage:held.stage,status:held.status},{stage:"BUILD",status:"WAITING"});
+  const next=new WorkflowRunner(store,{"product-architect":neverCalled},unused,{ensurePR(){throw new Error("unused");}});
+  assert.equal(await next.run(id),true);
+  const held=new WorkflowProjections(store).get(id);assert.deepEqual({stage:held.stage,status:held.status},{stage:"DESIGN",status:"WAITING"});
  } finally { store.db.close(); }
 }));
 

@@ -4,7 +4,8 @@ import { Store } from "../src/storage.js";
 import { WorkflowRunner } from "../src/workflow-runner.js";
 import { WorkflowIntake } from "../src/workflow-inbox.js";
 import { WorkflowCommands } from "../src/workflow-commands.js";
-import { result } from "./fixtures.js";
+import { architectPass,result } from "./fixtures.js";
+import type { AgentResult } from "../src/types.js";
 import type { AgentAdapter } from "../src/adapters/agent.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -29,18 +30,18 @@ class Workspace {
 test("a preview server that will not start does not fail the stage",async()=>{
  const store=new Store(":memory:"),item=new WorkflowIntake(store).start(issue,{actor:"dashboard",source:"control"});
  let instructions="";
- const adapter=(value:ReturnType<typeof result>):AgentAdapter=>({async run(request){
+ const adapter=(value:AgentResult|((instructions:string)=>AgentResult)):AgentAdapter=>({async run(request){
   instructions=request.instructions;
   store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000 WHERE id=?").run(request.executionId);
-  return value;}});
+  return typeof value==="function"?value(request.instructions):value;}});
  const runtime={async ensure(){throw new Error("Factory local runtime did not become ready. See /data/x.log");},
   async stop(){},async reconcile(){},async close(){}};
  try{
-  const runner=new WorkflowRunner(store,{"product-architect":adapter(result("spec")),developer:adapter(result("pass"))},
+  const runner=new WorkflowRunner(store,{"product-architect":adapter(architectPass),developer:adapter(result("pass"))},
    new Workspace() as never,{ensurePR(){return "unused";}},runtime as never);
   await runner.run(item.id);
   new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});
-  await runner.run(item.id);
+  await runner.run(item.id);await runner.run(item.id);
   const stage=(store.db.prepare("SELECT stage,status FROM work_items WHERE id=?").get(item.id) as {stage:string;status:string});
   assert.notEqual(stage.status,"FAILED","the stage ran without the preview server");
   const failed=store.db.prepare("SELECT payload FROM events WHERE work_item_id=? AND type='runtime.local_failed'").all(item.id) as Array<{payload:string}>;

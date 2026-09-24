@@ -25,15 +25,63 @@ function running(s:ReturnType<typeof setup>,role:AgentRole,id:string) {
  const current=s.projections.get("work-1");s.projections.transition({workItemId:"work-1",expectedRevision:current.revision,stage:current.stage,status:"RUNNING",activeRunId:id,actor:{type:"orchestrator",id:"scheduler"},source:{executionId:id},reason:{code:"execution-started",summary:`${role} started`}});
 }
 
-test("Architect specification creates a versioned approval request",()=>{
+test("the Architect proposes a brief first, and writes the spec only after the human approves it",()=>{
  const s=setup();
  try {
   running(s,"product-architect","run-a");
-  const applied=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-a",role:"product-architect",result:result("spec")});
-  assert.equal(applied.discarded,false);assert.deepEqual({stage:applied.projection.stage,status:applied.projection.status},{stage:"DESIGN",status:"WAITING"});
+  const brief=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-a",role:"product-architect",result:result("brief")});
+  assert.deepEqual({stage:brief.projection.stage,status:brief.projection.status},{stage:"DESIGN",status:"WAITING"});
+  assert.deepEqual(s.store.db.prepare("SELECT body,criteria,approved_by FROM specs WHERE work_item_id='work-1' AND version=1").get(),{body:"## Decisions for you\nNone.\n\n## Solution\nReturn 42.",criteria:"[]",approved_by:null},"nothing detailed exists before the human validates the brief");
+  const approval=s.records.activeRequest("work-1");assert.equal(approval?.payload.kind==="request"&&approval.payload.type,"brief-approval");
+  const approved=new WorkflowCommands(s.store).apply({kind:"approve",version:1,guidance:"Keep the public API"},{workItemId:"work-1",login:"owner",commentId:6,specVersion:1});
+  assert.deepEqual({stage:approved.projection.stage,status:approved.projection.status},{stage:"DESIGN",status:"QUEUED"});
+  const writing=s.records.activeRequest("work-1");assert.equal(writing?.payload.kind==="request"&&`${writing.payload.type}:${writing.payload.owner}`,"specification:architect");
+  assert.equal((s.store.db.prepare("SELECT approved_by FROM specs WHERE work_item_id='work-1' AND version=1").get() as {approved_by:string}).approved_by,"owner");
+  running(s,"product-architect","run-b");
+  const spec=s.results.apply({head:"head",workItemId:"work-1",executionId:"run-b",role:"product-architect",result:result("spec")});
+  assert.deepEqual({stage:spec.projection.stage,status:spec.projection.status},{stage:"BUILD",status:"QUEUED"},"no UX impact: the Builder starts without a second human gate");
   assert.equal((s.store.db.prepare("SELECT body FROM specs WHERE work_item_id='work-1' AND version=1").get() as {body:string}).body,"## Decisions for you\nNone.\n\n## Solution\nReturn 42.\n\n---\n\n# Specification\nAC1: returns 42");
-  const request=s.records.activeRequest("work-1");assert.equal(request?.payload.kind==="request"&&request.payload.type,"spec-approval");
+  assert.equal(s.records.activeRequest("work-1"),undefined);
  } finally {s.store.db.close();}
+});
+
+test("a spec without an approved brief is rejected, and feedback on a brief asks for a new brief",()=>{
+ const s=setup();
+ try {
+  running(s,"product-architect","run-a");
+  assert.throws(()=>s.results.apply({head:"head",workItemId:"work-1",executionId:"run-a",role:"product-architect",result:result("spec")}),error=>error instanceof InvalidResultError&&/only under an approved brief/.test(error.message));
+  s.results.apply({head:"head",workItemId:"work-1",executionId:"run-a",role:"product-architect",result:result("brief")});
+  const feedback=new WorkflowCommands(s.store).apply({kind:"answer",text:"Use SQLite"},{workItemId:"work-1",login:"owner",commentId:6,specVersion:1});
+  assert.deepEqual({stage:feedback.projection.stage,status:feedback.projection.status},{stage:"DESIGN",status:"QUEUED"});
+  running(s,"product-architect","run-b");
+  s.results.apply({head:"head",workItemId:"work-1",executionId:"run-b",role:"product-architect",result:result("brief")});
+  const request=s.records.activeRequest("work-1");assert.equal(request?.payload.kind==="request"&&`${request.payload.type}:${request.specVersion}`,"brief-approval:2");
+ } finally {s.store.db.close();}
+});
+
+test("a significant UX impact sends the written spec to the Designer, and an approved split waits for its stories",()=>{
+ const ux=setup();
+ try {
+  running(ux,"product-architect","run-a");
+  ux.results.apply({head:"head",workItemId:"work-1",executionId:"run-a",role:"product-architect",result:result("brief",{taskAssessment:{...result("brief").taskAssessment!,uxImpact:"significant"}})});
+  new WorkflowCommands(ux.store).apply({kind:"approve",version:1,guidance:""},{workItemId:"work-1",login:"owner",commentId:6,specVersion:1});
+  running(ux,"product-architect","run-b");
+  const spec=ux.results.apply({head:"head",workItemId:"work-1",executionId:"run-b",role:"product-architect",result:result("spec")});
+  assert.deepEqual({stage:spec.projection.stage,status:spec.projection.status},{stage:"DESIGN",status:"QUEUED"});
+  const request=ux.records.activeRequest("work-1");assert.equal(request?.payload.kind==="request"&&`${request.payload.type}:${request.payload.owner}`,"prototype:designer");
+ } finally {ux.store.db.close();}
+ const split=setup();
+ try {
+  running(split,"product-architect","run-a");
+  split.results.apply({head:"head",workItemId:"work-1",executionId:"run-a",role:"product-architect",result:result("brief")});
+  new WorkflowCommands(split.store).apply({kind:"approve",version:1,guidance:""},{workItemId:"work-1",login:"owner",commentId:6,specVersion:1});
+  running(split,"product-architect","run-b");
+  const story=(key:string,criteria:string[],dependsOn:string[]=[])=>({key,title:`Story ${key}`,scope:key,criteria,dependsOn,assessment:{complexity:"low" as const,risk:"low" as const,verificationDepth:"minimal" as const}});
+  const spec=split.results.apply({head:"head",workItemId:"work-1",executionId:"run-b",role:"product-architect",result:result("spec",{acceptanceCriteria:[{id:"AC1",description:"One"},{id:"AC2",description:"Two"}],spec:"# Spec\nAC1 AC2",stories:[story("A",["AC1"]),story("B",["AC2"],["A"])]})});
+  assert.deepEqual({stage:spec.projection.stage,status:spec.projection.status},{stage:"BUILD",status:"WAITING"});
+  assert.deepEqual(new WorkflowStories(split.store).forEpic("work-1",1).map(row=>row.key),["A","B"]);
+  const request=split.records.activeRequest("work-1");assert.equal(request?.payload.kind==="request"&&request.payload.type,"stories");
+ } finally {split.store.db.close();}
 });
 
 test("delivery pass advances the stored stage and accepts role-owned deferred findings",()=>{
@@ -158,5 +206,20 @@ test("an epic whose stories are integrated verifies only the criteria no story o
   assert.deepEqual(scope,{role:"qa",criteria:2,verifiedByStories:1,required:1,covered:1});
   const evidence=new WorkflowStories(s.store).verifiedByStories("work-1",1);
   assert.deepEqual(evidence,[{key:"S1",issue:2,criteria:["AC1"],verificationDepth:"minimal",coverage:[{criterionId:"AC1",status:"passed",evidence:"story test"}]}]);
+ } finally {s.store.db.close();}
+});
+
+test("an item proposed under the single-pass flow finishes it: its Designer prototype is approved and delivery starts",()=>{
+ const s=setup();
+ try {
+  // What an installation updated mid-Design holds: a whole spec, never approved, waiting for its prototype.
+  s.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,stories,assessment) VALUES('work-1',1,'Brief\n\n---\n\nSPEC AC1',?,'[]',?)").run(JSON.stringify([{id:"AC1",description:"Returns 42"}]),JSON.stringify({complexity:"low",risk:"low",verificationDepth:"minimal",uxImpact:"significant",rationale:"UI"}));
+  s.records.create({workItemId:"work-1",specVersion:1,scope:"spec",payload:{kind:"request",type:"prototype",owner:"designer",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:5},sourceType:"agent-result",sourceId:"old-run",actor:"product-architect"});
+  running(s,"designer","run-d");
+  s.results.apply({head:"head",workItemId:"work-1",executionId:"run-d",role:"designer",result:result("pass",{tests:[],coverage:[],testCandidates:[],changedFiles:[".factory/prototype/01-main.png"]})});
+  const approval=s.records.activeRequest("work-1");assert.equal(approval?.payload.kind==="request"&&approval.payload.type,"spec-approval");
+  const approved=new WorkflowCommands(s.store).apply({kind:"approve",version:1,guidance:""},{workItemId:"work-1",login:"owner",commentId:6,specVersion:1});
+  assert.deepEqual({stage:approved.projection.stage,status:approved.projection.status},{stage:"BUILD",status:"QUEUED"});
+  assert.equal((s.store.db.prepare("SELECT approved_by FROM specs WHERE work_item_id='work-1'").get() as {approved_by:string}).approved_by,"owner");
  } finally {s.store.db.close();}
 });

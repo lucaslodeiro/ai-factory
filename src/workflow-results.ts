@@ -8,8 +8,6 @@ import { WorkflowProjections } from "./workflow-projection.js";
 import { WorkflowRecords,type V3Stage,type WorkflowRecord } from "./workflow-records.js";
 import {roleShortName} from "./names.js";
 
-// The stored body leads with the brief the human approved, so every delivery role and a
-// recovered issue see the decisions the human made before the technical detail.
 // What the factory records about every Tester run so its testing can be tuned later: how many
 // tests it considered, how many it kept, and how many it discarded as redundant, against the depth
 // the human approved.
@@ -17,6 +15,8 @@ export function testSelectionMetrics(result:Pick<AgentResult,"testCandidates"|"t
  const count=(value:string)=>result.testCandidates.filter(candidate=>candidate.value===value).length;
  return {outcome:result.outcome,verificationDepth,candidates:result.testCandidates.length,kept:result.testCandidates.filter(candidate=>candidate.kept).length,essential:count("essential"),valuable:count("valuable"),redundant:count("redundant"),valuableDiscarded:result.testCandidates.filter(candidate=>candidate.value==="valuable"&&!candidate.kept).length,commands:result.tests.length};
 }
+// The stored body leads with the brief the human approved, so every delivery role and a
+// recovered issue see the decisions the human made before the technical detail.
 export function specificationBody(result:Pick<AgentResult,"brief"|"spec">){return `${result.brief.trim()}\n\n---\n\n${result.spec.trim()}`;}
 const specSeparator="\n\n---\n\n";
 // The Designer prototypes UI from the decisions and acceptance criteria, never from the full
@@ -63,14 +63,32 @@ export class WorkflowResults {
    const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:"DESIGN",status:"WAITING",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"questions",summary:"Architect needs human input"},recordIds:ids},()=>{this.resultEvent(input);ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",parentId:parent?.id,payload:{kind:"request",type:"clarification",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:this.cursor(input.workItemId),questions:result.questions},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);});
    return {discarded:false,projection,recordIds:ids};
   }
-  if(result.outcome==="spec") {
+  // The brief is the quick validation: the human approves the decisions and the scope before
+  // anything detailed is written, so a changed decision costs a short brief, not a whole spec.
+  if(result.outcome==="brief") {
    const next=specVersion+1;
-   const prototype=result.taskAssessment?.uxImpact==="significant";
-   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:"DESIGN",status:prototype?"QUEUED":"WAITING",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"spec-proposed",summary:prototype?`SPEC v${next} proposed; Designer prepares a prototype`:`SPEC v${next} proposed`},recordIds:ids,correctionCycles:0},()=>{
+   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage:"DESIGN",status:"WAITING",actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"brief-proposed",summary:`Brief v${next} proposed`},recordIds:ids,correctionCycles:0},()=>{
     this.resultEvent(input,next);
     if(specVersion)this.records.supersedeSpec(input.workItemId,specVersion);
-    this.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,stories,assessment) VALUES(?,?,?,?,?,?)").run(input.workItemId,next,specificationBody(result),JSON.stringify(result.acceptanceCriteria),JSON.stringify(result.stories),JSON.stringify(result.taskAssessment));
-    ids.push(this.records.create({workItemId:input.workItemId,specVersion:next,scope:"spec",payload:prototype?{kind:"request",type:"prototype",owner:"designer",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:this.cursor(input.workItemId)}:{kind:"request",type:"spec-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["BUILD"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
+    this.store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,stories,assessment) VALUES(?,?,?,'[]','[]',?)").run(input.workItemId,next,result.brief.trim(),JSON.stringify(result.taskAssessment));
+    ids.push(this.records.create({workItemId:input.workItemId,specVersion:next,scope:"spec",payload:{kind:"request",type:"brief-approval",owner:"human",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
+   });return {discarded:false,projection,recordIds:ids};
+  }
+  // The spec is written under an approved brief and needs no second reading: a significant UX
+  // impact sends it to the Designer, whose prototype the human approves; otherwise delivery starts.
+  if(result.outcome==="spec") {
+   if(active?.payload.kind!=="request"||active.payload.type!=="specification")throw new InvalidResultError("A spec is written only under an approved brief. Return a brief (outcome brief) for the human to validate first");
+   const row=this.store.db.prepare("SELECT body,assessment,approved_by FROM specs WHERE work_item_id=? AND version=?").get(input.workItemId,specVersion) as {body:string;assessment:string|null;approved_by:string|null}|undefined;
+   if(!row?.approved_by)throw new InvalidResultError(`Brief v${specVersion} is not approved`);
+   const assessment=row.assessment?JSON.parse(row.assessment) as {uxImpact?:string}:null,prototype=assessment?.uxImpact==="significant",stories=result.stories.length;
+   const stage=prototype?"DESIGN":"BUILD",status=!prototype&&stories?"WAITING":"QUEUED";
+   const summary=prototype?`SPEC v${specVersion} written; Designer prepares a prototype`:stories?`SPEC v${specVersion} written with ${stories} stories`:`SPEC v${specVersion} written; Builder starts`;
+   const projection=this.projections.transition({workItemId:input.workItemId,expectedRevision:revision,stage,status,actor:{type:"agent",id:"product-architect"},source:{executionId:input.executionId},reason:{code:"spec-written",summary},recordIds:ids,correctionCycles:0},()=>{
+    this.resultEvent(input,specVersion);
+    this.store.db.prepare("UPDATE specs SET body=?,criteria=?,stories=? WHERE work_item_id=? AND version=?").run(specificationBody({brief:specificationBrief(row.body),spec:result.spec}),JSON.stringify(result.acceptanceCriteria),JSON.stringify(result.stories),input.workItemId,specVersion);
+    this.records.resolveRequest(active.id,input.executionId);ids.push(active.id);
+    if(prototype)ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"prototype",owner:"designer",originatingStage:"DESIGN",allowedReturnStages:["DESIGN"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);
+    else if(stories){new WorkflowStories(this.store).plan(input.workItemId,specVersion,result.stories);ids.push(this.records.create({workItemId:input.workItemId,specVersion,scope:"spec",payload:{kind:"request",type:"stories",owner:"stories",originatingStage:"BUILD",allowedReturnStages:["REVIEW"],openedAfterCommentId:this.cursor(input.workItemId)},sourceType:"agent-result",sourceId:input.executionId,actor:"product-architect"}).id);}
    });return {discarded:false,projection,recordIds:ids};
   }
   if(result.outcome!=="resolved"||!active||active.payload.kind!=="request"||active.payload.type!=="tactical-decision"||active.payload.owner!=="architect")throw new InvalidResultError("Architect resolution requires an active tactical request");
@@ -84,7 +102,7 @@ export class WorkflowResults {
    this.records.resolveRequest(active.id,input.executionId);ids.push(active.id);
   });return {discarded:false,projection,recordIds:ids};
  }
- // The prototype opens the single human gate: the brief and the prototype are approved together.
+ // The prototype is the second gate: the human approves how the written spec looks before delivery.
  private designer(input:{workItemId:string;executionId:string;role:AgentRole;result:AgentResult;head:string},revision:number,specVersion:number,ids:string[]) {
   const active=this.records.activeRequest(input.workItemId);
   if(input.result.outcome!=="pass")throw new InvalidResultError(`Unsupported designer outcome ${input.result.outcome}`);

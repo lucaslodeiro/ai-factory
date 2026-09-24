@@ -268,23 +268,35 @@ test("a milestone that cannot be published keeps its attempts, never blocks othe
  } finally {s.store.db.close();}
 });
 
-test("a proposed specification leads with its brief and folds the full SPEC away",()=>{
- const body=resultMarkdown("product-architect",result("spec",{brief:"## Decisions for you\n**D1. Keep v1 clients?** Recommended: yes.",spec:"# Specification\n## Technical Design\nAC1: returns 42"}),3);
- const brief=body.indexOf("### Decisions for you"),criteria=body.indexOf("## Acceptance criteria"),action=body.indexOf("## Next action"),folded=body.indexOf("<details>\n<summary>Full technical specification v3");
- assert.ok(brief>0&&brief<criteria&&criteria<action&&action<folded,"brief, criteria and the approval command come before the folded SPEC");
- assert.match(body.slice(folded),/### Technical Design/);
- assert.match(body,/Approving accepts every recommendation above/);
+test("a brief comment carries the decisions and the approval command, and no criteria or SPEC",()=>{
+ const body=resultMarkdown("product-architect",result("brief",{brief:"## Decisions for you\n**D1. Keep v1 clients?** Recommended: yes."}),3);
+ assert.match(body,/^# Brief v3 — awaiting approval/m);
+ const brief=body.indexOf("### Decisions for you"),action=body.indexOf("## Next action");
+ assert.ok(brief>0&&brief<action,"the brief comes before the approval command");
+ assert.doesNotMatch(body,/## Acceptance criteria|<details>/);
+ assert.match(body,/Approving accepts every recommendation above\. Architect then writes the detailed specification/);
  assert.match(body,/`\/factory approve v3 \[guidance\]`/);
+ assert.equal((body.match(/## Next action/g)??[]).length,1);
 });
 
-test("a significant UX change defers approval to the prototype, whose screenshots link to the approved commit",()=>{
- const ux=result("spec");ux.taskAssessment={...ux.taskAssessment!,uxImpact:"significant"};
- const spec=resultMarkdown("product-architect",ux,2);
- assert.match(spec,/^# Brief v2 — prototype in progress/m);assert.doesNotMatch(spec,/\/factory approve/);
+test("a spec comment lists its criteria, says what starts next and folds the full SPEC away without asking for approval",()=>{
+ const body=resultMarkdown("product-architect",result("spec",{spec:"# Specification\n## Technical Design\nAC1: returns 42"}),3);
+ assert.match(body,/^# Specification v3 — delivery started/m);
+ const criteria=body.indexOf("## Acceptance criteria"),action=body.indexOf("## Next action"),folded=body.indexOf("<details>\n<summary>Full technical specification v3");
+ assert.ok(criteria>0&&criteria<action&&action<folded);
+ assert.match(body.slice(folded),/### Technical Design/);
+ assert.match(body,/The Builder starts from this specification/);
+ assert.doesNotMatch(body,/\/factory approve/);
+});
+
+test("a significant UX change sends the spec to a prototype, whose screenshots link to the approved commit",()=>{
+ const spec=resultMarkdown("product-architect",result("spec"),2,undefined,{prototypeFollows:true});
+ assert.match(spec,/^# Specification v2 — prototype in progress/m);assert.doesNotMatch(spec,/\/factory approve/);
  const prototype=resultMarkdown("designer",result("pass",{tests:[],coverage:[],changedFiles:[".factory/prototype/01-main flow.png",".factory/prototype/README.md"],summary:"Look at the empty state first."}),2,undefined,{prototype:{repo:"owner/demo",head:"abc123"}});
  assert.match(prototype,/^# Prototype for SPEC v2 — awaiting approval/m);
  assert.match(prototype,/!\[01-main flow\.png\]\(https:\/\/github\.com\/owner\/demo\/blob\/abc123\/\.factory\/prototype\/01-main%20flow\.png\?raw=true\)/);
  assert.match(prototype,/\[\.factory\/prototype\/README\.md\]\(https:\/\/github\.com\/owner\/demo\/blob\/abc123\/\.factory\/prototype\/README\.md\)/);
+ assert.match(prototype,/\*\*Approve the prototype and SPEC v2\*\*/);
  assert.match(prototype,/`\/factory approve v2 \[guidance\]`/);
  assert.equal((prototype.match(/## Next action/g)??[]).length,1);
 });

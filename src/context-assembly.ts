@@ -41,7 +41,7 @@ export interface AssembledContext {
 }
 
 interface Section { name:string; value:unknown; protected:boolean; }
-type SpecRow={body:string;criteria:string;assessment:string|null};
+type SpecRow={body:string;criteria:string;assessment:string|null;approved_by:string|null};
 
 const bytes=(value:string)=>Buffer.byteLength(value,"utf8");
 const shortIssue=(issue:ContextAssemblyInput["issue"])=>({title:issue.title,body:issue.body.slice(0,2048),bodyTruncated:bytes(issue.body)>bytes(issue.body.slice(0,2048))});
@@ -73,7 +73,7 @@ export class ContextAssembler {
     if (!Number.isSafeInteger(input.budgetBytes) || input.budgetBytes < 1) throw new Error("Context budget must be a positive integer");
     const item=this.store.db.prepare("SELECT id FROM work_items WHERE id=?").get(input.workItemId);
     if (!item) throw new Error("Unknown work item");
-    const spec=this.store.db.prepare("SELECT body,criteria,assessment FROM specs WHERE work_item_id=? AND version=?").get(input.workItemId,input.specVersion) as SpecRow|undefined;
+    const spec=this.store.db.prepare("SELECT body,criteria,assessment,approved_by FROM specs WHERE work_item_id=? AND version=?").get(input.workItemId,input.specVersion) as SpecRow|undefined;
     if (input.role !== "product-architect" && !spec) throw new InvalidContextError(`Approved SPEC v${input.specVersion} is unavailable`);
 
     const active=this.records.active(input.workItemId,input.specVersion,input.role);
@@ -94,8 +94,8 @@ export class ContextAssembler {
     const testerEvidence=input.role === "reviewer" ? testerExecutionEvidence(input.qaEvidence) : undefined;
     const sections:Section[]=[
       {name:"Issue",value:issue,protected:true},
-      // The Designer works before approval: its prototype is what the human approves with the brief.
-      {name:input.role === "designer" ? "Proposed specification" : "Approved specification",value:specification,protected:true},
+      // A brief the human sent back stays stored until the Architect proposes the next one.
+      {name:input.role === "product-architect" && spec && !spec.approved_by ? "Proposed specification" : "Approved specification",value:specification,protected:true},
       {name:"Active human decisions",value:decisions.filter(record=>record.payload.kind === "decision" && record.payload.category === "human").map(payload),protected:true},
       {name:"Active tactical decisions",value:decisions.filter(record=>record.payload.kind === "decision" && record.payload.category === "tactical").map(payload),protected:true},
       {name:"Active instructions",value:instructions.map(payload),protected:true},

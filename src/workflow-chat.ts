@@ -33,7 +33,7 @@ function baseMessageActions(projection:Pick<WorkflowProjection,"status">,request
  if(projection.status==="WAITING"&&request?.payload.kind==="request"){
   if(request.payload.type==="budget")return["budget"];
   if(["clarification","correction-limit","merge"].includes(request.payload.type))return["answer"];
-  if(request.payload.type==="spec-approval")return["approve","answer"];
+  if(request.payload.type==="brief-approval"||request.payload.type==="spec-approval")return["approve","answer"];
  }
  if(projection.status==="FAILED")return canReviseSpecification?["answer","retry","note"]:["retry","note"];
  if(["PAUSED","CANCELLED"].includes(projection.status))return["retry","note"];

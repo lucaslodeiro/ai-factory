@@ -1,7 +1,7 @@
 export const factoryCommandReference=`To start work, assign the issue to the Factory account, or use Add Issue in the dashboard.
 
 - \`/factory help\` — publish this command reference. Example: \`/factory help\`.
-- \`/factory approve vN [guidance]\` — approve SPEC vN, every recommendation in its brief and its split into stories when there is one; optional guidance applies to that SPEC. Example: \`/factory approve v2 Preserve the public API\`.
+- \`/factory approve vN [guidance]\` — approve brief vN, every recommendation in it and its split into stories when there is one, so Architect writes the specification; or approve the prototype of SPEC vN so the Builder starts. Optional guidance applies to that SPEC. Example: \`/factory approve v2 Preserve the public API\`.
 - \`/factory answer <text>\` — answer the active question, change a brief decision, request PR changes or request a revised SPEC after an invalid result. Example: \`/factory answer Use SQLite\`.
 - \`/factory retry [--issue] [--for <roles>] [guidance]\` — resume failed, paused or cancelled work and optionally add guidance. Example: \`/factory retry --for tester Do not use Chromium\`.
 - \`/factory note [--issue] [--for <roles>] <text>\` — add guidance without changing state. Example: \`/factory note --issue Keep dependencies minimal\`.

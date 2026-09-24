@@ -75,8 +75,8 @@ These changes shipped on `main` without a new design version; this section recor
 
 | # | Change | Where |
 | --- | --- | --- |
-| 1 | The human approves a short brief (decisions with recommendations, solution, criteria, assumptions, assessment) instead of the full SPEC; the SPEC is folded under it and the stored body is brief plus SPEC. | §7.2, `templates/BRIEF.md` |
-| 2 | A `designer` role prototypes a change whose `uxImpact` is significant, under `.factory/prototype/`, before the single human gate; the prototype leaves the branch when the Builder first starts. | §7.2, `agents/common/designer.md` |
+| 1 | The human approves a short brief (decisions with recommendations, solution, scope, assumptions, assessment, no criteria) before anything detailed is written; the Architect then writes the SPEC under it without a second approval, and the stored body is brief plus SPEC. | §7.2, `templates/BRIEF.md` |
+| 2 | A `designer` role prototypes a change whose `uxImpact` is significant, under `.factory/prototype/`, after its SPEC is written; the human approves the prototype, and it leaves the branch when the Builder first starts. | §7.2, `agents/common/designer.md` |
 | 3 | Live agent progress from provider events, with **Interrupt and retry with this** and **Add note** from the dashboard. | §7.8 |
 | 4 | Provider connection validation before a configuration restart; provider failures and partial work preserved. | `INSTALL.md` |
 | 5 | The global feed is **System activity**: GitHub, lifecycle, maintenance, notification, control and runtime events; workflow progress lives in each issue's conversation. | §8 |
@@ -236,7 +236,7 @@ type RecordPayload =
       rationale: string; supersedes: string[] }                             // structured
   | { kind: "finding"; classification: "auto-fix" | "decision-required" | "defer" | "environment-blocked";
       originRole: AgentRole; criterionId?: string; evidence: string }
-  | { kind: "request"; type: "clarification" | "prototype" | "spec-approval" | "tactical-decision"
+  | { kind: "request"; type: "clarification" | "brief-approval" | "specification" | "prototype" | "spec-approval" | "tactical-decision"
         | "correction-limit" | "merge" | "budget" | "stories";
       owner: "human" | "architect" | "designer" | "stories"; originatingStage: Stage;
       allowedReturnStages: Stage[]; openedAfterCommentId: number;
@@ -394,12 +394,15 @@ interface Projection { stage: Stage; status: Status; attempt: number; revision: 
 | DESIGN/RUNNING | Architect `questions` (no open tactical request) | DESIGN/WAITING | human-owned request `clarification` opened; prior approval invalid | Questions milestone with `/factory answer` |
 | DESIGN/RUNNING | Architect `questions` during open tactical request | DESIGN/WAITING | human-owned child request `clarification` opened with `parent_id` pointing to the Architect-owned tactical request; tactical request stays open but is blocked; approval kept | Questions milestone |
 | DESIGN/RUNNING | Architect `spec`, complexity/risk high, profile ≠ strong | DESIGN/QUEUED | draft stored on execution; next selection forced `strong` | Status comment: architectural review |
-| DESIGN/RUNNING | Architect `spec` (brief + SPEC) with `uxImpact: significant` | DESIGN/QUEUED | new `specs` row v+1 as below; Designer-owned request `prototype` opened | SPEC milestone says a prototype is in progress; no approval command yet |
+| DESIGN/RUNNING | Architect `brief` | DESIGN/WAITING | new `specs` row v+1 whose body is the brief, with no criteria or stories, and its assessment; `scope: spec` records of v → superseded; human-owned request `brief-approval` opened | Brief milestone with approve/change CTAs |
+| DESIGN/WAITING (`brief-approval`) | `/factory approve v<N> [guidance]` | DESIGN/QUEUED | request resolved; approval recorded on v N; optional spec instruction; Architect-owned request `specification` opened | Status says the Architect is writing the specification |
+| DESIGN/RUNNING | Architect `spec` without an open `specification` request | unchanged | result rejected as invalid; the retry is told to return a brief | none |
+| DESIGN/RUNNING | Architect `spec` for open `specification` request, `uxImpact: significant` | DESIGN/QUEUED | v N body becomes the brief followed by the SPEC, with its criteria and stories; `specification` resolved; Designer-owned request `prototype` opened | SPEC milestone says a prototype is in progress; no approval command |
+| DESIGN/RUNNING | Architect `spec` for open `specification` request | BUILD/QUEUED, or BUILD/WAITING with stories | as above; with stories, `stories` rows planned and stories-owned request `stories` opened | SPEC milestone with criteria and the full SPEC folded; no approval command |
 | DESIGN/RUNNING | Designer `pass` for open `prototype` request | DESIGN/WAITING | prototype committed and pushed; `prototype` resolved; human-owned request `spec-approval` opened | Prototype milestone with screenshots at that commit and approve/change CTAs |
-| DESIGN/RUNNING | Architect `spec` (brief + SPEC) | DESIGN/WAITING | new `specs` row v+1 whose body is the brief followed by the SPEC; `scope: spec` records of v → superseded; human-owned request `spec-approval` opened | SPEC milestone leading with the brief and approve/change CTAs, full SPEC folded |
 | DESIGN/WAITING | `/factory answer` (comment id > request.openedAfterCommentId) | DESIGN/QUEUED | decision `human` created; clarification resolved; correction_cycles = 0 | Answer acknowledged in status |
-| DESIGN/WAITING | `/factory approve v<N> [guidance]` | BUILD/QUEUED | request resolved; approval recorded; optional spec instruction | Status update |
-| DESIGN/WAITING | `/factory approve v<N>` of a SPEC with stories | BUILD/WAITING | approval recorded; `stories` rows planned; stories-owned request `stories` opened with `allowedReturnStages: [REVIEW]` | Status says the stories are being delivered; no human CTA |
+| DESIGN/WAITING (`spec-approval`) | `/factory approve v<N> [guidance]` | BUILD/QUEUED | request resolved; approval recorded; optional spec instruction | Status update |
+| DESIGN/WAITING (`spec-approval`) | `/factory approve v<N>` of a SPEC with stories | BUILD/WAITING | approval recorded; `stories` rows planned; stories-owned request `stories` opened with `allowedReturnStages: [REVIEW]` | Status says the stories are being delivered; no human CTA |
 | epic BUILD/WAITING (`stories`) | poll | unchanged | each story without an issue is created as a sub-issue of the epic (`parent_issue_id`), or adopted when a sub-issue with the same title by the Factory account exists; `blocked_by` declared once every story has an issue | Sub-issues and dependencies on GitHub |
 | — | story with an issue, dependencies declared, every blocker closed as `completed` | story BUILD/QUEUED | story issue assigned and labelled with the epic instance; work item with `base_branch` = epic branch and `epic_work_item_id`; `specs` v1 = the story's slice of the epic contract, approved by the epic approval | Story status |
 | story TEST/RUNNING | `pass` | DELIVERY/QUEUED | commit; verified head recorded | Status update |
