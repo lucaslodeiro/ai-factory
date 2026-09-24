@@ -483,6 +483,14 @@ A run whose provider writes nothing for five minutes while none of its tools is 
 
 Verified by `npx tsc --noEmit` and `npm test` (481 passed), including `test/adapters.test.ts` (a silent provider process stopped as stalled with its session kept; an open tool never counted as silence) and `test/workflow-runner.test.ts` (the stalled run retried without a person or a budget acknowledgement, continuing its session).
 
+## The dashboard shows the prototype's screenshots — 2026-09-24
+
+On `factory-demo#20` the prototype comment on GitHub showed the ten screenshots, but the dashboard listed their paths: the conversation rendered the Designer's result without the prototype commit, and its markdown renderer had no images or links. Pointing it at GitHub would not have been enough, since a private repository's images need the viewer's GitHub session, which the dashboard's image requests do not carry.
+
+The dashboard now shows each screenshot from this machine's repository at the prototype commit, through `GET /api/executions/<id>/prototype?path=…`. It serves only an image under `.factory/prototype/` that this Designer execution reported in its `changedFiles`, read with `git show <prototypeHead>:<path>` from the work item's worktree or the target clone, so it still works after the prototype leaves the branch before the Builder. The renderer shows those images and turns `https` links, such as the prototype README on GitHub, into links.
+
+Verified by `npx tsc --noEmit` and `npm test` (482 passed), including `test/prototype-screenshot.test.ts` with a real repository: the screenshot is served from the prototype commit after the prototype was removed from the branch, a file outside the prototype, one with `..` or one not reported is refused, and the conversation points at the local route. Not yet opened in a browser.
+
 ## A spec no longer carries its criteria and decisions twice — 2026-09-24
 
 SPEC v1 of `factory-demo#20` published 33,077 visible characters (plus 37,378 of hidden state index, which no agent reads). Its 24 acceptance criteria appeared twice: developed with Given/When/Then inside the spec text, as `templates/SPEC.md` asked, and again in `acceptanceCriteria`, which is what the Tester and the Reviewer check against. Every delivery role receives both, the spec body and the criteria list, and re-reads them on every turn. Its **Decisions** section also repeated "Decisions and Rationale": like a brief's, a spec's `decisions` are neither stored nor used.

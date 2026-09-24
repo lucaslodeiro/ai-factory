@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import {spawnSync} from "node:child_process";
 import path from "node:path";
 import {config} from "./config.js";
 import type {Store} from "./storage.js";
@@ -92,6 +93,30 @@ export async function applyInterruptRetryControl(store:Store,github:RuntimeGitHu
  }catch(error){const reason=error instanceof Error?error.message:String(error),marker=`<!-- ai-factory:workflow-comment:${config.repo}:${issue}:${key} -->`;if(github.editComment)await github.editComment(commentId,`${body}\n\nRejected: ${reason}\n\n${marker}`);throw error;}
 }
 const safeJson=(file:string)=>{try{return JSON.parse(fs.readFileSync(file,"utf8")) as Record<string,unknown>;}catch{return{};}};
+// The dashboard shows the Designer's screenshots from this machine's repository at the prototype
+// commit: GitHub's links need the viewer's GitHub session, which a private repository's image
+// requests from the dashboard do not carry.
+function prototypeView(store:Store,workItemId:string,executionId:string,head:unknown){
+ if(typeof head!=="string"||!head)return {};
+ const repo=(store.db.prepare("SELECT repo FROM work_items WHERE id=?").get(workItemId) as {repo:string}|undefined)?.repo;
+ return {...(repo?{prototype:{repo,head}}:{}),imageUrl:(file:string)=>`/api/executions/${encodeURIComponent(executionId)}/prototype?path=${encodeURIComponent(file)}`};
+}
+const imageTypes:Record<string,string>={png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",webp:"image/webp"};
+/** A screenshot the Designer reported for this execution, read from the prototype commit. */
+export function prototypeScreenshot(store:Store,executionId:string,file:string):{bytes:Buffer;type:string}|undefined{
+ const extension=file.match(/\.(png|jpe?g|webp)$/i)?.[1]?.toLowerCase();
+ if(!extension||!file.startsWith(".factory/prototype/")||file.split("/").includes(".."))return undefined;
+ const row=store.db.prepare("SELECT e.payload,w.context FROM events e JOIN work_items w ON w.id=e.work_item_id WHERE e.run_id=? AND e.type='agent.result' ORDER BY e.id DESC LIMIT 1").get(executionId) as {payload:string;context:string}|undefined;
+ if(!row)return undefined;
+ const payload=JSON.parse(row.payload) as {role?:string;result?:{changedFiles?:string[]};prototypeHead?:string};
+ if(payload.role!=="designer"||!payload.prototypeHead||!/^[0-9a-f]{7,40}$/i.test(payload.prototypeHead)||!payload.result?.changedFiles?.includes(file))return undefined;
+ const cwd=(JSON.parse(row.context||"{}") as {cwd?:string}).cwd;
+ for(const dir of [cwd,config.repoDir].filter((value):value is string=>Boolean(value)&&fs.existsSync(value!))){
+  const shown=spawnSync("git",["-C",dir,"show",`${payload.prototypeHead}:${file}`],{maxBuffer:32<<20});
+  if(shown.status===0&&shown.stdout.length)return {bytes:shown.stdout,type:imageTypes[extension]};
+ }
+ return undefined;
+}
 export function promptArtifact(executionId:string){const root=path.join(config.dataDir,"runs",path.basename(executionId)),file=path.join(root,"prompt.md");if(path.basename(executionId)!==executionId||!fs.existsSync(file))return{available:false};const bytes=fs.readFileSync(file),limit=512*1024;return{available:true,prompt:bytes.subarray(0,limit).toString("utf8"),truncated:bytes.length>limit};}
 
 export type ThreadPublication={status:"pending"}|{status:"published";commentId:number|null;url:string|null;publishedAt:string}|{status:"failed";attempts:number;error:string;failedAt:string;needsAttention:boolean};
@@ -133,7 +158,7 @@ export function workflowThread(store:Store,workItemId:string):WorkflowThreadTurn
  const executionTurn=(runId:string,row:{id:number;ts:string})=>{let turn=executions.get(runId);if(turn)return turn;const manifest=safeJson(path.join(config.dataDir,"runs",path.basename(runId),"prompt.json"));turn={id:row.id,at:row.ts,kind:"execution",executionId:runId,role:manifest.role??null,provider:manifest.provider??null,model:manifest.model??null,manifest:{sections:manifest.sectionBytes??{},budgetBytes:manifest.budgetBytes??null,budgetSource:manifest.budgetSource??null,includedRecordIds:manifest.includedRecordIds??[],activeRequestId:manifest.activeRequestId??null,promptBytes:manifest.promptBytes??null},available:promptArtifact(runId).available,startedAt:null,finishedAt:null,durationMs:null,status:null};executions.set(runId,turn);turns.push(turn);return turn;};
  for(const row of rows){let value:any={};try{value=JSON.parse(row.payload);}catch{}
   if(row.type==="execution.started"&&row.run_id){const turn=executionTurn(row.run_id,row);Object.assign(turn,{role:value.role??turn.role,provider:value.selection?.provider??turn.provider,model:value.selection?.model??turn.model,startedAt:row.ts});continue;}
-  if(row.type==="agent.result"&&row.run_id){const role=value.role as AgentRole,result=value.result as AgentResult;const turn=executionTurn(row.run_id,row);const publication=result&&isMilestoneResult(store,{work_item_id:workItemId,run_id:row.run_id},{role,result})?threadPublication(store,resultPublicationKey(row.id)):undefined;Object.assign(turn,{at:row.ts,resultEventId:row.id,role:role??turn.role,outcome:result?.outcome,markdown:result?resultMarkdown(role,result,value.specVersion??0):"Result unavailable",result,...(publication?{publication}:{})});continue;}
+  if(row.type==="agent.result"&&row.run_id){const role=value.role as AgentRole,result=value.result as AgentResult;const turn=executionTurn(row.run_id,row);const publication=result&&isMilestoneResult(store,{work_item_id:workItemId,run_id:row.run_id},{role,result})?threadPublication(store,resultPublicationKey(row.id)):undefined;Object.assign(turn,{at:row.ts,resultEventId:row.id,role:role??turn.role,outcome:result?.outcome,markdown:result?resultMarkdown(role,result,value.specVersion??0,undefined,prototypeView(store,workItemId,row.run_id,value.prototypeHead)):"Result unavailable",result,...(publication?{publication}:{})});continue;}
   if(row.type==="execution.finished"&&row.run_id){const turn=value.status!=="succeeded"?executionTurn(row.run_id,row):executions.get(row.run_id);if(!turn)continue;turn.finishedAt=row.ts;if(value.status!=="succeeded"){Object.assign(turn,{at:row.ts,status:value.status,reason:typeof value.providerError==="string"?value.providerError:executionOutcomeText(value.status,value.interruptionReason,value.role??turn.role)??`Execution ${value.status}`});}continue;}
   if(row.type==="execution.invalid_result"&&row.run_id){const turn=executionTurn(row.run_id,row);Object.assign(turn,{at:row.ts,rejection:String(value.message??"Result rejected by the validator")});continue;}
   if(row.type==="workflow.transition"&&value.reason?.code==="continued")continue;
