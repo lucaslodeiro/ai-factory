@@ -17,7 +17,7 @@ The machine-readable source of truth is `resultSchema` in `src/results.ts`, used
 | `changedFiles` | Explicit list of changed paths. |
 | `findings` | auto-fix/decision-required/defer/environment-blocked classification and concrete evidence. |
 | `questions` | Blocking questions only with Architect outcome `questions`; use `[]` with outcome `brief` or `spec`. Put decisions with a recommendation in the brief and your own assumptions under its "Assumed without asking". |
-| `decisions` | tactical/major, decision, rationale and whether it conflicts with a human decision. |
+| `decisions` | tactical/major, decision, rationale and whether it conflicts with a human decision. Use `[]` with outcome `brief`: your assumptions go only under its "Assumed without asking", and the spec carries the decisions the delivery roles need. |
 | `nextRole` | Non-null only for an approved-spec tactical resolution; cannot bypass gates. |
 | `reviewChecks` | Evidence per review dimension, including reasons for not-applicable. |
 

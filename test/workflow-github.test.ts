@@ -340,3 +340,11 @@ test("the status names the Designer while it prepares the prototype, and a perso
   assert.match(workflowStatusMarkdown(store,"w"),/Current actor \| Human/);
  } finally {store.db.close();}
 });
+
+test("a brief is published without a Decisions section repeating its assumptions, while a spec keeps it",()=>{
+ const decisions=[{kind:"tactical" as const,decision:"Use a native details element for the language menu",rationale:"Works without JS",conflictsWithHuman:false,supersedes:[]}];
+ const brief=resultMarkdown("product-architect",{...result("brief"),decisions},1);
+ assert.match(brief,/^# Brief v1 — awaiting approval/m);assert.doesNotMatch(brief,/^## Decisions$|native details element/m);
+ const spec=resultMarkdown("product-architect",{...result("spec"),decisions},1);
+ assert.match(spec,/## Decisions\n\n- \*\*tactical\*\* — Use a native details element/);
+});

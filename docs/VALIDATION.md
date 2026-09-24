@@ -469,6 +469,12 @@ Verified by `npx tsc --noEmit` and `npm test` (474 passed), including `test/work
 
 Verified by `npx tsc --noEmit` and `npm test` (476 passed), including `test/execution.test.ts` (a recovered run keeps its session and its partial usage) and `test/workflow-runner.test.ts` (a Builder after pull request feedback, with no correction cycle, and a Designer after prototype feedback under a revised spec each continue their own session; a Builder under another spec starts fresh).
 
+## A brief no longer repeats its assumptions as decisions — 2026-09-24
+
+On `factory-demo#20` brief v1 closed with a **Decisions** section that repeated, almost word for word, three items of its own "Assumed without asking". A brief's `decisions` are neither stored nor used: tactical decision records are created for a tactical resolution, and the spec carries the decisions the delivery roles need. The contract now asks for `decisions: []` with outcome `brief`, and the published brief omits that section even when a provider fills it; a spec and a tactical resolution still publish it. A brief that returns decisions anyway is not rejected, since a correction would cost more than the repetition it removes.
+
+Verified by `npx tsc --noEmit` and `npm test` (477 passed), including `test/workflow-github.test.ts`.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.
