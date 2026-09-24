@@ -137,7 +137,7 @@ test("Cursor access flags follow each role's write contract",async()=>{
  }
 });
 
-test("Claude and Codex keep a brief's session only when asked, and a resumed run continues that session",async()=>{
+test("Claude, Codex and Cursor keep a brief's session only when asked, and a resumed run continues that session",async()=>{
  const claudeArgs=async(session?:{persist?:boolean;resume?:string})=>{let args:string[]=[];await new ClaudeAdapter({async run(_id:string,_role:string,_command:string,argv:string[]){args=argv;return {finalEvent:{type:"result",is_error:false,structured_output:result("brief")}};}} as any).run({workItemId:"w",role:"product-architect",cwd:root,instructions:"test",selection:{...selectModel("product-architect"),provider:"claude",model:"auto"},session});return args;};
  assert.ok((await claudeArgs()).includes("--no-session-persistence"),"a run nobody continues leaves no session behind");
  const persisted=await claudeArgs({persist:true});assert.ok(!persisted.includes("--no-session-persistence"));assert.ok(!persisted.includes("--resume"));
@@ -146,7 +146,10 @@ test("Claude and Codex keep a brief's session only when asked, and a resumed run
  assert.ok((await codexArgs()).includes("--ephemeral"));
  const kept=await codexArgs({persist:true});assert.ok(!kept.includes("--ephemeral"));assert.equal(kept[kept.indexOf("--sandbox")+1],"read-only");
  const resumedCodex=await codexArgs({resume:"thread-1"});
- assert.deepEqual(resumedCodex.slice(0,2),["exec","resume"]);assert.deepEqual(resumedCodex.slice(-2),["thread-1","-"]);
- assert.ok(!resumedCodex.includes("--sandbox"),"exec resume takes no --sandbox flag");assert.ok(resumedCodex.includes('sandbox_mode="read-only"'));
+ assert.deepEqual(resumedCodex.slice(-3),["resume","thread-1","-"]);
+ assert.ok(resumedCodex.indexOf("--sandbox")<resumedCodex.indexOf("resume"),"--sandbox is not global, so it precedes the resume subcommand");assert.equal(resumedCodex[resumedCodex.indexOf("--sandbox")+1],"read-only");assert.ok(!resumedCodex.includes("--ephemeral"));
  assert.ok(resumedCodex.includes("--output-schema")&&resumedCodex.includes("--json"));
+ const cursorArgs=async(session?:{persist?:boolean;resume?:string})=>{let args:string[]=[];await new CursorAdapter({async run(_id:string,_role:string,_command:string,argv:string[]){args=argv;return {finalEvent:{type:"result",is_error:false,result:JSON.stringify(result("brief"))}};}} as any).run({workItemId:"w",role:"product-architect",cwd:root,instructions:"test",selection:{...selectModel("product-architect"),provider:"cursor",model:"auto"},session});return args;};
+ assert.ok(!(await cursorArgs({persist:true})).includes("--resume"));
+ const resumedCursor=await cursorArgs({resume:"chat-1"});assert.equal(resumedCursor[resumedCursor.indexOf("--resume")+1],"chat-1");assert.equal(resumedCursor[resumedCursor.indexOf("--mode")+1],"ask","the Architect stays read-only when resumed");
 });

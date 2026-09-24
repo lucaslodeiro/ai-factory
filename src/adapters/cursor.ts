@@ -25,7 +25,8 @@ export class CursorAdapter implements AgentAdapter {
   const accessArgs = r.role === "developer" || r.role === "qa" || r.role === "designer" ? ["--force"] : ["--mode", "ask"];
   const modelArgs = r.selection.model === "auto" ? [] : ["--model", r.selection.model];
   const { finalEvent } = await this.executions.run(r.workItemId, r.role, config.cursorCommand,
-   ["-p", ...modelArgs, "--output-format", "stream-json", "--trust", ...accessArgs], r.cwd, `${r.instructions}\n\n${cursorOutputContract(schema)}`, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
+   // Cursor keeps its chats by default, so a brief needs no flag to be continued later.
+   ["-p", ...modelArgs, ...(r.session?.resume ? ["--resume", r.session.resume] : []), "--output-format", "stream-json", "--trust", ...accessArgs], r.cwd, `${r.instructions}\n\n${cursorOutputContract(schema)}`, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
   const envelope = finalEvent;
   if (!envelope) throw new Error("Cursor did not return a result event");
   if (envelope.is_error) throw new Error(`Cursor returned an error result${providerFailureMessage(envelope,"cursor")?`: ${providerFailureMessage(envelope,"cursor")}`:""}`);

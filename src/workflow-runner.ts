@@ -34,8 +34,9 @@ export function recoverableAgentError(error:unknown){return error instanceof Inv
 // to paper over with the repository default.
 export function workItemBase(row:{base_branch:string|null}):string {if(!row.base_branch)throw new Error("Work item has no base branch");return row.base_branch;}
 
-// Cursor's resume flags are not verified against its CLI, so its spec pass starts fresh.
-const resumableProviders=new Set(["claude","codex"]);
+// Every provider CLI continues a chat by id. Cursor's `--resume` is taken from its documentation, not
+// checked against its binary; a resume it refuses costs nothing and the retry starts fresh.
+const resumableProviders=new Set(["claude","codex","cursor"]);
 function specContinuation(specVersion:number){return `# Continue: write the spec for brief v${specVersion}\n\nThe human approved the brief you wrote above, with every recommendation in it; any guidance given with the approval is under "Active instructions" below. The active request is now specification. Your contract, the rules and the repository you read are all above in this session: do not explore again what you already know, and read only what the spec needs beyond it. Return outcome spec under the same result contract, with brief "" and taskAssessment null. The sections below are the current state of the work item.`;}
 export function commitSummary(summary:string){const line=summary.trim().split(/\r?\n/)[0].trim();if(line.length<=72)return line;const cut=line.lastIndexOf(" ",72);return `${line.slice(0,cut>0?cut:72).trimEnd()}…`;}
 

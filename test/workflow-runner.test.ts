@@ -384,6 +384,6 @@ test("the spec pass continues the brief's provider session, and starts fresh whe
   assert.deepEqual([legacy.requests[1].session,legacy.resumed],[undefined,0],"a brief that did not keep its session is not resumed, whatever id its stream carried");
   config.roles["product-architect"]={...saved,provider:"cursor",model:"test-model"};
   const cursor=await design(false);
-  assert.deepEqual([cursor.requests[0].session,cursor.requests[1].session,cursor.resumed],[undefined,undefined,0],"a provider whose resume is unverified runs each pass fresh");
+  assert.deepEqual([cursor.requests[0].session,cursor.requests[1].session,cursor.resumed],[{persist:true},{resume:"brief-session"},1]);
  }finally{config.roles["product-architect"]=saved;}
 });
