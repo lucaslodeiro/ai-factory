@@ -148,7 +148,7 @@ export class WorkflowRunner {
 
   // Saying the Factory already tried and failed saves the agent from spending turns rediscovering
   // the same broken preview server for itself.
-  const runtimeNote=localRuntimeFailure?`\n\nThe Factory tried to start this project's preview server for you and it did not come up: ${localRuntimeFailure} Starting it yourself will probably fail the same way. If this task does not need a running preview, ignore it and continue. If it does, report an environment-blocked finding naming that cause instead of retrying it repeatedly.`:"";
+  const runtimeNote=localRuntimeFailure?`\n\nThe Factory tried to start this project's preview server for you and it did not come up: ${localRuntimeFailure} If this task does not need a running preview, ignore it and continue. If it does and the cause is something your task can fix (a build output that does not exist yet, a dependency that is not installed, the code you are changing), fix it and start the preview yourself. Report an environment-blocked finding only when the cause is outside the repository and your task, naming it, and do not retry the same failing start repeatedly.`:"";
   // A correction sends nothing but the rejection: the state the run worked from has not changed.
   const instructions=correcting?`${continuation}${runtimeNote}`:`${resumed?continuation:contract}\n\n${assembled.markdown}${runtimeNote}`,before=baseline?.head??this.workspaces.head(cwd);
    preparing=false;started=this.scheduler.begin(workItemId);

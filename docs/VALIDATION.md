@@ -483,6 +483,14 @@ A run whose provider writes nothing for five minutes while none of its tools is 
 
 Verified by `npx tsc --noEmit` and `npm test` (481 passed), including `test/adapters.test.ts` (a silent provider process stopped as stalled with its session kept; an open tool never counted as silence) and `test/workflow-runner.test.ts` (the stalled run retried without a person or a budget acknowledgement, continuing its session).
 
+## A preview that needs a build is built, and an agent fixes what it can — 2026-09-24
+
+After the prototype of `factory-demo#20` was approved, the Builder failed without writing any code: the Factory had started the project's preview, `npm run local:serve`, which serves the built site and stopped with `ENOENT … realpath 'dist'` because the fresh worktree had never been built. The Factory's note then told the agent that starting it itself "will probably fail the same way" and to report environment-blocked, which it did.
+
+When the preview does not come up and the project has a `build` script, the Factory now runs `npm run build` once (five minutes at most, output in the same runtime log) and starts the preview again; a failing build is reported with its exit code. The note no longer predicts failure: a cause the task can fix (a build output that does not exist yet, an uninstalled dependency, the code being changed) is fixed and the preview started by the agent, and environment-blocked is reserved for a cause outside the repository and the task.
+
+Verified by `npx tsc --noEmit` and `npm test`, including `test/local-runtime.test.ts` (a server that exits without `dist` starts after the build; a failing build is reported) and `test/local-runtime-optional.test.ts`.
+
 ## The dashboard shows the prototype's screenshots — 2026-09-24
 
 On `factory-demo#20` the prototype comment on GitHub showed the ten screenshots, but the dashboard listed their paths: the conversation rendered the Designer's result without the prototype commit, and its markdown renderer had no images or links. Pointing it at GitHub would not have been enough, since a private repository's images need the viewer's GitHub session, which the dashboard's image requests do not carry.

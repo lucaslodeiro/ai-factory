@@ -48,7 +48,7 @@ test("a preview server that will not start does not fail the stage",async()=>{
   assert.equal(failed.length>0,true,"the operator can still see it happened");
   assert.match(JSON.parse(failed[0].payload).reason,/did not become ready/);
  assert.match(instructions,/tried to start this project's preview server/,"the agent is told, so it does not spend turns rediscovering it");
- assert.match(instructions,/environment-blocked/);
+ assert.match(instructions,/environment-blocked/);assert.match(instructions,/fix it and start the preview yourself/,"a cause the task can fix is fixed, not reported");assert.doesNotMatch(instructions,/will probably fail the same way/);
  } finally { store.db.close(); }
 });
 

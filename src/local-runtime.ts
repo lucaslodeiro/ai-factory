@@ -28,8 +28,30 @@ export class LocalRuntimeManager {
  async ensure(workItemId:string,cwd:string){
   const current=this.runtimes.get(workItemId);if(current&&current.cwd===cwd&&!current.child.killed)return current;if(current)await this.stop(workItemId);
   const script=this.script(cwd);if(!script)return undefined;
-  const dir=path.join(config.dataDir,"local-runtimes"),log=path.join(dir,`${workItemId}.log`);fs.mkdirSync(dir,{recursive:true});fs.rmSync(path.join(cwd,".local","url"),{force:true});
-  const output=fs.openSync(log,"w",0o600),child=spawn("npm",["run",script],{cwd,env:{...agentEnvironment(),LOCAL_PORT:"0"},stdio:["ignore",output,output]});fs.closeSync(output);
+  const dir=path.join(config.dataDir,"local-runtimes"),log=path.join(dir,`${workItemId}.log`);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(log,"",{mode:0o600});
+  try{return await this.start(workItemId,cwd,script,log);}
+  catch(error){
+   // A preview that serves the built site cannot start before the first build: on factory-demo#20
+   // `local:serve` stopped with ENOENT on dist in a fresh worktree and the Builder gave up before
+   // writing any code. Building once and starting again is what a person would do.
+   if(!this.hasScript(cwd,"build"))throw error;
+   const built=await this.build(cwd,log);
+   if(!built.ok)throw new Error(`Factory local runtime did not become ready, and \`npm run build\` ${built.reason} before a second start. See ${log}`);
+   return await this.start(workItemId,cwd,script,log);
+  }
+ }
+ private hasScript(cwd:string,name:string){try{return typeof JSON.parse(fs.readFileSync(path.join(cwd,"package.json"),"utf8")).scripts?.[name]==="string";}catch{return false;}}
+ private build(cwd:string,log:string):Promise<{ok:boolean;reason?:string}>{
+  return new Promise(resolve=>{
+   const output=fs.openSync(log,"a",0o600),child=spawn("npm",["run","build"],{cwd,env:agentEnvironment(),stdio:["ignore",output,output]});fs.closeSync(output);
+   const timer=setTimeout(()=>{child.kill("SIGKILL");resolve({ok:false,reason:"did not finish in five minutes"});},300_000);
+   child.once("error",error=>{clearTimeout(timer);resolve({ok:false,reason:`could not start: ${error.message}`});});
+   child.once("exit",code=>{clearTimeout(timer);resolve(code===0?{ok:true}:{ok:false,reason:`exited ${code}`});});
+  });
+ }
+ private async start(workItemId:string,cwd:string,script:string,log:string){
+  fs.rmSync(path.join(cwd,".local","url"),{force:true});
+  const output=fs.openSync(log,"a",0o600),child=spawn("npm",["run",script],{cwd,env:{...agentEnvironment(),LOCAL_PORT:"0"},stdio:["ignore",output,output]});fs.closeSync(output);
   const runtime={child,cwd,url:"",script,log};this.runtimes.set(workItemId,runtime);const deadline=Date.now()+15000;
   let announced:string[]=[];
   while(Date.now()<deadline){
