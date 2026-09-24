@@ -24,6 +24,8 @@ export interface ContextAssemblyInput {
   storyEvidence?:unknown[];
   previousAttempt?:unknown;
   rejectedResult?:{message:string;kind?:"invalid-result"|"transient-error"};
+  // Sections a resumed session already holds, unchanged, so sending them again only adds tokens.
+  omitSections?:string[];
 }
 
 export interface ContextManifest {
@@ -109,11 +111,12 @@ export class ContextAssembler {
       ...(input.role === "reviewer" && testerEvidence ? [{name:"Tester execution evidence",value:testerEvidence,protected:true}] : []),
       ...(["qa","reviewer"].includes(input.role) && input.storyEvidence?.length ? [{name:"Verified by stories",value:{note:"These stories of this epic were verified on their own branches at their own depth and are integrated here. Do not repeat their tests: run the project's existing suite once to confirm the integration, and verify the criteria no story owns. Report coverage for those remaining criteria; a story's criterion may be cited from the story's evidence.",stories:input.storyEvidence},protected:true}] : []),
     ];
-    const protectedSections=sections.filter(section=>section.protected);
+    const omitted=new Set(input.omitSections??[]);
+    const protectedSections=sections.filter(section=>section.protected&&!omitted.has(section.name));
     const protectedMarkdown=render(protectedSections);
     if (bytes(protectedMarkdown)>input.budgetBytes) throw new InvalidContextError(`Protected context requires ${bytes(protectedMarkdown)} bytes but the budget is ${input.budgetBytes}`);
     const included=[...protectedSections],excluded:string[]=[];
-    for (const section of sections.filter(section=>!section.protected)) {
+    for (const section of sections.filter(section=>!section.protected&&!omitted.has(section.name))) {
       const candidate=render([...included,section]);
       if (bytes(candidate)<=input.budgetBytes) included.push(section); else excluded.push(section.name);
     }

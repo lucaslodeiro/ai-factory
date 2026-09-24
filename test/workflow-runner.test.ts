@@ -452,3 +452,30 @@ test("a result the validator rejects is corrected by continuing the run that pro
   }finally{design.db.close();}
  }finally{config.roles.developer=saved.developer;config.roles["product-architect"]=saved.architect;}
 });
+
+test("a correction cycle continues the Builder's and the Tester's own sessions with only what changed",async()=>{
+ const saved={developer:{...config.roles.developer},qa:{...config.roles.qa}},previousVerify=config.verifyCommand,previousMaxCycles=config.maxCycles;
+ config.roles.developer={...saved.developer,provider:"codex",model:"test-model"};config.roles.qa={...saved.qa,provider:"claude",model:"test-model"};config.verifyCommand=undefined;config.maxCycles=3;
+ const store=new Store(":memory:"),item=new WorkflowIntake(store).start(runnerIssue,{actor:"dashboard",source:"control"}),workspace:WorkspacePort=new Workspace(),requests:AgentRunRequest[]=[];
+ workspace.changeSummary=()=>({files:["src/a.ts"],stat:"1 file changed"});workspace.check=()=>["src/a.ts"];
+ let testerRuns=0;
+ const agent=(value:(request:AgentRunRequest)=>AgentResult):AgentAdapter=>({async run(request){requests.push(request);
+  store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);
+  store.event("execution.finished",{status:"succeeded",sessionId:request.session?.resume??`${request.role}-session`},request.workItemId,request.executionId);
+  return value(request);}});
+ try{
+  const runner=new WorkflowRunner(store,{"product-architect":agent(request=>architectPass(request.instructions)),developer:agent(()=>result("pass")),
+   qa:agent(()=>++testerRuns===1?result("changes",{findings:[{classification:"auto-fix",severity:"major",evidence:"Slug keeps a trailing dash"}]}):result("pass"))},workspace,{ensurePR(){return "unused";}});
+  await runner.run(item.id);new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:""},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});
+  const of=(role:string)=>requests.filter(request=>request.role===role);
+  for(let run=0;run<10&&of("qa").length<2;run++)await runner.run(item.id);
+  const state=new WorkflowProjections(store).get(item.id);assert.equal(of("qa").length,2,`stopped at ${state.stage}/${state.status} after ${requests.map(request=>request.role).join(",")}`);
+  assert.deepEqual(of("developer").map(request=>request.session),[{persist:true},{resume:"developer-session"}]);
+  assert.deepEqual(of("qa").map(request=>request.session),[{persist:true},{resume:"qa-session"}]);
+  const builder=of("developer")[1].instructions,tester=of("qa")[1].instructions;
+  assert.match(builder,/^# Continue: correction cycle 1/);assert.ok(builder.includes("Slug keeps a trailing dash"),"the findings are sent");
+  assert.match(tester,/^# Continue: verify correction cycle 1/);assert.match(tester,/src\/a\.ts/,"the Tester is told what changed");
+  for(const instructions of [builder,tester])assert.doesNotMatch(instructions,/AI Factory worker rules|## Issue|## Approved specification|## Repository map/,"what the session already holds is not sent again");
+  assert.equal((store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='delivery.session_resumed'").get() as {n:number}).n,2);
+ }finally{config.roles.developer=saved.developer;config.roles.qa=saved.qa;config.verifyCommand=previousVerify;config.maxCycles=previousMaxCycles;store.db.close();}
+});

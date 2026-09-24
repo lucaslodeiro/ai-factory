@@ -429,6 +429,16 @@ The issue budget now counts the same reported totals instead of provider-weighte
 
 Verified by `npx tsc --noEmit` and `npm test` (469 passed).
 
+## Correction cycles continue the Builder's and the Tester's own sessions — 2026-09-24
+
+A correction cycle started the Builder and the Tester from scratch: the full contract, the issue, the spec and the repository map again, and a fresh agent that re-read the code it had written itself. On issue 6 of the demo repository the second Builder run was not cheaper than the first across eight runs, and one cycle re-runs Builder and Tester, about 90% of an issue.
+
+In a correction cycle under the same spec version, with the same provider and model, the Builder and the Tester now continue the session of their own last applied run. They receive a short continuation and the current state (findings, decisions, instructions, changed files), without the contract, the issue, the approved spec or the repository map, which the session already holds. The Builder is told the branch changed since its run and to re-read a file before relying on memory; the Tester is told what changed and to re-verify against the new head. `delivery.session_resumed` records each one. A new spec version, a different model (a cycle that escalates the model) or a session that cannot be continued starts fresh as before. The Reviewer is left out on purpose: its verdict should not lean on its own earlier reading of the diff.
+
+What it saves is not proven yet. A resumed session re-reads its history as cache on every turn, and the budget now counts cache reads in full, so a long first run carried into a long fix could cost more than a fresh start. `ai-factory activity <work-item-id>` shows it per role run over run (`vsPreviousPercent`); the first real correction cycle decides it.
+
+Verified by `npx tsc --noEmit` and `npm test` (471 passed), including `test/workflow-runner.test.ts`: after a Tester finding, the second Builder and the second Tester each resume their own session, the Builder receives the finding, the Tester the changed files, and neither receives the contract, issue, spec or repository map again.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.
