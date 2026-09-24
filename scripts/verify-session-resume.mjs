@@ -18,7 +18,11 @@ const agentNames = ["PATH", "HOME", "USER", "SHELL", "TMPDIR", "LANG", "LC_ALL",
 const env = Object.fromEntries(agentNames.filter(name => process.env[name] !== undefined).map(name => [name, process.env[name]]));
 env.PATH = `${path.join(os.homedir(), ".local", "bin")}${path.delimiter}${env.PATH ?? ""}`;
 const command = (variable, fallback) => process.env[variable] || fallback;
-const RUN_LIMIT_MS = 300_000, KILL_AFTER_MS = 1_000;
+const RUN_LIMIT_MS = 300_000;
+// How long a provider gets to react to the interrupt signal before SIGKILL. Claude and Cursor die
+// on SIGTERM immediately; Codex's SIGINT handler round-trips a TurnInterrupt request to its own
+// in-process server and waits for the response before exiting, which needs real time to complete.
+const graceMs = { SIGTERM: 1_000, SIGINT: 10_000 };
 const readOnly = "Read,Glob,Grep";
 
 const providers = {
@@ -66,7 +70,7 @@ function run(command, args, input, cwd, log, stopSignal, stopWhen) {
     const stop = () => {
       if (stopped || !child.pid) return; stopped = true;
       try { process.kill(-child.pid, stopSignal); } catch {}
-      setTimeout(() => { try { process.kill(-child.pid, "SIGKILL"); } catch {} }, KILL_AFTER_MS).unref();
+      setTimeout(() => { try { process.kill(-child.pid, "SIGKILL"); } catch {} }, graceMs[stopSignal] ?? 1_000).unref();
     };
     const limit = setTimeout(stop, RUN_LIMIT_MS);
     child.stdout.on("data", chunk => { stdout += chunk; if (stopWhen && stopWhen(stdout)) stop(); });
