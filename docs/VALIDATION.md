@@ -399,7 +399,15 @@ When the validator rejected a result, the retry ran the whole execution again fr
 
 A run a person stopped (interrupt with guidance, pause or cancel) no longer holds the next run for `/factory budget +0`: the stop is the acknowledgement. Its usage, when the stream reported some, still counts, and it is still listed as unmeasured. A run the factory cut short by itself (a timeout, the live budget limit, maintenance) still waits for a person, since nobody decided to accept its unknown cost.
 
-`scripts/verify-session-resume.mjs` now checks the completed turn first, since it is what every resume in the factory depends on today, and exits non-zero only when that fails; the mid-turn kill is reported alongside. Claude 2.1.281: completed turn **PASS**, mid-turn kill **PASS**, both live. Codex and Cursor: **completed turn not yet checked live**. Until it is, the correction and the Architect's continuations rely on an assumption for them: a provider whose resumed session came back empty without failing would give the agent a rejection with no memory of the work it refers to. Run `node ~/ai-factory/engine/scripts/verify-session-resume.mjs codex cursor` on the installation.
+`scripts/verify-session-resume.mjs` now checks the completed turn first, since it is what every resume in the factory depends on today, and exits non-zero only when that fails; the mid-turn kill is reported alongside. All live, on the installation or in this environment:
+
+| Provider | Completed turn, then resume | Killed mid-turn, then resume |
+| --- | --- | --- |
+| Claude 2.1.281 | **PASS** | **PASS** |
+| Codex 0.155.1 | **PASS** | FAIL |
+| Cursor 2026.09.23 | **PASS** | FAIL |
+
+Every resume the factory does today (the correction of a rejected result, and the Architect's brief, spec, revision and consultation continuations) follows a completed turn, so it is verified for all three providers. Continuing a run that was cut short mid-turn remains Claude-only.
 
 Verified by `npx tsc --noEmit` and `npm test` (472 passed), including `test/workflow-runner.test.ts` (a rejected Builder result and a rejected brief each corrected in their own session with the rejection alone), `test/budget.test.ts` (interrupt, pause and cancel acknowledged; a timeout still held) and the daemon integration test, where a cancelled Builder run no longer stops the retry. The script's verdicts were rechecked with fake providers that remember and forget, for both scenarios.
 
