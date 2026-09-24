@@ -4,7 +4,7 @@
 // SIGKILL a second later) leaves a provider session that a new run can resume, and the resumed run
 // remembers what the killed run had already read.
 //
-// Usage: node scripts/verify-session-resume.mjs [claude] [codex] [cursor]   (default: claude codex)
+// Usage: node scripts/verify-session-resume.mjs [claude] [codex] [cursor]   (default: claude codex cursor)
 // Each provider costs one short run and one short resume. Nothing in the factory is touched.
 import { spawn, spawnSync } from "node:child_process";
 import { randomInt } from "node:crypto";
@@ -90,23 +90,32 @@ async function verify(name, provider, root) {
   const task = "This directory has six files, w1.txt to w6.txt, each holding one secret word. Read them strictly one at a time, in order, with exactly one separate tool call per file, and never read two files in one call. After reading all six, reply with the six secret words, one per line.";
   const resumeTask = "You were interrupted. Do not use any tool and do not read any file. From what you already read earlier in this conversation, list every secret word you saw, exactly as written, one per line. If you saw none, reply NONE.";
 
+  // Stopped once three files were read, like a real interruption well into a run. A provider may
+  // record a step only when the step ends (Codex writes a tool's output when the model's response
+  // for that step finishes), so the file read in the step cut short may be lost; the earlier ones
+  // must not be. Stopping at the very first read measured only that last, unfinished step.
   const first = await run(provider.command, provider.fresh(), task, cwd, path.join(cwd, "1-killed.jsonl"), provider.stopSignal,
-    stdout => words.some(word => stdout.includes(word)) && !parse(stdout).some(event => event.type === "result"));
+    stdout => words.filter(word => stdout.includes(word)).length >= 3 && !parse(stdout).some(event => event.type === "result"));
   if (first.code === null && !first.stopped) return { verdict: "FAIL", detail: `could not start ${provider.command}: ${first.stderr.trim().slice(-300)}`, cwd };
   if (!first.stopped) return { verdict: "INCONCLUSIVE", detail: `the run finished (exit ${first.code}) before the interrupt signal could be sent; run the check again`, cwd };
   const events = parse(first.stdout), sessionId = events.map(provider.session).find(Boolean);
   const seen = words.filter(word => first.stdout.includes(word));
   if (!sessionId) return { verdict: "FAIL", detail: "the killed run's stream carried no session id", cwd };
-  if (!seen.length) return { verdict: "INCONCLUSIVE", detail: "the run was interrupted before it read any file", cwd };
+  if (seen.length < 2) return { verdict: "INCONCLUSIVE", detail: `the run was interrupted after reading ${seen.length} file(s), too few to tell a lost step from a lost session; run the check again`, cwd };
 
   const second = await run(provider.command, provider.resume(sessionId), resumeTask, cwd, path.join(cwd, "2-resumed.jsonl"), provider.stopSignal);
   const resumed = parse(second.stdout), answer = provider.finalText(resumed) ?? "";
   if (second.code !== 0) return { verdict: "FAIL", detail: `resume exited ${second.code}: ${(second.stderr || answer).trim().slice(-400)}`, cwd, sessionId };
   if (resumed.some(provider.usedTool)) return { verdict: "INCONCLUSIVE", detail: "the resumed run read files again, so its answer does not prove it remembered", cwd, sessionId };
-  const missing = seen.filter(word => !answer.includes(word));
-  return missing.length
-    ? { verdict: "FAIL", detail: `resumed, but did not remember ${missing.join(", ")} of the ${seen.length} word(s) read before the kill. Answer: ${answer.trim().slice(0, 300)}`, cwd, sessionId }
-    : { verdict: "PASS", detail: `resumed session ${sessionId} and recalled all ${seen.length} word(s) read before the kill without reading again`, cwd, sessionId };
+  // Words in the order the killed run read them; only the last one can have been in flight.
+  const order = seen.slice().sort((a, b) => first.stdout.indexOf(a) - first.stdout.indexOf(b));
+  const remembered = order.filter(word => answer.includes(word)), settled = order.slice(0, -1);
+  const lostSettled = settled.filter(word => !answer.includes(word));
+  const detail = `remembered ${remembered.length} of the ${order.length} word(s) read before the kill (${order.map(word => `${word}${answer.includes(word) ? " ✓" : " ✗"}`).join(", ")})`;
+  if (lostSettled.length) return { verdict: "FAIL", detail: `resumed, but lost steps that had finished before the kill: ${detail}. Answer: ${answer.trim().slice(0, 300)}`, cwd, sessionId };
+  return remembered.length === order.length
+    ? { verdict: "PASS", detail: `resumed session ${sessionId}: ${detail}`, cwd, sessionId }
+    : { verdict: "PASS", detail: `resumed session ${sessionId}; only the step cut short was lost: ${detail}`, cwd, sessionId };
 }
 
 // A run that finished its turn normally, then resumed: what the factory relies on to correct a
@@ -130,7 +139,7 @@ async function verifyCompleted(name, provider, root) {
     : { verdict: "FAIL", detail: `resumed, but did not remember ${word}. Answer: ${answer.trim().slice(0, 300)}`, cwd, sessionId };
 }
 
-const requested = process.argv.slice(2).length ? process.argv.slice(2) : ["claude", "codex"];
+const requested = process.argv.slice(2).length ? process.argv.slice(2) : ["claude", "codex", "cursor"];
 const unknown = requested.filter(name => !providers[name]);
 if (unknown.length) { console.error(`Unknown provider: ${unknown.join(", ")}. Use claude, codex or cursor.`); process.exit(2); }
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "factory-resume-check-"));
