@@ -361,8 +361,8 @@ test("the spec pass continues the brief's provider session, and starts fresh whe
   await runner.run(item.id);if(briefBeforeSessions)store.db.prepare("UPDATE events SET payload=json_remove(payload,'$.sessionPersisted') WHERE type='model.selected'").run();
   new WorkflowCommands(store).apply({kind:"approve",version:1,guidance:"Keep the public API"},{workItemId:item.id,login:"owner",commentId:1,specVersion:1});
   await runner.run(item.id);if(resumeFails)await runner.run(item.id);
-  const spentNothing=(store.db.prepare("SELECT json_extract(payload,'$.spentNothing') spent FROM events WHERE type='architect.session_unavailable'").get() as {spent:number}|undefined)?.spent;
-  const state=new WorkflowProjections(store).get(item.id),resumed=(store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='architect.session_resumed'").get() as {n:number}).n,unavailable=(store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='architect.session_unavailable'").get() as {n:number}).n;
+  const spentNothing=(store.db.prepare("SELECT json_extract(payload,'$.spentNothing') spent FROM events WHERE type='session.unavailable'").get() as {spent:number}|undefined)?.spent;
+  const state=new WorkflowProjections(store).get(item.id),resumed=(store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='architect.session_resumed'").get() as {n:number}).n,unavailable=(store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='session.unavailable'").get() as {n:number}).n;
   store.db.close();return {requests,stage:state.stage,status:state.status,resumed,unavailable,spentNothing};
  };
  try{
@@ -413,6 +413,42 @@ test("a revised brief continues the brief sent back, and a tactical consultation
   assert.match(consultation.instructions,/^# Continue: a tactical consultation/);assert.match(consultation.instructions,/TACTICAL RETURN ROUTE — REQUIRED/);assert.match(consultation.instructions,/re-read any file before relying on/);
   assert.deepEqual(consultation.allowedNextRoles,["developer","qa"]);
   assert.deepEqual({stage:new WorkflowProjections(store).get(item.id).stage,resumed:(store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='architect.session_resumed'").get() as {n:number}).n},{stage:"BUILD",resumed:3});
-  assert.equal(requests.filter(request=>request.role!=="product-architect").every(request=>request.session===undefined),true,"only the Architect keeps sessions");
+  assert.equal(requests.filter(request=>request.role!=="product-architect").every(request=>request.session?.persist===true&&!request.session.resume),true,"delivery roles keep their session, so a rejected result could be corrected, but never continue another run's");
  }finally{config.roles["product-architect"]=saved;store.db.close();}
+});
+
+test("a result the validator rejects is corrected by continuing the run that produced it, with nothing but the rejection",async()=>{
+ const saved={developer:{...config.roles.developer},architect:{...config.roles["product-architect"]}};
+ config.roles.developer={...saved.developer,provider:"codex",model:"test-model"};config.roles["product-architect"]={...saved.architect,provider:"claude",model:"test-model"};
+ const rejection="Designer PASS lists the prototype files it wrote, all under .factory/prototype/";
+ // Each role's first run completes its turn and keeps its session, but its report is rejected.
+ const agent=(store:Store,requests:AgentRunRequest[],corrected:AgentResult):AgentAdapter=>({async run(request){requests.push(request);
+  store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);
+  store.event("execution.finished",{status:"succeeded",sessionId:request.session?.resume??`${request.role}-session`},request.workItemId,request.executionId);
+  if(!request.session?.resume)throw new InvalidResultError(rejection);
+  return corrected;}});
+ try{
+  const store=new Store(":memory:"),requests:AgentRunRequest[]=[];
+  try{
+   store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,base_branch,created_at,updated_at,context,stage,status) VALUES('build',1,'owner/demo','factory/issue-1','main','now','now',?,'BUILD','QUEUED')").run(JSON.stringify({title:"Build",body:"Continue",cwd:"/tmp/factory-work"}));
+   store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment,approved_by,approved_at) VALUES('build',1,'SPEC',?,?,'owner','now')").run(JSON.stringify([{id:"AC1",description:"Works"}]),JSON.stringify({complexity:"medium",risk:"low",verificationDepth:"standard",uxImpact:"none",rationale:"standard"}));
+   const runner=new WorkflowRunner(store,{developer:agent(store,requests,result("pass"))},new Workspace(),{ensurePR(){return "unused";}});
+   await runner.run("build");assert.equal(new WorkflowProjections(store).get("build").status,"QUEUED","the rejection is retried");
+   await runner.run("build");
+   assert.deepEqual(requests.map(request=>request.session),[{persist:true},{resume:"developer-session"}]);
+   assert.match(requests[1].instructions,/^# Correct your result/);assert.ok(requests[1].instructions.includes(rejection));
+   assert.doesNotMatch(requests[1].instructions,/AI Factory worker rules|Approved specification/,"neither the contract nor the context is sent again");
+   assert.ok(requests[1].instructions.length<1000);
+   assert.equal(new WorkflowProjections(store).get("build").stage,"TEST","the corrected result is applied");
+   assert.equal((store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='execution.correction_resumed'").get() as {n:number}).n,1);
+  }finally{store.db.close();}
+  const design=new Store(":memory:"),architectRequests:AgentRunRequest[]=[];
+  try{
+   const item=new WorkflowIntake(design).start(runnerIssue,{actor:"dashboard",source:"control"});
+   const runner=new WorkflowRunner(design,{"product-architect":agent(design,architectRequests,result("brief"))},new Workspace(),{ensurePR(){return "unused";}});
+   await runner.run(item.id);await runner.run(item.id);
+   assert.deepEqual(architectRequests[1].session,{resume:"product-architect-session"},"a rejected brief is corrected in its own session, although no Architect result was ever applied");
+   assert.equal(new WorkflowProjections(design).get(item.id).status,"WAITING");
+  }finally{design.db.close();}
+ }finally{config.roles.developer=saved.developer;config.roles["product-architect"]=saved.architect;}
 });

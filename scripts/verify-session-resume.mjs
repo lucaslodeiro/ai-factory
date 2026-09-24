@@ -109,15 +109,41 @@ async function verify(name, provider, root) {
     : { verdict: "PASS", detail: `resumed session ${sessionId} and recalled all ${seen.length} word(s) read before the kill without reading again`, cwd, sessionId };
 }
 
+// A run that finished its turn normally, then resumed: what the factory relies on to correct a
+// rejected result with nothing but the rejection, and to continue the Architect's passes.
+async function verifyCompleted(name, provider, root) {
+  const cwd = fs.mkdtempSync(path.join(root, `${name}-completed-`));
+  spawnSync("git", ["init", "-q"], { cwd });
+  const word = `granite-${randomInt(1000, 9999)}`;
+  fs.writeFileSync(path.join(cwd, "w1.txt"), `The secret word in this file is ${word}.\n`);
+  const first = await run(provider.command, provider.fresh(), "Read w1.txt with one tool call, then reply with only the word DONE.", cwd, path.join(cwd, "1-completed.jsonl"), provider.stopSignal);
+  if (first.code !== 0) return { verdict: "FAIL", detail: `the first run exited ${first.code}: ${first.stderr.trim().slice(-300)}`, cwd };
+  const sessionId = parse(first.stdout).map(provider.session).find(Boolean);
+  if (!sessionId) return { verdict: "FAIL", detail: "the completed run's stream carried no session id", cwd };
+  if (!first.stdout.includes(word)) return { verdict: "INCONCLUSIVE", detail: "the first run did not read the file", cwd };
+  const second = await run(provider.command, provider.resume(sessionId), "Do not use any tool and do not read any file. What secret word did you read earlier in this conversation? Reply with the word only, or NONE.", cwd, path.join(cwd, "2-resumed.jsonl"), provider.stopSignal);
+  const resumed = parse(second.stdout), answer = provider.finalText(resumed) ?? "";
+  if (second.code !== 0) return { verdict: "FAIL", detail: `resume exited ${second.code}: ${(second.stderr || answer).trim().slice(-400)}`, cwd, sessionId };
+  if (resumed.some(provider.usedTool)) return { verdict: "INCONCLUSIVE", detail: "the resumed run read the file again", cwd, sessionId };
+  return answer.includes(word)
+    ? { verdict: "PASS", detail: `resumed session ${sessionId} and recalled ${word} without reading again`, cwd, sessionId }
+    : { verdict: "FAIL", detail: `resumed, but did not remember ${word}. Answer: ${answer.trim().slice(0, 300)}`, cwd, sessionId };
+}
+
 const requested = process.argv.slice(2).length ? process.argv.slice(2) : ["claude", "codex"];
 const unknown = requested.filter(name => !providers[name]);
 if (unknown.length) { console.error(`Unknown provider: ${unknown.join(", ")}. Use claude, codex or cursor.`); process.exit(2); }
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "factory-resume-check-"));
 let failed = false;
+// The completed turn is what every resume in the factory depends on today, so it decides the exit
+// code; a mid-turn kill only decides whether a cut-short run can be continued instead of restarted.
 for (const name of requested) {
-  process.stdout.write(`${name}: running, interrupting mid-turn and resuming… `);
-  const outcome = await verify(name, providers[name], root);
-  failed ||= outcome.verdict !== "PASS";
-  console.log(`${outcome.verdict}\n  ${outcome.detail}\n  logs: ${outcome.cwd}`);
+  process.stdout.write(`${name} — completed turn, then resume: `);
+  const completed = await verifyCompleted(name, providers[name], root);
+  failed ||= completed.verdict !== "PASS";
+  console.log(`${completed.verdict}\n  ${completed.detail}\n  logs: ${completed.cwd}`);
+  process.stdout.write(`${name} — killed mid-turn, then resume: `);
+  const killed = await verify(name, providers[name], root);
+  console.log(`${killed.verdict}\n  ${killed.detail}\n  logs: ${killed.cwd}`);
 }
 process.exit(failed ? 1 : 0);

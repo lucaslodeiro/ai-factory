@@ -95,13 +95,11 @@ if(codex){
   assert.equal(command("cancel", workId).status, 0);
   await waitFor(() => (store!.db.prepare("SELECT status FROM work_items LIMIT 1").get() as any)?.status === "CANCELLED" && (store!.db.prepare("SELECT COUNT(*) AS n FROM executions WHERE status='running'").get() as any).n === 0);
   assert.equal(command("retry", workId).status, 0);
-  // The cancelled Builder run reported no usage, so the retry waits until an approver acknowledges it.
-  await waitFor(() => {const row=store!.db.prepare("SELECT stage,status FROM work_items LIMIT 1").get() as any;return row?.stage==="BUILD"&&row?.status==="WAITING";});
-  assert.equal((store.db.prepare("SELECT json_extract(payload,'$.budget') budget FROM records WHERE kind='request' AND status='open'").get() as any)?.budget,"unknown");
-  const waiting = JSON.parse(fs.readFileSync(stateFile, "utf8")); waiting.comments.push({ id: waiting.comments.length + 1, body: "/factory budget +0 Cancelled on purpose", user: { login: "owner", type: "User" } }); fs.writeFileSync(stateFile, JSON.stringify(waiting));
+  // The cancelled Builder run reported no usage, but the person who cancelled it already decided:
+  // the retry runs without asking them to acknowledge its unknown cost.
   await waitFor(() => {const row=store!.db.prepare("SELECT stage,status FROM work_items LIMIT 1").get() as any;return row?.stage==="DELIVERY"&&row?.status==="WAITING";});
-  const grant=store.db.prepare("SELECT actor,payload FROM records WHERE kind='budget'").get() as {actor:string;payload:string};
-  assert.equal(grant.actor,"owner");assert.equal(JSON.parse(grant.payload).acknowledges.length,1);
+  assert.equal((store.db.prepare("SELECT COUNT(*) n FROM records WHERE kind='request' AND json_extract(payload,'$.type')='budget'").get() as any).n,0,"no budget acknowledgement was requested");
+  assert.equal((store.db.prepare("SELECT COUNT(*) n FROM executions WHERE status='cancelled' AND interruption_reason='user-cancel' AND total_tokens IS NULL").get() as any).n,1,"the cancelled run is still recorded as unmeasured");
   assert.equal(git(origin,["rev-parse","refs/ai-factory/lease"]),obsoleteLease);
   const workRow=store.db.prepare("SELECT branch,context FROM work_items LIMIT 1").get() as {branch:string;context:string};const w={branch:workRow.branch,context:JSON.parse(workRow.context)}; assert.equal(w.context.pr, "https://example.test/pull/1");
   assert.equal(git(origin, ["show", `${w.branch}:src/greet.mjs`]), 'export const greet = name => "Hello " + name;');

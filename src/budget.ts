@@ -65,12 +65,18 @@ export function budgetFamily(store:Store,workItemId:string):string[] {
  return [owner,...(store.db.prepare("SELECT id FROM work_items WHERE epic_work_item_id=? ORDER BY created_at").all(owner) as Array<{id:string}>).map(item=>item.id)];
 }
 
+export const humanStops=["interrupted-for-guidance","user-pause","user-cancel"];
+
 export function budgetState(store:Store,workItemId:string,settings:BudgetSettings=config):BudgetState {
  const family=budgetFamily(store,workItemId),ledger=family.flatMap(member=>budgetLedger(store,member));
  const grants=(store.db.prepare(`SELECT payload FROM records WHERE work_item_id IN (${family.map(()=>"?").join(",")}) AND kind='budget' AND status='active' ORDER BY sequence`).all(...family) as Array<{payload:string}>)
   .map(row=>JSON.parse(row.payload) as {tokens?:unknown;acknowledges?:unknown});
  const extended=grants.reduce((total,grant)=>total+(tokens(grant.tokens) ?? 0),0);
  const acknowledged=new Set(grants.flatMap(grant=>Array.isArray(grant.acknowledges) ? grant.acknowledges.filter((id):id is string=>typeof id === "string") : []));
+ // A run a person stopped (pause, cancel, or interrupt with guidance) is acknowledged by that
+ // decision: asking the same person to confirm afterwards that its cost is unknown adds a stop to
+ // the workflow and no information. Its usage, when the stream reported some, still counts.
+ for (const row of store.db.prepare(`SELECT id FROM executions WHERE work_item_id IN (${family.map(()=>"?").join(",")}) AND interruption_reason IN (${humanStops.map(()=>"?").join(",")})`).all(...family,...humanStops) as Array<{id:string}>) acknowledged.add(row.id);
  const consumed=ledger.reduce((total,entry)=>total+(entry.tokens ?? 0),0),granted=settings.issueBudgetTokens+extended;
  const unknownRuns=ledger.filter(entry=>entry.tokens === null).map(entry=>entry.executionId);
  const unacknowledgedRuns=ledger.filter(entry=>entry.tokens === null && !acknowledged.has(entry.executionId) && !settings.budgetUnmeteredRoles.includes(entry.role as AgentRole)).map(entry=>entry.executionId);

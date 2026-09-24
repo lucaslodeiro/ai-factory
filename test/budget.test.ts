@@ -256,3 +256,16 @@ test("an epic and its stories share one budget, and an extension on any of their
   assert.deepEqual([budgetState(store,epic).granted,budgetState(store,s1).block],[1500,null],"the extension granted on a story issue lifts the hold on the family");
  } finally { store.db.close(); }
 }));
+
+test("a run a person stopped is acknowledged by that decision, while a run the factory cut short still waits for one",()=>withBudget(500_000,[],()=>{
+ const {store,id}=setup();
+ try {
+  const stopped=(reason:string)=>{const execution=run(store,id,"developer",null,{status:reason==="user-cancel"?"cancelled":"interrupted"});store.db.prepare("UPDATE executions SET interruption_reason=? WHERE id=?").run(reason,execution);return execution;};
+  for(const reason of ["interrupted-for-guidance","user-pause","user-cancel"])stopped(reason);
+  let state=budgetState(store,id);
+  assert.deepEqual([state.unknownRuns.length,state.unacknowledgedRuns.length,state.block],[3,0,null],"unmeasured, but nobody is asked to confirm a stop they made");
+  const timeout=stopped("execution-timeout");
+  state=budgetState(store,id);
+  assert.deepEqual([state.unacknowledgedRuns,state.block],[[timeout],"unknown"],"a timeout nobody decided still needs a person to accept its unknown cost");
+ } finally { store.db.close(); }
+}));
