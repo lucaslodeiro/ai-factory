@@ -1,4 +1,5 @@
 import {browserRequired,browserInstructions} from "./browser-runner.mjs";
+import { reapStrayProcesses } from "./process-reaper.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
@@ -118,6 +119,7 @@ export class ExecutionManager {
       child.on("close", code => {
         // Clean any remaining descendants even after a normal provider exit.
         closing=true;clearTimeout(timeout);clearInterval(progressTimer);recordProgress();this.running.delete(id);
+        void reapStrayProcesses(cwd).then(pids=>{if(pids.length)this.store.event("execution.processes_reaped",{count:pids.length},workItemId,id);}).catch(()=>{});
         let completion: { runId: string; status: string; code: number | null; reason?:string } | undefined;
         try {
           const saved = JSON.parse(fs.readFileSync(path.join(logDir, "completion.json"), "utf8"));

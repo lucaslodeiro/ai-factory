@@ -475,6 +475,14 @@ On `factory-demo#20` brief v1 closed with a **Decisions** section that repeated,
 
 Verified by `npx tsc --noEmit` and `npm test` (477 passed), including `test/workflow-github.test.ts`.
 
+## Servers left running in worktrees are stopped — 2026-09-24
+
+On the installation, while `factory-demo#20` ran, four processes had been running for one to three days: two `npm run test:server` and one `npm run local:serve` in Factory worktrees, and an `npm test` in the engine. The test servers were started in the background by agents: providers run each command in its own process group, so stopping the run's group missed them. The `local:serve` was a preview server of an earlier daemon, which stopped without stopping it. They hold memory and ports, and a held port can fail the next Tester.
+
+After every run, and when the daemon starts, the Factory now stops every process whose working directory is inside a Factory worktree (the run's own, or all of them at start) and that is not the daemon or a descendant of it, so the current preview server survives: SIGTERM, then SIGKILL after 1.5 s. Nothing outside `<data>/worktrees` is ever touched, and a sibling worktree is not matched by prefix. Processes are found through `/proc` on Linux and `ps` plus `lsof` on macOS. `execution.processes_reaped` and the daemon's ready log record how many. A process a person starts by hand inside a Factory worktree is stopped too.
+
+Verified by `npx tsc --noEmit` and `npm test` (479 passed), including `test/process-reaper.test.ts`: the ownership rule on a synthetic process table, and a real background process left in a worktree by a shell that exited, stopped while a directory outside the worktrees is refused. The `ps`/`lsof` path has not run on macOS yet.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { config } from "./config.js";
 import { Store } from "./storage.js";
 import { ExecutionManager,streamFacts } from "./execution-manager.js";
+import { reapStrayProcesses } from "./process-reaper.js";
 import type { ModelSelection } from "./types.js";
 import { CodexAdapter } from "./adapters/codex.js";
 import { ClaudeAdapter } from "./adapters/claude.js";
@@ -140,9 +141,11 @@ export async function startDaemon(store = new Store(),github=new GitHubAdapter()
  let timer: NodeJS.Timeout | undefined;
  try {
   const recovered=recoverAbandonedExecutions(store);
+  // Servers a previous daemon or its agents left running in the worktrees; nothing is running now.
+  const reaped=await reapStrayProcesses();
   store.setMetadata("runtime:local-work",null);
   audit(); await controls(); timer = setInterval(()=>void controls(), 200);
-  daemonLog("info","daemon.ready",{items:(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL").get() as {count:number}).count,recoveredExecutions:recovered,recoveredSignalMaintenance});
+  daemonLog("info","daemon.ready",{items:(store.db.prepare("SELECT COUNT(*) count FROM work_items WHERE archived_at IS NULL").get() as {count:number}).count,recoveredExecutions:recovered,reapedProcesses:reaped.length,recoveredSignalMaintenance});
   let localTask:Promise<void>|undefined,remoteTask:Promise<void>|undefined,nextRemote=0;
   // nextAt is written when a cycle ends; local work that finishes earlier can pull the next cycle forward, never push it back.
   const mark=(state:string,error?:string)=>store.setMetadata("runtime:github-sync",{state,at:new Date().toISOString(),...(error?{error}:{} )});
