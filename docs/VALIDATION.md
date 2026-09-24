@@ -418,10 +418,10 @@ Verified by `npx tsc --noEmit` and `npm test` (472 passed), including `test/work
 | Provider | Verdict | Original run | Correction |
 | --- | --- | --- | --- |
 | Claude 2.1.281 | **PASS** | 6 tool calls, 8 turns, 131,152 tokens | 0 tool calls, 2 turns, 20,354 tokens (16%) |
-| Codex | **PASS** | 6 tool calls, 147,359 tokens | 0 tool calls, 170,225 tokens reported (116%) |
+| Codex | **PASS** | 6 tool calls, 147,359 tokens | 0 tool calls, 22,866 tokens (16%); Codex reported 170,225 for the thread |
 | Cursor | **PASS** | 6 tool calls, 219,971 tokens | 0 tool calls, 33,500 tokens (15%) |
 
-Codex's correction made no tool call yet reported more than the run it corrected; 170,225 − 147,359 = 22,866, about 16%, in line with Claude and Cursor. That reads as Codex reporting the thread's running total on a resumed session rather than the resumed run alone, which would count the earlier run twice in the budget. It is being checked against the raw `turn.completed` events before anything relies on it.
+Codex's correction made no tool call yet reported more than the run it corrected; 170,225 − 147,359 = 22,866, about 16%, in line with Claude and Cursor. The raw `turn.completed` events confirm it: the correction reported input 169,773 and output 452 against the first run's 147,031 and 328, so Codex states a resumed thread's running total, and every Codex resume (a correction, an Architect pass) counted the earlier run again in the budget. A resumed Codex run is now recorded as that total less what the thread had reported when its last measured run ended; the provider's figure is kept beside it as `sessionUsage`, and live progress uses the same base so the 125% stop is not tripped by the earlier run. A run cut short before its turn completed reports nothing and does not reset the base. Claude and Cursor report the resumed run alone and are unchanged. `test/adapters.test.ts` replays these two reports: the correction records 22,866 tokens.
 
 The factory no longer records or prints a dollar figure. Claude's `total_cost_usd` is an estimate from a price list, and on a resumed session it is the session's running total, so the correction above read as 118% of the run it saved. `activity`, `benchmark` and this check now compare the tokens each CLI reported for the run, and the benchmark's prompt-share estimate (4 bytes per token, priced as cache write plus re-reads) was removed with it.
 

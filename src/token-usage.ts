@@ -15,6 +15,13 @@ export function reportedTokens(usage:Partial<TokenUsage>|null|undefined,provider
  if(provider==="cursor"&&(usage.cacheReadTokens===null||usage.cacheReadTokens===undefined||usage.cacheWriteTokens===null||usage.cacheWriteTokens===undefined))return null;
  return Math.round(usage.totalTokens);
 }
+/** A run's own share of a thread total: Codex reports a resumed thread's running total, so a resumed
+ * run is that total less what the thread had already reported when the previous run ended. */
+export function sinceSessionTotal(usage:TokenUsage|null,baseline:Partial<TokenUsage>|null|undefined):TokenUsage|null {
+ if(!usage||!baseline)return usage;
+ const less=(field:Exclude<keyof TokenUsage,"partial">)=>usage[field]===null?null:Math.max(0,usage[field]!-(baseline[field]??0));
+ return {...usage,inputTokens:less("inputTokens"),outputTokens:less("outputTokens"),cachedTokens:less("cachedTokens"),cacheReadTokens:less("cacheReadTokens"),cacheWriteTokens:less("cacheWriteTokens"),totalTokens:less("totalTokens")};
+}
 const number = (value:unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
 const first = (...values:unknown[]) => values.map(number).find(value=>value !== null) ?? null;
 

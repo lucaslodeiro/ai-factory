@@ -153,3 +153,27 @@ test("Claude, Codex and Cursor keep a brief's session only when asked, and a res
  assert.ok(!(await cursorArgs({persist:true})).includes("--resume"));
  const resumedCursor=await cursorArgs({resume:"chat-1"});assert.equal(resumedCursor[resumedCursor.indexOf("--resume")+1],"chat-1");assert.equal(resumedCursor[resumedCursor.indexOf("--mode")+1],"ask","the Architect stays read-only when resumed");
 });
+
+test("a resumed Codex run is measured from where its thread left off, not from the thread's running total",async()=>{
+ // Real reports from the correction check: the resumed turn.completed repeats the first run's usage.
+ const script=path.join(root,"codex-thread");
+ fs.writeFileSync(script,`#!${process.execPath}
+const resumed=process.argv.includes('resume');
+console.log(JSON.stringify({type:'thread.started',thread_id:'thread-1'}));
+if(process.argv.includes('killed'))process.exit(0);
+console.log(JSON.stringify({type:'turn.completed',usage:resumed?{input_tokens:169773,cached_input_tokens:145792,output_tokens:452}:{input_tokens:147031,cached_input_tokens:124672,output_tokens:328}}));
+`,{mode:0o755});
+ const store=new Store(":memory:"),manager=new ExecutionManager(store),selection={provider:"codex",model:"auto"} as any;
+ try{
+  await manager.run("w","developer",script,["exec","-"],root,"",30_000,selection);
+  // A run cut short before its turn completed reports nothing, and must not reset the base.
+  await manager.run("w","developer",script,["exec","resume","thread-1","killed"],root,"",30_000,selection,{},undefined,undefined,"thread-1");
+  await manager.run("w","developer",script,["exec","resume","thread-1","-"],root,"",30_000,selection,{},undefined,undefined,"thread-1");
+  const finished=(store.db.prepare("SELECT payload FROM events WHERE type='execution.finished' ORDER BY id").all() as Array<{payload:string}>).map(row=>JSON.parse(row.payload));
+  assert.equal(finished[0].usage.totalTokens,147359);
+  assert.equal(finished[1].usage,null);
+  assert.deepEqual(finished[2].usage,{inputTokens:1622,outputTokens:124,cachedTokens:21120,cacheReadTokens:21120,cacheWriteTokens:0,totalTokens:22866});
+  assert.equal(finished[2].sessionUsage.totalTokens,170225,"what the provider reported is kept beside it");
+  assert.deepEqual((store.db.prepare("SELECT total_tokens FROM executions ORDER BY rowid").all() as Array<{total_tokens:number|null}>).map(row=>row.total_tokens),[147359,null,22866]);
+ }finally{store.db.close();}
+});

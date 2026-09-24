@@ -7,7 +7,7 @@ import path from "node:path";
 import { Store } from "./storage.js";
 import { config, agentEnvironment } from "./config.js";
 import type { AgentRole, ModelSelection } from "./types.js";
-import { tokenUsageReducer } from "./token-usage.js";
+import { sinceSessionTotal, tokenUsageReducer, type TokenUsage } from "./token-usage.js";
 import { providerActivityReducer } from "./provider-activity.js";
 import { eachJsonLine, type JsonEvent } from "./provider-stream.js";
 import {progressMonitor,progressKey} from "./execution-progress.js";
@@ -51,7 +51,14 @@ export interface ExecutionOutput {
 export class ExecutionManager {
   private running = new Map<string, { child: ChildProcess; cancel: () => void; interrupt: (reason:string) => void }>();
   constructor(private store: Store) {}
-  async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs, selection?: ModelSelection, promptMetadata:PromptManifestInput = {}, executionId?:string, localRuntimeUrl?:string): Promise<ExecutionOutput> {
+  /** What the provider last reported as the whole thread's usage, from that thread's latest run. */
+  private sessionTotal(sessionId:string):Partial<TokenUsage>|null {
+    // A run cut short before its turn completed reported nothing, so the last one that did is the base.
+    const row=this.store.db.prepare("SELECT payload FROM events WHERE type='execution.finished' AND json_extract(payload,'$.sessionId')=? AND coalesce(json_extract(payload,'$.sessionUsage.totalTokens'),json_extract(payload,'$.usage.totalTokens')) IS NOT NULL ORDER BY id DESC LIMIT 1").get(sessionId) as {payload:string}|undefined;
+    const payload=row?JSON.parse(row.payload) as {usage?:Partial<TokenUsage>|null;sessionUsage?:Partial<TokenUsage>|null}:undefined;
+    return payload?.sessionUsage??payload?.usage??null;
+  }
+  async run(workItemId: string, role: AgentRole, command: string, args: string[], cwd: string, input = "", timeoutMs = config.timeoutMs, selection?: ModelSelection, promptMetadata:PromptManifestInput = {}, executionId?:string, localRuntimeUrl?:string, resumedSession?:string): Promise<ExecutionOutput> {
     if(browserRequired(cwd,role))input+=browserInstructions(cwd,localRuntimeUrl);
     const id = executionId??randomUUID();
     const logDir = path.join(config.dataDir, "runs", id);
@@ -72,7 +79,10 @@ export class ExecutionManager {
     } else this.store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,prompt_bytes,prompt_sha256) VALUES(?,?,?,?,?,?,?,?)")
       .run(id, workItemId, role, workflowStage[role], "running", new Date().toISOString(),promptBytes,promptSha256);
     this.store.event("execution.started", { role, command, cwd, logDir, selection }, workItemId, id);
-    const monitor=progressMonitor(logDir,selection?.provider??null);
+    // Codex reports a resumed thread's running total, so a resumed run is measured from where the
+    // thread's previous run left it; otherwise the budget would count that run again.
+    const sessionBaseline=selection?.provider==="codex"&&resumedSession?this.sessionTotal(resumedSession):null;
+    const monitor=progressMonitor(logDir,selection?.provider??null,sessionBaseline);
     this.store.setMetadata(progressKey(id),monitor.poll());
     return new Promise((resolve, reject) => {
       let cancelled = false, interrupted = false, interruptionReason:string|undefined, timedOut = false;
@@ -116,13 +126,13 @@ export class ExecutionManager {
         const session=(event:JsonEvent)=>event.type==="thread.started"&&typeof event.thread_id==="string"?event.thread_id:typeof event.session_id==="string"?event.session_id:undefined;
         try { eachJsonLine(stdoutFile,event=>{usageReducer.add(event);activityReducer.add(event);sessionId??=session(event);if(event.type==="result")finalEvent=event;if(event.type==="turn.failed")failedTurn=event;}); } catch {}
         if(status==="succeeded"&&(finalEvent?.is_error===true||failedTurn))status="failed";
-        const usage=usageReducer.result();
+        const sessionUsage=selection?.provider==="codex"?usageReducer.result():undefined,usage=sinceSessionTotal(usageReducer.result(),sessionBaseline);
         // Without a completion record the supervisor died before the agent was reaped, so the agent may
         // still be running: retry must prove its process group is gone first.
         this.store.db.prepare("UPDATE executions SET status=?,finished_at=?,exit_code=?,input_tokens=?,output_tokens=?,cached_tokens=?,total_tokens=?,interruption_reason=?,recovery_pending=? WHERE id=?")
           .run(status, new Date().toISOString(), providerExitCode, usage?.inputTokens ?? null,usage?.outputTokens ?? null,usage?.cachedTokens ?? null,usage?.totalTokens ?? null,interruptionReason??null,completion?0:1,id);
         const providerError=status==="failed"?providerFailureMessage(finalEvent??failedTurn,selection?.provider):undefined;
-        this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage,activity:activityReducer.result(),interruptionReason,providerError,sessionId }, workItemId, id);
+        this.store.event("execution.finished", { status, code: providerExitCode, supervisorExitCode: code,usage,sessionUsage,activity:activityReducer.result(),interruptionReason,providerError,sessionId }, workItemId, id);
         if (status !== "succeeded") {const message=`Execution ${id} ${status}${providerError ? `: ${providerError}` : spawnError ? ': ' + spawnError.message : ''}`;return reject(providerError&&/Failed to provide valid structured output after \d+ attempts/i.test(providerError)?new InvalidResultError(message):new Error(message));}
         resolve({ id, finalEvent, readStdout:()=>{ const stdout=readOutput(stdoutFile,10_000_000); if(stdout.tooLarge)throw new Error("Agent output exceeds 10 MB"); return stdout.text; } });
       });

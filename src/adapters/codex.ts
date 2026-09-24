@@ -20,7 +20,7 @@ export class CodexAdapter implements AgentAdapter {
   // `resume` subcommand; the resumed thread then runs under the same policy as a fresh one.
   const args = ["exec", ...modelArgs, "--json", ...(r.session?.persist ? [] : r.session?.resume ? [] : ["--ephemeral"]), ...sandboxArgs, "--output-schema", schema, "--output-last-message", output,
    ...(r.session?.resume ? ["resume", r.session.resume, "-"] : ["-"])];
-  await this.executions.run(r.workItemId, r.role, config.codexCommand, args, r.cwd, r.instructions, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl);
+  await this.executions.run(r.workItemId, r.role, config.codexCommand, args, r.cwd, r.instructions, config.timeoutMs, r.selection,r.promptMetadata,r.executionId,r.localRuntimeUrl,r.session?.resume);
   return parseResult(JSON.parse(fs.readFileSync(output, "utf8")), r.role, r.allowedNextRoles, r.consultationFrom);
  }
 }
