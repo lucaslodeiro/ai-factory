@@ -479,3 +479,43 @@ test("a correction cycle continues the Builder's and the Tester's own sessions w
   assert.equal((store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='delivery.session_resumed'").get() as {n:number}).n,2);
  }finally{config.roles.developer=saved.developer;config.roles.qa=saved.qa;config.verifyCommand=previousVerify;config.maxCycles=previousMaxCycles;store.db.close();}
 });
+
+test("a run stopped before it finished is continued in its own session, whatever stopped it, on every provider",async()=>{
+ const saved={...config.roles.developer};
+ const seed=(store:Store,over:{status?:string;reason?:string|null;role?:string;specVersion?:number;result?:boolean;provider?:string}={})=>{
+  store.db.prepare("INSERT INTO work_items(id,issue_number,repo,branch,base_branch,created_at,updated_at,context,stage,status) VALUES('build',1,'owner/demo','factory/issue-1','main','now','now',?,'BUILD','QUEUED')").run(JSON.stringify({title:"Build",body:"Continue",cwd:"/tmp/factory-work"}));
+  store.db.prepare("INSERT INTO specs(work_item_id,version,body,criteria,assessment,approved_by,approved_at) VALUES('build',1,'SPEC',?,?,'owner','now')").run(JSON.stringify([{id:"AC1",description:"Works"}]),JSON.stringify({complexity:"medium",risk:"low",verificationDepth:"standard",uxImpact:"none",rationale:"standard"}));
+  store.db.prepare("INSERT INTO executions(id,work_item_id,role,stage,status,started_at,interruption_reason,total_tokens) VALUES('stopped','build',?,'BUILD',?,'2026-09-24T10:00:00Z',?,5000)").run(over.role??"developer",over.status??"interrupted",over.reason===undefined?"interrupted-for-guidance":over.reason);
+  store.event("model.selected",{role:over.role??"developer",specVersion:over.specVersion??1,selection:{provider:over.provider??"codex",model:"test-model"},sessionPersisted:true},"build","stopped");
+  store.event("execution.finished",{status:over.status??"interrupted",sessionId:"stopped-session"},"build","stopped");
+  if(over.result)store.event("agent.result",{role:"developer",result:result("pass")},"build","stopped");
+ };
+ const attempt=async(provider:"claude"|"codex"|"cursor",over:Parameters<typeof seed>[1]={})=>{
+  config.roles.developer={...saved,provider,model:"test-model"};
+  const store=new Store(":memory:"),requests:AgentRunRequest[]=[];
+  try{
+   seed(store,{provider,...over});
+   const workspace=new Workspace();workspace.check=()=>["src/a.ts"];
+   await new WorkflowRunner(store,{developer:{async run(request){requests.push(request);store.db.prepare("UPDATE executions SET status='succeeded',total_tokens=1000,finished_at='now' WHERE id=?").run(request.executionId);return result("pass");}}},workspace,{ensurePR(){return "unused";}}).run("build");
+   return {request:requests[0],continued:(store.db.prepare("SELECT COUNT(*) n FROM events WHERE type='execution.session_continued'").get() as {n:number}).n};
+  }finally{store.db.close();}
+ };
+ try{
+  for(const provider of ["claude","codex","cursor"] as const){
+   const {request,continued}=await attempt(provider);
+   assert.deepEqual(request.session,{resume:"stopped-session"},`${provider} continues the stopped run`);
+   assert.match(request.instructions,/^# Continue: your run was stopped before it finished\n\nA person stopped your run to give you new guidance/);
+   assert.doesNotMatch(request.instructions,/AI Factory worker rules|## Issue|## Approved specification/,"what the session holds is not sent again");
+   assert.equal(continued,1);
+  }
+  assert.match((await attempt("codex",{status:"timed_out",reason:"execution-timeout"})).request.instructions,/reached the Factory's time limit/);
+  assert.match((await attempt("claude",{status:"cancelled",reason:"token-budget-limit"})).request.instructions,/token budget, and an approver has extended it/);
+  assert.match((await attempt("cursor",{reason:"daemon-restart"})).request.instructions,/The Factory restarted while you were working/);
+  // Nothing to continue: the run returned its result, belongs to another role, another spec, or another provider.
+  for(const over of [{result:true},{role:"qa"},{specVersion:2},{status:"failed",reason:null}])assert.deepEqual((await attempt("codex",over)).request.session,{persist:true},JSON.stringify(over));
+  config.roles.developer={...saved,provider:"claude",model:"test-model"};
+  const store=new Store(":memory:"),requests:AgentRunRequest[]=[];
+  try{seed(store,{provider:"codex"});await new WorkflowRunner(store,{developer:{async run(request){requests.push(request);store.db.prepare("UPDATE executions SET status='succeeded',finished_at='now' WHERE id=?").run(request.executionId);return result("pass");}}},Object.assign(new Workspace(),{check:()=>["src/a.ts"]}),{ensurePR(){return "unused";}}).run("build");
+   assert.deepEqual(requests[0].session,{persist:true},"a session of another provider cannot be continued");}finally{store.db.close();}
+ }finally{config.roles.developer=saved;}
+});

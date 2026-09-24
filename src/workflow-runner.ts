@@ -45,6 +45,16 @@ function consultationContinuation(route:Parameters<typeof tacticalRouteSection>[
 function deliveryContinuation(role:"developer"|"qa",cycle:number){return role==="developer"
  ?`# Continue: correction cycle ${cycle}\n\nThe work you delivered above came back with findings, under "Open findings required by this role" below. Your contract, the approved specification and the repository you read are all above in this session. The branch has changed since your run: other roles committed to it, so re-read a file before relying on what you remember of it, and do not explore again what has not changed. Fix what the findings name, re-run the checks that cover it, and return under the same result contract. The sections below are the current state of the work item.`
  :`# Continue: verify correction cycle ${cycle}\n\nThe Builder changed the branch to address the findings of the last verification or review; what changed is under "Changed files" below. Your contract, the approved specification and the tests you wrote are all above in this session. Re-read the changed files and anything they touch before relying on what you remember, re-run your verification against the new head, and do not repeat checks the change cannot affect. Return under the same result contract. The sections below are the current state of the work item.`;}
+// A run stopped before it finished left its work in its own session, on every provider: only the
+// step in progress at the stop can be missing (verified by scripts/verify-session-resume.mjs).
+const stopReasons:Record<string,string>={
+ "interrupted-for-guidance":"A person stopped your run to give you new guidance; it is under \"Active instructions\" below and takes precedence over your plan",
+ "execution-timeout":"Your run reached the Factory's time limit",
+ "token-budget-limit":"Your run reached the issue's token budget, and an approver has extended it",
+ "user-pause":"A person paused the workflow and has now resumed it",
+ "user-cancel":"A person cancelled the workflow and has now restored it",
+};
+function stoppedContinuation(reason:string){return `# Continue: your run was stopped before it finished\n\n${stopReasons[reason]??"The Factory restarted while you were working"}. Everything you did before the stop is above in this session, except possibly the last step: a command or an edit in progress at the stop may or may not have taken effect, so check what it touched before repeating it. Do not redo work that is already done. Finish the task under the same contract and return the same result format. The sections below are the current state of the work item.`;}
 function specContinuation(specVersion:number){return `# Continue: write the spec for brief v${specVersion}\n\nThe human approved the brief you wrote above, with every recommendation in it; any guidance given with the approval is under "Active instructions" below. The active request is now specification. Your contract, the rules and the repository you read are all above in this session: do not explore again what you already know, and read only what the spec needs beyond it. Return outcome spec under the same result contract, with brief "" and taskAssessment null. The sections below are the current state of the work item.`;}
 export function commitSummary(summary:string){const line=summary.trim().split(/\r?\n/)[0].trim();if(line.length<=72)return line;const cut=line.lastIndexOf(" ",72);return `${line.slice(0,cut>0?cut:72).trimEnd()}…`;}
 
@@ -124,11 +134,12 @@ export class WorkflowRunner {
    const writingSpec=active?.payload.kind==="request"&&active.payload.type==="specification";
    const rejectedSession=sessions&&invalidResultRetry?.kind==="invalid-result"&&invalidResultRetry.executionId?this.runSession(invalidResultRetry.executionId,selection,currentContext.unresumableSession):undefined;
    const correcting=Boolean(rejectedSession);
+   const stopped=!rejectedSession&&sessions?this.stoppedSession(workItemId,role,specVersion,selection,currentContext.unresumableSession):undefined;
    // A correction cycle continues the Builder's or the Tester's last applied run under the same spec.
-   const deliverySession=!rejectedSession&&sessions&&!route&&(role==="developer"||role==="qa")&&projection.correctionCycles>0?this.roleSession(workItemId,role,specVersion,selection,currentContext.unresumableSession):undefined;
-   resumed=rejectedSession??deliverySession??(sessions&&role==="product-architect"?this.architectSession(workItemId,selection,currentContext.unresumableSession):undefined);
-   const continuation=!resumed?"":correcting?rejectionContinuation(invalidResultRetry!.message??"the result did not satisfy the result contract"):deliverySession?deliveryContinuation(role as "developer"|"qa",projection.correctionCycles):writingSpec?specContinuation(specVersion):route?consultationContinuation(route):answerContinuation();
-   const assembled=this.assembler.assemble({workItemId,role,specVersion,budgetBytes:budget.bytes-contractBytes-2,budgetSource:budget.source,issue:{title:context.title??`Issue #${row.issue_number}`,body:context.body??""},repositoryMap:role==="developer"?this.workspaces.repositoryMap?.(cwd):undefined,changedFiles:(reviewerContext??summary??retrySummary)?.files,diffStat:(reviewerContext??summary??retrySummary)?.stat,diffPath:reviewerContext?.path,qaEvidence:role==="reviewer"?this.latestResult(workItemId,"qa"):undefined,storyEvidence:["qa","reviewer"].includes(role)?new WorkflowStories(this.store).verifiedByStories(workItemId,specVersion):undefined,previousAttempt,rejectedResult:invalidResultRetry?.message?{message:invalidResultRetry.message,kind:invalidResultRetry.kind}:undefined,omitSections:deliverySession?["Issue","Approved specification","Repository map"]:undefined});
+   const deliverySession=!rejectedSession&&!stopped&&sessions&&!route&&(role==="developer"||role==="qa")&&projection.correctionCycles>0?this.roleSession(workItemId,role,specVersion,selection,currentContext.unresumableSession):undefined;
+   resumed=rejectedSession??stopped?.sessionId??deliverySession??(sessions&&role==="product-architect"?this.architectSession(workItemId,selection,currentContext.unresumableSession):undefined);
+   const continuation=!resumed?"":correcting?rejectionContinuation(invalidResultRetry!.message??"the result did not satisfy the result contract"):stopped?stoppedContinuation(stopped.reason):deliverySession?deliveryContinuation(role as "developer"|"qa",projection.correctionCycles):writingSpec?specContinuation(specVersion):route?consultationContinuation(route):answerContinuation();
+   const assembled=this.assembler.assemble({workItemId,role,specVersion,budgetBytes:budget.bytes-contractBytes-2,budgetSource:budget.source,issue:{title:context.title??`Issue #${row.issue_number}`,body:context.body??""},repositoryMap:role==="developer"?this.workspaces.repositoryMap?.(cwd):undefined,changedFiles:(reviewerContext??summary??retrySummary)?.files,diffStat:(reviewerContext??summary??retrySummary)?.stat,diffPath:reviewerContext?.path,qaEvidence:role==="reviewer"?this.latestResult(workItemId,"qa"):undefined,storyEvidence:["qa","reviewer"].includes(role)?new WorkflowStories(this.store).verifiedByStories(workItemId,specVersion):undefined,previousAttempt,rejectedResult:invalidResultRetry?.message?{message:invalidResultRetry.message,kind:invalidResultRetry.kind}:undefined,omitSections:deliverySession||stopped?["Issue","Approved specification","Repository map"]:undefined});
 
   // Saying the Factory already tried and failed saves the agent from spending turns rediscovering
   // the same broken preview server for itself.
@@ -140,6 +151,7 @@ export class WorkflowRunner {
    const session=sessions?(resumed?{resume:resumed}:{persist:true}):undefined;
    this.store.event("model.selected",{role,specVersion,selection,budget,...(session?{sessionPersisted:true}:{})},workItemId,started.executionId);
    if(resumed&&role==="product-architect")this.store.event("architect.session_resumed",{sessionId:resumed,specVersion},workItemId,started.executionId);
+   if(stopped)this.store.event("execution.session_continued",{sessionId:resumed,stoppedExecutionId:stopped.executionId,reason:stopped.reason},workItemId,started.executionId);
    if(deliverySession)this.store.event("delivery.session_resumed",{sessionId:resumed,role,correctionCycle:projection.correctionCycles,specVersion},workItemId,started.executionId);
    if(correcting)this.store.event("execution.correction_resumed",{sessionId:resumed,rejectedExecutionId:invalidResultRetry!.executionId},workItemId,started.executionId);
    let result=await adapter.run({workItemId,role,cwd,instructions,selection,executionId:started.executionId,promptMetadata:correcting?{includedRecordIds:[],budgetBytes:budget.bytes,budgetSource:budget.source,sectionBytes:{Continuation:Buffer.byteLength(continuation)}}:{...assembled.manifest,budgetBytes:budget.bytes,budgetSource:budget.source,sectionBytes:{...(resumed?{Continuation:Buffer.byteLength(continuation)}:{Contract:contractBytes}),...assembled.manifest.sectionBytes}},allowedNextRoles:route?.allowedNextRoles,consultationFrom:route?.from,localRuntimeUrl,session});
@@ -218,6 +230,17 @@ export class WorkflowRunner {
  private architectSession(workItemId:string,selection:ModelSelection,unresumable?:string){
   const latest=this.store.db.prepare("SELECT run_id FROM events WHERE work_item_id=? AND type='agent.result' AND json_extract(payload,'$.role')='product-architect' ORDER BY id DESC LIMIT 1").get(workItemId) as {run_id:string}|undefined;
   return latest?this.runSession(latest.run_id,selection,unresumable):undefined;
+ }
+ // The session of this role's latest run when that run was stopped before it returned a result, under
+ // the same spec: the next run continues it instead of starting over.
+ private stoppedSession(workItemId:string,role:AgentRole,specVersion:number,selection:ModelSelection,unresumable?:string){
+  const latest=this.store.db.prepare("SELECT e.id,e.role,e.status,e.interruption_reason FROM executions e WHERE e.work_item_id=? ORDER BY e.started_at DESC,e.rowid DESC LIMIT 1").get(workItemId) as {id:string;role:string;status:string;interruption_reason:string|null}|undefined;
+  if(!latest||latest.role!==role||!["interrupted","timed_out","cancelled"].includes(latest.status))return undefined;
+  if(this.store.db.prepare("SELECT 1 FROM events WHERE run_id=? AND type='agent.result' LIMIT 1").get(latest.id))return undefined;
+  const selected=this.store.db.prepare("SELECT payload FROM events WHERE run_id=? AND type='model.selected' ORDER BY id DESC LIMIT 1").get(latest.id) as {payload:string}|undefined;
+  if(!selected||(JSON.parse(selected.payload) as {specVersion?:number}).specVersion!==specVersion)return undefined;
+  const sessionId=this.runSession(latest.id,selection,unresumable);
+  return sessionId?{sessionId,executionId:latest.id,reason:latest.interruption_reason??(latest.status==="timed_out"?"execution-timeout":"daemon-restart")}:undefined;
  }
  // The session of a delivery role's last applied run under this spec version. A new spec starts fresh:
  // the session would carry work built against a specification that no longer holds.

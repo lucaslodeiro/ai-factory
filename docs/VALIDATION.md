@@ -404,10 +404,10 @@ A run a person stopped (interrupt with guidance, pause or cancel) no longer hold
 | Provider | Completed turn, then resume | Killed mid-turn, then resume |
 | --- | --- | --- |
 | Claude 2.1.281 | **PASS** | **PASS** |
-| Codex 0.155.1 | **PASS** | FAIL |
-| Cursor 2026.09.23 | **PASS** | FAIL |
+| Codex 0.155.1 | **PASS** | FAIL, then **PASS** with the corrected check below |
+| Cursor 2026.09.23 | **PASS** | FAIL, then **PASS** with the corrected check below |
 
-Every resume the factory does today (the correction of a rejected result, and the Architect's brief, spec, revision and consultation continuations) follows a completed turn, so it is verified for all three providers. Continuing a run that was cut short mid-turn remains Claude-only.
+Every resume the factory does today (the correction of a rejected result, and the Architect's brief, spec, revision and consultation continuations) follows a completed turn, so it is verified for all three providers. Continuing a run that was cut short mid-turn was first measured as Claude-only; the check was wrong, see the next entry.
 
 Verified by `npx tsc --noEmit` and `npm test` (472 passed), including `test/workflow-runner.test.ts` (a rejected Builder result and a rejected brief each corrected in their own session with the rejection alone), `test/budget.test.ts` (interrupt, pause and cancel acknowledged; a timeout still held) and the daemon integration test, where a cancelled Builder run no longer stops the retry. The script's verdicts were rechecked with fake providers that remember and forget, for both scenarios.
 
@@ -446,6 +446,20 @@ The GitHub status comment was rewritten only when the workflow's presentation ch
 While an agent runs, the status comment now carries a **Progress** row (the tool in progress or the last one; the same content-free progress the dashboard shows, never a command), when the run started and its last activity in UTC, and the tokens the provider has reported for the run so far. The daemon's GitHub sync republishes it through a `progress` presentation: at most every five minutes and only when there were new provider events since the last one, and at once when the dashboard's warning appears or clears (five minutes without progress, or the same action repeated four times). With a warning, the next action says the agent may need a look, that no action is needed if it waits on a slow command, and offers pause and retry with guidance. A finished run has no heartbeat; its transition publishes the result as before.
 
 Verified by `npx tsc --noEmit` and `npm test` (473 passed), including `test/workflow-heartbeat.test.ts`: the five-minute and new-activity rule, a warning published at once and its clearing too, one run's heartbeat not used as another's baseline, the rendered rows, and no heartbeat once the run finished. Not yet observed on a live issue.
+
+## A run stopped before it finished continues its own session, on every provider — 2026-09-24
+
+The mid-turn check stopped each provider the instant the first file's content appeared. Codex's source (`codex-rs/core/src/session/turn.rs`, `drain_in_flight`) records a tool's output when the model's response for that step ends, a moment after the tool reports it, and its rollout is written as the turn goes (`rollout/src/recorder.rs`) and replayed with a trailing unfinished turn kept (`core/src/session/rollout_reconstruction.rs`), in 0.155.1 as in 0.156.1. So the check measured only the step cut short, and read it as a lost session. It now stops after three reads and fails only when a step that had finished is forgotten. Live on the installation:
+
+| Provider | Completed turn, then resume | Killed after three reads, then resume |
+| --- | --- | --- |
+| Codex 0.155.1 | **PASS** | **PASS**: 2 of 3 remembered, only the step cut short lost |
+| Cursor 2026.09.23 | **PASS** | **PASS**: 2 of 3 remembered, only the step cut short lost |
+| Claude 2.1.281 | **PASS** | **PASS** (earlier run, all remembered) |
+
+A run stopped before it returned a result, by a person's guidance, a pause, a cancel, the time limit, the live budget limit or a Factory restart, is now continued by the next run of the same role under the same spec, provider and model, on all three providers. It receives a short note naming why it stopped, that the last step may not have taken effect and must be checked before repeating it, and the current state, without the contract, issue, spec or repository map again; `execution.session_continued` records it. Anything else starts fresh as before: the stopped run returned a result, the next run is another role, the spec changed, the provider or model changed, or the run left no session (a run recovered after the daemon died may not have one).
+
+Verified by `npx tsc --noEmit` and `npm test` (474 passed), including `test/workflow-runner.test.ts`: the same stopped Builder is continued on Claude, Codex and Cursor, each stop reason gets its note, and a run with a result, another role, another spec, a failed run or another provider's session starts fresh.
 
 ## Remaining operational validation
 
