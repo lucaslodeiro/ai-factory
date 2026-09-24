@@ -14,7 +14,10 @@ test('browser instructions select a transient project preview and prohibit persi
   fs.writeFileSync(path.join(root,'package.json'),JSON.stringify({scripts:{'local:start':'node service.mjs start','local:serve':'node server.mjs'},devDependencies:{playwright:'*'}}));
   const instructions=browserInstructions(root);
   assert.match(instructions,/npm run local:serve/);
-  assert.match(instructions,/ephemeral child process/);
+  assert.match(instructions,/npm run local:serve <\/dev\/null >\/tmp\/preview\.log 2>&1 &/,"a background server must not hold the tool's output");
+  assert.match(instructions,/stop it before you return your result/);
+  assert.match(instructions,/end every script that connected with `await browser\.close\(\)`/,"a script left connected over CDP never exits");
+  assert.match(instructions,/never kill the browser process or send the raw CDP Browser\.close command/);
   assert.match(instructions,/Never register a system service or use launchctl/);
   assert.doesNotMatch(instructions,/npm run local:start/);
  }finally{fs.rmSync(root,{recursive:true,force:true})}
