@@ -439,6 +439,14 @@ What it saves is not proven yet. A resumed session re-reads its history as cache
 
 Verified by `npx tsc --noEmit` and `npm test` (471 passed), including `test/workflow-runner.test.ts`: after a Tester finding, the second Builder and the second Tester each resume their own session, the Builder receives the finding, the Tester the changed files, and neither receives the contract, issue, spec or repository map again.
 
+## The status comment shows a running agent's progress — 2026-09-24
+
+The GitHub status comment was rewritten only when the workflow's presentation changed, so a long run read as frozen there: "The current agent is running" and nothing else for as long as it took. On `factory-demo#19` the run was interrupted after five minutes without visible news, although the dashboard had the progress all along.
+
+While an agent runs, the status comment now carries a **Progress** row (the tool in progress or the last one; the same content-free progress the dashboard shows, never a command), when the run started and its last activity in UTC, and the tokens the provider has reported for the run so far. The daemon's GitHub sync republishes it through a `progress` presentation: at most every five minutes and only when there were new provider events since the last one, and at once when the dashboard's warning appears or clears (five minutes without progress, or the same action repeated four times). With a warning, the next action says the agent may need a look, that no action is needed if it waits on a slow command, and offers pause and retry with guidance. A finished run has no heartbeat; its transition publishes the result as before.
+
+Verified by `npx tsc --noEmit` and `npm test` (473 passed), including `test/workflow-heartbeat.test.ts`: the five-minute and new-activity rule, a warning published at once and its clearing too, one run's heartbeat not used as another's baseline, the rendered rows, and no heartbeat once the run finished. Not yet observed on a live issue.
+
 ## Remaining operational validation
 
 The happy-path issue-to-PR acceptance flow has completed with real providers and explicit human approval. Human merge was explicitly performed by the user and then observed by the orchestrator. Real Slack delivery is not configured; its retry/HTTP behavior is tested locally. Complex-task Sonnet-to-Opus escalation and Sol routing remain covered by deterministic tests, not by this low-risk live demo. GitHub Actions is optional and remains inactive because of workflow scope. Environment filtering/worktrees are not a complete OS isolation boundary; use trusted repositories.

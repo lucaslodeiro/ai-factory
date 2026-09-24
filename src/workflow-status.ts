@@ -9,6 +9,8 @@ import type { LastCommandOutcome } from "./workflow-inbox.js";
 import { factoryCommandReference } from "./factory-help.js";
 import {config} from "./config.js";
 import {budgetState,budgetSummary,formatTokens} from "./budget.js";
+import {workflowActivity} from "./workflow-activity.js";
+import {progressKey,type ExecutionProgress} from "./execution-progress.js";
 
 const stages={DESIGN:"Design",BUILD:"Build",TEST:"Test",REVIEW:"Review",DELIVERY:"Delivery"} as const;
 const stageActors={DESIGN:"Architect",BUILD:"Builder",TEST:"Tester",REVIEW:"Reviewer",DELIVERY:"Orchestrator"} as const;
@@ -49,6 +51,8 @@ function nextAction(store:Store,workItemId:string) {
  if(request?.payload.kind==="request"&&request.payload.type==="specification")return box(`Brief v${request.specVersion} is approved. Architect is writing the specification and its acceptance criteria; no human action is required. You can still pause or cancel the workflow.${command("/factory pause [reason]")}${command("/factory cancel [reason]")}`);
  if(request?.payload.kind==="request"&&request.payload.owner==="architect")return box(`Architect is next. No human action is required. You can still pause or cancel the workflow.${command("/factory pause [reason]")}${command("/factory cancel [reason]")}`);
  if(projection.status==="COMPLETED")return box("Delivery is complete. No further factory action is required.");
+ const activity=projection.status==="RUNNING"?workflowActivity(store,workItemId,"RUNNING"):undefined;
+ if(activity&&"warning" in activity&&activity.warning)return box(`The current agent may need a look: ${publishedText(activity.detail)} No action is required if it is waiting on a slow command. If it is going in circles, pause it and retry with guidance.${command("/factory pause [reason]")}${command("/factory retry [guidance]")}`);
  return box(`${projection.status==="RUNNING"?"The current agent is running":"The next agent is queued"}. No human action is required. You can pause or cancel the workflow.${command("/factory pause [reason]")}${command("/factory cancel [reason]")}`);
 }
 
@@ -66,6 +70,16 @@ function requestLabel(request:ReturnType<WorkflowRecords["activeRequest"]>) {
  return "Waiting for merge";
 }
 
+// What the running agent is doing, as of the last publication: absolute times, because the comment
+// is static until the next heartbeat rewrites it. Tool names and counts only, never commands.
+function progressRows(store:Store,workItemId:string):string[][] {
+ const activity=workflowActivity(store,workItemId,"RUNNING");if(!("role" in activity))return [["Progress",activity.label]];
+ const run=store.db.prepare("SELECT e.id FROM executions e JOIN work_items w ON w.active_run_id=e.id WHERE w.id=?").get(workItemId) as {id:string}|undefined;
+ const tokens=run?store.metadata<ExecutionProgress>(progressKey(run.id))?.usageTokens??null:null;
+ const times=[activity.since&&`running since ${utcMinute(activity.since)}`,"lastProgressAt" in activity&&activity.lastProgressAt&&`last activity ${utcMinute(activity.lastProgressAt)}`].filter(Boolean).join(" · ");
+ return [["Progress",`${"warning" in activity&&activity.warning?`${activity.label}: `:""}${publishedText(activity.detail)}`],...(times?[["Agent activity",times]]:[]),...(tokens!==null?[["This run",`${formatTokens(tokens)} tokens reported so far`]]:[])];
+}
+
 export function workflowStatusMarkdown(store:Store,workItemId:string) {
  const item=store.db.prepare("SELECT issue_number,context FROM work_items WHERE id=?").get(workItemId) as {issue_number:number;context:string}|undefined;
  if(!item)throw new Error("Unknown work item");
@@ -76,6 +90,7 @@ export function workflowStatusMarkdown(store:Store,workItemId:string) {
  const actor=["FAILED","PAUSED","CANCELLED"].includes(projection.status)?"Human":request?.payload.kind==="request"?(request.payload.owner==="human"?"Human":request.payload.owner==="stories"?"Stories":request.payload.owner==="designer"?"Designer":"Architect"):projection.status==="RUNNING"||projection.status==="QUEUED"?stageActors[projection.stage]:"None";
  const rows=[["Stage",stages[projection.stage]],["Status",statuses[projection.status]],["Current actor",actor],["Instance",config.instanceName],["SPEC version",spec?`v${spec}`:"Not proposed"],["Attempt",String(projection.attempt)]];
  if(request?.payload.kind==="request")rows.push(["Open request",requestLabel(request)]);
+ if(projection.status==="RUNNING")rows.push(...progressRows(store,workItemId));
  if(failure)rows.push(["Failure",publishedText(sanitizeFailureEvidence(failure.message,240))]);
  const budget=budgetState(store,workItemId);if(budget.runs)rows.push(["Token budget",budgetSummary(budget)]);
  if(context.pr)rows.push(["Pull request",context.pr]);

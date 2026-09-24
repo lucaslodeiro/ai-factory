@@ -1,4 +1,5 @@
 import type {RuntimeGitHub} from "./github-runtime.js";
+import {publishHeartbeats} from "./workflow-heartbeat.js";
 import { config } from "./config.js";
 import type { Issue } from "./adapters/github.js";
 import type { Store } from "./storage.js";
@@ -27,6 +28,7 @@ export class WorkflowOrchestrator {
   for(const item of this.rows())if(!item.archived_at){try{const comments=await this.github.comments(item.issue_number);if(!this.row(item.id).archived_at)this.inbox.poll(item.id,comments);}catch(error){if(this.issueNotFound(error)){await this.archiveDeleted(item);continue;}throw error;}}
   // After the comments, so an approval that plans stories creates them in the same poll.
   await this.reconcileStories(login);
+  publishHeartbeats(this.store);
   await this.flush();
   if(this.store.db.prepare("SELECT 1 FROM events WHERE id>? AND type IN ('github.pr_poll_failed','github.issue_state_failed') LIMIT 1").get(since))throw new Error("Some GitHub checks failed; inspect daemon logs. Local processing remains independent.");
  }
