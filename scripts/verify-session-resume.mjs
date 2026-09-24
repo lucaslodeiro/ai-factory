@@ -24,6 +24,7 @@ const readOnly = "Read,Glob,Grep";
 const providers = {
   claude: {
     command: command("CLAUDE_COMMAND", "claude"),
+    stopSignal: "SIGTERM",
     fresh: () => ["-p", "--output-format", "stream-json", "--verbose", "--tools", readOnly, "--allowedTools", readOnly],
     resume: id => ["-p", "--resume", id, "--output-format", "stream-json", "--verbose", "--tools", readOnly, "--allowedTools", readOnly],
     session: event => typeof event.session_id === "string" ? event.session_id : undefined,
@@ -32,6 +33,10 @@ const providers = {
   },
   codex: {
     command: command("CODEX_COMMAND", "codex"),
+    // codex-rs only installs a handler for SIGINT (tokio::signal::ctrl_c, its graceful shutdown
+    // that flushes the buffered rollout writer); it has no SIGTERM handler, so SIGTERM kills it
+    // with the default disposition before that flush runs and the completed item is lost.
+    stopSignal: "SIGINT",
     // Same shape the factory uses: --sandbox is not global, so it precedes the resume subcommand.
     fresh: () => ["exec", "--json", "--sandbox", "read-only", "-"],
     resume: id => ["exec", "--json", "--sandbox", "read-only", "resume", id, "-"],
@@ -41,6 +46,7 @@ const providers = {
   },
   cursor: {
     command: command("CURSOR_COMMAND", "cursor-agent"),
+    stopSignal: "SIGTERM",
     fresh: () => ["-p", "--output-format", "stream-json", "--trust", "--mode", "ask"],
     resume: id => ["-p", "--resume", id, "--output-format", "stream-json", "--trust", "--mode", "ask"],
     session: event => typeof event.session_id === "string" ? event.session_id : undefined,
@@ -53,13 +59,13 @@ const parse = text => text.split(/\r?\n/).flatMap(line => { try { const value = 
 
 // Runs one provider process in its own process group, like the factory's supervisor does, and
 // optionally stops it the factory's way as soon as `stopWhen` holds for what it has written.
-function run(command, args, input, cwd, log, stopWhen) {
+function run(command, args, input, cwd, log, stopSignal, stopWhen) {
   return new Promise(resolve => {
     let stdout = "", stderr = "", stopped = false, settled = false;
     const child = spawn(command, args, { cwd, env, detached: true, stdio: ["pipe", "pipe", "pipe"] });
     const stop = () => {
       if (stopped || !child.pid) return; stopped = true;
-      try { process.kill(-child.pid, "SIGTERM"); } catch {}
+      try { process.kill(-child.pid, stopSignal); } catch {}
       setTimeout(() => { try { process.kill(-child.pid, "SIGKILL"); } catch {} }, KILL_AFTER_MS).unref();
     };
     const limit = setTimeout(stop, RUN_LIMIT_MS);
@@ -80,16 +86,16 @@ async function verify(name, provider, root) {
   const task = "This directory has six files, w1.txt to w6.txt, each holding one secret word. Read them strictly one at a time, in order, with exactly one separate tool call per file, and never read two files in one call. After reading all six, reply with the six secret words, one per line.";
   const resumeTask = "You were interrupted. Do not use any tool and do not read any file. From what you already read earlier in this conversation, list every secret word you saw, exactly as written, one per line. If you saw none, reply NONE.";
 
-  const first = await run(provider.command, provider.fresh(), task, cwd, path.join(cwd, "1-killed.jsonl"),
+  const first = await run(provider.command, provider.fresh(), task, cwd, path.join(cwd, "1-killed.jsonl"), provider.stopSignal,
     stdout => words.some(word => stdout.includes(word)) && !parse(stdout).some(event => event.type === "result"));
   if (first.code === null && !first.stopped) return { verdict: "FAIL", detail: `could not start ${provider.command}: ${first.stderr.trim().slice(-300)}`, cwd };
+  if (!first.stopped) return { verdict: "INCONCLUSIVE", detail: `the run finished (exit ${first.code}) before the interrupt signal could be sent; run the check again`, cwd };
   const events = parse(first.stdout), sessionId = events.map(provider.session).find(Boolean);
   const seen = words.filter(word => first.stdout.includes(word));
-  if (!first.stopped) return { verdict: "INCONCLUSIVE", detail: `the run finished before it could be interrupted (exit ${first.code}); run the check again`, cwd };
   if (!sessionId) return { verdict: "FAIL", detail: "the killed run's stream carried no session id", cwd };
   if (!seen.length) return { verdict: "INCONCLUSIVE", detail: "the run was interrupted before it read any file", cwd };
 
-  const second = await run(provider.command, provider.resume(sessionId), resumeTask, cwd, path.join(cwd, "2-resumed.jsonl"));
+  const second = await run(provider.command, provider.resume(sessionId), resumeTask, cwd, path.join(cwd, "2-resumed.jsonl"), provider.stopSignal);
   const resumed = parse(second.stdout), answer = provider.finalText(resumed) ?? "";
   if (second.code !== 0) return { verdict: "FAIL", detail: `resume exited ${second.code}: ${(second.stderr || answer).trim().slice(-400)}`, cwd, sessionId };
   if (resumed.some(provider.usedTool)) return { verdict: "INCONCLUSIVE", detail: "the resumed run read files again, so its answer does not prove it remembered", cwd, sessionId };
