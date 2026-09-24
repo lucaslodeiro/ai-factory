@@ -355,7 +355,7 @@ Providers do not report the same things. Codex (`exec --json`) and Claude (`stre
 
 ## Token budget per issue
 
-Every issue may consume `FACTORY_ISSUE_BUDGET_TOKENS` cost-weighted token units (2,000,000 by default) across all its runs: every stage, retry, invalid-result retry and correction spends from the same budget. Cached reads count at a discount; the budget is an approximation of provider cost, not a bill in dollars.
+Every issue may consume `FACTORY_ISSUE_BUDGET_TOKENS` tokens (5,000,000 by default) across all its runs: every stage, retry, invalid-result retry and correction spends from the same budget. A run spends the total its provider's CLI reported, input, output, cache reads and cache writes alike, with nothing priced or weighted, so the budget, `activity` and `benchmark` count the same number. Cache reads dominate a long run, so this total is several times what an agent writes or reads fresh. A Cursor run whose report lacks the cache breakdown counts as unmeasured rather than low.
 
 The installer seeds every limit and quota in `.env.example`. They are editable under **Settings → Limits & quotas** in the dashboard; saving restarts the daemon. The brief (4,000 characters), spec (20,000) and summary (600) values are writing targets, never rejection thresholds. The section also contains the Architect's question, decision and story counts, list safety cap, correction and retry limits, context size, token budget and grace, execution and verification timeouts, and artifact retention.
 

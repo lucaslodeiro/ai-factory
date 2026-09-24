@@ -7,18 +7,13 @@ import type { AgentProvider } from "./types.js";
 // sum of what it had reported by then, a lower bound and never an estimate. The issue budget counts
 // it; a run with no usage at all stays unknown.
 export interface TokenUsage { inputTokens:number|null; outputTokens:number|null; cachedTokens:number|null; cacheReadTokens:number|null; cacheWriteTokens:number|null; totalTokens:number|null; partial?:boolean; }
-/** Input-token equivalents approximate provider charges; cached reads are discounted, not free. */
-export function billableTokenUnits(usage:Partial<TokenUsage>|null|undefined,provider?:AgentProvider|null,model?:string|null):number|null {
+/** The tokens the provider's CLI reported for a run, as it reported them: nothing is priced or
+ * weighted. A Cursor report without its cache breakdown leaves the cache out of the total, so it is
+ * not the run's consumption and stays unknown rather than reading low. */
+export function reportedTokens(usage:Partial<TokenUsage>|null|undefined,provider?:AgentProvider|null):number|null {
  if(!usage||usage.totalTokens===null||usage.totalTokens===undefined)return null;
- if(!provider)return Math.round(usage.totalTokens); // older runs did not preserve the provider
  if(provider==="cursor"&&(usage.cacheReadTokens===null||usage.cacheReadTokens===undefined||usage.cacheWriteTokens===null||usage.cacheWriteTokens===undefined))return null;
- if(usage.inputTokens===null||usage.inputTokens===undefined||usage.outputTokens===null||usage.outputTokens===undefined)return Math.round(usage.totalTokens);
- if(usage.cacheReadTokens===null||usage.cacheReadTokens===undefined||usage.cacheWriteTokens===null||usage.cacheWriteTokens===undefined)return Math.ceil(usage.inputTokens+5*usage.outputTokens);
- // Claude CLI currently writes a one-hour cache (2x). OpenAI cache writes are ordinary input.
- // Cursor Composer 2.5 lists cache reads at 0.4x input. Unknown Cursor models use full input
- // weight until their rate is known, rather than pretending their reported cache is free.
- const readWeight=provider==="cursor"?(model?.startsWith("composer-2.5")?0.4:1):0.1;
- return Math.ceil(usage.inputTokens+5*usage.outputTokens+readWeight*usage.cacheReadTokens+(provider==="codex"?1:2)*usage.cacheWriteTokens);
+ return Math.round(usage.totalTokens);
 }
 const number = (value:unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
 const first = (...values:unknown[]) => values.map(number).find(value=>value !== null) ?? null;

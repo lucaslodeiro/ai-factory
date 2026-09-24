@@ -47,7 +47,7 @@ test("Claude progress exposes partial token usage and a bounded schema error",()
   const file=path.join(dir,"stdout.log"),monitor=progressMonitor(dir,"claude");
   fs.writeFileSync(file,JSON.stringify({type:"assistant",message:{id:"m1",usage:{input_tokens:2,cache_read_input_tokens:100,cache_creation_input_tokens:20,output_tokens:3},content:[]}})+"\n");
   fs.appendFileSync(file,JSON.stringify({type:"user",message:{content:[{type:"tool_result",tool_use_id:"one",is_error:true,content:"Output does not match required schema: /brief is too long"}]}})+"\n");
-  const progress=monitor.poll();assert.equal(progress.usageTokens,67);assert.equal(progress.validationAttempts,1);assert.match(progress.lastValidationError!,/brief is too long/);
+  const progress=monitor.poll();assert.equal(progress.usageTokens,125);assert.equal(progress.validationAttempts,1);assert.match(progress.lastValidationError!,/brief is too long/);
   assert.doesNotMatch(JSON.stringify(progress),/secret prompt/);
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });

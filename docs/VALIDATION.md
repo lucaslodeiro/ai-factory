@@ -418,10 +418,14 @@ Verified by `npx tsc --noEmit` and `npm test` (472 passed), including `test/work
 | Provider | Verdict | Original run | Correction |
 | --- | --- | --- | --- |
 | Claude 2.1.281 | **PASS** | 6 tool calls, 8 turns, 131,152 tokens | 0 tool calls, 2 turns, 20,354 tokens (16%) |
-| Codex | not yet run | | |
-| Cursor | not yet run | | |
+| Codex | **PASS** | 6 tool calls, 147,359 tokens | 0 tool calls, 170,225 tokens reported (116%) |
+| Cursor | **PASS** | 6 tool calls, 219,971 tokens | 0 tool calls, 33,500 tokens (15%) |
 
-The factory no longer records or prints a dollar figure. Claude's `total_cost_usd` is an estimate from a price list, and on a resumed session it is the session's running total, so the correction above read as 118% of the run it saved. `activity`, `benchmark` and this check now compare the tokens each CLI reported for the run, and the benchmark's prompt-share estimate (4 bytes per token, priced as cache write plus re-reads) was removed with it. The issue budget still counts provider-weighted units; see `INSTALL.md`.
+Codex's correction made no tool call yet reported more than the run it corrected; 170,225 − 147,359 = 22,866, about 16%, in line with Claude and Cursor. That reads as Codex reporting the thread's running total on a resumed session rather than the resumed run alone, which would count the earlier run twice in the budget. It is being checked against the raw `turn.completed` events before anything relies on it.
+
+The factory no longer records or prints a dollar figure. Claude's `total_cost_usd` is an estimate from a price list, and on a resumed session it is the session's running total, so the correction above read as 118% of the run it saved. `activity`, `benchmark` and this check now compare the tokens each CLI reported for the run, and the benchmark's prompt-share estimate (4 bytes per token, priced as cache write plus re-reads) was removed with it.
+
+The issue budget now counts the same reported totals instead of provider-weighted units (output ×5, cache reads ×0.1 or ×0.4, cache writes ×1 or ×2), so one number means the same thing in the budget, `activity` and `benchmark`. The default moved from 2,000,000 weighted units to 5,000,000 tokens: on the correction check the raw total was about 3.9 times the weighted one, and a Builder run, mostly cache reads, is further apart. An installation with `FACTORY_ISSUE_BUDGET_TOKENS` set in its `.env` keeps that value and should revisit it.
 
 Verified by `npx tsc --noEmit` and `npm test` (469 passed).
 

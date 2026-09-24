@@ -9,7 +9,7 @@ import { WorkflowProjections } from "../src/workflow-projection.js";
 import { WorkflowCommands } from "../src/workflow-commands.js";
 import { WorkflowRecords } from "../src/workflow-records.js";
 import { announceBudgetWarnings, budgetState, holdForBudget, liveBudget } from "../src/budget.js";
-import {billableTokenUnits} from "../src/token-usage.js";
+import {reportedTokens} from "../src/token-usage.js";
 
 test("a running agent gets a 25% grace after the issue budget alert",()=>{
  assert.deepEqual(liveBudget(500000,0,null),{consumed:null,percent:null,alert:false,stop:false});
@@ -18,33 +18,31 @@ test("a running agent gets a 25% grace after the issue budget alert",()=>{
  assert.equal(liveBudget(500000,100000,524999).stop,false);
  assert.equal(liveBudget(500000,100000,525000).stop,true);
 });
-test("the issue limit weights provider-reported cache reads instead of charging them as new input",()=>{
+test("the issue limit counts the tokens the provider reported, cache reads included and unweighted",()=>{
  const usage={inputTokens:24,outputTokens:98,cacheReadTokens:587566,cacheWriteTokens:82797,totalTokens:670485};
- const weighted=billableTokenUnits(usage,"claude")!;
- assert.equal(weighted,224865);
+ assert.equal(reportedTokens(usage,"claude"),670485);
  const {store,id}=setup();
  try{
   const execution=run(store,id,"product-architect",usage.totalTokens);
   store.event("execution.started",{selection:{provider:"claude"}},id,execution);
   store.event("execution.finished",{status:"cancelled",usage},id,execution);
-  assert.equal(budgetState(store,id,settings(500000)).consumed,weighted);
-  assert.equal(budgetState(store,id,settings(500000)).block,null);
+  assert.equal(budgetState(store,id,settings(1_000_000)).consumed,670485);
+  assert.equal(budgetState(store,id,settings(1_000_000)).block,null);
  }finally{store.db.close();}
 });
-test("budget weights provider cache usage and leaves incomplete Cursor reports unmeasured",()=>{
+test("every provider spends the same reported total, and an incomplete Cursor report stays unmeasured",()=>{
  const usage={inputTokens:10,outputTokens:2,cacheReadTokens:100,cacheWriteTokens:20,totalTokens:132};
- assert.equal(billableTokenUnits(usage,"claude"),70);
- assert.equal(billableTokenUnits(usage,"codex"),50);
- assert.equal(billableTokenUnits(usage,"cursor","composer-2.5"),100);
- assert.equal(billableTokenUnits({inputTokens:10,outputTokens:2,totalTokens:12},"cursor"),null);
+ for(const provider of ["claude","codex","cursor"] as const)assert.equal(reportedTokens(usage,provider),132);
+ assert.equal(reportedTokens({inputTokens:10,outputTokens:2,totalTokens:12},"cursor"),null);
+ assert.equal(reportedTokens({inputTokens:10,outputTokens:2,totalTokens:12},"codex"),12);
 });
-test("Cursor execution budget uses the reported model and cache breakdown",()=>{
+test("a Cursor execution spends its reported total, cache breakdown included",()=>{
  const {store,id}=setup();try{
   const usage={inputTokens:54057,outputTokens:5486,cacheReadTokens:605442,cacheWriteTokens:0,totalTokens:664985};
   const execution=run(store,id,"designer",usage.totalTokens);
   store.event("execution.started",{selection:{provider:"cursor",model:"composer-2.5"}},id,execution);
   store.event("execution.finished",{status:"succeeded",usage},id,execution);
-  assert.equal(budgetState(store,id,settings(2_000_000)).consumed,323664);
+  assert.equal(budgetState(store,id,settings(2_000_000)).consumed,664985);
  }finally{store.db.close();}
 });
 import { adoptIssueState, issueStateIndex } from "../src/workflow-state.js";

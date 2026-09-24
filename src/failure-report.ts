@@ -146,8 +146,8 @@ export function failureDiagnosis(reason: string, stderr: string, run?: {status:s
     "**Recommended action:** Inspect the exact operation and error below. Run the relevant connection or configuration check; do not change credentials unless the evidence identifies an access failure. Retry after the reported cause is resolved.",
   ].join("\n\n");
   if(kind==="execution"&&/token budget/i.test(reason))return [
-    "**Summary:** The agent used the issue's cost-weighted token allowance before finishing this stage.",
-    `**Evidence:** ${sanitizeFailureEvidence(reason,600)} Cached reads are discounted in the budget; the provider's raw token count is shown separately in execution usage.`,
+    "**Summary:** The agent used the issue's token allowance before finishing this stage.",
+    `**Evidence:** ${sanitizeFailureEvidence(reason,600)} The budget counts the tokens the provider reported, cache reads included.`,
     "**Recommended action:** Inspect the last agent message and tool below. Reduce repeated repository reads or choose a cheaper model before retrying; extend the shared budget only if the extra work is justified.",
   ].join("\n\n");
   if(kind==="execution"&&run?.status==="timed_out")return [
